@@ -1,0 +1,25 @@
+best_epoch: 1
+best_valid_balanced_accuracy: 0.500000
+total: 77
+real_positive: 62
+real_negative: 15
+predicted_positive: 77
+predicted_negative: 0
+TP: 62
+FP: 15
+TN: 0
+FN: 0
+accuracy: 0.805195
+sensitivity: 1.000000
+precision: 0.805195
+specificity: 0.000000
+IoU: 0.805195
+FAR: 1.000000
+F1: 0.892086
+balanced_accuracy: 0.500000
+loss: 0.672378
+
+per_protein_subgroup_metrics:
+subgroup,total,real_positive,real_negative,predicted_positive,predicted_negative,TP,FP,TN,FN,accuracy,sensitivity,precision,specificity,IoU,FAR,F1,balanced_accuracy,loss
+GLTPD1,29,21,8,29,0,21,8,0,0,0.724138,1.000000,0.724138,0.000000,0.724138,1.000000,0.840000,0.500000,0.671979
+RLBP1,48,41,7,48,0,41,7,0,0,0.854167,1.000000,0.854167,0.000000,0.854167,1.000000,0.921348,0.500000,0.672619

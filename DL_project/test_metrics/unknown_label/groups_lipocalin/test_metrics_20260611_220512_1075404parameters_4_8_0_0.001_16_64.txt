@@ -1,0 +1,93 @@
+third_layers_in_mlps: 0
+cross_attention: 1
+protein_self_attention: 1
+lipid_self_attention: 1
+double_attention: 0
+m: 4
+lr: 0.001
+weight_decay: 0.0
+hiddim: 64
+ep: 150
+seed: 0
+excluded_groups: ["lipocalin"]
+excluded_subgroups: []
+batch: 16
+num_workers: 4
+lipid_fragments_treatment: 0
+protein_pooling: 0
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+ordinary_prot_pooling: 1
+prot_attention_pos_bias: 0
+prot_pooling_by_pockets: 0
+tanimoto_weight: 1
+class_weights: 0
+protein_group_weight: 0
+grab_loss: 0
+type_opt: 1
+plmon: 1
+buryon: 1
+loss_type: 1
+pool_type: 1
+HEADS: 8
+training_duration_sec: 9984.221237
+epochs_completed: 150
+best_epoch: 1
+best_valid_balanced_accuracy: 0.500000
+best_valid_F1: 0.545455
+final_train_balanced_accuracy: 0.500000
+final_valid_balanced_accuracy: 0.500000
+best_to_final_drop: 0.000000
+mean_valid_balanced_accuracy: 0.499028
+auc_valid_balanced_accuracy: 0.499021
+valid_balanced_accuracy_std: 0.011867
+min_train_loss: 0.637056
+final_train_loss: 0.674506
+min_valid_loss: 0.698902
+final_valid_loss: 0.757689
+train_loss_reduction: 0.007342
+valid_loss_reduction: -0.004571
+epochs_to_best: 1
+epochs_without_improvement: 149
+mean_train_valid_gap: 0.001312
+max_train_valid_gap: 0.153182
+overfitting_onset_epoch: 3
+overfitting_epochs: 1
+nan_epoch_count: 0
+collapse_epoch_count: 149
+converged: 1
+run_status: complete
+total: 129
+real_positive: 42
+real_negative: 87
+predicted_positive: 129
+predicted_negative: 0
+TP: 42
+FP: 87
+TN: 0
+FN: 0
+accuracy: 0.325581
+sensitivity: 1.000000
+precision: 0.325581
+specificity: 0.000000
+IoU: 0.325581
+FAR: 1.000000
+F1: 0.491228
+balanced_accuracy: 0.500000
+loss: 0.770270
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity       IoU       FAR        F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  --------  --------  --------  -----------------  --------
+CRABP2        7              0              7                   7                   0   0   7   0   0  0.000000    undefined   0.000000     0.000000  0.000000  1.000000  0.000000          undefined  0.885250
+FABP1        26             16             10                  26                   0  16  10   0   0  0.615385     1.000000   0.615385     0.000000  0.615385  1.000000  0.761905           0.500000  0.668445
+FABP5        16              5             11                  16                   0   5  11   0   0  0.312500     1.000000   0.312500     0.000000  0.312500  1.000000  0.476190           0.500000  0.775963
+FABP7        15              5             10                  15                   0   5  10   0   0  0.333333     1.000000   0.333333     0.000000  0.333333  1.000000  0.500000           0.500000  0.768705
+LCN1         16             10              6                  16                   0  10   6   0   0  0.625000     1.000000   0.625000     0.000000  0.625000  1.000000  0.769231           0.500000  0.663342
+LCN15        11              2              9                  11                   0   2   9   0   0  0.181818     1.000000   0.181818     0.000000  0.181818  1.000000  0.307692           0.500000  0.818763
+PMP2          8              3              5                   8                   0   3   5   0   0  0.375000     1.000000   0.375000     0.000000  0.375000  1.000000  0.545455           0.500000  0.755288
+RBP1         10              0             10                  10                   0   0  10   0   0  0.000000    undefined   0.000000     0.000000  0.000000  1.000000  0.000000          undefined  0.885009
+RBP4         16              1             15                  16                   0   1  15   0   0  0.062500     1.000000   0.062500     0.000000  0.062500  1.000000  0.117647           0.500000  0.862165
+RBP5          4              0              4                   4                   0   0   4   0   0  0.000000    undefined   0.000000     0.000000  0.000000  1.000000  0.000000          undefined  0.883896

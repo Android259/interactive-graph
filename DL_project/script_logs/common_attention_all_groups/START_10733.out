@@ -1,0 +1,578 @@
+=== COMMON + ATTENTION | excluded group: START | seed: 0 ===
+
+number of parameters : 1075404
+train : (1089, 12)
+valid : (122, 12)
+test : (123, 12)
+class weights : [1.021575927734375, 0.9793165326118469]
+data extracted
+
+NOTE: Using experimental fast data loading logic. To disable, pass
+    "--load_fast=false" and report issues on GitHub. More details:
+    https://github.com/tensorflow/tensorboard/issues/4784
+
+EPOCH 1:
+train batch 1: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 1/35
+train accuracy : 0.4375
+train pred 0/1 : 0/32 label 0/1 : 18/14
+train batch 2: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 2/35
+train accuracy : 0.5625
+train pred 0/1 : 32/0 label 0/1 : 18/14
+train batch 3: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 3/35
+train accuracy : 0.40625
+train pred 0/1 : 32/0 label 0/1 : 13/19
+train batch 4: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 4/35
+train accuracy : 0.4375
+train pred 0/1 : 0/32 label 0/1 : 18/14
+train batch 5: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 5/35
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+train batch 6: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 6/35
+train accuracy : 0.625
+train pred 0/1 : 0/32 label 0/1 : 12/20
+train batch 7: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 7/35
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+train batch 8: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 8/35
+train accuracy : 0.40625
+train pred 0/1 : 0/32 label 0/1 : 19/13
+train batch 9: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 9/35
+train accuracy : 0.3125
+train pred 0/1 : 32/0 label 0/1 : 10/22
+train batch 10: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 10/35
+train accuracy : 0.4375
+train pred 0/1 : 29/3 label 0/1 : 11/21
+train batch 11: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 11/35
+train accuracy : 0.625
+train pred 0/1 : 0/32 label 0/1 : 12/20
+train batch 12: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 12/35
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+train batch 13: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 13/35
+train accuracy : 0.3125
+train pred 0/1 : 0/32 label 0/1 : 22/10
+train batch 14: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 14/35
+train accuracy : 0.5625
+train pred 0/1 : 0/32 label 0/1 : 14/18
+train batch 15: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 15/35
+train accuracy : 0.53125
+train pred 0/1 : 0/32 label 0/1 : 15/17
+train batch 16: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 16/35
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+train batch 17: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 17/35
+train accuracy : 0.5625
+train pred 0/1 : 10/22 label 0/1 : 18/14
+train batch 18: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 18/35
+train accuracy : 0.4375
+train pred 0/1 : 32/0 label 0/1 : 14/18
+train batch 19: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 19/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 20: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 20/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+train batch 21: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 21/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 22: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 22/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+train batch 23: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 23/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 24: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 24/35
+train accuracy : 0.4375
+train pred 0/1 : 32/0 label 0/1 : 14/18
+train batch 25: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 25/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 26: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 26/35
+train accuracy : 0.34375
+train pred 0/1 : 32/0 label 0/1 : 11/21
+train batch 27: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 27/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+train batch 28: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 28/35
+train accuracy : 0.53125
+train pred 0/1 : 17/15 label 0/1 : 14/18
+train batch 29: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 29/35
+train accuracy : 0.5625
+train pred 0/1 : 14/18 label 0/1 : 20/12
+train batch 30: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 30/35
+train accuracy : 0.5
+train pred 0/1 : 11/21 label 0/1 : 13/19
+train batch 31: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 31/35
+train accuracy : 0.53125
+train pred 0/1 : 15/17 label 0/1 : 14/18
+train batch 32: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 32/35
+train accuracy : 0.4375
+train pred 0/1 : 17/15 label 0/1 : 21/11
+train batch 33: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 33/35
+train accuracy : 0.5625
+train pred 0/1 : 16/16 label 0/1 : 18/14
+train batch 34: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 34/35
+train accuracy : 0.59375
+train pred 0/1 : 14/18 label 0/1 : 15/17
+train batch 35: predictions shape=(1, 2), labels shape=(1,)
+epoch : 1
+batch : 35/35
+train accuracy : 0.0
+train pred 0/1 : 0/1 label 0/1 : 1/0
+VALIDATION
+valid batch 1: predictions shape=(32, 2), labels shape=(32,)
+valid batch : 1/4
+valid accuracy : 0.21875
+valid pred 0/1 : 32/0 label 0/1 : 7/25
+valid batch 2: predictions shape=(32, 2), labels shape=(32,)
+valid batch : 2/4
+valid accuracy : 0.125
+valid pred 0/1 : 32/0 label 0/1 : 4/28
+valid batch 3: predictions shape=(32, 2), labels shape=(32,)
+valid batch : 3/4
+valid accuracy : 0.1875
+valid pred 0/1 : 32/0 label 0/1 : 6/26
+valid batch 4: predictions shape=(26, 2), labels shape=(26,)
+valid batch : 4/4
+valid accuracy : 0.1538461595773697
+valid pred 0/1 : 26/0 label 0/1 : 4/22
+valid epoch balanced_accuracy: 0.500000
+EPOCH 2:
+train batch 1: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 1/35
+train accuracy : 0.5
+train pred 0/1 : 32/0 label 0/1 : 16/16
+train batch 2: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 2/35
+train accuracy : 0.375
+train pred 0/1 : 32/0 label 0/1 : 12/20
+train batch 3: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 3/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+train batch 4: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 4/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+train batch 5: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 5/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 6: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 6/35
+train accuracy : 0.625
+train pred 0/1 : 32/0 label 0/1 : 20/12
+train batch 7: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 7/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 8: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 8/35
+train accuracy : 0.28125
+train pred 0/1 : 32/0 label 0/1 : 9/23
+train batch 9: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 9/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+train batch 10: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 10/35
+train accuracy : 0.4375
+train pred 0/1 : 32/0 label 0/1 : 14/18
+train batch 11: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 11/35
+train accuracy : 0.5
+train pred 0/1 : 32/0 label 0/1 : 16/16
+train batch 12: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 12/35
+train accuracy : 0.5
+train pred 0/1 : 32/0 label 0/1 : 16/16
+train batch 13: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 13/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 14: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 14/35
+train accuracy : 0.6875
+train pred 0/1 : 17/15 label 0/1 : 21/11
+train batch 15: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 15/35
+train accuracy : 0.71875
+train pred 0/1 : 26/6 label 0/1 : 19/13
+train batch 16: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 16/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 17: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 17/35
+train accuracy : 0.4375
+train pred 0/1 : 31/1 label 0/1 : 13/19
+train batch 18: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 18/35
+train accuracy : 0.625
+train pred 0/1 : 20/12 label 0/1 : 14/18
+train batch 19: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 19/35
+train accuracy : 0.875
+train pred 0/1 : 19/13 label 0/1 : 21/11
+train batch 20: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 20/35
+train accuracy : 0.625
+train pred 0/1 : 18/14 label 0/1 : 14/18
+train batch 21: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 21/35
+train accuracy : 0.53125
+train pred 0/1 : 13/19 label 0/1 : 18/14
+train batch 22: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 22/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 11/21
+train batch 23: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 23/35
+train accuracy : 0.65625
+train pred 0/1 : 8/24 label 0/1 : 19/13
+train batch 24: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 24/35
+train accuracy : 0.75
+train pred 0/1 : 14/18 label 0/1 : 14/18
+train batch 25: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 25/35
+train accuracy : 0.4375
+train pred 0/1 : 23/9 label 0/1 : 11/21
+train batch 26: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 26/35
+train accuracy : 0.5625
+train pred 0/1 : 19/13 label 0/1 : 13/19
+train batch 27: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 27/35
+train accuracy : 0.59375
+train pred 0/1 : 3/29 label 0/1 : 12/20
+train batch 28: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 28/35
+train accuracy : 0.625
+train pred 0/1 : 4/28 label 0/1 : 16/16
+train batch 29: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 29/35
+train accuracy : 0.625
+train pred 0/1 : 3/29 label 0/1 : 15/17
+train batch 30: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 30/35
+train accuracy : 0.4375
+train pred 0/1 : 2/30 label 0/1 : 20/12
+train batch 31: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 31/35
+train accuracy : 0.53125
+train pred 0/1 : 7/25 label 0/1 : 16/16
+train batch 32: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 32/35
+train accuracy : 0.75
+train pred 0/1 : 15/17 label 0/1 : 17/15
+train batch 33: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 33/35
+train accuracy : 0.5625
+train pred 0/1 : 13/19 label 0/1 : 17/15
+train batch 34: predictions shape=(32, 2), labels shape=(32,)
+epoch : 2
+batch : 34/35
+train accuracy : 0.59375
+train pred 0/1 : 17/15 label 0/1 : 18/14
+train batch 35: predictions shape=(1, 2), labels shape=(1,)
+epoch : 2
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch 1: predictions shape=(32, 2), labels shape=(32,)
+valid batch : 1/4
+valid accuracy : 0.1875
+valid pred 0/1 : 30/2 label 0/1 : 6/26
+valid batch 2: predictions shape=(32, 2), labels shape=(32,)
+valid batch : 2/4
+valid accuracy : 0.21875
+valid pred 0/1 : 32/0 label 0/1 : 7/25
+valid batch 3: predictions shape=(32, 2), labels shape=(32,)
+valid batch : 3/4
+valid accuracy : 0.1875
+valid pred 0/1 : 31/1 label 0/1 : 5/27
+valid batch 4: predictions shape=(26, 2), labels shape=(26,)
+valid batch : 4/4
+valid accuracy : 0.1538461595773697
+valid pred 0/1 : 23/3 label 0/1 : 3/23
+valid epoch balanced_accuracy: 0.472183
+EPOCH 3:
+train batch 1: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 1/35
+train accuracy : 0.5625
+train pred 0/1 : 26/6 label 0/1 : 14/18
+train batch 2: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 2/35
+train accuracy : 0.59375
+train pred 0/1 : 29/3 label 0/1 : 18/14
+train batch 3: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 3/35
+train accuracy : 0.5
+train pred 0/1 : 26/6 label 0/1 : 18/14
+train batch 4: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 4/35
+train accuracy : 0.59375
+train pred 0/1 : 28/4 label 0/1 : 15/17
+train batch 5: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 5/35
+train accuracy : 0.375
+train pred 0/1 : 31/1 label 0/1 : 11/21
+train batch 6: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 6/35
+train accuracy : 0.5625
+train pred 0/1 : 25/7 label 0/1 : 15/17
+train batch 7: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 7/35
+train accuracy : 0.71875
+train pred 0/1 : 5/27 label 0/1 : 14/18
+train batch 8: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 8/35
+train accuracy : 0.71875
+train pred 0/1 : 5/27 label 0/1 : 14/18
+train batch 9: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 9/35
+train accuracy : 0.5625
+train pred 0/1 : 10/22 label 0/1 : 22/10
+train batch 10: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 10/35
+train accuracy : 0.5625
+train pred 0/1 : 8/24 label 0/1 : 18/14
+train batch 11: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 11/35
+train accuracy : 0.625
+train pred 0/1 : 7/25 label 0/1 : 13/19
+train batch 12: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 12/35
+train accuracy : 0.5625
+train pred 0/1 : 4/28 label 0/1 : 16/16
+train batch 13: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 13/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 16/16
+train batch 14: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 14/35
+train accuracy : 0.59375
+train pred 0/1 : 4/28 label 0/1 : 15/17
+train batch 15: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 15/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 16/16
+train batch 16: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 16/35
+train accuracy : 0.71875
+train pred 0/1 : 10/22 label 0/1 : 11/21
+train batch 17: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 17/35
+train accuracy : 0.6875
+train pred 0/1 : 2/30 label 0/1 : 12/20
+train batch 18: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 18/35
+train accuracy : 0.5625
+train pred 0/1 : 6/26 label 0/1 : 18/14
+train batch 19: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 19/35
+train accuracy : 0.65625
+train pred 0/1 : 14/18 label 0/1 : 23/9
+train batch 20: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 20/35
+train accuracy : 0.65625
+train pred 0/1 : 4/28 label 0/1 : 13/19
+train batch 21: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 21/35
+train accuracy : 0.71875
+train pred 0/1 : 13/19 label 0/1 : 16/16
+train batch 22: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 22/35
+train accuracy : 0.5625
+train pred 0/1 : 9/23 label 0/1 : 17/15
+train batch 23: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 23/35
+train accuracy : 0.6875
+train pred 0/1 : 18/14 label 0/1 : 16/16
+train batch 24: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 24/35
+train accuracy : 0.625
+train pred 0/1 : 19/13 label 0/1 : 21/11
+train batch 25: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 25/35
+train accuracy : 0.53125
+train pred 0/1 : 18/14 label 0/1 : 13/19
+train batch 26: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 26/35
+train accuracy : 0.71875
+train pred 0/1 : 19/13 label 0/1 : 14/18
+train batch 27: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 27/35
+train accuracy : 0.5625
+train pred 0/1 : 18/14 label 0/1 : 14/18
+train batch 28: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 28/35
+train accuracy : 0.625
+train pred 0/1 : 8/24 label 0/1 : 12/20
+train batch 29: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 29/35
+train accuracy : 0.5625
+train pred 0/1 : 2/30 label 0/1 : 16/16
+train batch 30: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 30/35
+train accuracy : 0.53125
+train pred 0/1 : 2/30 label 0/1 : 17/15
+train batch 31: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 31/35
+train accuracy : 0.6875
+train pred 0/1 : 4/28 label 0/1 : 14/18
+train batch 32: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 32/35
+train accuracy : 0.5625
+train pred 0/1 : 4/28 label 0/1 : 18/14
+train batch 33: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 33/35
+train accuracy : 0.8125
+train pred 0/1 : 7/25 label 0/1 : 11/21
+train batch 34: predictions shape=(32, 2), labels shape=(32,)
+epoch : 3
+batch : 34/35
+train accuracy : 0.5625
+train pred 0/1 : 8/24 label 0/1 : 22/10
+train batch 35: predictions shape=(1, 2), labels shape=(1,)
+epoch : 3
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION

@@ -1,0 +1,21 @@
+Waiting for exclusive access to GPU GPU-6d6d6e1b-bebd-5002-97a2-86f3e6d798a5.
+=== GROUP: GLTP | VARIANT: test | SEED: 0 | GPU: NVIDIA H200 ===
+
+number of parameters : 37407
+train : (1221, 12)
+valid : (55, 12)
+test : (55, 12)
+class weights : [1.1181318759918213, 0.9044444561004639]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.151099
+accuracy: 0.127273
+sensitivity: 0.076923
+precision: 0.200000
+specificity: 0.250000
+IoU: 0.058824
+FAR: 0.750000
+F1: 0.111111
+balanced_accuracy: 0.163462
+loss: 0.915702

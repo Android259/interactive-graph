@@ -1,0 +1,39 @@
+
+number of parameters : 37407
+/home/kalinina/ltp/DL_project/dataloader/New_dataloader.py:91: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)
+  self.train_orig_indexes = torch.as_tensor(self.csvtrain["_tanimoto_orig_idx"].values, dtype=torch.long)
+train : (1095, 12)
+valid : (118, 12)
+test : (118, 12)
+class weights : [1.0157699584960938, 0.9847122430801392]
+data extracted
+EPOCH 1:
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.11/site-packages/torch/utils/data/dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+VALIDATION
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.11/site-packages/torch/utils/data/dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+valid epoch balanced_accuracy: 0.522672
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.11/site-packages/torch/utils/data/dataloader.py:752: UserWarning: 'pin_memory' argument is set as true but no accelerator is found, then device pinned memory won't be used.
+  super().__init__(loader)
+accuracy: 0.194915
+sensitivity: 0.061224
+precision: 0.666667
+specificity: 0.850000
+IoU: 0.059406
+FAR: 0.150000
+F1: 0.112150
+balanced_accuracy: 0.455612
+loss: 0.744345
+Traceback (most recent call last):
+  File "/home/kalinina/ltp/DL_project/./training/new_train.py", line 808, in <module>
+    run_test(run_summary)
+  File "/home/kalinina/ltp/DL_project/./training/new_train.py", line 736, in run_test
+    append_metric(
+  File "/home/kalinina/ltp/DL_project/append_metric_to_table.py", line 22, in append_metric
+    row = metric_row(
+          ^^^^^^^^^^^
+  File "/home/kalinina/ltp/DL_project/build_metrics_table.py", line 495, in metric_row
+    metrics_root = metrics_root.resolve()
+                   ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'resolve'

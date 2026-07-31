@@ -1,0 +1,665 @@
+Resuming oldest Bigfoot queue with pending jobs: /home/kalinina/DL_project/.bigfoot_job_queues/active
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:12:51    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=32,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=10,W=360…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=8,W=3609…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=8,W=3609…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 12 | checkpoint 9 | best rolling-5 balanced accuracy 0.485907
+  Latest train balanced accuracy: 0.876215
+  Checkpoint valid:  predicted 0/1 = 95/23 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:17:57    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=32,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=10,W=360…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=8,W=3609…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=8,W=3609…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 17 | checkpoint 9 | best rolling-5 balanced accuracy 0.485907
+  Latest train balanced accuracy: 0.919530
+  Checkpoint valid:  predicted 0/1 = 95/23 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:23:03    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=32,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=10,W=360…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=8,W=3609…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=8,W=3609…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 22 | checkpoint 18 | best rolling-5 balanced accuracy 0.493382
+  Latest train balanced accuracy: 0.925039
+  Checkpoint valid:  predicted 0/1 = 93/25 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:28:09    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=32,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=32,W=360…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=8,W=3609…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=10,W=360…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 27 | checkpoint 18 | best rolling-5 balanced accuracy 0.493382
+  Latest train balanced accuracy: 0.925011
+  Checkpoint valid:  predicted 0/1 = 93/25 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:33:15    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=32,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=32,W=360…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=8,W=3609…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=10,W=360…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 32 | checkpoint 18 | best rolling-5 balanced accuracy 0.493382
+  Latest train balanced accuracy: 0.952472
+  Checkpoint valid:  predicted 0/1 = 93/25 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:38:21    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=32,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=32,W=360…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=8,W=3609…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=10,W=360…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 37 | checkpoint 36 | best rolling-5 balanced accuracy 0.508333
+  Latest train balanced accuracy: 0.952443
+  Checkpoint valid:  predicted 0/1 = 54/64 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:43:30    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=32,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=8,W=3609…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=10,W=360…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=8,W=3609…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 42 | checkpoint 37 | best rolling-5 balanced accuracy 0.511029
+  Latest train balanced accuracy: 0.976137
+  Checkpoint valid:  predicted 0/1 = 58/60 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:48:36    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=32,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=8,W=3609…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=10,W=360…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=8,W=3609…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 46 | checkpoint 37 | best rolling-5 balanced accuracy 0.511029
+  Latest train balanced accuracy: 0.962506
+  Checkpoint valid:  predicted 0/1 = 58/60 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:53:42    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=10,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=8,W=3609…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=32,W=360…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=32,W=360…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 51 | checkpoint 37 | best rolling-5 balanced accuracy 0.511029
+  Latest train balanced accuracy: 0.979005
+  Checkpoint valid:  predicted 0/1 = 58/60 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    15366    sgine_STAR…   0:58:47    Running   kalinina   R=10,J=P,Q…   default  
+    15368    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15369    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15370    sgine_STAR…   -          Waiting   kalinina   R=32,W=360…   default  
+    15371    sgine_STAR…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15372    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15373    sgine_lipo…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15374    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15375    sgine_lipo…   -          Waiting   kalinina   R=32,W=360…   default  
+    15376    sgine_lipo…   -          Waiting   kalinina   R=10,W=360…   default  
+    15377    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15378    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15379    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15380    sgine_GLTP…   -          Waiting   kalinina   R=32,W=360…   default  
+    15381    sgine_GLTP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15382    sgine_IP_t…   -          Waiting   kalinina   R=10,W=360…   default  
+    15383    sgine_IP_t…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15384    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15385    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15386    sgine_IP_t…   -          Waiting   kalinina   R=32,W=360…   default  
+    15393    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15394    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15395    sgine_LBP_…   -          Waiting   kalinina   R=10,W=360…   default  
+    15396    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15397    sgine_LBP_…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15398    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15399    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15400    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15401    sgine_scp2…   -          Waiting   kalinina   R=32,W=360…   default  
+    15402    sgine_scp2…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15404    sgine_ML_s0   -          Waiting   kalinina   R=10,W=360…   default  
+    15405    sgine_ML_s1   -          Waiting   kalinina   R=8,W=3609…   default  
+    15406    sgine_ML_s2   -          Waiting   kalinina   R=32,W=360…   default  
+    15407    sgine_ML_s3   -          Waiting   kalinina   R=32,W=360…   default  
+    15408    sgine_ML_s4   -          Waiting   kalinina   R=32,W=360…   default  
+    15409    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15410    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15411    sgine_OSBP…   -          Waiting   kalinina   R=10,W=360…   default  
+    15412    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15413    sgine_OSBP…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15432    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15433    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15434    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15435    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15436    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15451    nopost_mis…   -          Waiting   kalinina   R=10,W=360…   default  
+    15452    nopost_mis…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15466    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15467    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+    15470    nopost_mis…   -          Waiting   kalinina   R=32,W=360…   default  
+Synchronizing script logs.
+Job 15366 (sgine_START_s0)
+  Epoch: current 56 | checkpoint 37 | best rolling-5 balanced accuracy 0.511029
+  Latest train balanced accuracy: 0.989010
+  Checkpoint valid:  predicted 0/1 = 58/60 | actual 0/1 = 16/102
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=1 waiting=49 other=0 total=50 pending_queue=14. Checking again in 300 seconds.
+
+
+******************************************************
+                RESTRICTED ACCESS
+      If you can't access, please, make sure 
+            you've accepted the charter 
+      https://perseus.univ-grenoble-alpes.fr/
+******************************************************
+
+
+
+Bigfoot queue: submitted=0 waiting_before=44 max_waiting=54 pending=0.
+
+
+******************************************************
+                RESTRICTED ACCESS
+      If you can't access, please, make sure 
+            you've accepted the charter 
+      https://perseus.univ-grenoble-alpes.fr/
+******************************************************
+
+
+
+
+
+******************************************************
+                RESTRICTED ACCESS
+
+      If you can't access, please, make sure
+            you've accepted the charter
+      https://perseus.univ-grenoble-alpes.fr/
+
+******************************************************
+

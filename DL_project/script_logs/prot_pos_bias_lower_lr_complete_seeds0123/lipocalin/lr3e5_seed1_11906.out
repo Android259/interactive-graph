@@ -1,0 +1,73 @@
+Waiting for exclusive access to GPU GPU-921bd90d-c98b-84ba-5b27-e17315d3441a.
+=== GROUP: lipocalin | VARIANT: lr3e5 | SEED: 1 | LR: 0.00003 | WEIGHT_DECAY: 0 | GPU: Tesla V100-SXM2-32GB ===
+
+number of parameters : 1075406
+train : (1082, 12)
+valid : (126, 12)
+test : (126, 12)
+class weights : [1.3004807233810425, 0.8123123049736023]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.492794
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.521341
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.509978
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.509978
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.486696
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.502217
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.529102
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.525499
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.514135
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.489191
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.515244
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.519401
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.465909
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.456208
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.481153
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.478659
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.491685
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.524667
+EPOCH 19:
+VALIDATION
+valid epoch balanced_accuracy: 0.475055
+EPOCH 20:
+VALIDATION
+valid epoch balanced_accuracy: 0.479767
+EPOCH 21:
+VALIDATION
+valid epoch balanced_accuracy: 0.513304
+EPOCH 22:

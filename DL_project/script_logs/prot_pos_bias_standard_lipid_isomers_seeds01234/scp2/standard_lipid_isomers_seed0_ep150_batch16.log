@@ -1,0 +1,41 @@
+
+number of parameters : 1720782
+train : (1236, 12)
+valid : (48, 12)
+test : (47, 12)
+class weights : [1.181644320487976, 0.8667601943016052]
+data extracted
+EPOCH 1:
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 739, in <module>
+    countrain, countval, train_metrics, valid_metrics = epoch(epoch_number,countrain,countval)
+  File "/home/kalinina/DL_project/./training/new_train.py", line 348, in epoch
+    for i, graph in enumerate(train_loader):
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 708, in __next__
+    data = self._next_data()
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1455, in _next_data
+    return self._process_data(data)
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/utils/data/dataloader.py", line 1505, in _process_data
+    data.reraise()
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/_utils.py", line 733, in reraise
+    raise exception
+FileNotFoundError: Caught FileNotFoundError in DataLoader worker process 3.
+Original Traceback (most recent call last):
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/utils/data/_utils/worker.py", line 349, in _worker_loop
+    data = fetcher.fetch(index)  # type: ignore[possibly-undefined]
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 52, in fetch
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/utils/data/_utils/fetch.py", line 52, in <listcomp>
+    data = [self.dataset[idx] for idx in possibly_batched_index]
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch_geometric/data/dataset.py", line 291, in __getitem__
+    data = self.get(self.indices()[idx])
+  File "/home/kalinina/DL_project/dataloader/New_dataloader.py", line 726, in get
+    lipid_graph = self.make_graph_lipid(row)
+  File "/home/kalinina/DL_project/dataloader/New_dataloader.py", line 615, in make_graph_lipid
+    nodes, edges = self.read_lipid_graph_tables(canonical_smiles)
+  File "/home/kalinina/DL_project/dataloader/New_dataloader.py", line 579, in read_lipid_graph_tables
+    graph_id = self.lipid_graph_id(canonical_smiles)
+  File "/home/kalinina/DL_project/dataloader/New_dataloader.py", line 574, in lipid_graph_id
+    raise FileNotFoundError(
+FileNotFoundError: Lipid isomer graph not found for SMILES: CCCCC/C=C\C=C/C=C\C=C/CCCCCCC(=O)O[C@H](COC(=O)CCCCCCCCCCCCCCCCC)COP(=O)([O-])OCC[N+](C)(C)C. Run data/build_lipid_isomer_graphs.py first.
+

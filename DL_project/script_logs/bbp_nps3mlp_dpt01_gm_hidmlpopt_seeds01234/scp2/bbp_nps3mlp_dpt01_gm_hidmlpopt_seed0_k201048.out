@@ -1,0 +1,12 @@
+Waiting for exclusive access to GPU GPU-572f5e7c-e4b5-5e79-94e7-61f1b24a9bd5.
+=== GROUP: scp2 | VARIANT: bbp_nps3mlp_dpt01_gm_hidmlpopt | SEED: 0 | GPU: NVIDIA H100 ===
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 51, in <module>
+    conf = read_configuration()
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 713, in read_configuration
+    return read_named_configuration(argv)
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 704, in read_named_configuration
+    config.validate()
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 308, in validate
+    raise ValueError(
+ValueError: hiddim (100) must be divisible by HEADS (8)

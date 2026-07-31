@@ -1,0 +1,12 @@
+Waiting for exclusive access to GPU GPU-c4340cd5-b641-a6d3-022e-854d83cab1b6.
+=== GROUP: IP_trans | VARIANT: bbp_nps3mlp_esmv2_dpt01_wd0001_ap_plm64_hid64 | SEED: 0 | GPU: NVIDIA H200 ===
+
+number of parameters : 1542407
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 75, in <module>
+    train_dataset, valid_dataset, test_dataset = PLIDataset(root_dir=path, csv = csv, seed=conf.seed,excluded_subgroups=conf.excluded_subgroups, config=conf, excluded_groups=conf.excluded_groups)
+  File "/home/kalinina/DL_project/dataloader/New_dataloader.py", line 251, in __init__
+    tanimoto_matrix = np.load(tanimoto_matrix_path, mmap_mode="r")
+  File "/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/lib/npyio.py", line 427, in load
+    fid = stack.enter_context(open(os_fspath(file), "rb"))
+FileNotFoundError: [Errno 2] No such file or directory: '/home/kalinina/DL_project/data//Total_tanimoto_matrix_uint8.npy'

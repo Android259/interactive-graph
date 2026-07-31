@@ -1,0 +1,145 @@
+
+number of parameters : 1287306
+train : (1492, 12)
+valid : (10, 12)
+test : (10, 12)
+class weights : [1.0, 1.0]
+balanced batches : 94 per epoch covering all 1492 train rows, target 8 positive + 8 unlabeled
+cache warmed : 35 proteins, 409 lipid encodings, 0 lipid graphs, 134 MiB
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.800000
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.800000
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.800000
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 19:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 20:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 21:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 22:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 23:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 24:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 25:
+VALIDATION
+valid epoch balanced_accuracy: 0.900000
+EPOCH 26:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 27:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 28:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 29:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 30:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 31:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 32:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 33:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 34:
+VALIDATION
+valid epoch balanced_accuracy: 0.800000
+EPOCH 35:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 36:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 37:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 38:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 39:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 40:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 41:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 42:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 43:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 44:
+VALIDATION
+valid epoch balanced_accuracy: 0.700000
+EPOCH 45:
+VALIDATION
+valid epoch balanced_accuracy: 0.600000
+EPOCH 46:

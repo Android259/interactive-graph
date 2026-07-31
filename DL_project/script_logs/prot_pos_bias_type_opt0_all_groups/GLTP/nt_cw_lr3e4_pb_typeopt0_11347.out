@@ -1,0 +1,112 @@
+Waiting for exclusive access to GPU GPU-03552530-e0ea-aba8-6e58-1c63bbaea5f4.
+=== GROUP: GLTP | VARIANT: nt_cw_lr3e4_pb_typeopt0 | GPU: Tesla V100-SXM2-32GB ===
+
+number of parameters : 1075406
+train : (1224, 12)
+valid : (55, 12)
+test : (55, 12)
+class weights : [1.1147540807724, 0.9066666960716248]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.207143
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.425000
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.203571
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.267857
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.292857
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.292857
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.292857
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.475000
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.353571
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.475000
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.439286
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.475000
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.403571
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.314286
+EPOCH 19:
+VALIDATION
+valid epoch balanced_accuracy: 0.192857
+EPOCH 20:
+VALIDATION
+valid epoch balanced_accuracy: 0.425000
+EPOCH 21:
+VALIDATION
+valid epoch balanced_accuracy: 0.328571
+EPOCH 22:
+VALIDATION
+valid epoch balanced_accuracy: 0.425000
+EPOCH 23:
+VALIDATION
+valid epoch balanced_accuracy: 0.353571
+EPOCH 24:
+VALIDATION
+valid epoch balanced_accuracy: 0.378571
+EPOCH 25:
+VALIDATION
+valid epoch balanced_accuracy: 0.425000
+EPOCH 26:
+VALIDATION
+valid epoch balanced_accuracy: 0.292857
+EPOCH 27:
+VALIDATION
+valid epoch balanced_accuracy: 0.364286
+EPOCH 28:
+VALIDATION
+valid epoch balanced_accuracy: 0.303571
+EPOCH 29:
+VALIDATION
+valid epoch balanced_accuracy: 0.400000
+EPOCH 30:
+VALIDATION
+valid epoch balanced_accuracy: 0.403571
+EPOCH 31:
+VALIDATION
+valid epoch balanced_accuracy: 0.453571
+EARLY STOPPING: rolling validation balanced accuracy did not improve for 30 epochs and validation loss increased over the same window.
+accuracy: 0.163636
+sensitivity: 0.000000
+precision: undefined
+specificity: 1.000000
+IoU: 0.000000
+FAR: 0.000000
+F1: 0.000000
+balanced_accuracy: 0.500000
+loss: 1.122438

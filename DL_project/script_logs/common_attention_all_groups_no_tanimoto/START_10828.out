@@ -1,0 +1,3909 @@
+=== COMMON + ATTENTION, NO TANIMOTO WEIGHT | excluded group: START | seed: 0 | GPU: NVIDIA A100-PCIE-40GB | batch: 32 ===
+
+number of parameters : 1075404
+train : (1089, 12)
+valid : (122, 12)
+test : (123, 12)
+class weights : [1.021575927734375, 0.9793165326118469]
+data extracted
+
+NOTE: Using experimental fast data loading logic. To disable, pass
+    "--load_fast=false" and report issues on GitHub. More details:
+    https://github.com/tensorflow/tensorboard/issues/4784
+
+EPOCH 1:
+epoch : 1
+batch : 1/35
+train accuracy : 0.4375
+train pred 0/1 : 0/32 label 0/1 : 18/14
+epoch : 1
+batch : 2/35
+train accuracy : 0.5625
+train pred 0/1 : 32/0 label 0/1 : 18/14
+epoch : 1
+batch : 3/35
+train accuracy : 0.40625
+train pred 0/1 : 32/0 label 0/1 : 13/19
+epoch : 1
+batch : 4/35
+train accuracy : 0.4375
+train pred 0/1 : 0/32 label 0/1 : 18/14
+epoch : 1
+batch : 5/35
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+epoch : 1
+batch : 6/35
+train accuracy : 0.375
+train pred 0/1 : 32/0 label 0/1 : 12/20
+epoch : 1
+batch : 7/35
+train accuracy : 0.5
+train pred 0/1 : 12/20 label 0/1 : 16/16
+epoch : 1
+batch : 8/35
+train accuracy : 0.40625
+train pred 0/1 : 0/32 label 0/1 : 19/13
+epoch : 1
+batch : 9/35
+train accuracy : 0.3125
+train pred 0/1 : 32/0 label 0/1 : 10/22
+epoch : 1
+batch : 10/35
+train accuracy : 0.65625
+train pred 0/1 : 0/32 label 0/1 : 11/21
+epoch : 1
+batch : 11/35
+train accuracy : 0.625
+train pred 0/1 : 0/32 label 0/1 : 12/20
+epoch : 1
+batch : 12/35
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+epoch : 1
+batch : 13/35
+train accuracy : 0.3125
+train pred 0/1 : 0/32 label 0/1 : 22/10
+epoch : 1
+batch : 14/35
+train accuracy : 0.5625
+train pred 0/1 : 0/32 label 0/1 : 14/18
+epoch : 1
+batch : 15/35
+train accuracy : 0.53125
+train pred 0/1 : 0/32 label 0/1 : 15/17
+epoch : 1
+batch : 16/35
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+epoch : 1
+batch : 17/35
+train accuracy : 0.4375
+train pred 0/1 : 0/32 label 0/1 : 18/14
+epoch : 1
+batch : 18/35
+train accuracy : 0.4375
+train pred 0/1 : 32/0 label 0/1 : 14/18
+epoch : 1
+batch : 19/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+epoch : 1
+batch : 20/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+epoch : 1
+batch : 21/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+epoch : 1
+batch : 22/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+epoch : 1
+batch : 23/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+epoch : 1
+batch : 24/35
+train accuracy : 0.4375
+train pred 0/1 : 32/0 label 0/1 : 14/18
+epoch : 1
+batch : 25/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+epoch : 1
+batch : 26/35
+train accuracy : 0.34375
+train pred 0/1 : 32/0 label 0/1 : 11/21
+epoch : 1
+batch : 27/35
+train accuracy : 0.5625
+train pred 0/1 : 5/27 label 0/1 : 17/15
+epoch : 1
+batch : 28/35
+train accuracy : 0.5625
+train pred 0/1 : 0/32 label 0/1 : 14/18
+epoch : 1
+batch : 29/35
+train accuracy : 0.375
+train pred 0/1 : 0/32 label 0/1 : 20/12
+epoch : 1
+batch : 30/35
+train accuracy : 0.59375
+train pred 0/1 : 0/32 label 0/1 : 13/19
+epoch : 1
+batch : 31/35
+train accuracy : 0.5625
+train pred 0/1 : 0/32 label 0/1 : 14/18
+epoch : 1
+batch : 32/35
+train accuracy : 0.34375
+train pred 0/1 : 0/32 label 0/1 : 21/11
+epoch : 1
+batch : 33/35
+train accuracy : 0.4375
+train pred 0/1 : 0/32 label 0/1 : 18/14
+epoch : 1
+batch : 34/35
+train accuracy : 0.53125
+train pred 0/1 : 0/32 label 0/1 : 15/17
+epoch : 1
+batch : 35/35
+train accuracy : 0.0
+train pred 0/1 : 0/1 label 0/1 : 1/0
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.21875
+valid pred 0/1 : 32/0 label 0/1 : 7/25
+valid batch : 2/4
+valid accuracy : 0.125
+valid pred 0/1 : 32/0 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.1875
+valid pred 0/1 : 32/0 label 0/1 : 6/26
+valid batch : 4/4
+valid accuracy : 0.1538461595773697
+valid pred 0/1 : 26/0 label 0/1 : 4/22
+valid epoch balanced_accuracy: 0.500000
+EPOCH 2:
+epoch : 2
+batch : 1/35
+train accuracy : 0.5
+train pred 0/1 : 32/0 label 0/1 : 16/16
+epoch : 2
+batch : 2/35
+train accuracy : 0.375
+train pred 0/1 : 32/0 label 0/1 : 12/20
+epoch : 2
+batch : 3/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+epoch : 2
+batch : 4/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+epoch : 2
+batch : 5/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+epoch : 2
+batch : 6/35
+train accuracy : 0.625
+train pred 0/1 : 32/0 label 0/1 : 20/12
+epoch : 2
+batch : 7/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+epoch : 2
+batch : 8/35
+train accuracy : 0.28125
+train pred 0/1 : 32/0 label 0/1 : 9/23
+epoch : 2
+batch : 9/35
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+epoch : 2
+batch : 10/35
+train accuracy : 0.4375
+train pred 0/1 : 32/0 label 0/1 : 14/18
+epoch : 2
+batch : 11/35
+train accuracy : 0.5
+train pred 0/1 : 32/0 label 0/1 : 16/16
+epoch : 2
+batch : 12/35
+train accuracy : 0.5
+train pred 0/1 : 32/0 label 0/1 : 16/16
+epoch : 2
+batch : 13/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+epoch : 2
+batch : 14/35
+train accuracy : 0.65625
+train pred 0/1 : 14/18 label 0/1 : 21/11
+epoch : 2
+batch : 15/35
+train accuracy : 0.75
+train pred 0/1 : 23/9 label 0/1 : 19/13
+epoch : 2
+batch : 16/35
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+epoch : 2
+batch : 17/35
+train accuracy : 0.40625
+train pred 0/1 : 32/0 label 0/1 : 13/19
+epoch : 2
+batch : 18/35
+train accuracy : 0.71875
+train pred 0/1 : 19/13 label 0/1 : 14/18
+epoch : 2
+batch : 19/35
+train accuracy : 0.65625
+train pred 0/1 : 16/16 label 0/1 : 21/11
+epoch : 2
+batch : 20/35
+train accuracy : 0.75
+train pred 0/1 : 20/12 label 0/1 : 14/18
+epoch : 2
+batch : 21/35
+train accuracy : 0.71875
+train pred 0/1 : 19/13 label 0/1 : 18/14
+epoch : 2
+batch : 22/35
+train accuracy : 0.625
+train pred 0/1 : 19/13 label 0/1 : 11/21
+epoch : 2
+batch : 23/35
+train accuracy : 0.5625
+train pred 0/1 : 17/15 label 0/1 : 19/13
+epoch : 2
+batch : 24/35
+train accuracy : 0.6875
+train pred 0/1 : 12/20 label 0/1 : 14/18
+epoch : 2
+batch : 25/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 11/21
+epoch : 2
+batch : 26/35
+train accuracy : 0.5625
+train pred 0/1 : 13/19 label 0/1 : 13/19
+epoch : 2
+batch : 27/35
+train accuracy : 0.625
+train pred 0/1 : 0/32 label 0/1 : 12/20
+epoch : 2
+batch : 28/35
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+epoch : 2
+batch : 29/35
+train accuracy : 0.625
+train pred 0/1 : 3/29 label 0/1 : 15/17
+epoch : 2
+batch : 30/35
+train accuracy : 0.625
+train pred 0/1 : 8/24 label 0/1 : 20/12
+epoch : 2
+batch : 31/35
+train accuracy : 0.5
+train pred 0/1 : 6/26 label 0/1 : 16/16
+epoch : 2
+batch : 32/35
+train accuracy : 0.40625
+train pred 0/1 : 6/26 label 0/1 : 17/15
+epoch : 2
+batch : 33/35
+train accuracy : 0.5625
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 2
+batch : 34/35
+train accuracy : 0.59375
+train pred 0/1 : 19/13 label 0/1 : 18/14
+epoch : 2
+batch : 35/35
+train accuracy : 0.0
+train pred 0/1 : 1/0 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.3125
+valid pred 0/1 : 24/8 label 0/1 : 6/26
+valid batch : 2/4
+valid accuracy : 0.1875
+valid pred 0/1 : 25/7 label 0/1 : 7/25
+valid batch : 3/4
+valid accuracy : 0.53125
+valid pred 0/1 : 18/14 label 0/1 : 5/27
+valid batch : 4/4
+valid accuracy : 0.38461539149284363
+valid pred 0/1 : 17/9 label 0/1 : 3/23
+valid epoch balanced_accuracy: 0.458039
+EPOCH 3:
+epoch : 3
+batch : 1/35
+train accuracy : 0.59375
+train pred 0/1 : 21/11 label 0/1 : 14/18
+epoch : 3
+batch : 2/35
+train accuracy : 0.5625
+train pred 0/1 : 20/12 label 0/1 : 18/14
+epoch : 3
+batch : 3/35
+train accuracy : 0.59375
+train pred 0/1 : 25/7 label 0/1 : 18/14
+epoch : 3
+batch : 4/35
+train accuracy : 0.6875
+train pred 0/1 : 15/17 label 0/1 : 15/17
+epoch : 3
+batch : 5/35
+train accuracy : 0.75
+train pred 0/1 : 9/23 label 0/1 : 11/21
+epoch : 3
+batch : 6/35
+train accuracy : 0.40625
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 3
+batch : 7/35
+train accuracy : 0.53125
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 3
+batch : 8/35
+train accuracy : 0.5
+train pred 0/1 : 10/22 label 0/1 : 14/18
+epoch : 3
+batch : 9/35
+train accuracy : 0.5625
+train pred 0/1 : 12/20 label 0/1 : 22/10
+epoch : 3
+batch : 10/35
+train accuracy : 0.53125
+train pred 0/1 : 17/15 label 0/1 : 18/14
+epoch : 3
+batch : 11/35
+train accuracy : 0.6875
+train pred 0/1 : 17/15 label 0/1 : 13/19
+epoch : 3
+batch : 12/35
+train accuracy : 0.59375
+train pred 0/1 : 17/15 label 0/1 : 16/16
+epoch : 3
+batch : 13/35
+train accuracy : 0.75
+train pred 0/1 : 20/12 label 0/1 : 16/16
+epoch : 3
+batch : 14/35
+train accuracy : 0.65625
+train pred 0/1 : 20/12 label 0/1 : 15/17
+epoch : 3
+batch : 15/35
+train accuracy : 0.65625
+train pred 0/1 : 23/9 label 0/1 : 16/16
+epoch : 3
+batch : 16/35
+train accuracy : 0.59375
+train pred 0/1 : 22/10 label 0/1 : 11/21
+epoch : 3
+batch : 17/35
+train accuracy : 0.65625
+train pred 0/1 : 11/21 label 0/1 : 12/20
+epoch : 3
+batch : 18/35
+train accuracy : 0.4375
+train pred 0/1 : 2/30 label 0/1 : 18/14
+epoch : 3
+batch : 19/35
+train accuracy : 0.46875
+train pred 0/1 : 6/26 label 0/1 : 23/9
+epoch : 3
+batch : 20/35
+train accuracy : 0.625
+train pred 0/1 : 1/31 label 0/1 : 13/19
+epoch : 3
+batch : 21/35
+train accuracy : 0.5625
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 3
+batch : 22/35
+train accuracy : 0.5625
+train pred 0/1 : 5/27 label 0/1 : 17/15
+epoch : 3
+batch : 23/35
+train accuracy : 0.625
+train pred 0/1 : 8/24 label 0/1 : 16/16
+epoch : 3
+batch : 24/35
+train accuracy : 0.59375
+train pred 0/1 : 12/20 label 0/1 : 21/11
+epoch : 3
+batch : 25/35
+train accuracy : 0.59375
+train pred 0/1 : 16/16 label 0/1 : 13/19
+epoch : 3
+batch : 26/35
+train accuracy : 0.8125
+train pred 0/1 : 12/20 label 0/1 : 14/18
+epoch : 3
+batch : 27/35
+train accuracy : 0.5625
+train pred 0/1 : 18/14 label 0/1 : 14/18
+epoch : 3
+batch : 28/35
+train accuracy : 0.5625
+train pred 0/1 : 20/12 label 0/1 : 12/20
+epoch : 3
+batch : 29/35
+train accuracy : 0.59375
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 3
+batch : 30/35
+train accuracy : 0.5
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 3
+batch : 31/35
+train accuracy : 0.75
+train pred 0/1 : 14/18 label 0/1 : 14/18
+epoch : 3
+batch : 32/35
+train accuracy : 0.59375
+train pred 0/1 : 7/25 label 0/1 : 18/14
+epoch : 3
+batch : 33/35
+train accuracy : 0.78125
+train pred 0/1 : 6/26 label 0/1 : 11/21
+epoch : 3
+batch : 34/35
+train accuracy : 0.65625
+train pred 0/1 : 13/19 label 0/1 : 22/10
+epoch : 3
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.28125
+valid pred 0/1 : 23/9 label 0/1 : 4/28
+valid batch : 2/4
+valid accuracy : 0.34375
+valid pred 0/1 : 19/13 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.375
+valid pred 0/1 : 20/12 label 0/1 : 4/28
+valid batch : 4/4
+valid accuracy : 0.42307692766189575
+valid pred 0/1 : 12/14 label 0/1 : 9/17
+valid epoch balanced_accuracy: 0.363744
+EPOCH 4:
+epoch : 4
+batch : 1/35
+train accuracy : 0.59375
+train pred 0/1 : 15/17 label 0/1 : 16/16
+epoch : 4
+batch : 2/35
+train accuracy : 0.46875
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 4
+batch : 3/35
+train accuracy : 0.59375
+train pred 0/1 : 9/23 label 0/1 : 18/14
+epoch : 4
+batch : 4/35
+train accuracy : 0.8125
+train pred 0/1 : 12/20 label 0/1 : 16/16
+epoch : 4
+batch : 5/35
+train accuracy : 0.71875
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 4
+batch : 6/35
+train accuracy : 0.625
+train pred 0/1 : 14/18 label 0/1 : 14/18
+epoch : 4
+batch : 7/35
+train accuracy : 0.75
+train pred 0/1 : 14/18 label 0/1 : 16/16
+epoch : 4
+batch : 8/35
+train accuracy : 0.65625
+train pred 0/1 : 21/11 label 0/1 : 14/18
+epoch : 4
+batch : 9/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 21/11
+epoch : 4
+batch : 10/35
+train accuracy : 0.6875
+train pred 0/1 : 13/19 label 0/1 : 19/13
+epoch : 4
+batch : 11/35
+train accuracy : 0.71875
+train pred 0/1 : 17/15 label 0/1 : 18/14
+epoch : 4
+batch : 12/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 4
+batch : 13/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 17/15
+epoch : 4
+batch : 14/35
+train accuracy : 0.71875
+train pred 0/1 : 18/14 label 0/1 : 19/13
+epoch : 4
+batch : 15/35
+train accuracy : 0.625
+train pred 0/1 : 17/15 label 0/1 : 17/15
+epoch : 4
+batch : 16/35
+train accuracy : 0.5
+train pred 0/1 : 29/3 label 0/1 : 13/19
+epoch : 4
+batch : 17/35
+train accuracy : 0.59375
+train pred 0/1 : 22/10 label 0/1 : 15/17
+epoch : 4
+batch : 18/35
+train accuracy : 0.65625
+train pred 0/1 : 17/15 label 0/1 : 12/20
+epoch : 4
+batch : 19/35
+train accuracy : 0.5625
+train pred 0/1 : 0/32 label 0/1 : 14/18
+epoch : 4
+batch : 20/35
+train accuracy : 0.53125
+train pred 0/1 : 0/32 label 0/1 : 15/17
+epoch : 4
+batch : 21/35
+train accuracy : 0.5625
+train pred 0/1 : 0/32 label 0/1 : 14/18
+epoch : 4
+batch : 22/35
+train accuracy : 0.71875
+train pred 0/1 : 0/32 label 0/1 : 9/23
+epoch : 4
+batch : 23/35
+train accuracy : 0.59375
+train pred 0/1 : 0/32 label 0/1 : 13/19
+epoch : 4
+batch : 24/35
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+epoch : 4
+batch : 25/35
+train accuracy : 0.59375
+train pred 0/1 : 0/32 label 0/1 : 13/19
+epoch : 4
+batch : 26/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 16/16
+epoch : 4
+batch : 27/35
+train accuracy : 0.8125
+train pred 0/1 : 14/18 label 0/1 : 16/16
+epoch : 4
+batch : 28/35
+train accuracy : 0.5
+train pred 0/1 : 16/16 label 0/1 : 18/14
+epoch : 4
+batch : 29/35
+train accuracy : 0.59375
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 4
+batch : 30/35
+train accuracy : 0.53125
+train pred 0/1 : 22/10 label 0/1 : 13/19
+epoch : 4
+batch : 31/35
+train accuracy : 0.71875
+train pred 0/1 : 24/8 label 0/1 : 17/15
+epoch : 4
+batch : 32/35
+train accuracy : 0.6875
+train pred 0/1 : 22/10 label 0/1 : 14/18
+epoch : 4
+batch : 33/35
+train accuracy : 0.59375
+train pred 0/1 : 16/16 label 0/1 : 19/13
+epoch : 4
+batch : 34/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 4
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.90625
+valid pred 0/1 : 0/32 label 0/1 : 3/29
+valid batch : 2/4
+valid accuracy : 0.84375
+valid pred 0/1 : 0/32 label 0/1 : 5/27
+valid batch : 3/4
+valid accuracy : 0.84375
+valid pred 0/1 : 0/32 label 0/1 : 5/27
+valid batch : 4/4
+valid accuracy : 0.692307710647583
+valid pred 0/1 : 0/26 label 0/1 : 8/18
+valid epoch balanced_accuracy: 0.500000
+EPOCH 5:
+epoch : 5
+batch : 1/35
+train accuracy : 0.5
+train pred 0/1 : 9/23 label 0/1 : 19/13
+epoch : 5
+batch : 2/35
+train accuracy : 0.5625
+train pred 0/1 : 1/31 label 0/1 : 15/17
+epoch : 5
+batch : 3/35
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+epoch : 5
+batch : 4/35
+train accuracy : 0.65625
+train pred 0/1 : 0/32 label 0/1 : 11/21
+epoch : 5
+batch : 5/35
+train accuracy : 0.53125
+train pred 0/1 : 0/32 label 0/1 : 15/17
+epoch : 5
+batch : 6/35
+train accuracy : 0.5
+train pred 0/1 : 1/31 label 0/1 : 17/15
+epoch : 5
+batch : 7/35
+train accuracy : 0.46875
+train pred 0/1 : 4/28 label 0/1 : 21/11
+epoch : 5
+batch : 8/35
+train accuracy : 0.5
+train pred 0/1 : 2/30 label 0/1 : 18/14
+epoch : 5
+batch : 9/35
+train accuracy : 0.59375
+train pred 0/1 : 13/19 label 0/1 : 18/14
+epoch : 5
+batch : 10/35
+train accuracy : 0.625
+train pred 0/1 : 21/11 label 0/1 : 13/19
+epoch : 5
+batch : 11/35
+train accuracy : 0.53125
+train pred 0/1 : 18/14 label 0/1 : 15/17
+epoch : 5
+batch : 12/35
+train accuracy : 0.71875
+train pred 0/1 : 20/12 label 0/1 : 13/19
+epoch : 5
+batch : 13/35
+train accuracy : 0.6875
+train pred 0/1 : 19/13 label 0/1 : 11/21
+epoch : 5
+batch : 14/35
+train accuracy : 0.84375
+train pred 0/1 : 11/21 label 0/1 : 14/18
+epoch : 5
+batch : 15/35
+train accuracy : 0.59375
+train pred 0/1 : 8/24 label 0/1 : 15/17
+epoch : 5
+batch : 16/35
+train accuracy : 0.65625
+train pred 0/1 : 7/25 label 0/1 : 14/18
+epoch : 5
+batch : 17/35
+train accuracy : 0.625
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 5
+batch : 18/35
+train accuracy : 0.5625
+train pred 0/1 : 4/28 label 0/1 : 16/16
+epoch : 5
+batch : 19/35
+train accuracy : 0.6875
+train pred 0/1 : 6/26 label 0/1 : 14/18
+epoch : 5
+batch : 20/35
+train accuracy : 0.53125
+train pred 0/1 : 5/27 label 0/1 : 18/14
+epoch : 5
+batch : 21/35
+train accuracy : 0.78125
+train pred 0/1 : 10/22 label 0/1 : 17/15
+epoch : 5
+batch : 22/35
+train accuracy : 0.6875
+train pred 0/1 : 26/6 label 0/1 : 20/12
+epoch : 5
+batch : 23/35
+train accuracy : 0.78125
+train pred 0/1 : 17/15 label 0/1 : 12/20
+epoch : 5
+batch : 24/35
+train accuracy : 0.84375
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 5
+batch : 25/35
+train accuracy : 0.625
+train pred 0/1 : 14/18 label 0/1 : 16/16
+epoch : 5
+batch : 26/35
+train accuracy : 0.6875
+train pred 0/1 : 6/26 label 0/1 : 14/18
+epoch : 5
+batch : 27/35
+train accuracy : 0.71875
+train pred 0/1 : 5/27 label 0/1 : 14/18
+epoch : 5
+batch : 28/35
+train accuracy : 0.65625
+train pred 0/1 : 13/19 label 0/1 : 18/14
+epoch : 5
+batch : 29/35
+train accuracy : 0.75
+train pred 0/1 : 12/20 label 0/1 : 18/14
+epoch : 5
+batch : 30/35
+train accuracy : 0.75
+train pred 0/1 : 8/24 label 0/1 : 16/16
+epoch : 5
+batch : 31/35
+train accuracy : 0.6875
+train pred 0/1 : 13/19 label 0/1 : 19/13
+epoch : 5
+batch : 32/35
+train accuracy : 0.6875
+train pred 0/1 : 15/17 label 0/1 : 19/13
+epoch : 5
+batch : 33/35
+train accuracy : 0.59375
+train pred 0/1 : 25/7 label 0/1 : 14/18
+epoch : 5
+batch : 34/35
+train accuracy : 0.625
+train pred 0/1 : 20/12 label 0/1 : 12/20
+epoch : 5
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.78125
+valid pred 0/1 : 0/32 label 0/1 : 7/25
+valid batch : 2/4
+valid accuracy : 0.75
+valid pred 0/1 : 0/32 label 0/1 : 8/24
+valid batch : 3/4
+valid accuracy : 0.875
+valid pred 0/1 : 0/32 label 0/1 : 4/28
+valid batch : 4/4
+valid accuracy : 0.9230769872665405
+valid pred 0/1 : 0/26 label 0/1 : 2/24
+valid epoch balanced_accuracy: 0.500000
+EPOCH 6:
+epoch : 6
+batch : 1/35
+train accuracy : 0.625
+train pred 0/1 : 3/29 label 0/1 : 15/17
+epoch : 6
+batch : 2/35
+train accuracy : 0.53125
+train pred 0/1 : 0/32 label 0/1 : 15/17
+epoch : 6
+batch : 3/35
+train accuracy : 0.625
+train pred 0/1 : 0/32 label 0/1 : 12/20
+epoch : 6
+batch : 4/35
+train accuracy : 0.53125
+train pred 0/1 : 0/32 label 0/1 : 15/17
+epoch : 6
+batch : 5/35
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+epoch : 6
+batch : 6/35
+train accuracy : 0.34375
+train pred 0/1 : 0/32 label 0/1 : 21/11
+epoch : 6
+batch : 7/35
+train accuracy : 0.4375
+train pred 0/1 : 0/32 label 0/1 : 18/14
+epoch : 6
+batch : 8/35
+train accuracy : 0.65625
+train pred 0/1 : 0/32 label 0/1 : 11/21
+epoch : 6
+batch : 9/35
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+epoch : 6
+batch : 10/35
+train accuracy : 0.625
+train pred 0/1 : 2/30 label 0/1 : 14/18
+epoch : 6
+batch : 11/35
+train accuracy : 0.625
+train pred 0/1 : 1/31 label 0/1 : 13/19
+epoch : 6
+batch : 12/35
+train accuracy : 0.6875
+train pred 0/1 : 4/28 label 0/1 : 14/18
+epoch : 6
+batch : 13/35
+train accuracy : 0.59375
+train pred 0/1 : 1/31 label 0/1 : 14/18
+epoch : 6
+batch : 14/35
+train accuracy : 0.625
+train pred 0/1 : 3/29 label 0/1 : 15/17
+epoch : 6
+batch : 15/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 14/18
+epoch : 6
+batch : 16/35
+train accuracy : 0.4375
+train pred 0/1 : 18/14 label 0/1 : 14/18
+epoch : 6
+batch : 17/35
+train accuracy : 0.53125
+train pred 0/1 : 17/15 label 0/1 : 18/14
+epoch : 6
+batch : 18/35
+train accuracy : 0.6875
+train pred 0/1 : 19/13 label 0/1 : 17/15
+epoch : 6
+batch : 19/35
+train accuracy : 0.6875
+train pred 0/1 : 19/13 label 0/1 : 21/11
+epoch : 6
+batch : 20/35
+train accuracy : 0.59375
+train pred 0/1 : 16/16 label 0/1 : 15/17
+epoch : 6
+batch : 21/35
+train accuracy : 0.59375
+train pred 0/1 : 21/11 label 0/1 : 14/18
+epoch : 6
+batch : 22/35
+train accuracy : 0.625
+train pred 0/1 : 21/11 label 0/1 : 19/13
+epoch : 6
+batch : 23/35
+train accuracy : 0.71875
+train pred 0/1 : 24/8 label 0/1 : 17/15
+epoch : 6
+batch : 24/35
+train accuracy : 0.625
+train pred 0/1 : 19/13 label 0/1 : 15/17
+epoch : 6
+batch : 25/35
+train accuracy : 0.59375
+train pred 0/1 : 21/11 label 0/1 : 16/16
+epoch : 6
+batch : 26/35
+train accuracy : 0.53125
+train pred 0/1 : 22/10 label 0/1 : 13/19
+epoch : 6
+batch : 27/35
+train accuracy : 0.53125
+train pred 0/1 : 21/11 label 0/1 : 16/16
+epoch : 6
+batch : 28/35
+train accuracy : 0.5625
+train pred 0/1 : 21/11 label 0/1 : 19/13
+epoch : 6
+batch : 29/35
+train accuracy : 0.75
+train pred 0/1 : 14/18 label 0/1 : 18/14
+epoch : 6
+batch : 30/35
+train accuracy : 0.46875
+train pred 0/1 : 20/12 label 0/1 : 15/17
+epoch : 6
+batch : 31/35
+train accuracy : 0.625
+train pred 0/1 : 21/11 label 0/1 : 19/13
+epoch : 6
+batch : 32/35
+train accuracy : 0.5625
+train pred 0/1 : 16/16 label 0/1 : 18/14
+epoch : 6
+batch : 33/35
+train accuracy : 0.625
+train pred 0/1 : 17/15 label 0/1 : 11/21
+epoch : 6
+batch : 34/35
+train accuracy : 0.4375
+train pred 0/1 : 17/15 label 0/1 : 13/19
+epoch : 6
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.15625
+valid pred 0/1 : 28/4 label 0/1 : 7/25
+valid batch : 2/4
+valid accuracy : 0.09375
+valid pred 0/1 : 30/2 label 0/1 : 5/27
+valid batch : 3/4
+valid accuracy : 0.0625
+valid pred 0/1 : 28/4 label 0/1 : 2/30
+valid batch : 4/4
+valid accuracy : 0.3076923191547394
+valid pred 0/1 : 25/1 label 0/1 : 7/19
+valid epoch balanced_accuracy: 0.353135
+EPOCH 7:
+epoch : 7
+batch : 1/35
+train accuracy : 0.5625
+train pred 0/1 : 13/19 label 0/1 : 17/15
+epoch : 7
+batch : 2/35
+train accuracy : 0.6875
+train pred 0/1 : 20/12 label 0/1 : 20/12
+epoch : 7
+batch : 3/35
+train accuracy : 0.65625
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 7
+batch : 4/35
+train accuracy : 0.75
+train pred 0/1 : 20/12 label 0/1 : 16/16
+epoch : 7
+batch : 5/35
+train accuracy : 0.625
+train pred 0/1 : 19/13 label 0/1 : 17/15
+epoch : 7
+batch : 6/35
+train accuracy : 0.5625
+train pred 0/1 : 22/10 label 0/1 : 18/14
+epoch : 7
+batch : 7/35
+train accuracy : 0.59375
+train pred 0/1 : 17/15 label 0/1 : 20/12
+epoch : 7
+batch : 8/35
+train accuracy : 0.71875
+train pred 0/1 : 19/13 label 0/1 : 18/14
+epoch : 7
+batch : 9/35
+train accuracy : 0.71875
+train pred 0/1 : 22/10 label 0/1 : 19/13
+epoch : 7
+batch : 10/35
+train accuracy : 0.5625
+train pred 0/1 : 21/11 label 0/1 : 19/13
+epoch : 7
+batch : 11/35
+train accuracy : 0.53125
+train pred 0/1 : 21/11 label 0/1 : 12/20
+epoch : 7
+batch : 12/35
+train accuracy : 0.625
+train pred 0/1 : 21/11 label 0/1 : 17/15
+epoch : 7
+batch : 13/35
+train accuracy : 0.5
+train pred 0/1 : 19/13 label 0/1 : 15/17
+epoch : 7
+batch : 14/35
+train accuracy : 0.65625
+train pred 0/1 : 17/15 label 0/1 : 14/18
+epoch : 7
+batch : 15/35
+train accuracy : 0.5
+train pred 0/1 : 16/16 label 0/1 : 12/20
+epoch : 7
+batch : 16/35
+train accuracy : 0.53125
+train pred 0/1 : 20/12 label 0/1 : 17/15
+epoch : 7
+batch : 17/35
+train accuracy : 0.5
+train pred 0/1 : 23/9 label 0/1 : 11/21
+epoch : 7
+batch : 18/35
+train accuracy : 0.59375
+train pred 0/1 : 20/12 label 0/1 : 9/23
+epoch : 7
+batch : 19/35
+train accuracy : 0.5
+train pred 0/1 : 27/5 label 0/1 : 15/17
+epoch : 7
+batch : 20/35
+train accuracy : 0.65625
+train pred 0/1 : 20/12 label 0/1 : 15/17
+epoch : 7
+batch : 21/35
+train accuracy : 0.53125
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 7
+batch : 22/35
+train accuracy : 0.5625
+train pred 0/1 : 6/26 label 0/1 : 20/12
+epoch : 7
+batch : 23/35
+train accuracy : 0.625
+train pred 0/1 : 2/30 label 0/1 : 14/18
+epoch : 7
+batch : 24/35
+train accuracy : 0.5
+train pred 0/1 : 5/27 label 0/1 : 21/11
+epoch : 7
+batch : 25/35
+train accuracy : 0.59375
+train pred 0/1 : 3/29 label 0/1 : 16/16
+epoch : 7
+batch : 26/35
+train accuracy : 0.71875
+train pred 0/1 : 3/29 label 0/1 : 12/20
+epoch : 7
+batch : 27/35
+train accuracy : 0.5625
+train pred 0/1 : 1/31 label 0/1 : 13/19
+epoch : 7
+batch : 28/35
+train accuracy : 0.6875
+train pred 0/1 : 2/30 label 0/1 : 12/20
+epoch : 7
+batch : 29/35
+train accuracy : 0.6875
+train pred 0/1 : 5/27 label 0/1 : 15/17
+epoch : 7
+batch : 30/35
+train accuracy : 0.625
+train pred 0/1 : 6/26 label 0/1 : 18/14
+epoch : 7
+batch : 31/35
+train accuracy : 0.6875
+train pred 0/1 : 4/28 label 0/1 : 14/18
+epoch : 7
+batch : 32/35
+train accuracy : 0.6875
+train pred 0/1 : 2/30 label 0/1 : 12/20
+epoch : 7
+batch : 33/35
+train accuracy : 0.75
+train pred 0/1 : 5/27 label 0/1 : 13/19
+epoch : 7
+batch : 34/35
+train accuracy : 0.46875
+train pred 0/1 : 3/29 label 0/1 : 20/12
+epoch : 7
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.875
+valid pred 0/1 : 3/29 label 0/1 : 3/29
+valid batch : 2/4
+valid accuracy : 0.8125
+valid pred 0/1 : 5/27 label 0/1 : 5/27
+valid batch : 3/4
+valid accuracy : 0.8125
+valid pred 0/1 : 4/28 label 0/1 : 6/26
+valid batch : 4/4
+valid accuracy : 0.7307692766189575
+valid pred 0/1 : 4/22 label 0/1 : 7/19
+valid epoch balanced_accuracy: 0.622112
+EPOCH 8:
+epoch : 8
+batch : 1/35
+train accuracy : 0.59375
+train pred 0/1 : 1/31 label 0/1 : 14/18
+epoch : 8
+batch : 2/35
+train accuracy : 0.625
+train pred 0/1 : 2/30 label 0/1 : 14/18
+epoch : 8
+batch : 3/35
+train accuracy : 0.625
+train pred 0/1 : 3/29 label 0/1 : 15/17
+epoch : 8
+batch : 4/35
+train accuracy : 0.4375
+train pred 0/1 : 4/28 label 0/1 : 22/10
+epoch : 8
+batch : 5/35
+train accuracy : 0.53125
+train pred 0/1 : 5/27 label 0/1 : 20/12
+epoch : 8
+batch : 6/35
+train accuracy : 0.65625
+train pred 0/1 : 2/30 label 0/1 : 13/19
+epoch : 8
+batch : 7/35
+train accuracy : 0.6875
+train pred 0/1 : 5/27 label 0/1 : 13/19
+epoch : 8
+batch : 8/35
+train accuracy : 0.5
+train pred 0/1 : 4/28 label 0/1 : 20/12
+epoch : 8
+batch : 9/35
+train accuracy : 0.46875
+train pred 0/1 : 4/28 label 0/1 : 19/13
+epoch : 8
+batch : 10/35
+train accuracy : 0.5625
+train pred 0/1 : 5/27 label 0/1 : 19/13
+epoch : 8
+batch : 11/35
+train accuracy : 0.53125
+train pred 0/1 : 3/29 label 0/1 : 18/14
+epoch : 8
+batch : 12/35
+train accuracy : 0.71875
+train pred 0/1 : 2/30 label 0/1 : 11/21
+epoch : 8
+batch : 13/35
+train accuracy : 0.71875
+train pred 0/1 : 5/27 label 0/1 : 14/18
+epoch : 8
+batch : 14/35
+train accuracy : 0.625
+train pred 0/1 : 5/27 label 0/1 : 17/15
+epoch : 8
+batch : 15/35
+train accuracy : 0.4375
+train pred 0/1 : 3/29 label 0/1 : 21/11
+epoch : 8
+batch : 16/35
+train accuracy : 0.59375
+train pred 0/1 : 4/28 label 0/1 : 17/15
+epoch : 8
+batch : 17/35
+train accuracy : 0.46875
+train pred 0/1 : 2/30 label 0/1 : 19/13
+epoch : 8
+batch : 18/35
+train accuracy : 0.78125
+train pred 0/1 : 2/30 label 0/1 : 9/23
+epoch : 8
+batch : 19/35
+train accuracy : 0.78125
+train pred 0/1 : 6/26 label 0/1 : 13/19
+epoch : 8
+batch : 20/35
+train accuracy : 0.625
+train pred 0/1 : 5/27 label 0/1 : 17/15
+epoch : 8
+batch : 21/35
+train accuracy : 0.5625
+train pred 0/1 : 3/29 label 0/1 : 17/15
+epoch : 8
+batch : 22/35
+train accuracy : 0.71875
+train pred 0/1 : 4/28 label 0/1 : 13/19
+epoch : 8
+batch : 23/35
+train accuracy : 0.625
+train pred 0/1 : 4/28 label 0/1 : 16/16
+epoch : 8
+batch : 24/35
+train accuracy : 0.625
+train pred 0/1 : 4/28 label 0/1 : 16/16
+epoch : 8
+batch : 25/35
+train accuracy : 0.6875
+train pred 0/1 : 7/25 label 0/1 : 17/15
+epoch : 8
+batch : 26/35
+train accuracy : 0.65625
+train pred 0/1 : 3/29 label 0/1 : 14/18
+epoch : 8
+batch : 27/35
+train accuracy : 0.65625
+train pred 0/1 : 4/28 label 0/1 : 15/17
+epoch : 8
+batch : 28/35
+train accuracy : 0.65625
+train pred 0/1 : 2/30 label 0/1 : 13/19
+epoch : 8
+batch : 29/35
+train accuracy : 0.6875
+train pred 0/1 : 2/30 label 0/1 : 12/20
+epoch : 8
+batch : 30/35
+train accuracy : 0.65625
+train pred 0/1 : 4/28 label 0/1 : 15/17
+epoch : 8
+batch : 31/35
+train accuracy : 0.6875
+train pred 0/1 : 2/30 label 0/1 : 12/20
+epoch : 8
+batch : 32/35
+train accuracy : 0.59375
+train pred 0/1 : 1/31 label 0/1 : 14/18
+epoch : 8
+batch : 33/35
+train accuracy : 0.65625
+train pred 0/1 : 3/29 label 0/1 : 14/18
+epoch : 8
+batch : 34/35
+train accuracy : 0.59375
+train pred 0/1 : 7/25 label 0/1 : 20/12
+epoch : 8
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.8125
+valid pred 0/1 : 4/28 label 0/1 : 8/24
+valid batch : 2/4
+valid accuracy : 0.75
+valid pred 0/1 : 7/25 label 0/1 : 5/27
+valid batch : 3/4
+valid accuracy : 0.8125
+valid pred 0/1 : 3/29 label 0/1 : 5/27
+valid batch : 4/4
+valid accuracy : 0.884615421295166
+valid pred 0/1 : 2/24 label 0/1 : 3/23
+valid epoch balanced_accuracy: 0.622112
+EPOCH 9:
+epoch : 9
+batch : 1/35
+train accuracy : 0.71875
+train pred 0/1 : 5/27 label 0/1 : 14/18
+epoch : 9
+batch : 2/35
+train accuracy : 0.59375
+train pred 0/1 : 3/29 label 0/1 : 16/16
+epoch : 9
+batch : 3/35
+train accuracy : 0.59375
+train pred 0/1 : 9/23 label 0/1 : 22/10
+epoch : 9
+batch : 4/35
+train accuracy : 0.65625
+train pred 0/1 : 5/27 label 0/1 : 16/16
+epoch : 9
+batch : 5/35
+train accuracy : 0.65625
+train pred 0/1 : 4/28 label 0/1 : 15/17
+epoch : 9
+batch : 6/35
+train accuracy : 0.625
+train pred 0/1 : 2/30 label 0/1 : 14/18
+epoch : 9
+batch : 7/35
+train accuracy : 0.5625
+train pred 0/1 : 3/29 label 0/1 : 17/15
+epoch : 9
+batch : 8/35
+train accuracy : 0.59375
+train pred 0/1 : 6/26 label 0/1 : 19/13
+epoch : 9
+batch : 9/35
+train accuracy : 0.6875
+train pred 0/1 : 6/26 label 0/1 : 16/16
+epoch : 9
+batch : 10/35
+train accuracy : 0.46875
+train pred 0/1 : 3/29 label 0/1 : 20/12
+epoch : 9
+batch : 11/35
+train accuracy : 0.65625
+train pred 0/1 : 0/32 label 0/1 : 11/21
+epoch : 9
+batch : 12/35
+train accuracy : 0.625
+train pred 0/1 : 3/29 label 0/1 : 15/17
+epoch : 9
+batch : 13/35
+train accuracy : 0.6875
+train pred 0/1 : 3/29 label 0/1 : 13/19
+epoch : 9
+batch : 14/35
+train accuracy : 0.59375
+train pred 0/1 : 2/30 label 0/1 : 15/17
+epoch : 9
+batch : 15/35
+train accuracy : 0.6875
+train pred 0/1 : 3/29 label 0/1 : 13/19
+epoch : 9
+batch : 16/35
+train accuracy : 0.5625
+train pred 0/1 : 6/26 label 0/1 : 18/14
+epoch : 9
+batch : 17/35
+train accuracy : 0.5625
+train pred 0/1 : 2/30 label 0/1 : 16/16
+epoch : 9
+batch : 18/35
+train accuracy : 0.75
+train pred 0/1 : 5/27 label 0/1 : 13/19
+epoch : 9
+batch : 19/35
+train accuracy : 0.59375
+train pred 0/1 : 8/24 label 0/1 : 19/13
+epoch : 9
+batch : 20/35
+train accuracy : 0.75
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 9
+batch : 21/35
+train accuracy : 0.59375
+train pred 0/1 : 12/20 label 0/1 : 19/13
+epoch : 9
+batch : 22/35
+train accuracy : 0.625
+train pred 0/1 : 10/22 label 0/1 : 10/22
+epoch : 9
+batch : 23/35
+train accuracy : 0.75
+train pred 0/1 : 18/14 label 0/1 : 18/14
+epoch : 9
+batch : 24/35
+train accuracy : 0.8125
+train pred 0/1 : 17/15 label 0/1 : 15/17
+epoch : 9
+batch : 25/35
+train accuracy : 0.71875
+train pred 0/1 : 26/6 label 0/1 : 17/15
+epoch : 9
+batch : 26/35
+train accuracy : 0.65625
+train pred 0/1 : 20/12 label 0/1 : 13/19
+epoch : 9
+batch : 27/35
+train accuracy : 0.71875
+train pred 0/1 : 20/12 label 0/1 : 19/13
+epoch : 9
+batch : 28/35
+train accuracy : 0.46875
+train pred 0/1 : 24/8 label 0/1 : 9/23
+epoch : 9
+batch : 29/35
+train accuracy : 0.71875
+train pred 0/1 : 19/13 label 0/1 : 14/18
+epoch : 9
+batch : 30/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 18/14
+epoch : 9
+batch : 31/35
+train accuracy : 0.6875
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 9
+batch : 32/35
+train accuracy : 0.6875
+train pred 0/1 : 6/26 label 0/1 : 14/18
+epoch : 9
+batch : 33/35
+train accuracy : 0.75
+train pred 0/1 : 12/20 label 0/1 : 18/14
+epoch : 9
+batch : 34/35
+train accuracy : 0.65625
+train pred 0/1 : 6/26 label 0/1 : 15/17
+epoch : 9
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.78125
+valid pred 0/1 : 7/25 label 0/1 : 2/30
+valid batch : 2/4
+valid accuracy : 0.71875
+valid pred 0/1 : 4/28 label 0/1 : 9/23
+valid batch : 3/4
+valid accuracy : 0.90625
+valid pred 0/1 : 4/28 label 0/1 : 5/27
+valid batch : 4/4
+valid accuracy : 0.7307692766189575
+valid pred 0/1 : 4/22 label 0/1 : 5/21
+valid epoch balanced_accuracy: 0.607261
+EPOCH 10:
+epoch : 10
+batch : 1/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 10
+batch : 2/35
+train accuracy : 0.5625
+train pred 0/1 : 8/24 label 0/1 : 20/12
+epoch : 10
+batch : 3/35
+train accuracy : 0.78125
+train pred 0/1 : 16/16 label 0/1 : 17/15
+epoch : 10
+batch : 4/35
+train accuracy : 0.6875
+train pred 0/1 : 17/15 label 0/1 : 13/19
+epoch : 10
+batch : 5/35
+train accuracy : 0.75
+train pred 0/1 : 12/20 label 0/1 : 18/14
+epoch : 10
+batch : 6/35
+train accuracy : 0.6875
+train pred 0/1 : 12/20 label 0/1 : 16/16
+epoch : 10
+batch : 7/35
+train accuracy : 0.65625
+train pred 0/1 : 20/12 label 0/1 : 15/17
+epoch : 10
+batch : 8/35
+train accuracy : 0.59375
+train pred 0/1 : 16/16 label 0/1 : 21/11
+epoch : 10
+batch : 9/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 13/19
+epoch : 10
+batch : 10/35
+train accuracy : 0.875
+train pred 0/1 : 11/21 label 0/1 : 13/19
+epoch : 10
+batch : 11/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 19/13
+epoch : 10
+batch : 12/35
+train accuracy : 0.78125
+train pred 0/1 : 5/27 label 0/1 : 12/20
+epoch : 10
+batch : 13/35
+train accuracy : 0.5625
+train pred 0/1 : 6/26 label 0/1 : 18/14
+epoch : 10
+batch : 14/35
+train accuracy : 0.8125
+train pred 0/1 : 6/26 label 0/1 : 12/20
+epoch : 10
+batch : 15/35
+train accuracy : 0.5625
+train pred 0/1 : 5/27 label 0/1 : 19/13
+epoch : 10
+batch : 16/35
+train accuracy : 0.84375
+train pred 0/1 : 12/20 label 0/1 : 17/15
+epoch : 10
+batch : 17/35
+train accuracy : 0.84375
+train pred 0/1 : 7/25 label 0/1 : 10/22
+epoch : 10
+batch : 18/35
+train accuracy : 0.5625
+train pred 0/1 : 9/23 label 0/1 : 17/15
+epoch : 10
+batch : 19/35
+train accuracy : 0.65625
+train pred 0/1 : 11/21 label 0/1 : 18/14
+epoch : 10
+batch : 20/35
+train accuracy : 0.65625
+train pred 0/1 : 12/20 label 0/1 : 13/19
+epoch : 10
+batch : 21/35
+train accuracy : 0.71875
+train pred 0/1 : 14/18 label 0/1 : 13/19
+epoch : 10
+batch : 22/35
+train accuracy : 0.71875
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 10
+batch : 23/35
+train accuracy : 0.59375
+train pred 0/1 : 15/17 label 0/1 : 14/18
+epoch : 10
+batch : 24/35
+train accuracy : 0.625
+train pred 0/1 : 12/20 label 0/1 : 14/18
+epoch : 10
+batch : 25/35
+train accuracy : 0.75
+train pred 0/1 : 13/19 label 0/1 : 15/17
+epoch : 10
+batch : 26/35
+train accuracy : 0.59375
+train pred 0/1 : 8/24 label 0/1 : 15/17
+epoch : 10
+batch : 27/35
+train accuracy : 0.75
+train pred 0/1 : 10/22 label 0/1 : 18/14
+epoch : 10
+batch : 28/35
+train accuracy : 0.59375
+train pred 0/1 : 10/22 label 0/1 : 19/13
+epoch : 10
+batch : 29/35
+train accuracy : 0.71875
+train pred 0/1 : 10/22 label 0/1 : 17/15
+epoch : 10
+batch : 30/35
+train accuracy : 0.84375
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 10
+batch : 31/35
+train accuracy : 0.84375
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 10
+batch : 32/35
+train accuracy : 0.75
+train pred 0/1 : 17/15 label 0/1 : 15/17
+epoch : 10
+batch : 33/35
+train accuracy : 0.8125
+train pred 0/1 : 10/22 label 0/1 : 14/18
+epoch : 10
+batch : 34/35
+train accuracy : 0.78125
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 10
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.34375
+valid pred 0/1 : 20/12 label 0/1 : 3/29
+valid batch : 2/4
+valid accuracy : 0.375
+valid pred 0/1 : 19/13 label 0/1 : 7/25
+valid batch : 3/4
+valid accuracy : 0.4375
+valid pred 0/1 : 16/16 label 0/1 : 6/26
+valid batch : 4/4
+valid accuracy : 0.6538462042808533
+valid pred 0/1 : 10/16 label 0/1 : 5/21
+valid epoch balanced_accuracy: 0.437058
+EPOCH 11:
+epoch : 11
+batch : 1/35
+train accuracy : 0.71875
+train pred 0/1 : 18/14 label 0/1 : 11/21
+epoch : 11
+batch : 2/35
+train accuracy : 0.75
+train pred 0/1 : 9/23 label 0/1 : 11/21
+epoch : 11
+batch : 3/35
+train accuracy : 0.84375
+train pred 0/1 : 15/17 label 0/1 : 18/14
+epoch : 11
+batch : 4/35
+train accuracy : 0.65625
+train pred 0/1 : 6/26 label 0/1 : 17/15
+epoch : 11
+batch : 5/35
+train accuracy : 0.71875
+train pred 0/1 : 10/22 label 0/1 : 17/15
+epoch : 11
+batch : 6/35
+train accuracy : 0.78125
+train pred 0/1 : 15/17 label 0/1 : 16/16
+epoch : 11
+batch : 7/35
+train accuracy : 0.78125
+train pred 0/1 : 17/15 label 0/1 : 14/18
+epoch : 11
+batch : 8/35
+train accuracy : 0.71875
+train pred 0/1 : 17/15 label 0/1 : 14/18
+epoch : 11
+batch : 9/35
+train accuracy : 0.71875
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 11
+batch : 10/35
+train accuracy : 0.78125
+train pred 0/1 : 15/17 label 0/1 : 18/14
+epoch : 11
+batch : 11/35
+train accuracy : 0.6875
+train pred 0/1 : 21/11 label 0/1 : 17/15
+epoch : 11
+batch : 12/35
+train accuracy : 0.75
+train pred 0/1 : 10/22 label 0/1 : 12/20
+epoch : 11
+batch : 13/35
+train accuracy : 0.65625
+train pred 0/1 : 15/17 label 0/1 : 14/18
+epoch : 11
+batch : 14/35
+train accuracy : 0.78125
+train pred 0/1 : 11/21 label 0/1 : 12/20
+epoch : 11
+batch : 15/35
+train accuracy : 0.71875
+train pred 0/1 : 17/15 label 0/1 : 18/14
+epoch : 11
+batch : 16/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 11
+batch : 17/35
+train accuracy : 0.6875
+train pred 0/1 : 10/22 label 0/1 : 18/14
+epoch : 11
+batch : 18/35
+train accuracy : 0.8125
+train pred 0/1 : 19/13 label 0/1 : 15/17
+epoch : 11
+batch : 19/35
+train accuracy : 0.75
+train pred 0/1 : 25/7 label 0/1 : 17/15
+epoch : 11
+batch : 20/35
+train accuracy : 0.75
+train pred 0/1 : 19/13 label 0/1 : 21/11
+epoch : 11
+batch : 21/35
+train accuracy : 0.75
+train pred 0/1 : 17/15 label 0/1 : 23/9
+epoch : 11
+batch : 22/35
+train accuracy : 0.65625
+train pred 0/1 : 16/16 label 0/1 : 19/13
+epoch : 11
+batch : 23/35
+train accuracy : 0.75
+train pred 0/1 : 20/12 label 0/1 : 18/14
+epoch : 11
+batch : 24/35
+train accuracy : 0.71875
+train pred 0/1 : 16/16 label 0/1 : 15/17
+epoch : 11
+batch : 25/35
+train accuracy : 0.78125
+train pred 0/1 : 14/18 label 0/1 : 17/15
+epoch : 11
+batch : 26/35
+train accuracy : 0.90625
+train pred 0/1 : 13/19 label 0/1 : 12/20
+epoch : 11
+batch : 27/35
+train accuracy : 0.84375
+train pred 0/1 : 6/26 label 0/1 : 11/21
+epoch : 11
+batch : 28/35
+train accuracy : 0.625
+train pred 0/1 : 6/26 label 0/1 : 16/16
+epoch : 11
+batch : 29/35
+train accuracy : 0.78125
+train pred 0/1 : 10/22 label 0/1 : 17/15
+epoch : 11
+batch : 30/35
+train accuracy : 0.8125
+train pred 0/1 : 9/23 label 0/1 : 13/19
+epoch : 11
+batch : 31/35
+train accuracy : 0.6875
+train pred 0/1 : 13/19 label 0/1 : 15/17
+epoch : 11
+batch : 32/35
+train accuracy : 0.71875
+train pred 0/1 : 17/15 label 0/1 : 12/20
+epoch : 11
+batch : 33/35
+train accuracy : 0.71875
+train pred 0/1 : 18/14 label 0/1 : 17/15
+epoch : 11
+batch : 34/35
+train accuracy : 0.78125
+train pred 0/1 : 15/17 label 0/1 : 16/16
+epoch : 11
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.78125
+valid pred 0/1 : 4/28 label 0/1 : 7/25
+valid batch : 2/4
+valid accuracy : 0.84375
+valid pred 0/1 : 5/27 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.75
+valid pred 0/1 : 8/24 label 0/1 : 4/28
+valid batch : 4/4
+valid accuracy : 0.692307710647583
+valid pred 0/1 : 4/22 label 0/1 : 6/20
+valid epoch balanced_accuracy: 0.597360
+EPOCH 12:
+epoch : 12
+batch : 1/35
+train accuracy : 0.71875
+train pred 0/1 : 14/18 label 0/1 : 21/11
+epoch : 12
+batch : 2/35
+train accuracy : 0.75
+train pred 0/1 : 8/24 label 0/1 : 16/16
+epoch : 12
+batch : 3/35
+train accuracy : 0.84375
+train pred 0/1 : 16/16 label 0/1 : 19/13
+epoch : 12
+batch : 4/35
+train accuracy : 0.8125
+train pred 0/1 : 20/12 label 0/1 : 18/14
+epoch : 12
+batch : 5/35
+train accuracy : 0.875
+train pred 0/1 : 16/16 label 0/1 : 12/20
+epoch : 12
+batch : 6/35
+train accuracy : 0.71875
+train pred 0/1 : 22/10 label 0/1 : 15/17
+epoch : 12
+batch : 7/35
+train accuracy : 0.90625
+train pred 0/1 : 12/20 label 0/1 : 13/19
+epoch : 12
+batch : 8/35
+train accuracy : 0.65625
+train pred 0/1 : 7/25 label 0/1 : 16/16
+epoch : 12
+batch : 9/35
+train accuracy : 0.71875
+train pred 0/1 : 5/27 label 0/1 : 12/20
+epoch : 12
+batch : 10/35
+train accuracy : 0.875
+train pred 0/1 : 11/21 label 0/1 : 15/17
+epoch : 12
+batch : 11/35
+train accuracy : 0.84375
+train pred 0/1 : 11/21 label 0/1 : 12/20
+epoch : 12
+batch : 12/35
+train accuracy : 0.8125
+train pred 0/1 : 8/24 label 0/1 : 12/20
+epoch : 12
+batch : 13/35
+train accuracy : 0.75
+train pred 0/1 : 13/19 label 0/1 : 19/13
+epoch : 12
+batch : 14/35
+train accuracy : 0.71875
+train pred 0/1 : 22/10 label 0/1 : 17/15
+epoch : 12
+batch : 15/35
+train accuracy : 0.59375
+train pred 0/1 : 26/6 label 0/1 : 17/15
+epoch : 12
+batch : 16/35
+train accuracy : 0.6875
+train pred 0/1 : 28/4 label 0/1 : 22/10
+epoch : 12
+batch : 17/35
+train accuracy : 0.625
+train pred 0/1 : 26/6 label 0/1 : 14/18
+epoch : 12
+batch : 18/35
+train accuracy : 0.75
+train pred 0/1 : 18/14 label 0/1 : 16/16
+epoch : 12
+batch : 19/35
+train accuracy : 0.875
+train pred 0/1 : 19/13 label 0/1 : 17/15
+epoch : 12
+batch : 20/35
+train accuracy : 0.71875
+train pred 0/1 : 12/20 label 0/1 : 21/11
+epoch : 12
+batch : 21/35
+train accuracy : 0.75
+train pred 0/1 : 8/24 label 0/1 : 14/18
+epoch : 12
+batch : 22/35
+train accuracy : 0.8125
+train pred 0/1 : 10/22 label 0/1 : 14/18
+epoch : 12
+batch : 23/35
+train accuracy : 0.65625
+train pred 0/1 : 12/20 label 0/1 : 21/11
+epoch : 12
+batch : 24/35
+train accuracy : 0.6875
+train pred 0/1 : 6/26 label 0/1 : 12/20
+epoch : 12
+batch : 25/35
+train accuracy : 0.625
+train pred 0/1 : 14/18 label 0/1 : 18/14
+epoch : 12
+batch : 26/35
+train accuracy : 0.8125
+train pred 0/1 : 16/16 label 0/1 : 14/18
+epoch : 12
+batch : 27/35
+train accuracy : 0.625
+train pred 0/1 : 17/15 label 0/1 : 13/19
+epoch : 12
+batch : 28/35
+train accuracy : 0.71875
+train pred 0/1 : 20/12 label 0/1 : 15/17
+epoch : 12
+batch : 29/35
+train accuracy : 0.75
+train pred 0/1 : 11/21 label 0/1 : 11/21
+epoch : 12
+batch : 30/35
+train accuracy : 0.71875
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 12
+batch : 31/35
+train accuracy : 0.75
+train pred 0/1 : 9/23 label 0/1 : 15/17
+epoch : 12
+batch : 32/35
+train accuracy : 0.71875
+train pred 0/1 : 8/24 label 0/1 : 17/15
+epoch : 12
+batch : 33/35
+train accuracy : 0.65625
+train pred 0/1 : 11/21 label 0/1 : 20/12
+epoch : 12
+batch : 34/35
+train accuracy : 0.78125
+train pred 0/1 : 3/29 label 0/1 : 10/22
+epoch : 12
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.71875
+valid pred 0/1 : 10/22 label 0/1 : 3/29
+valid batch : 2/4
+valid accuracy : 0.65625
+valid pred 0/1 : 8/24 label 0/1 : 7/25
+valid batch : 3/4
+valid accuracy : 0.46875
+valid pred 0/1 : 13/19 label 0/1 : 6/26
+valid batch : 4/4
+valid accuracy : 0.5384615659713745
+valid pred 0/1 : 11/15 label 0/1 : 5/21
+valid epoch balanced_accuracy: 0.493399
+EPOCH 13:
+epoch : 13
+batch : 1/35
+train accuracy : 0.8125
+train pred 0/1 : 9/23 label 0/1 : 13/19
+epoch : 13
+batch : 2/35
+train accuracy : 0.625
+train pred 0/1 : 11/21 label 0/1 : 21/11
+epoch : 13
+batch : 3/35
+train accuracy : 0.8125
+train pred 0/1 : 8/24 label 0/1 : 12/20
+epoch : 13
+batch : 4/35
+train accuracy : 0.90625
+train pred 0/1 : 9/23 label 0/1 : 12/20
+epoch : 13
+batch : 5/35
+train accuracy : 0.8125
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 13
+batch : 6/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 13
+batch : 7/35
+train accuracy : 0.71875
+train pred 0/1 : 15/17 label 0/1 : 18/14
+epoch : 13
+batch : 8/35
+train accuracy : 0.71875
+train pred 0/1 : 15/17 label 0/1 : 20/12
+epoch : 13
+batch : 9/35
+train accuracy : 0.84375
+train pred 0/1 : 18/14 label 0/1 : 15/17
+epoch : 13
+batch : 10/35
+train accuracy : 0.75
+train pred 0/1 : 22/10 label 0/1 : 18/14
+epoch : 13
+batch : 11/35
+train accuracy : 0.6875
+train pred 0/1 : 22/10 label 0/1 : 20/12
+epoch : 13
+batch : 12/35
+train accuracy : 0.75
+train pred 0/1 : 16/16 label 0/1 : 14/18
+epoch : 13
+batch : 13/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 15/17
+epoch : 13
+batch : 14/35
+train accuracy : 0.75
+train pred 0/1 : 14/18 label 0/1 : 14/18
+epoch : 13
+batch : 15/35
+train accuracy : 0.71875
+train pred 0/1 : 6/26 label 0/1 : 15/17
+epoch : 13
+batch : 16/35
+train accuracy : 0.625
+train pred 0/1 : 4/28 label 0/1 : 16/16
+epoch : 13
+batch : 17/35
+train accuracy : 0.71875
+train pred 0/1 : 12/20 label 0/1 : 13/19
+epoch : 13
+batch : 18/35
+train accuracy : 0.78125
+train pred 0/1 : 11/21 label 0/1 : 8/24
+epoch : 13
+batch : 19/35
+train accuracy : 0.84375
+train pred 0/1 : 13/19 label 0/1 : 12/20
+epoch : 13
+batch : 20/35
+train accuracy : 0.84375
+train pred 0/1 : 11/21 label 0/1 : 14/18
+epoch : 13
+batch : 21/35
+train accuracy : 0.6875
+train pred 0/1 : 14/18 label 0/1 : 20/12
+epoch : 13
+batch : 22/35
+train accuracy : 0.71875
+train pred 0/1 : 14/18 label 0/1 : 21/11
+epoch : 13
+batch : 23/35
+train accuracy : 0.8125
+train pred 0/1 : 14/18 label 0/1 : 14/18
+epoch : 13
+batch : 24/35
+train accuracy : 0.65625
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 13
+batch : 25/35
+train accuracy : 0.84375
+train pred 0/1 : 19/13 label 0/1 : 20/12
+epoch : 13
+batch : 26/35
+train accuracy : 0.75
+train pred 0/1 : 15/17 label 0/1 : 15/17
+epoch : 13
+batch : 27/35
+train accuracy : 0.84375
+train pred 0/1 : 21/11 label 0/1 : 16/16
+epoch : 13
+batch : 28/35
+train accuracy : 0.96875
+train pred 0/1 : 23/9 label 0/1 : 22/10
+epoch : 13
+batch : 29/35
+train accuracy : 0.75
+train pred 0/1 : 13/19 label 0/1 : 15/17
+epoch : 13
+batch : 30/35
+train accuracy : 0.78125
+train pred 0/1 : 14/18 label 0/1 : 7/25
+epoch : 13
+batch : 31/35
+train accuracy : 0.8125
+train pred 0/1 : 15/17 label 0/1 : 13/19
+epoch : 13
+batch : 32/35
+train accuracy : 0.84375
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 13
+batch : 33/35
+train accuracy : 0.46875
+train pred 0/1 : 8/24 label 0/1 : 21/11
+epoch : 13
+batch : 34/35
+train accuracy : 0.5
+train pred 0/1 : 2/30 label 0/1 : 18/14
+epoch : 13
+batch : 35/35
+train accuracy : 0.0
+train pred 0/1 : 0/1 label 0/1 : 1/0
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.6875
+valid pred 0/1 : 9/23 label 0/1 : 3/29
+valid batch : 2/4
+valid accuracy : 0.65625
+valid pred 0/1 : 12/20 label 0/1 : 9/23
+valid batch : 3/4
+valid accuracy : 0.59375
+valid pred 0/1 : 8/24 label 0/1 : 7/25
+valid batch : 4/4
+valid accuracy : 0.5769230723381042
+valid pred 0/1 : 9/17 label 0/1 : 2/24
+valid epoch balanced_accuracy: 0.513201
+EPOCH 14:
+epoch : 14
+batch : 1/35
+train accuracy : 0.90625
+train pred 0/1 : 10/22 label 0/1 : 13/19
+epoch : 14
+batch : 2/35
+train accuracy : 0.78125
+train pred 0/1 : 10/22 label 0/1 : 11/21
+epoch : 14
+batch : 3/35
+train accuracy : 0.84375
+train pred 0/1 : 16/16 label 0/1 : 15/17
+epoch : 14
+batch : 4/35
+train accuracy : 0.625
+train pred 0/1 : 26/6 label 0/1 : 14/18
+epoch : 14
+batch : 5/35
+train accuracy : 0.6875
+train pred 0/1 : 27/5 label 0/1 : 17/15
+epoch : 14
+batch : 6/35
+train accuracy : 0.46875
+train pred 0/1 : 30/2 label 0/1 : 15/17
+epoch : 14
+batch : 7/35
+train accuracy : 0.4375
+train pred 0/1 : 30/2 label 0/1 : 12/20
+epoch : 14
+batch : 8/35
+train accuracy : 0.5625
+train pred 0/1 : 29/3 label 0/1 : 17/15
+epoch : 14
+batch : 9/35
+train accuracy : 0.65625
+train pred 0/1 : 20/12 label 0/1 : 17/15
+epoch : 14
+batch : 10/35
+train accuracy : 0.78125
+train pred 0/1 : 13/19 label 0/1 : 18/14
+epoch : 14
+batch : 11/35
+train accuracy : 0.8125
+train pred 0/1 : 13/19 label 0/1 : 15/17
+epoch : 14
+batch : 12/35
+train accuracy : 0.875
+train pred 0/1 : 10/22 label 0/1 : 14/18
+epoch : 14
+batch : 13/35
+train accuracy : 0.78125
+train pred 0/1 : 8/24 label 0/1 : 15/17
+epoch : 14
+batch : 14/35
+train accuracy : 0.65625
+train pred 0/1 : 8/24 label 0/1 : 17/15
+epoch : 14
+batch : 15/35
+train accuracy : 0.6875
+train pred 0/1 : 7/25 label 0/1 : 15/17
+epoch : 14
+batch : 16/35
+train accuracy : 0.6875
+train pred 0/1 : 10/22 label 0/1 : 18/14
+epoch : 14
+batch : 17/35
+train accuracy : 0.625
+train pred 0/1 : 6/26 label 0/1 : 18/14
+epoch : 14
+batch : 18/35
+train accuracy : 0.75
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 14
+batch : 19/35
+train accuracy : 0.75
+train pred 0/1 : 15/17 label 0/1 : 15/17
+epoch : 14
+batch : 20/35
+train accuracy : 0.65625
+train pred 0/1 : 13/19 label 0/1 : 14/18
+epoch : 14
+batch : 21/35
+train accuracy : 0.75
+train pred 0/1 : 16/16 label 0/1 : 18/14
+epoch : 14
+batch : 22/35
+train accuracy : 0.84375
+train pred 0/1 : 16/16 label 0/1 : 17/15
+epoch : 14
+batch : 23/35
+train accuracy : 0.625
+train pred 0/1 : 19/13 label 0/1 : 19/13
+epoch : 14
+batch : 24/35
+train accuracy : 0.71875
+train pred 0/1 : 18/14 label 0/1 : 15/17
+epoch : 14
+batch : 25/35
+train accuracy : 0.65625
+train pred 0/1 : 17/15 label 0/1 : 16/16
+epoch : 14
+batch : 26/35
+train accuracy : 0.59375
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 14
+batch : 27/35
+train accuracy : 0.6875
+train pred 0/1 : 16/16 label 0/1 : 14/18
+epoch : 14
+batch : 28/35
+train accuracy : 0.78125
+train pred 0/1 : 17/15 label 0/1 : 14/18
+epoch : 14
+batch : 29/35
+train accuracy : 0.8125
+train pred 0/1 : 16/16 label 0/1 : 18/14
+epoch : 14
+batch : 30/35
+train accuracy : 0.65625
+train pred 0/1 : 13/19 label 0/1 : 6/26
+epoch : 14
+batch : 31/35
+train accuracy : 0.75
+train pred 0/1 : 14/18 label 0/1 : 20/12
+epoch : 14
+batch : 32/35
+train accuracy : 0.625
+train pred 0/1 : 16/16 label 0/1 : 16/16
+epoch : 14
+batch : 33/35
+train accuracy : 0.65625
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 14
+batch : 34/35
+train accuracy : 0.71875
+train pred 0/1 : 13/19 label 0/1 : 20/12
+epoch : 14
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 1/0 label 0/1 : 1/0
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.25
+valid pred 0/1 : 26/6 label 0/1 : 6/26
+valid batch : 2/4
+valid accuracy : 0.375
+valid pred 0/1 : 20/12 label 0/1 : 8/24
+valid batch : 3/4
+valid accuracy : 0.28125
+valid pred 0/1 : 26/6 label 0/1 : 3/29
+valid batch : 4/4
+valid accuracy : 0.19230769574642181
+valid pred 0/1 : 19/7 label 0/1 : 4/22
+valid epoch balanced_accuracy: 0.394625
+EPOCH 15:
+epoch : 15
+batch : 1/35
+train accuracy : 0.71875
+train pred 0/1 : 10/22 label 0/1 : 13/19
+epoch : 15
+batch : 2/35
+train accuracy : 0.6875
+train pred 0/1 : 13/19 label 0/1 : 13/19
+epoch : 15
+batch : 3/35
+train accuracy : 0.8125
+train pred 0/1 : 17/15 label 0/1 : 19/13
+epoch : 15
+batch : 4/35
+train accuracy : 0.75
+train pred 0/1 : 16/16 label 0/1 : 14/18
+epoch : 15
+batch : 5/35
+train accuracy : 0.78125
+train pred 0/1 : 19/13 label 0/1 : 18/14
+epoch : 15
+batch : 6/35
+train accuracy : 0.90625
+train pred 0/1 : 14/18 label 0/1 : 13/19
+epoch : 15
+batch : 7/35
+train accuracy : 0.75
+train pred 0/1 : 20/12 label 0/1 : 22/10
+epoch : 15
+batch : 8/35
+train accuracy : 0.78125
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 15
+batch : 9/35
+train accuracy : 0.65625
+train pred 0/1 : 22/10 label 0/1 : 15/17
+epoch : 15
+batch : 10/35
+train accuracy : 0.5625
+train pred 0/1 : 23/9 label 0/1 : 17/15
+epoch : 15
+batch : 11/35
+train accuracy : 0.71875
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 15
+batch : 12/35
+train accuracy : 0.78125
+train pred 0/1 : 21/11 label 0/1 : 20/12
+epoch : 15
+batch : 13/35
+train accuracy : 0.875
+train pred 0/1 : 16/16 label 0/1 : 12/20
+epoch : 15
+batch : 14/35
+train accuracy : 0.65625
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 15
+batch : 15/35
+train accuracy : 0.6875
+train pred 0/1 : 12/20 label 0/1 : 18/14
+epoch : 15
+batch : 16/35
+train accuracy : 0.59375
+train pred 0/1 : 14/18 label 0/1 : 11/21
+epoch : 15
+batch : 17/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 18/14
+epoch : 15
+batch : 18/35
+train accuracy : 0.6875
+train pred 0/1 : 9/23 label 0/1 : 17/15
+epoch : 15
+batch : 19/35
+train accuracy : 0.65625
+train pred 0/1 : 9/23 label 0/1 : 18/14
+epoch : 15
+batch : 20/35
+train accuracy : 0.71875
+train pred 0/1 : 4/28 label 0/1 : 11/21
+epoch : 15
+batch : 21/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 15/17
+epoch : 15
+batch : 22/35
+train accuracy : 0.78125
+train pred 0/1 : 8/24 label 0/1 : 13/19
+epoch : 15
+batch : 23/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 11/21
+epoch : 15
+batch : 24/35
+train accuracy : 0.625
+train pred 0/1 : 20/12 label 0/1 : 18/14
+epoch : 15
+batch : 25/35
+train accuracy : 0.90625
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 15
+batch : 26/35
+train accuracy : 0.8125
+train pred 0/1 : 15/17 label 0/1 : 19/13
+epoch : 15
+batch : 27/35
+train accuracy : 0.875
+train pred 0/1 : 9/23 label 0/1 : 13/19
+epoch : 15
+batch : 28/35
+train accuracy : 0.8125
+train pred 0/1 : 19/13 label 0/1 : 19/13
+epoch : 15
+batch : 29/35
+train accuracy : 0.78125
+train pred 0/1 : 21/11 label 0/1 : 20/12
+epoch : 15
+batch : 30/35
+train accuracy : 0.59375
+train pred 0/1 : 21/11 label 0/1 : 12/20
+epoch : 15
+batch : 31/35
+train accuracy : 0.65625
+train pred 0/1 : 22/10 label 0/1 : 17/15
+epoch : 15
+batch : 32/35
+train accuracy : 0.75
+train pred 0/1 : 18/14 label 0/1 : 16/16
+epoch : 15
+batch : 33/35
+train accuracy : 0.65625
+train pred 0/1 : 11/21 label 0/1 : 14/18
+epoch : 15
+batch : 34/35
+train accuracy : 0.75
+train pred 0/1 : 9/23 label 0/1 : 15/17
+epoch : 15
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.59375
+valid pred 0/1 : 14/18 label 0/1 : 5/27
+valid batch : 2/4
+valid accuracy : 0.65625
+valid pred 0/1 : 11/21 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.59375
+valid pred 0/1 : 9/23 label 0/1 : 8/24
+valid batch : 4/4
+valid accuracy : 0.46153849363327026
+valid pred 0/1 : 10/16 label 0/1 : 4/22
+valid epoch balanced_accuracy: 0.483498
+EPOCH 16:
+epoch : 16
+batch : 1/35
+train accuracy : 0.84375
+train pred 0/1 : 5/27 label 0/1 : 10/22
+epoch : 16
+batch : 2/35
+train accuracy : 0.53125
+train pred 0/1 : 2/30 label 0/1 : 15/17
+epoch : 16
+batch : 3/35
+train accuracy : 0.46875
+train pred 0/1 : 5/27 label 0/1 : 20/12
+epoch : 16
+batch : 4/35
+train accuracy : 0.71875
+train pred 0/1 : 9/23 label 0/1 : 18/14
+epoch : 16
+batch : 5/35
+train accuracy : 0.875
+train pred 0/1 : 11/21 label 0/1 : 13/19
+epoch : 16
+batch : 6/35
+train accuracy : 0.6875
+train pred 0/1 : 9/23 label 0/1 : 17/15
+epoch : 16
+batch : 7/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 14/18
+epoch : 16
+batch : 8/35
+train accuracy : 0.5625
+train pred 0/1 : 11/21 label 0/1 : 13/19
+epoch : 16
+batch : 9/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 12/20
+epoch : 16
+batch : 10/35
+train accuracy : 0.75
+train pred 0/1 : 11/21 label 0/1 : 15/17
+epoch : 16
+batch : 11/35
+train accuracy : 0.625
+train pred 0/1 : 13/19 label 0/1 : 19/13
+epoch : 16
+batch : 12/35
+train accuracy : 0.6875
+train pred 0/1 : 17/15 label 0/1 : 19/13
+epoch : 16
+batch : 13/35
+train accuracy : 0.5625
+train pred 0/1 : 9/23 label 0/1 : 19/13
+epoch : 16
+batch : 14/35
+train accuracy : 0.75
+train pred 0/1 : 9/23 label 0/1 : 17/15
+epoch : 16
+batch : 15/35
+train accuracy : 0.65625
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 16
+batch : 16/35
+train accuracy : 0.65625
+train pred 0/1 : 6/26 label 0/1 : 17/15
+epoch : 16
+batch : 17/35
+train accuracy : 0.78125
+train pred 0/1 : 7/25 label 0/1 : 14/18
+epoch : 16
+batch : 18/35
+train accuracy : 0.75
+train pred 0/1 : 7/25 label 0/1 : 15/17
+epoch : 16
+batch : 19/35
+train accuracy : 0.6875
+train pred 0/1 : 9/23 label 0/1 : 19/13
+epoch : 16
+batch : 20/35
+train accuracy : 0.71875
+train pred 0/1 : 7/25 label 0/1 : 14/18
+epoch : 16
+batch : 21/35
+train accuracy : 0.71875
+train pred 0/1 : 8/24 label 0/1 : 13/19
+epoch : 16
+batch : 22/35
+train accuracy : 0.59375
+train pred 0/1 : 6/26 label 0/1 : 17/15
+epoch : 16
+batch : 23/35
+train accuracy : 0.65625
+train pred 0/1 : 7/25 label 0/1 : 16/16
+epoch : 16
+batch : 24/35
+train accuracy : 0.53125
+train pred 0/1 : 16/16 label 0/1 : 19/13
+epoch : 16
+batch : 25/35
+train accuracy : 0.53125
+train pred 0/1 : 18/14 label 0/1 : 7/25
+epoch : 16
+batch : 26/35
+train accuracy : 0.65625
+train pred 0/1 : 18/14 label 0/1 : 15/17
+epoch : 16
+batch : 27/35
+train accuracy : 0.625
+train pred 0/1 : 20/12 label 0/1 : 16/16
+epoch : 16
+batch : 28/35
+train accuracy : 0.8125
+train pred 0/1 : 13/19 label 0/1 : 17/15
+epoch : 16
+batch : 29/35
+train accuracy : 0.75
+train pred 0/1 : 10/22 label 0/1 : 14/18
+epoch : 16
+batch : 30/35
+train accuracy : 0.78125
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 16
+batch : 31/35
+train accuracy : 0.71875
+train pred 0/1 : 8/24 label 0/1 : 17/15
+epoch : 16
+batch : 32/35
+train accuracy : 0.6875
+train pred 0/1 : 9/23 label 0/1 : 17/15
+epoch : 16
+batch : 33/35
+train accuracy : 0.75
+train pred 0/1 : 7/25 label 0/1 : 13/19
+epoch : 16
+batch : 34/35
+train accuracy : 0.59375
+train pred 0/1 : 9/23 label 0/1 : 22/10
+epoch : 16
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.59375
+valid pred 0/1 : 9/23 label 0/1 : 8/24
+valid batch : 2/4
+valid accuracy : 0.59375
+valid pred 0/1 : 10/22 label 0/1 : 5/27
+valid batch : 3/4
+valid accuracy : 0.53125
+valid pred 0/1 : 13/19 label 0/1 : 6/26
+valid batch : 4/4
+valid accuracy : 0.692307710647583
+valid pred 0/1 : 8/18 label 0/1 : 2/24
+valid epoch balanced_accuracy: 0.474540
+EPOCH 17:
+epoch : 17
+batch : 1/35
+train accuracy : 0.6875
+train pred 0/1 : 9/23 label 0/1 : 17/15
+epoch : 17
+batch : 2/35
+train accuracy : 0.75
+train pred 0/1 : 7/25 label 0/1 : 13/19
+epoch : 17
+batch : 3/35
+train accuracy : 0.71875
+train pred 0/1 : 7/25 label 0/1 : 14/18
+epoch : 17
+batch : 4/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 12/20
+epoch : 17
+batch : 5/35
+train accuracy : 0.75
+train pred 0/1 : 21/11 label 0/1 : 13/19
+epoch : 17
+batch : 6/35
+train accuracy : 0.6875
+train pred 0/1 : 16/16 label 0/1 : 12/20
+epoch : 17
+batch : 7/35
+train accuracy : 0.5
+train pred 0/1 : 12/20 label 0/1 : 14/18
+epoch : 17
+batch : 8/35
+train accuracy : 0.59375
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 17
+batch : 9/35
+train accuracy : 0.625
+train pred 0/1 : 7/25 label 0/1 : 17/15
+epoch : 17
+batch : 10/35
+train accuracy : 0.6875
+train pred 0/1 : 9/23 label 0/1 : 19/13
+epoch : 17
+batch : 11/35
+train accuracy : 0.84375
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 17
+batch : 12/35
+train accuracy : 0.78125
+train pred 0/1 : 6/26 label 0/1 : 13/19
+epoch : 17
+batch : 13/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 21/11
+epoch : 17
+batch : 14/35
+train accuracy : 0.65625
+train pred 0/1 : 8/24 label 0/1 : 19/13
+epoch : 17
+batch : 15/35
+train accuracy : 0.59375
+train pred 0/1 : 11/21 label 0/1 : 24/8
+epoch : 17
+batch : 16/35
+train accuracy : 0.6875
+train pred 0/1 : 6/26 label 0/1 : 16/16
+epoch : 17
+batch : 17/35
+train accuracy : 0.625
+train pred 0/1 : 10/22 label 0/1 : 18/14
+epoch : 17
+batch : 18/35
+train accuracy : 0.78125
+train pred 0/1 : 11/21 label 0/1 : 18/14
+epoch : 17
+batch : 19/35
+train accuracy : 0.78125
+train pred 0/1 : 13/19 label 0/1 : 12/20
+epoch : 17
+batch : 20/35
+train accuracy : 0.6875
+train pred 0/1 : 19/13 label 0/1 : 11/21
+epoch : 17
+batch : 21/35
+train accuracy : 0.65625
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 17
+batch : 22/35
+train accuracy : 0.84375
+train pred 0/1 : 13/19 label 0/1 : 14/18
+epoch : 17
+batch : 23/35
+train accuracy : 0.71875
+train pred 0/1 : 14/18 label 0/1 : 17/15
+epoch : 17
+batch : 24/35
+train accuracy : 0.6875
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 17
+batch : 25/35
+train accuracy : 0.71875
+train pred 0/1 : 14/18 label 0/1 : 19/13
+epoch : 17
+batch : 26/35
+train accuracy : 0.71875
+train pred 0/1 : 9/23 label 0/1 : 16/16
+epoch : 17
+batch : 27/35
+train accuracy : 0.65625
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 17
+batch : 28/35
+train accuracy : 0.625
+train pred 0/1 : 7/25 label 0/1 : 15/17
+epoch : 17
+batch : 29/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 12/20
+epoch : 17
+batch : 30/35
+train accuracy : 0.78125
+train pred 0/1 : 9/23 label 0/1 : 16/16
+epoch : 17
+batch : 31/35
+train accuracy : 0.53125
+train pred 0/1 : 7/25 label 0/1 : 16/16
+epoch : 17
+batch : 32/35
+train accuracy : 0.5625
+train pred 0/1 : 7/25 label 0/1 : 17/15
+epoch : 17
+batch : 33/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 18/14
+epoch : 17
+batch : 34/35
+train accuracy : 0.71875
+train pred 0/1 : 5/27 label 0/1 : 14/18
+epoch : 17
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.75
+valid pred 0/1 : 5/27 label 0/1 : 5/27
+valid batch : 2/4
+valid accuracy : 0.75
+valid pred 0/1 : 8/24 label 0/1 : 6/26
+valid batch : 3/4
+valid accuracy : 0.78125
+valid pred 0/1 : 6/26 label 0/1 : 5/27
+valid batch : 4/4
+valid accuracy : 0.6538462042808533
+valid pred 0/1 : 6/20 label 0/1 : 5/21
+valid epoch balanced_accuracy: 0.577558
+EPOCH 18:
+epoch : 18
+batch : 1/35
+train accuracy : 0.6875
+train pred 0/1 : 7/25 label 0/1 : 17/15
+epoch : 18
+batch : 2/35
+train accuracy : 0.6875
+train pred 0/1 : 2/30 label 0/1 : 12/20
+epoch : 18
+batch : 3/35
+train accuracy : 0.75
+train pred 0/1 : 9/23 label 0/1 : 17/15
+epoch : 18
+batch : 4/35
+train accuracy : 0.5
+train pred 0/1 : 2/30 label 0/1 : 16/16
+epoch : 18
+batch : 5/35
+train accuracy : 0.65625
+train pred 0/1 : 7/25 label 0/1 : 18/14
+epoch : 18
+batch : 6/35
+train accuracy : 0.625
+train pred 0/1 : 8/24 label 0/1 : 12/20
+epoch : 18
+batch : 7/35
+train accuracy : 0.65625
+train pred 0/1 : 6/26 label 0/1 : 13/19
+epoch : 18
+batch : 8/35
+train accuracy : 0.53125
+train pred 0/1 : 6/26 label 0/1 : 19/13
+epoch : 18
+batch : 9/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 14/18
+epoch : 18
+batch : 10/35
+train accuracy : 0.59375
+train pred 0/1 : 14/18 label 0/1 : 17/15
+epoch : 18
+batch : 11/35
+train accuracy : 0.71875
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 18
+batch : 12/35
+train accuracy : 0.75
+train pred 0/1 : 7/25 label 0/1 : 13/19
+epoch : 18
+batch : 13/35
+train accuracy : 0.625
+train pred 0/1 : 9/23 label 0/1 : 21/11
+epoch : 18
+batch : 14/35
+train accuracy : 0.53125
+train pred 0/1 : 4/28 label 0/1 : 17/15
+epoch : 18
+batch : 15/35
+train accuracy : 0.65625
+train pred 0/1 : 3/29 label 0/1 : 14/18
+epoch : 18
+batch : 16/35
+train accuracy : 0.71875
+train pred 0/1 : 5/27 label 0/1 : 14/18
+epoch : 18
+batch : 17/35
+train accuracy : 0.59375
+train pred 0/1 : 1/31 label 0/1 : 14/18
+epoch : 18
+batch : 18/35
+train accuracy : 0.78125
+train pred 0/1 : 4/28 label 0/1 : 9/23
+epoch : 18
+batch : 19/35
+train accuracy : 0.71875
+train pred 0/1 : 7/25 label 0/1 : 16/16
+epoch : 18
+batch : 20/35
+train accuracy : 0.59375
+train pred 0/1 : 9/23 label 0/1 : 18/14
+epoch : 18
+batch : 21/35
+train accuracy : 0.5
+train pred 0/1 : 10/22 label 0/1 : 12/20
+epoch : 18
+batch : 22/35
+train accuracy : 0.65625
+train pred 0/1 : 14/18 label 0/1 : 19/13
+epoch : 18
+batch : 23/35
+train accuracy : 0.78125
+train pred 0/1 : 16/16 label 0/1 : 17/15
+epoch : 18
+batch : 24/35
+train accuracy : 0.75
+train pred 0/1 : 15/17 label 0/1 : 15/17
+epoch : 18
+batch : 25/35
+train accuracy : 0.8125
+train pred 0/1 : 16/16 label 0/1 : 18/14
+epoch : 18
+batch : 26/35
+train accuracy : 0.625
+train pred 0/1 : 16/16 label 0/1 : 16/16
+epoch : 18
+batch : 27/35
+train accuracy : 0.71875
+train pred 0/1 : 12/20 label 0/1 : 17/15
+epoch : 18
+batch : 28/35
+train accuracy : 0.6875
+train pred 0/1 : 12/20 label 0/1 : 12/20
+epoch : 18
+batch : 29/35
+train accuracy : 0.625
+train pred 0/1 : 8/24 label 0/1 : 20/12
+epoch : 18
+batch : 30/35
+train accuracy : 0.8125
+train pred 0/1 : 13/19 label 0/1 : 17/15
+epoch : 18
+batch : 31/35
+train accuracy : 0.71875
+train pred 0/1 : 9/23 label 0/1 : 18/14
+epoch : 18
+batch : 32/35
+train accuracy : 0.84375
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 18
+batch : 33/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 16/16
+epoch : 18
+batch : 34/35
+train accuracy : 0.8125
+train pred 0/1 : 11/21 label 0/1 : 15/17
+epoch : 18
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.40625
+valid pred 0/1 : 15/17 label 0/1 : 4/28
+valid batch : 2/4
+valid accuracy : 0.5625
+valid pred 0/1 : 13/19 label 0/1 : 7/25
+valid batch : 3/4
+valid accuracy : 0.625
+valid pred 0/1 : 11/21 label 0/1 : 5/27
+valid batch : 4/4
+valid accuracy : 0.5384615659713745
+valid pred 0/1 : 13/13 label 0/1 : 5/21
+valid epoch balanced_accuracy: 0.472654
+EPOCH 19:
+epoch : 19
+batch : 1/35
+train accuracy : 0.75
+train pred 0/1 : 8/24 label 0/1 : 16/16
+epoch : 19
+batch : 2/35
+train accuracy : 0.6875
+train pred 0/1 : 14/18 label 0/1 : 16/16
+epoch : 19
+batch : 3/35
+train accuracy : 0.84375
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 19
+batch : 4/35
+train accuracy : 0.84375
+train pred 0/1 : 14/18 label 0/1 : 15/17
+epoch : 19
+batch : 5/35
+train accuracy : 0.6875
+train pred 0/1 : 12/20 label 0/1 : 16/16
+epoch : 19
+batch : 6/35
+train accuracy : 0.71875
+train pred 0/1 : 17/15 label 0/1 : 18/14
+epoch : 19
+batch : 7/35
+train accuracy : 0.46875
+train pred 0/1 : 18/14 label 0/1 : 19/13
+epoch : 19
+batch : 8/35
+train accuracy : 0.71875
+train pred 0/1 : 16/16 label 0/1 : 15/17
+epoch : 19
+batch : 9/35
+train accuracy : 0.6875
+train pred 0/1 : 13/19 label 0/1 : 15/17
+epoch : 19
+batch : 10/35
+train accuracy : 0.65625
+train pred 0/1 : 6/26 label 0/1 : 17/15
+epoch : 19
+batch : 11/35
+train accuracy : 0.75
+train pred 0/1 : 5/27 label 0/1 : 13/19
+epoch : 19
+batch : 12/35
+train accuracy : 0.71875
+train pred 0/1 : 6/26 label 0/1 : 13/19
+epoch : 19
+batch : 13/35
+train accuracy : 0.65625
+train pred 0/1 : 3/29 label 0/1 : 14/18
+epoch : 19
+batch : 14/35
+train accuracy : 0.53125
+train pred 0/1 : 8/24 label 0/1 : 17/15
+epoch : 19
+batch : 15/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 19/13
+epoch : 19
+batch : 16/35
+train accuracy : 0.625
+train pred 0/1 : 5/27 label 0/1 : 17/15
+epoch : 19
+batch : 17/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 17/15
+epoch : 19
+batch : 18/35
+train accuracy : 0.53125
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 19
+batch : 19/35
+train accuracy : 0.5625
+train pred 0/1 : 16/16 label 0/1 : 18/14
+epoch : 19
+batch : 20/35
+train accuracy : 0.6875
+train pred 0/1 : 7/25 label 0/1 : 13/19
+epoch : 19
+batch : 21/35
+train accuracy : 0.6875
+train pred 0/1 : 10/22 label 0/1 : 12/20
+epoch : 19
+batch : 22/35
+train accuracy : 0.625
+train pred 0/1 : 8/24 label 0/1 : 14/18
+epoch : 19
+batch : 23/35
+train accuracy : 0.65625
+train pred 0/1 : 7/25 label 0/1 : 16/16
+epoch : 19
+batch : 24/35
+train accuracy : 0.71875
+train pred 0/1 : 12/20 label 0/1 : 19/13
+epoch : 19
+batch : 25/35
+train accuracy : 0.6875
+train pred 0/1 : 6/26 label 0/1 : 16/16
+epoch : 19
+batch : 26/35
+train accuracy : 0.8125
+train pred 0/1 : 8/24 label 0/1 : 14/18
+epoch : 19
+batch : 27/35
+train accuracy : 0.53125
+train pred 0/1 : 5/27 label 0/1 : 16/16
+epoch : 19
+batch : 28/35
+train accuracy : 0.75
+train pred 0/1 : 6/26 label 0/1 : 12/20
+epoch : 19
+batch : 29/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 18/14
+epoch : 19
+batch : 30/35
+train accuracy : 0.71875
+train pred 0/1 : 7/25 label 0/1 : 16/16
+epoch : 19
+batch : 31/35
+train accuracy : 0.875
+train pred 0/1 : 8/24 label 0/1 : 12/20
+epoch : 19
+batch : 32/35
+train accuracy : 0.65625
+train pred 0/1 : 11/21 label 0/1 : 20/12
+epoch : 19
+batch : 33/35
+train accuracy : 0.6875
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 19
+batch : 34/35
+train accuracy : 0.6875
+train pred 0/1 : 6/26 label 0/1 : 14/18
+epoch : 19
+batch : 35/35
+train accuracy : 0.0
+train pred 0/1 : 1/0 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.65625
+valid pred 0/1 : 12/20 label 0/1 : 7/25
+valid batch : 2/4
+valid accuracy : 0.65625
+valid pred 0/1 : 11/21 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.53125
+valid pred 0/1 : 11/21 label 0/1 : 6/26
+valid batch : 4/4
+valid accuracy : 0.5384615659713745
+valid pred 0/1 : 8/18 label 0/1 : 4/22
+valid epoch balanced_accuracy: 0.493399
+EPOCH 20:
+epoch : 20
+batch : 1/35
+train accuracy : 0.65625
+train pred 0/1 : 4/28 label 0/1 : 11/21
+epoch : 20
+batch : 2/35
+train accuracy : 0.625
+train pred 0/1 : 6/26 label 0/1 : 12/20
+epoch : 20
+batch : 3/35
+train accuracy : 0.65625
+train pred 0/1 : 5/27 label 0/1 : 16/16
+epoch : 20
+batch : 4/35
+train accuracy : 0.59375
+train pred 0/1 : 5/27 label 0/1 : 16/16
+epoch : 20
+batch : 5/35
+train accuracy : 0.6875
+train pred 0/1 : 6/26 label 0/1 : 16/16
+epoch : 20
+batch : 6/35
+train accuracy : 0.625
+train pred 0/1 : 6/26 label 0/1 : 18/14
+epoch : 20
+batch : 7/35
+train accuracy : 0.78125
+train pred 0/1 : 6/26 label 0/1 : 13/19
+epoch : 20
+batch : 8/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 18/14
+epoch : 20
+batch : 9/35
+train accuracy : 0.75
+train pred 0/1 : 8/24 label 0/1 : 12/20
+epoch : 20
+batch : 10/35
+train accuracy : 0.71875
+train pred 0/1 : 7/25 label 0/1 : 14/18
+epoch : 20
+batch : 11/35
+train accuracy : 0.71875
+train pred 0/1 : 9/23 label 0/1 : 16/16
+epoch : 20
+batch : 12/35
+train accuracy : 0.65625
+train pred 0/1 : 8/24 label 0/1 : 13/19
+epoch : 20
+batch : 13/35
+train accuracy : 0.75
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 20
+batch : 14/35
+train accuracy : 0.71875
+train pred 0/1 : 8/24 label 0/1 : 13/19
+epoch : 20
+batch : 15/35
+train accuracy : 0.5625
+train pred 0/1 : 10/22 label 0/1 : 14/18
+epoch : 20
+batch : 16/35
+train accuracy : 0.5625
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 20
+batch : 17/35
+train accuracy : 0.5625
+train pred 0/1 : 13/19 label 0/1 : 19/13
+epoch : 20
+batch : 18/35
+train accuracy : 0.34375
+train pred 0/1 : 9/23 label 0/1 : 18/14
+epoch : 20
+batch : 19/35
+train accuracy : 0.65625
+train pred 0/1 : 6/26 label 0/1 : 17/15
+epoch : 20
+batch : 20/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 18/14
+epoch : 20
+batch : 21/35
+train accuracy : 0.59375
+train pred 0/1 : 9/23 label 0/1 : 20/12
+epoch : 20
+batch : 22/35
+train accuracy : 0.59375
+train pred 0/1 : 12/20 label 0/1 : 19/13
+epoch : 20
+batch : 23/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 14/18
+epoch : 20
+batch : 24/35
+train accuracy : 0.4375
+train pred 0/1 : 9/23 label 0/1 : 21/11
+epoch : 20
+batch : 25/35
+train accuracy : 0.8125
+train pred 0/1 : 9/23 label 0/1 : 11/21
+epoch : 20
+batch : 26/35
+train accuracy : 0.59375
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 20
+batch : 27/35
+train accuracy : 0.71875
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 20
+batch : 28/35
+train accuracy : 0.53125
+train pred 0/1 : 10/22 label 0/1 : 19/13
+epoch : 20
+batch : 29/35
+train accuracy : 0.65625
+train pred 0/1 : 11/21 label 0/1 : 12/20
+epoch : 20
+batch : 30/35
+train accuracy : 0.59375
+train pred 0/1 : 8/24 label 0/1 : 19/13
+epoch : 20
+batch : 31/35
+train accuracy : 0.59375
+train pred 0/1 : 15/17 label 0/1 : 14/18
+epoch : 20
+batch : 32/35
+train accuracy : 0.59375
+train pred 0/1 : 11/21 label 0/1 : 10/22
+epoch : 20
+batch : 33/35
+train accuracy : 0.59375
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 20
+batch : 34/35
+train accuracy : 0.59375
+train pred 0/1 : 12/20 label 0/1 : 21/11
+epoch : 20
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 1/0 label 0/1 : 1/0
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.46875
+valid pred 0/1 : 11/21 label 0/1 : 8/24
+valid batch : 2/4
+valid accuracy : 0.65625
+valid pred 0/1 : 9/23 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.46875
+valid pred 0/1 : 15/17 label 0/1 : 4/28
+valid batch : 4/4
+valid accuracy : 0.42307692766189575
+valid pred 0/1 : 12/14 label 0/1 : 5/21
+valid epoch balanced_accuracy: 0.382367
+EPOCH 21:
+epoch : 21
+batch : 1/35
+train accuracy : 0.46875
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 21
+batch : 2/35
+train accuracy : 0.625
+train pred 0/1 : 12/20 label 0/1 : 18/14
+epoch : 21
+batch : 3/35
+train accuracy : 0.6875
+train pred 0/1 : 9/23 label 0/1 : 15/17
+epoch : 21
+batch : 4/35
+train accuracy : 0.6875
+train pred 0/1 : 10/22 label 0/1 : 18/14
+epoch : 21
+batch : 5/35
+train accuracy : 0.59375
+train pred 0/1 : 10/22 label 0/1 : 21/11
+epoch : 21
+batch : 6/35
+train accuracy : 0.65625
+train pred 0/1 : 22/10 label 0/1 : 17/15
+epoch : 21
+batch : 7/35
+train accuracy : 0.6875
+train pred 0/1 : 13/19 label 0/1 : 15/17
+epoch : 21
+batch : 8/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 13/19
+epoch : 21
+batch : 9/35
+train accuracy : 0.6875
+train pred 0/1 : 19/13 label 0/1 : 17/15
+epoch : 21
+batch : 10/35
+train accuracy : 0.71875
+train pred 0/1 : 14/18 label 0/1 : 19/13
+epoch : 21
+batch : 11/35
+train accuracy : 0.6875
+train pred 0/1 : 18/14 label 0/1 : 20/12
+epoch : 21
+batch : 12/35
+train accuracy : 0.59375
+train pred 0/1 : 12/20 label 0/1 : 11/21
+epoch : 21
+batch : 13/35
+train accuracy : 0.71875
+train pred 0/1 : 17/15 label 0/1 : 14/18
+epoch : 21
+batch : 14/35
+train accuracy : 0.625
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 21
+batch : 15/35
+train accuracy : 0.40625
+train pred 0/1 : 8/24 label 0/1 : 15/17
+epoch : 21
+batch : 16/35
+train accuracy : 0.6875
+train pred 0/1 : 12/20 label 0/1 : 12/20
+epoch : 21
+batch : 17/35
+train accuracy : 0.59375
+train pred 0/1 : 5/27 label 0/1 : 18/14
+epoch : 21
+batch : 18/35
+train accuracy : 0.59375
+train pred 0/1 : 9/23 label 0/1 : 16/16
+epoch : 21
+batch : 19/35
+train accuracy : 0.59375
+train pred 0/1 : 12/20 label 0/1 : 19/13
+epoch : 21
+batch : 20/35
+train accuracy : 0.59375
+train pred 0/1 : 6/26 label 0/1 : 15/17
+epoch : 21
+batch : 21/35
+train accuracy : 0.625
+train pred 0/1 : 12/20 label 0/1 : 18/14
+epoch : 21
+batch : 22/35
+train accuracy : 0.71875
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 21
+batch : 23/35
+train accuracy : 0.53125
+train pred 0/1 : 14/18 label 0/1 : 17/15
+epoch : 21
+batch : 24/35
+train accuracy : 0.65625
+train pred 0/1 : 11/21 label 0/1 : 10/22
+epoch : 21
+batch : 25/35
+train accuracy : 0.625
+train pred 0/1 : 14/18 label 0/1 : 14/18
+epoch : 21
+batch : 26/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 14/18
+epoch : 21
+batch : 27/35
+train accuracy : 0.59375
+train pred 0/1 : 17/15 label 0/1 : 20/12
+epoch : 21
+batch : 28/35
+train accuracy : 0.78125
+train pred 0/1 : 8/24 label 0/1 : 9/23
+epoch : 21
+batch : 29/35
+train accuracy : 0.6875
+train pred 0/1 : 8/24 label 0/1 : 14/18
+epoch : 21
+batch : 30/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 21
+batch : 31/35
+train accuracy : 0.75
+train pred 0/1 : 11/21 label 0/1 : 13/19
+epoch : 21
+batch : 32/35
+train accuracy : 0.71875
+train pred 0/1 : 9/23 label 0/1 : 16/16
+epoch : 21
+batch : 33/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 17/15
+epoch : 21
+batch : 34/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 21
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.53125
+valid pred 0/1 : 14/18 label 0/1 : 7/25
+valid batch : 2/4
+valid accuracy : 0.53125
+valid pred 0/1 : 10/22 label 0/1 : 5/27
+valid batch : 3/4
+valid accuracy : 0.5625
+valid pred 0/1 : 11/21 label 0/1 : 7/25
+valid batch : 4/4
+valid accuracy : 0.46153849363327026
+valid pred 0/1 : 14/12 label 0/1 : 2/24
+valid epoch balanced_accuracy: 0.429986
+EPOCH 22:
+epoch : 22
+batch : 1/35
+train accuracy : 0.65625
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 22
+batch : 2/35
+train accuracy : 0.59375
+train pred 0/1 : 12/20 label 0/1 : 13/19
+epoch : 22
+batch : 3/35
+train accuracy : 0.59375
+train pred 0/1 : 8/24 label 0/1 : 13/19
+epoch : 22
+batch : 4/35
+train accuracy : 0.65625
+train pred 0/1 : 12/20 label 0/1 : 19/13
+epoch : 22
+batch : 5/35
+train accuracy : 0.71875
+train pred 0/1 : 10/22 label 0/1 : 13/19
+epoch : 22
+batch : 6/35
+train accuracy : 0.65625
+train pred 0/1 : 13/19 label 0/1 : 18/14
+epoch : 22
+batch : 7/35
+train accuracy : 0.40625
+train pred 0/1 : 9/23 label 0/1 : 20/12
+epoch : 22
+batch : 8/35
+train accuracy : 0.65625
+train pred 0/1 : 3/29 label 0/1 : 14/18
+epoch : 22
+batch : 9/35
+train accuracy : 0.625
+train pred 0/1 : 9/23 label 0/1 : 17/15
+epoch : 22
+batch : 10/35
+train accuracy : 0.625
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 22
+batch : 11/35
+train accuracy : 0.6875
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 22
+batch : 12/35
+train accuracy : 0.53125
+train pred 0/1 : 7/25 label 0/1 : 18/14
+epoch : 22
+batch : 13/35
+train accuracy : 0.78125
+train pred 0/1 : 7/25 label 0/1 : 10/22
+epoch : 22
+batch : 14/35
+train accuracy : 0.5
+train pred 0/1 : 8/24 label 0/1 : 18/14
+epoch : 22
+batch : 15/35
+train accuracy : 0.78125
+train pred 0/1 : 6/26 label 0/1 : 13/19
+epoch : 22
+batch : 16/35
+train accuracy : 0.6875
+train pred 0/1 : 10/22 label 0/1 : 14/18
+epoch : 22
+batch : 17/35
+train accuracy : 0.46875
+train pred 0/1 : 8/24 label 0/1 : 13/19
+epoch : 22
+batch : 18/35
+train accuracy : 0.71875
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 22
+batch : 19/35
+train accuracy : 0.59375
+train pred 0/1 : 13/19 label 0/1 : 18/14
+epoch : 22
+batch : 20/35
+train accuracy : 0.6875
+train pred 0/1 : 13/19 label 0/1 : 13/19
+epoch : 22
+batch : 21/35
+train accuracy : 0.46875
+train pred 0/1 : 14/18 label 0/1 : 19/13
+epoch : 22
+batch : 22/35
+train accuracy : 0.6875
+train pred 0/1 : 9/23 label 0/1 : 15/17
+epoch : 22
+batch : 23/35
+train accuracy : 0.625
+train pred 0/1 : 6/26 label 0/1 : 18/14
+epoch : 22
+batch : 24/35
+train accuracy : 0.5
+train pred 0/1 : 6/26 label 0/1 : 18/14
+epoch : 22
+batch : 25/35
+train accuracy : 0.59375
+train pred 0/1 : 5/27 label 0/1 : 18/14
+epoch : 22
+batch : 26/35
+train accuracy : 0.59375
+train pred 0/1 : 7/25 label 0/1 : 18/14
+epoch : 22
+batch : 27/35
+train accuracy : 0.46875
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 22
+batch : 28/35
+train accuracy : 0.75
+train pred 0/1 : 6/26 label 0/1 : 12/20
+epoch : 22
+batch : 29/35
+train accuracy : 0.65625
+train pred 0/1 : 10/22 label 0/1 : 13/19
+epoch : 22
+batch : 30/35
+train accuracy : 0.65625
+train pred 0/1 : 11/21 label 0/1 : 18/14
+epoch : 22
+batch : 31/35
+train accuracy : 0.53125
+train pred 0/1 : 13/19 label 0/1 : 16/16
+epoch : 22
+batch : 32/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 13/19
+epoch : 22
+batch : 33/35
+train accuracy : 0.65625
+train pred 0/1 : 17/15 label 0/1 : 18/14
+epoch : 22
+batch : 34/35
+train accuracy : 0.59375
+train pred 0/1 : 19/13 label 0/1 : 16/16
+epoch : 22
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 1/0 label 0/1 : 1/0
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.40625
+valid pred 0/1 : 19/13 label 0/1 : 4/28
+valid batch : 2/4
+valid accuracy : 0.3125
+valid pred 0/1 : 18/14 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.40625
+valid pred 0/1 : 18/14 label 0/1 : 7/25
+valid batch : 4/4
+valid accuracy : 0.5
+valid pred 0/1 : 15/11 label 0/1 : 6/20
+valid epoch balanced_accuracy: 0.412306
+EPOCH 23:
+epoch : 23
+batch : 1/35
+train accuracy : 0.71875
+train pred 0/1 : 21/11 label 0/1 : 20/12
+epoch : 23
+batch : 2/35
+train accuracy : 0.6875
+train pred 0/1 : 19/13 label 0/1 : 19/13
+epoch : 23
+batch : 3/35
+train accuracy : 0.71875
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 23
+batch : 4/35
+train accuracy : 0.5
+train pred 0/1 : 12/20 label 0/1 : 18/14
+epoch : 23
+batch : 5/35
+train accuracy : 0.59375
+train pred 0/1 : 16/16 label 0/1 : 19/13
+epoch : 23
+batch : 6/35
+train accuracy : 0.6875
+train pred 0/1 : 16/16 label 0/1 : 18/14
+epoch : 23
+batch : 7/35
+train accuracy : 0.5625
+train pred 0/1 : 22/10 label 0/1 : 14/18
+epoch : 23
+batch : 8/35
+train accuracy : 0.5625
+train pred 0/1 : 20/12 label 0/1 : 20/12
+epoch : 23
+batch : 9/35
+train accuracy : 0.5625
+train pred 0/1 : 13/19 label 0/1 : 15/17
+epoch : 23
+batch : 10/35
+train accuracy : 0.71875
+train pred 0/1 : 8/24 label 0/1 : 15/17
+epoch : 23
+batch : 11/35
+train accuracy : 0.71875
+train pred 0/1 : 4/28 label 0/1 : 13/19
+epoch : 23
+batch : 12/35
+train accuracy : 0.8125
+train pred 0/1 : 7/25 label 0/1 : 11/21
+epoch : 23
+batch : 13/35
+train accuracy : 0.65625
+train pred 0/1 : 7/25 label 0/1 : 16/16
+epoch : 23
+batch : 14/35
+train accuracy : 0.71875
+train pred 0/1 : 6/26 label 0/1 : 15/17
+epoch : 23
+batch : 15/35
+train accuracy : 0.625
+train pred 0/1 : 1/31 label 0/1 : 13/19
+epoch : 23
+batch : 16/35
+train accuracy : 0.5
+train pred 0/1 : 1/31 label 0/1 : 17/15
+epoch : 23
+batch : 17/35
+train accuracy : 0.53125
+train pred 0/1 : 3/29 label 0/1 : 18/14
+epoch : 23
+batch : 18/35
+train accuracy : 0.59375
+train pred 0/1 : 3/29 label 0/1 : 16/16
+epoch : 23
+batch : 19/35
+train accuracy : 0.6875
+train pred 0/1 : 4/28 label 0/1 : 14/18
+epoch : 23
+batch : 20/35
+train accuracy : 0.625
+train pred 0/1 : 4/28 label 0/1 : 14/18
+epoch : 23
+batch : 21/35
+train accuracy : 0.46875
+train pred 0/1 : 8/24 label 0/1 : 21/11
+epoch : 23
+batch : 22/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 23
+batch : 23/35
+train accuracy : 0.625
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 23
+batch : 24/35
+train accuracy : 0.625
+train pred 0/1 : 16/16 label 0/1 : 22/10
+epoch : 23
+batch : 25/35
+train accuracy : 0.625
+train pred 0/1 : 10/22 label 0/1 : 14/18
+epoch : 23
+batch : 26/35
+train accuracy : 0.6875
+train pred 0/1 : 9/23 label 0/1 : 11/21
+epoch : 23
+batch : 27/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 13/19
+epoch : 23
+batch : 28/35
+train accuracy : 0.75
+train pred 0/1 : 13/19 label 0/1 : 15/17
+epoch : 23
+batch : 29/35
+train accuracy : 0.53125
+train pred 0/1 : 14/18 label 0/1 : 15/17
+epoch : 23
+batch : 30/35
+train accuracy : 0.59375
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 23
+batch : 31/35
+train accuracy : 0.78125
+train pred 0/1 : 18/14 label 0/1 : 15/17
+epoch : 23
+batch : 32/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 12/20
+epoch : 23
+batch : 33/35
+train accuracy : 0.78125
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 23
+batch : 34/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 12/20
+epoch : 23
+batch : 35/35
+train accuracy : 0.0
+train pred 0/1 : 0/1 label 0/1 : 1/0
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.5625
+valid pred 0/1 : 13/19 label 0/1 : 7/25
+valid batch : 2/4
+valid accuracy : 0.53125
+valid pred 0/1 : 13/19 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.59375
+valid pred 0/1 : 10/22 label 0/1 : 7/25
+valid batch : 4/4
+valid accuracy : 0.6153846383094788
+valid pred 0/1 : 9/17 label 0/1 : 3/23
+valid epoch balanced_accuracy: 0.478548
+EPOCH 24:
+epoch : 24
+batch : 1/35
+train accuracy : 0.75
+train pred 0/1 : 7/25 label 0/1 : 9/23
+epoch : 24
+batch : 2/35
+train accuracy : 0.65625
+train pred 0/1 : 12/20 label 0/1 : 17/15
+epoch : 24
+batch : 3/35
+train accuracy : 0.75
+train pred 0/1 : 14/18 label 0/1 : 12/20
+epoch : 24
+batch : 4/35
+train accuracy : 0.65625
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 24
+batch : 5/35
+train accuracy : 0.75
+train pred 0/1 : 10/22 label 0/1 : 12/20
+epoch : 24
+batch : 6/35
+train accuracy : 0.625
+train pred 0/1 : 10/22 label 0/1 : 18/14
+epoch : 24
+batch : 7/35
+train accuracy : 0.75
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 24
+batch : 8/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 15/17
+epoch : 24
+batch : 9/35
+train accuracy : 0.78125
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 24
+batch : 10/35
+train accuracy : 0.65625
+train pred 0/1 : 8/24 label 0/1 : 15/17
+epoch : 24
+batch : 11/35
+train accuracy : 0.65625
+train pred 0/1 : 8/24 label 0/1 : 15/17
+epoch : 24
+batch : 12/35
+train accuracy : 0.625
+train pred 0/1 : 9/23 label 0/1 : 15/17
+epoch : 24
+batch : 13/35
+train accuracy : 0.75
+train pred 0/1 : 13/19 label 0/1 : 9/23
+epoch : 24
+batch : 14/35
+train accuracy : 0.6875
+train pred 0/1 : 18/14 label 0/1 : 22/10
+epoch : 24
+batch : 15/35
+train accuracy : 0.5625
+train pred 0/1 : 10/22 label 0/1 : 20/12
+epoch : 24
+batch : 16/35
+train accuracy : 0.75
+train pred 0/1 : 6/26 label 0/1 : 12/20
+epoch : 24
+batch : 17/35
+train accuracy : 0.65625
+train pred 0/1 : 15/17 label 0/1 : 18/14
+epoch : 24
+batch : 18/35
+train accuracy : 0.59375
+train pred 0/1 : 10/22 label 0/1 : 11/21
+epoch : 24
+batch : 19/35
+train accuracy : 0.40625
+train pred 0/1 : 9/23 label 0/1 : 22/10
+epoch : 24
+batch : 20/35
+train accuracy : 0.65625
+train pred 0/1 : 17/15 label 0/1 : 18/14
+epoch : 24
+batch : 21/35
+train accuracy : 0.71875
+train pred 0/1 : 13/19 label 0/1 : 18/14
+epoch : 24
+batch : 22/35
+train accuracy : 0.6875
+train pred 0/1 : 15/17 label 0/1 : 17/15
+epoch : 24
+batch : 23/35
+train accuracy : 0.65625
+train pred 0/1 : 14/18 label 0/1 : 13/19
+epoch : 24
+batch : 24/35
+train accuracy : 0.53125
+train pred 0/1 : 17/15 label 0/1 : 14/18
+epoch : 24
+batch : 25/35
+train accuracy : 0.59375
+train pred 0/1 : 14/18 label 0/1 : 17/15
+epoch : 24
+batch : 26/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 14/18
+epoch : 24
+batch : 27/35
+train accuracy : 0.59375
+train pred 0/1 : 16/16 label 0/1 : 15/17
+epoch : 24
+batch : 28/35
+train accuracy : 0.625
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 24
+batch : 29/35
+train accuracy : 0.78125
+train pred 0/1 : 9/23 label 0/1 : 16/16
+epoch : 24
+batch : 30/35
+train accuracy : 0.53125
+train pred 0/1 : 10/22 label 0/1 : 19/13
+epoch : 24
+batch : 31/35
+train accuracy : 0.71875
+train pred 0/1 : 15/17 label 0/1 : 18/14
+epoch : 24
+batch : 32/35
+train accuracy : 0.78125
+train pred 0/1 : 13/19 label 0/1 : 18/14
+epoch : 24
+batch : 33/35
+train accuracy : 0.78125
+train pred 0/1 : 11/21 label 0/1 : 12/20
+epoch : 24
+batch : 34/35
+train accuracy : 0.65625
+train pred 0/1 : 12/20 label 0/1 : 19/13
+epoch : 24
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 0/1 label 0/1 : 0/1
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.46875
+valid pred 0/1 : 15/17 label 0/1 : 8/24
+valid batch : 2/4
+valid accuracy : 0.4375
+valid pred 0/1 : 16/16 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.53125
+valid pred 0/1 : 13/19 label 0/1 : 6/26
+valid batch : 4/4
+valid accuracy : 0.5
+valid pred 0/1 : 12/14 label 0/1 : 3/23
+valid epoch balanced_accuracy: 0.424092
+EPOCH 25:
+epoch : 25
+batch : 1/35
+train accuracy : 0.75
+train pred 0/1 : 7/25 label 0/1 : 11/21
+epoch : 25
+batch : 2/35
+train accuracy : 0.5625
+train pred 0/1 : 10/22 label 0/1 : 16/16
+epoch : 25
+batch : 3/35
+train accuracy : 0.78125
+train pred 0/1 : 10/22 label 0/1 : 15/17
+epoch : 25
+batch : 4/35
+train accuracy : 0.71875
+train pred 0/1 : 18/14 label 0/1 : 13/19
+epoch : 25
+batch : 5/35
+train accuracy : 0.6875
+train pred 0/1 : 17/15 label 0/1 : 17/15
+epoch : 25
+batch : 6/35
+train accuracy : 0.71875
+train pred 0/1 : 11/21 label 0/1 : 16/16
+epoch : 25
+batch : 7/35
+train accuracy : 0.625
+train pred 0/1 : 9/23 label 0/1 : 17/15
+epoch : 25
+batch : 8/35
+train accuracy : 0.6875
+train pred 0/1 : 17/15 label 0/1 : 19/13
+epoch : 25
+batch : 9/35
+train accuracy : 0.6875
+train pred 0/1 : 11/21 label 0/1 : 17/15
+epoch : 25
+batch : 10/35
+train accuracy : 0.65625
+train pred 0/1 : 15/17 label 0/1 : 18/14
+epoch : 25
+batch : 11/35
+train accuracy : 0.65625
+train pred 0/1 : 12/20 label 0/1 : 15/17
+epoch : 25
+batch : 12/35
+train accuracy : 0.6875
+train pred 0/1 : 13/19 label 0/1 : 13/19
+epoch : 25
+batch : 13/35
+train accuracy : 0.71875
+train pred 0/1 : 10/22 label 0/1 : 13/19
+epoch : 25
+batch : 14/35
+train accuracy : 0.65625
+train pred 0/1 : 9/23 label 0/1 : 14/18
+epoch : 25
+batch : 15/35
+train accuracy : 0.625
+train pred 0/1 : 13/19 label 0/1 : 17/15
+epoch : 25
+batch : 16/35
+train accuracy : 0.71875
+train pred 0/1 : 14/18 label 0/1 : 15/17
+epoch : 25
+batch : 17/35
+train accuracy : 0.75
+train pred 0/1 : 15/17 label 0/1 : 15/17
+epoch : 25
+batch : 18/35
+train accuracy : 0.65625
+train pred 0/1 : 18/14 label 0/1 : 17/15
+epoch : 25
+batch : 19/35
+train accuracy : 0.625
+train pred 0/1 : 18/14 label 0/1 : 18/14
+epoch : 25
+batch : 20/35
+train accuracy : 0.625
+train pred 0/1 : 14/18 label 0/1 : 14/18
+epoch : 25
+batch : 21/35
+train accuracy : 0.84375
+train pred 0/1 : 14/18 label 0/1 : 11/21
+epoch : 25
+batch : 22/35
+train accuracy : 0.625
+train pred 0/1 : 19/13 label 0/1 : 15/17
+epoch : 25
+batch : 23/35
+train accuracy : 0.625
+train pred 0/1 : 11/21 label 0/1 : 15/17
+epoch : 25
+batch : 24/35
+train accuracy : 0.8125
+train pred 0/1 : 9/23 label 0/1 : 11/21
+epoch : 25
+batch : 25/35
+train accuracy : 0.53125
+train pred 0/1 : 9/23 label 0/1 : 22/10
+epoch : 25
+batch : 26/35
+train accuracy : 0.71875
+train pred 0/1 : 12/20 label 0/1 : 17/15
+epoch : 25
+batch : 27/35
+train accuracy : 0.6875
+train pred 0/1 : 12/20 label 0/1 : 18/14
+epoch : 25
+batch : 28/35
+train accuracy : 0.75
+train pred 0/1 : 9/23 label 0/1 : 15/17
+epoch : 25
+batch : 29/35
+train accuracy : 0.625
+train pred 0/1 : 16/16 label 0/1 : 14/18
+epoch : 25
+batch : 30/35
+train accuracy : 0.59375
+train pred 0/1 : 12/20 label 0/1 : 17/15
+epoch : 25
+batch : 31/35
+train accuracy : 0.71875
+train pred 0/1 : 15/17 label 0/1 : 20/12
+epoch : 25
+batch : 32/35
+train accuracy : 0.53125
+train pred 0/1 : 12/20 label 0/1 : 17/15
+epoch : 25
+batch : 33/35
+train accuracy : 0.65625
+train pred 0/1 : 13/19 label 0/1 : 18/14
+epoch : 25
+batch : 34/35
+train accuracy : 0.6875
+train pred 0/1 : 12/20 label 0/1 : 12/20
+epoch : 25
+batch : 35/35
+train accuracy : 1.0
+train pred 0/1 : 1/0 label 0/1 : 1/0
+VALIDATION
+valid batch : 1/4
+valid accuracy : 0.5
+valid pred 0/1 : 16/16 label 0/1 : 4/28
+valid batch : 2/4
+valid accuracy : 0.375
+valid pred 0/1 : 16/16 label 0/1 : 4/28
+valid batch : 3/4
+valid accuracy : 0.46875
+valid pred 0/1 : 17/15 label 0/1 : 6/26
+valid batch : 4/4
+valid accuracy : 0.46153849363327026
+valid pred 0/1 : 13/13 label 0/1 : 7/19
+valid epoch balanced_accuracy: 0.423149
+EPOCH 26:
+epoch : 26
+batch : 1/35
+train accuracy : 0.71875
+train pred 0/1 : 17/15 label 0/1 : 16/16
+epoch : 26
+batch : 2/35
+train accuracy : 0.625
+train pred 0/1 : 21/11 label 0/1 : 17/15
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 636, in <module>
+    countrain, countval, train_metrics, valid_metrics = epoch(epoch_number,countrain,countval)
+  File "/home/kalinina/DL_project/./training/new_train.py", line 399, in epoch
+    los.backward()
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/_tensor.py", line 626, in backward
+    torch.autograd.backward(
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/autograd/__init__.py", line 347, in backward
+    _engine_run_backward(
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/autograd/graph.py", line 823, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.69 GiB. GPU 0 has a total capacity of 39.49 GiB of which 947.00 MiB is free. Including non-PyTorch memory, this process has 7.58 GiB memory in use. Process 347721 has 30.97 GiB memory in use. Of the allocated memory 5.92 GiB is allocated by PyTorch, and 1.16 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

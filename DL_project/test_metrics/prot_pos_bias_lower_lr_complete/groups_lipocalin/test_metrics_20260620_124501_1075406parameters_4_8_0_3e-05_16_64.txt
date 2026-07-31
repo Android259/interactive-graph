@@ -1,0 +1,106 @@
+label: prot_pos_bias_lower_lr_complete
+third_layers_in_mlps: 0
+cross_attention: 1
+protein_self_attention: 1
+lipid_self_attention: 1
+double_attention: 0
+m: 4
+final_m: 4
+final_dropout: 0.0
+lr: 3e-05
+weight_decay: 0.0
+hiddim: 64
+ep: 150
+seed: 0
+excluded_groups: ["lipocalin"]
+excluded_subgroups: []
+batch: 16
+num_workers: 4
+lipid_fragments_treatment: 0
+protein_pooling: 1
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+ordinary_prot_pooling: 0
+prot_attention_pos_bias: 1
+prot_pooling_by_pockets: 0
+tanimoto_weight: 0
+class_weights: 1
+protein_group_weight: 0
+protein_class_weight: 0
+protein_class_sqrt_weight: 0
+grab_loss: 0
+pu_loss: 0
+pu_prior: 0.2
+pu_unlabeled_positive_fraction: None
+pu_beta: 0.0
+pu_gamma: 1.0
+type_opt: 0
+plmon: 1
+buryon: 1
+loss_type: 1
+pool_type: 1
+HEADS: 8
+training_duration_sec: 8078.715711
+epochs_completed: 102
+checkpoint_epoch: 42
+checkpoint_valid_balanced_accuracy: 0.595169
+checkpoint_rolling_valid_balanced_accuracy: 0.585845
+max_valid_balanced_accuracy_epoch: 47
+max_valid_balanced_accuracy: 0.616184
+best_valid_F1: 0.505051
+final_train_balanced_accuracy: 0.997226
+final_valid_balanced_accuracy: 0.583575
+checkpoint_to_final_drop: 0.011594
+mean_valid_balanced_accuracy: 0.551880
+auc_valid_balanced_accuracy: 0.552481
+valid_balanced_accuracy_std: 0.032524
+min_train_loss: 0.019505
+final_train_loss: 0.020742
+min_valid_loss: 0.694009
+final_valid_loss: 1.750013
+train_loss_reduction: 0.640038
+valid_loss_reduction: -1.029198
+epochs_to_checkpoint: 42
+epochs_since_checkpoint: 60
+mean_train_valid_gap: 0.384084
+max_train_valid_gap: 0.478537
+overfitting_onset_epoch: 3
+overfitting_epochs: 36
+nan_epoch_count: 0
+collapse_epoch_count: 0
+converged: 0
+run_status: complete
+total: 136
+real_positive: 44
+real_negative: 92
+predicted_positive: 42
+predicted_negative: 94
+TP: 17
+FP: 25
+TN: 67
+FN: 27
+accuracy: 0.617647
+sensitivity: 0.386364
+precision: 0.404762
+specificity: 0.728261
+IoU: 0.246377
+FAR: 0.271739
+F1: 0.395349
+balanced_accuracy: 0.557312
+loss: 1.044300
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity       IoU       FAR        F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  --------  --------  --------  -----------------  --------
+CRABP2       11              0             11                   2                   9   0   2   9   0  0.818182    undefined   0.000000     0.818182  0.000000  0.181818  0.000000          undefined  0.499205
+FABP1        20             15              5                   7                  13   6   1   4   9  0.500000     0.400000   0.857143     0.800000  0.375000  0.200000  0.545455           0.600000  1.403467
+FABP5        14              6              8                   1                  13   0   1   7   6  0.500000     0.000000   0.000000     0.875000  0.000000  0.125000  0.000000           0.437500  1.461960
+FABP7        20              6             14                   3                  17   1   2  12   5  0.650000     0.166667   0.333333     0.857143  0.125000  0.142857  0.222222           0.511905  1.276182
+LCN1         25             11             14                  13                  12   9   4  10   2  0.760000     0.818182   0.692308     0.714286  0.600000  0.285714  0.750000           0.766234  0.702765
+LCN15         9              2              7                   4                   5   1   3   4   1  0.555556     0.500000   0.250000     0.571429  0.200000  0.428571  0.333333           0.535714  0.682546
+PMP2         11              3              8                   3                   8   0   3   5   3  0.454545     0.000000   0.000000     0.625000  0.000000  0.375000  0.000000           0.312500  1.633395
+RBP1         11              0             11                   3                   8   0   3   8   0  0.727273    undefined   0.000000     0.727273  0.000000  0.272727  0.000000          undefined  0.559954
+RBP4          7              1              6                   3                   4   0   3   3   1  0.428571     0.000000   0.000000     0.500000  0.000000  0.500000  0.000000           0.250000  1.037930
+RBP5          8              0              8                   3                   5   0   3   5   0  0.625000    undefined   0.000000     0.625000  0.000000  0.375000  0.000000          undefined  0.921096

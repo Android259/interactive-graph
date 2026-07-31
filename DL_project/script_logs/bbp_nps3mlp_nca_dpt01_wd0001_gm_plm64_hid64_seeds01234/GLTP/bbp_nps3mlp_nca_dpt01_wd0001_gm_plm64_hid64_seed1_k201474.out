@@ -1,0 +1,10 @@
+Waiting for exclusive access to GPU GPU-18e9376f-273b-9a3c-4600-0d1a0e4e5e5b.
+=== GROUP: GLTP | VARIANT: bbp_nps3mlp_nca_dpt01_wd0001_gm_plm64_hid64 | SEED: 1 | GPU: NVIDIA H200 ===
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 51, in <module>
+    conf = read_configuration()
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 774, in read_configuration
+    return read_named_configuration(argv)
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 763, in read_named_configuration
+    raise ValueError(f"Unknown parameter: {argument}")
+ValueError: Unknown parameter: --cross_attention=False

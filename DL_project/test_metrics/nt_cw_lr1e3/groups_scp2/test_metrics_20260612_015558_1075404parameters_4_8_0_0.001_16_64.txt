@@ -1,0 +1,87 @@
+label: nt_cw_lr1e3
+third_layers_in_mlps: 0
+cross_attention: 1
+protein_self_attention: 1
+lipid_self_attention: 1
+double_attention: 0
+m: 4
+lr: 0.001
+weight_decay: 0.0
+hiddim: 64
+ep: 150
+seed: 0
+excluded_groups: ["scp2"]
+excluded_subgroups: []
+batch: 16
+num_workers: 4
+lipid_fragments_treatment: 0
+protein_pooling: 0
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+ordinary_prot_pooling: 1
+prot_attention_pos_bias: 0
+prot_pooling_by_pockets: 0
+tanimoto_weight: 1
+class_weights: 1
+protein_group_weight: 0
+grab_loss: 0
+type_opt: 1
+plmon: 1
+buryon: 1
+loss_type: 1
+pool_type: 1
+HEADS: 8
+training_duration_sec: 10611.697770
+epochs_completed: 150
+best_epoch: 70
+best_valid_balanced_accuracy: 0.803161
+best_valid_F1: 0.800000
+final_train_balanced_accuracy: 0.500000
+final_valid_balanced_accuracy: 0.500000
+best_to_final_drop: 0.303161
+mean_valid_balanced_accuracy: 0.584339
+auc_valid_balanced_accuracy: 0.584377
+valid_balanced_accuracy_std: 0.054325
+min_train_loss: 0.573936
+final_train_loss: 0.697024
+min_valid_loss: 0.607461
+final_valid_loss: 0.690635
+train_loss_reduction: -0.049903
+valid_loss_reduction: -0.061142
+epochs_to_best: 70
+epochs_without_improvement: 80
+mean_train_valid_gap: -0.016134
+max_train_valid_gap: 0.229195
+overfitting_onset_epoch: 2
+overfitting_epochs: 4
+nan_epoch_count: 0
+collapse_epoch_count: 24
+converged: 1
+run_status: complete
+total: 53
+real_positive: 19
+real_negative: 34
+predicted_positive: 28
+predicted_negative: 25
+TP: 15
+FP: 13
+TN: 21
+FN: 4
+accuracy: 0.679245
+sensitivity: 0.789474
+precision: 0.535714
+specificity: 0.617647
+IoU: 0.468750
+FAR: 0.382353
+F1: 0.638298
+balanced_accuracy: 0.703560
+loss: 0.673094
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity       IoU       FAR        F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  --------  --------  --------  -----------------  --------
+HSDL2         8              1              7                   5                   3   1   4   3   0  0.500000     1.000000   0.200000     0.428571  0.200000  0.571429  0.333333           0.714286  0.755798
+SCP2         19              4             15                  12                   7   4   8   7   0  0.578947     1.000000   0.333333     0.466667  0.333333  0.533333  0.500000           0.733333  0.722487
+SCP2D1       26             14             12                  11                  15  10   1  11   4  0.807692     0.714286   0.909091     0.916667  0.666667  0.083333  0.800000           0.815476  0.611551

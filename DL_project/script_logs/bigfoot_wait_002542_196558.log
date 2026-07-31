@@ -1,0 +1,602 @@
+Opening shared SSH connection to kalinina@bigfoot.
+Using active Bigfoot queue: /home/kalinina/DL_project/.bigfoot_job_queues/active
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    16866    nps3mlp_ga…   2:55:03    Running   kalinina   R=10,J=P,Q…   default  
+    16867    nps3mlp_ga…   2:50:26    Running   kalinina   R=10,J=P,Q…   default  
+    16868    nps3mlp_ga…   2:49:12    Running   kalinina   R=10,J=P,Q…   default  
+    16869    nps3mlp_ga…   2:48:33    Running   kalinina   R=10,J=P,Q…   default  
+    16870    nps3mlp_ga…   1:06:20    Running   kalinina   R=10,J=P,Q…   default  
+    16871    nps3mlp_ga…   1:05:22    Running   kalinina   R=10,J=P,Q…   default  
+    16872    nps3mlp_ga…   1:04:46    Running   kalinina   R=32,J=P,Q…   default  
+    16873    nps3mlp_ga…   0:55:05    Running   kalinina   R=10,J=P,Q…   default  
+    16874    nps3mlp_ga…   0:54:27    Running   kalinina   R=10,J=P,Q…   default  
+    16875    nps3mlp_ga…   0:53:50    Running   kalinina   R=10,J=P,Q…   default  
+    16876    nps3mlp_ga…   0:46:13    Running   kalinina   R=10,J=P,Q…   default  
+    16877    nps3mlp_ga…   0:44:10    Running   kalinina   R=10,J=P,Q…   default  
+    16878    nps3mlp_ga…   0:43:50    Running   kalinina   R=10,J=P,Q…   default  
+    16879    nps3mlp_ga…   0:37:04    Running   kalinina   R=10,J=P,Q…   default  
+    16880    nps3mlp_ga…   0:36:14    Running   kalinina   R=8,J=P,Q=…   default  
+    16881    nps3mlp_ga…   0:20:00    Running   kalinina   R=8,J=P,Q=…   default  
+    16882    nps3mlp_ga…   0:03:05    Running   kalinina   R=10,J=P,Q…   default  
+    16883    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16884    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16885    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16886    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16887    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16888    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16889    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16890    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16891    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16892    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16893    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16894    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16895    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16896    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16897    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16898    nps3mlp_ga…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16899    nps3mlp_ga…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16900    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16901    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16902    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16903    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16904    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16905    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16906    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16907    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16908    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16909    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16910    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16911    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16912    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16913    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16914    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16915    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16916    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16917    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16918    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16934    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16935    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16936    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16937    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16938    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16939    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16940    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16941    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16942    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16943    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16944    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16945    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16946    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+Synchronizing script logs.
+Job 16866 (nps3mlp_gat_residual_CRAL-TRIO_s1)
+  Epoch: current 139 | checkpoint 52 | best rolling-5 balanced accuracy 0.725334
+  Latest train balanced accuracy: 0.996992
+  Checkpoint valid:  predicted 0/1 = 93/87 | actual 0/1 = 75/105
+Job 16867 (nps3mlp_gat_residual_CRAL-TRIO_s2)
+  Epoch: current 132 | checkpoint 21 | best rolling-5 balanced accuracy 0.713994
+  Latest train balanced accuracy: 0.997042
+  Checkpoint valid:  predicted 0/1 = 72/100 | actual 0/1 = 63/109
+Job 16868 (nps3mlp_gat_residual_CRAL-TRIO_s3)
+  Epoch: current 150 | checkpoint 75 | best rolling-5 balanced accuracy 0.659791
+  Latest train balanced accuracy: 0.997023
+  Checkpoint valid:  predicted 0/1 = 104/71 | actual 0/1 = 71/104
+Job 16869 (nps3mlp_gat_residual_CRAL-TRIO_s4)
+  Epoch: current 149 | checkpoint 127 | best rolling-5 balanced accuracy 0.651792
+  Latest train balanced accuracy: 0.989737
+  Checkpoint valid:  predicted 0/1 = 96/76 | actual 0/1 = 71/101
+Job 16870 (nps3mlp_gat_residual_START_s0)
+  Epoch: current 50 | checkpoint 2 | best rolling-5 balanced accuracy 0.530637
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 16871 (nps3mlp_gat_residual_START_s1)
+  Epoch: current 50 | checkpoint 48 | best rolling-5 balanced accuracy 0.733377
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 16872 (nps3mlp_gat_residual_START_s2)
+  Epoch: current 60 | checkpoint 26 | best rolling-5 balanced accuracy 0.725893
+  Latest train balanced accuracy: 0.992707
+  Checkpoint valid:  predicted 0/1 = 63/61 | actual 0/1 = 28/96
+Job 16873 (nps3mlp_gat_residual_START_s3)
+  Epoch: current 42 | checkpoint 32 | best rolling-5 balanced accuracy 0.655232
+  Latest train balanced accuracy: 0.975876
+  Checkpoint valid:  predicted 0/1 = 77/47 | actual 0/1 = 25/99
+Job 16874 (nps3mlp_gat_residual_START_s4)
+  Epoch: current 53 | checkpoint 26 | best rolling-5 balanced accuracy 0.666875
+  Latest train balanced accuracy: 0.976757
+  Checkpoint valid:  predicted 0/1 = 79/47 | actual 0/1 = 30/96
+Job 16875 (nps3mlp_gat_residual_lipocalin_s0)
+  Epoch: current 41 | checkpoint 1 | best rolling-5 balanced accuracy 0.537923
+  Latest train balanced accuracy: 0.969489
+  Checkpoint valid:  predicted 0/1 = 63/73 | actual 0/1 = 90/46
+Job 16876 (nps3mlp_gat_residual_lipocalin_s1)
+  Epoch: current 36 | checkpoint 25 | best rolling-5 balanced accuracy 0.584120
+  Latest train balanced accuracy: 0.968279
+  Checkpoint valid:  predicted 0/1 = 100/23 | actual 0/1 = 79/44
+Job 16877 (nps3mlp_gat_residual_lipocalin_s2)
+  Epoch: current 33 | checkpoint 31 | best rolling-5 balanced accuracy 0.634583
+  Latest train balanced accuracy: 0.973297
+  Checkpoint valid:  predicted 0/1 = 75/61 | actual 0/1 = 86/50
+Job 16878 (nps3mlp_gat_residual_lipocalin_s3)
+  Epoch: current 33 | checkpoint 19 | best rolling-5 balanced accuracy 0.677108
+  Latest train balanced accuracy: 0.973297
+  Checkpoint valid:  predicted 0/1 = 59/72 | actual 0/1 = 83/48
+Job 16879 (nps3mlp_gat_residual_lipocalin_s4)
+  Epoch: current 29 | checkpoint 27 | best rolling-5 balanced accuracy 0.568333
+  Latest train balanced accuracy: 0.967630
+  Checkpoint valid:  predicted 0/1 = 95/33 | actual 0/1 = 80/48
+Job 16880 (nps3mlp_gat_residual_GLTP_s0)
+  Epoch: current 31 | checkpoint 1 | best rolling-5 balanced accuracy 0.500000
+  Latest train balanced accuracy: 0.946508
+  Checkpoint valid:  predicted 0/1 = 0/55 | actual 0/1 = 13/42
+Job 16881 (nps3mlp_gat_residual_GLTP_s1)
+  Epoch: current 14 | checkpoint 13 | best rolling-5 balanced accuracy 0.464706
+  Latest train balanced accuracy: 0.902623
+  Checkpoint valid:  predicted 0/1 = 53/1 | actual 0/1 = 17/37
+Job 16882 (nps3mlp_gat_residual_GLTP_s2)
+  Epoch: current 2 | checkpoint 1 | best rolling-5 balanced accuracy 0.342105
+  Latest train balanced accuracy: 0.660090
+  Checkpoint valid:  predicted 0/1 = 54/6 | actual 0/1 = 19/41
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=17 waiting=49 other=0 total=66 pending_queue=46. Checking again in 300 seconds.
+# INFO:  Moldable instance:  1  Estimated nb resources:  8  Walltime:  18000
+OAR_JOB_ID=16947
+# INFO:  Moldable instance:  1  Estimated nb resources:  8  Walltime:  18000
+OAR_JOB_ID=16948
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    16866    nps3mlp_ga…   3:00:18    Running   kalinina   R=10,J=P,Q…   default  
+    16867    nps3mlp_ga…   2:55:41    Running   kalinina   R=10,J=P,Q…   default  
+    16870    nps3mlp_ga…   1:11:35    Running   kalinina   R=10,J=P,Q…   default  
+    16871    nps3mlp_ga…   1:10:37    Running   kalinina   R=10,J=P,Q…   default  
+    16872    nps3mlp_ga…   1:10:01    Running   kalinina   R=32,J=P,Q…   default  
+    16873    nps3mlp_ga…   1:00:20    Running   kalinina   R=10,J=P,Q…   default  
+    16874    nps3mlp_ga…   0:59:42    Running   kalinina   R=10,J=P,Q…   default  
+    16875    nps3mlp_ga…   0:59:05    Running   kalinina   R=10,J=P,Q…   default  
+    16876    nps3mlp_ga…   0:51:28    Running   kalinina   R=10,J=P,Q…   default  
+    16877    nps3mlp_ga…   0:49:25    Running   kalinina   R=10,J=P,Q…   default  
+    16878    nps3mlp_ga…   0:49:05    Running   kalinina   R=10,J=P,Q…   default  
+    16879    nps3mlp_ga…   0:42:19    Running   kalinina   R=10,J=P,Q…   default  
+    16880    nps3mlp_ga…   0:41:29    Running   kalinina   R=8,J=P,Q=…   default  
+    16881    nps3mlp_ga…   0:25:15    Running   kalinina   R=8,J=P,Q=…   default  
+    16882    nps3mlp_ga…   0:08:20    Running   kalinina   R=10,J=P,Q…   default  
+    16883    nps3mlp_ga…   0:04:18    Running   kalinina   R=10,J=P,Q…   default  
+    16884    nps3mlp_ga…   0:02:38    Running   kalinina   R=10,J=P,Q…   default  
+    16885    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16886    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16887    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16888    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16889    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16890    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16891    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16892    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16893    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16894    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16895    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16896    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16897    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16898    nps3mlp_ga…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16899    nps3mlp_ga…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16900    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16901    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16902    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16903    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16904    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16905    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16906    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16907    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16908    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16909    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16910    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16911    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16912    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16913    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16914    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16915    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16916    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16917    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16918    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16934    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16935    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16936    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16937    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16938    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16939    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16940    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16941    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16942    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16943    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16944    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16945    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16946    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16947    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=5:0:…   default  
+    16948    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=5:0:…   default  
+Synchronizing script logs.
+Job 16866 (nps3mlp_gat_residual_CRAL-TRIO_s1)
+  Epoch: current 143 | checkpoint 52 | best rolling-5 balanced accuracy 0.725334
+  Latest train balanced accuracy: 0.995796
+  Checkpoint valid:  predicted 0/1 = 93/87 | actual 0/1 = 75/105
+Job 16867 (nps3mlp_gat_residual_CRAL-TRIO_s2)
+  Epoch: current 137 | checkpoint 21 | best rolling-5 balanced accuracy 0.713994
+  Latest train balanced accuracy: 0.996801
+  Checkpoint valid:  predicted 0/1 = 72/100 | actual 0/1 = 63/109
+Job 16870 (nps3mlp_gat_residual_START_s0)
+  Epoch: current 54 | checkpoint 2 | best rolling-5 balanced accuracy 0.530637
+  Latest train balanced accuracy: 0.990865
+  Checkpoint valid:  predicted 0/1 = 17/101 | actual 0/1 = 16/102
+Job 16871 (nps3mlp_gat_residual_START_s1)
+  Epoch: current 54 | checkpoint 51 | best rolling-5 balanced accuracy 0.744401
+  Latest train balanced accuracy: 0.990865
+  Checkpoint valid:  predicted 0/1 = 79/43 | actual 0/1 = 17/105
+Job 16872 (nps3mlp_gat_residual_START_s2)
+  Epoch: current 65 | checkpoint 26 | best rolling-5 balanced accuracy 0.725893
+  Latest train balanced accuracy: 0.985166
+  Checkpoint valid:  predicted 0/1 = 63/61 | actual 0/1 = 28/96
+Job 16873 (nps3mlp_gat_residual_START_s3)
+  Epoch: current 46 | checkpoint 32 | best rolling-5 balanced accuracy 0.655232
+  Latest train balanced accuracy: 0.984366
+  Checkpoint valid:  predicted 0/1 = 77/47 | actual 0/1 = 25/99
+Job 16874 (nps3mlp_gat_residual_START_s4)
+  Epoch: current 58 | checkpoint 26 | best rolling-5 balanced accuracy 0.666875
+  Latest train balanced accuracy: 0.988740
+  Checkpoint valid:  predicted 0/1 = 79/47 | actual 0/1 = 30/96
+Job 16875 (nps3mlp_gat_residual_lipocalin_s0)
+  Epoch: current 44 | checkpoint 1 | best rolling-5 balanced accuracy 0.537923
+  Latest train balanced accuracy: 0.986131
+  Checkpoint valid:  predicted 0/1 = 63/73 | actual 0/1 = 90/46
+Job 16876 (nps3mlp_gat_residual_lipocalin_s1)
+  Epoch: current 40 | checkpoint 25 | best rolling-5 balanced accuracy 0.584120
+  Latest train balanced accuracy: 0.980251
+  Checkpoint valid:  predicted 0/1 = 100/23 | actual 0/1 = 79/44
+Job 16877 (nps3mlp_gat_residual_lipocalin_s2)
+  Epoch: current 37 | checkpoint 31 | best rolling-5 balanced accuracy 0.634583
+  Latest train balanced accuracy: 0.970816
+  Checkpoint valid:  predicted 0/1 = 75/61 | actual 0/1 = 86/50
+Job 16878 (nps3mlp_gat_residual_lipocalin_s3)
+  Epoch: current 37 | checkpoint 34 | best rolling-5 balanced accuracy 0.688755
+  Latest train balanced accuracy: 0.970816
+  Checkpoint valid:  predicted 0/1 = 84/47 | actual 0/1 = 83/48
+Job 16879 (nps3mlp_gat_residual_lipocalin_s4)
+  Epoch: current 33 | checkpoint 27 | best rolling-5 balanced accuracy 0.568333
+  Latest train balanced accuracy: 0.974573
+  Checkpoint valid:  predicted 0/1 = 95/33 | actual 0/1 = 80/48
+Job 16880 (nps3mlp_gat_residual_GLTP_s0)
+  Epoch: current 35 | checkpoint 1 | best rolling-5 balanced accuracy 0.500000
+  Latest train balanced accuracy: 0.969792
+  Checkpoint valid:  predicted 0/1 = 0/55 | actual 0/1 = 13/42
+Job 16881 (nps3mlp_gat_residual_GLTP_s1)
+  Epoch: current 18 | checkpoint 14 | best rolling-5 balanced accuracy 0.470588
+  Latest train balanced accuracy: 0.924772
+  Checkpoint valid:  predicted 0/1 = 53/1 | actual 0/1 = 17/37
+Job 16882 (nps3mlp_gat_residual_GLTP_s2)
+  Epoch: current 6 | checkpoint 1 | best rolling-5 balanced accuracy 0.342105
+  Latest train balanced accuracy: 0.806300
+  Checkpoint valid:  predicted 0/1 = 54/6 | actual 0/1 = 19/41
+Job 16883 (nps3mlp_gat_residual_GLTP_s3)
+  Epoch: current 4 | checkpoint 2 | best rolling-5 balanced accuracy 0.200321
+  Latest train balanced accuracy: 0.786003
+  Checkpoint valid:  predicted 0/1 = 47/8 | actual 0/1 = 16/39
+Job 16884 (nps3mlp_gat_residual_GLTP_s4)
+  Epoch: current 3 | checkpoint 2 | best rolling-5 balanced accuracy 0.350000
+  Latest train balanced accuracy: 0.729692
+  Checkpoint valid:  predicted 0/1 = 50/10 | actual 0/1 = 20/40
+Completed OAR job IDs:
+16868
+16869
+Synchronizing results from completed jobs.
+Updating metrics table and feature contributions.
+Added 0 new metric rows to /home/kalinina/DL_project/metrics_summary.csv
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=17 waiting=49 other=0 total=66 pending_queue=46. Checking again in 300 seconds.
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    16866    nps3mlp_ga…   3:05:36    Running   kalinina   R=10,J=P,Q…   default  
+    16867    nps3mlp_ga…   3:00:59    Running   kalinina   R=10,J=P,Q…   default  
+    16870    nps3mlp_ga…   1:16:53    Running   kalinina   R=10,J=P,Q…   default  
+    16871    nps3mlp_ga…   1:15:55    Running   kalinina   R=10,J=P,Q…   default  
+    16872    nps3mlp_ga…   1:15:19    Running   kalinina   R=32,J=P,Q…   default  
+    16873    nps3mlp_ga…   1:05:38    Running   kalinina   R=10,J=P,Q…   default  
+    16874    nps3mlp_ga…   1:05:00    Running   kalinina   R=10,J=P,Q…   default  
+    16875    nps3mlp_ga…   1:04:23    Running   kalinina   R=10,J=P,Q…   default  
+    16876    nps3mlp_ga…   0:56:46    Running   kalinina   R=10,J=P,Q…   default  
+    16877    nps3mlp_ga…   0:54:43    Running   kalinina   R=10,J=P,Q…   default  
+    16878    nps3mlp_ga…   0:54:23    Running   kalinina   R=10,J=P,Q…   default  
+    16879    nps3mlp_ga…   0:47:37    Running   kalinina   R=10,J=P,Q…   default  
+    16880    nps3mlp_ga…   0:46:47    Running   kalinina   R=8,J=P,Q=…   default  
+    16881    nps3mlp_ga…   0:30:33    Running   kalinina   R=8,J=P,Q=…   default  
+    16882    nps3mlp_ga…   0:13:38    Running   kalinina   R=10,J=P,Q…   default  
+    16883    nps3mlp_ga…   0:09:36    Running   kalinina   R=10,J=P,Q…   default  
+    16884    nps3mlp_ga…   0:07:56    Running   kalinina   R=10,J=P,Q…   default  
+    16885    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16886    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16887    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16888    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16889    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16890    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16891    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16892    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16893    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16894    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16895    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16896    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16897    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16898    nps3mlp_ga…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16899    nps3mlp_ga…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16900    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16901    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16902    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16903    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16904    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16905    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16906    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16907    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16908    nps3mlp_ga…   -          Waiting   kalinina   R=32,W=180…   default  
+    16909    nps3mlp_ga…   -          Waiting   kalinina   R=10,W=180…   default  
+    16910    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16911    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16912    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16913    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16914    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16915    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16916    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16917    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16918    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16934    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16935    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16936    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16937    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16938    nps3mlp_gi…   -          Waiting   kalinina   R=8,W=1809…   default  
+    16939    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16940    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16941    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16942    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16943    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16944    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16945    nps3mlp_gi…   -          Waiting   kalinina   R=32,W=180…   default  
+    16946    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16947    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+    16948    nps3mlp_gi…   -          Waiting   kalinina   R=10,W=180…   default  
+Synchronizing script logs.
+Job 16866 (nps3mlp_gat_residual_CRAL-TRIO_s1)
+  Epoch: current 147 | checkpoint 52 | best rolling-5 balanced accuracy 0.725334
+  Latest train balanced accuracy: 0.995796
+  Checkpoint valid:  predicted 0/1 = 93/87 | actual 0/1 = 75/105
+Job 16867 (nps3mlp_gat_residual_CRAL-TRIO_s2)
+  Epoch: current 141 | checkpoint 21 | best rolling-5 balanced accuracy 0.713994
+  Latest train balanced accuracy: 0.929547
+  Checkpoint valid:  predicted 0/1 = 72/100 | actual 0/1 = 63/109
+Job 16870 (nps3mlp_gat_residual_START_s0)
+  Epoch: current 58 | checkpoint 2 | best rolling-5 balanced accuracy 0.530637
+  Latest train balanced accuracy: 0.985300
+  Checkpoint valid:  predicted 0/1 = 17/101 | actual 0/1 = 16/102
+Job 16871 (nps3mlp_gat_residual_START_s1)
+  Epoch: current 59 | checkpoint 54 | best rolling-5 balanced accuracy 0.745103
+  Latest train balanced accuracy: 0.977809
+  Checkpoint valid:  predicted 0/1 = 56/66 | actual 0/1 = 23/99
+Job 16872 (nps3mlp_gat_residual_START_s2)
+  Epoch: current 70 | checkpoint 26 | best rolling-5 balanced accuracy 0.725893
+  Latest train balanced accuracy: 0.993557
+  Checkpoint valid:  predicted 0/1 = 63/61 | actual 0/1 = 28/96
+Job 16873 (nps3mlp_gat_residual_START_s3)
+  Epoch: current 50 | checkpoint 32 | best rolling-5 balanced accuracy 0.655232
+  Latest train balanced accuracy: 0.983417
+  Checkpoint valid:  predicted 0/1 = 77/47 | actual 0/1 = 25/99
+Job 16874 (nps3mlp_gat_residual_START_s4)
+  Epoch: current 63 | checkpoint 26 | best rolling-5 balanced accuracy 0.666875
+  Latest train balanced accuracy: 0.980529
+  Checkpoint valid:  predicted 0/1 = 79/47 | actual 0/1 = 30/96
+Job 16875 (nps3mlp_gat_residual_lipocalin_s0)
+  Epoch: current 49 | checkpoint 1 | best rolling-5 balanced accuracy 0.537923
+  Latest train balanced accuracy: 0.972950
+  Checkpoint valid:  predicted 0/1 = 63/73 | actual 0/1 = 90/46
+Job 16876 (nps3mlp_gat_residual_lipocalin_s1)
+  Epoch: current 44 | checkpoint 25 | best rolling-5 balanced accuracy 0.584120
+  Latest train balanced accuracy: 0.986526
+  Checkpoint valid:  predicted 0/1 = 100/23 | actual 0/1 = 79/44
+Job 16877 (nps3mlp_gat_residual_lipocalin_s2)
+  Epoch: current 41 | checkpoint 31 | best rolling-5 balanced accuracy 0.634583
+  Latest train balanced accuracy: 0.982535
+  Checkpoint valid:  predicted 0/1 = 75/61 | actual 0/1 = 86/50
+Job 16878 (nps3mlp_gat_residual_lipocalin_s3)
+  Epoch: current 41 | checkpoint 34 | best rolling-5 balanced accuracy 0.688755
+  Latest train balanced accuracy: 0.982535
+  Checkpoint valid:  predicted 0/1 = 84/47 | actual 0/1 = 83/48
+Job 16879 (nps3mlp_gat_residual_lipocalin_s4)
+  Epoch: current 37 | checkpoint 27 | best rolling-5 balanced accuracy 0.568333
+  Latest train balanced accuracy: 0.982923
+  Checkpoint valid:  predicted 0/1 = 95/33 | actual 0/1 = 80/48
+Job 16880 (nps3mlp_gat_residual_GLTP_s0)
+  Epoch: current 39 | checkpoint 1 | best rolling-5 balanced accuracy 0.500000
+  Latest train balanced accuracy: 0.974587
+  Checkpoint valid:  predicted 0/1 = 0/55 | actual 0/1 = 13/42
+Job 16881 (nps3mlp_gat_residual_GLTP_s1)
+  Epoch: current 21 | checkpoint 14 | best rolling-5 balanced accuracy 0.470588
+  Latest train balanced accuracy: 0.933261
+  Checkpoint valid:  predicted 0/1 = 53/1 | actual 0/1 = 17/37
+Job 16882 (nps3mlp_gat_residual_GLTP_s2)
+  Epoch: current 10 | checkpoint 1 | best rolling-5 balanced accuracy 0.342105
+  Latest train balanced accuracy: 0.854988
+  Checkpoint valid:  predicted 0/1 = 54/6 | actual 0/1 = 19/41
+Job 16883 (nps3mlp_gat_residual_GLTP_s3)
+  Epoch: current 8 | checkpoint 7 | best rolling-5 balanced accuracy 0.357693
+  Latest train balanced accuracy: 0.822271
+  Checkpoint valid:  predicted 0/1 = 53/2 | actual 0/1 = 16/39
+Job 16884 (nps3mlp_gat_residual_GLTP_s4)
+  Epoch: current 6 | checkpoint 5 | best rolling-5 balanced accuracy 0.412500
+  Latest train balanced accuracy: 0.806025
+  Checkpoint valid:  predicted 0/1 = 60/0 | actual 0/1 = 20/40
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=17 waiting=49 other=0 total=66 pending_queue=46. Checking again in 300 seconds.
+# INFO:  Moldable instance:  1  Estimated nb resources:  8  Walltime:  18000
+OAR_JOB_ID=16950
+# ADMISSION RULE> A failed admission rule prevented submitting the job: 
+[MAX_JOBS] Error: you cannot have more than 50 jobs waiting in the queue at the same time.
+[MAX_JOBS] Please, consider using CIGRI (https://gricad-doc.univ-grenoble-alpes.fr/hpc/grid/).
+Bigfoot queue: oarsub failed; kept remaining commands in /home/kalinina/DL_project/.bigfoot_job_queues/active/pending.commands.
+Bigfoot queue: drain failed; will retry on the next poll.
+Current OAR jobs for kalinina:
+    16867    nps3mlp_g…   3:06:13    Running    kalinina   R=10,J=P,Q…   default  
+    16870    nps3mlp_g…   1:22:07    Running    kalinina   R=10,J=P,Q…   default  
+    16871    nps3mlp_g…   1:21:09    Running    kalinina   R=10,J=P,Q…   default  
+    16872    nps3mlp_g…   1:20:33    Running    kalinina   R=32,J=P,Q…   default  
+    16873    nps3mlp_g…   1:10:52    Running    kalinina   R=10,J=P,Q…   default  
+    16874    nps3mlp_g…   1:10:14    Running    kalinina   R=10,J=P,Q…   default  
+    16875    nps3mlp_g…   1:09:37    Running    kalinina   R=10,J=P,Q…   default  
+    16876    nps3mlp_g…   1:02:00    Running    kalinina   R=10,J=P,Q…   default  
+    16877    nps3mlp_g…   0:59:57    Running    kalinina   R=10,J=P,Q…   default  
+    16878    nps3mlp_g…   0:59:37    Running    kalinina   R=10,J=P,Q…   default  
+    16879    nps3mlp_g…   0:52:51    Running    kalinina   R=10,J=P,Q…   default  
+    16880    nps3mlp_g…   0:52:01    Running    kalinina   R=8,J=P,Q=…   default  
+    16881    nps3mlp_g…   0:35:47    Running    kalinina   R=8,J=P,Q=…   default  
+    16882    nps3mlp_g…   0:18:52    Running    kalinina   R=10,J=P,Q…   default  
+    16883    nps3mlp_g…   0:14:50    Running    kalinina   R=10,J=P,Q…   default  
+    16884    nps3mlp_g…   0:13:10    Running    kalinina   R=10,J=P,Q…   default  
+    16885    nps3mlp_g…   0:00:19    Running    kalinina   R=8,J=P,Q=…   default  
+    16886    nps3mlp_g…   -          toLaunch   kalinina   R=10,W=180…   default  
+    16887    nps3mlp_g…   -          Waiting    kalinina   R=32,W=180…   default  
+    16888    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16889    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16890    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16891    nps3mlp_g…   -          Waiting    kalinina   R=32,W=180…   default  
+    16892    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16893    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16894    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16895    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16896    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16897    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16898    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16899    nps3mlp_g…   -          Waiting    kalinina   R=8,W=1809…   default  
+    16900    nps3mlp_g…   -          Waiting    kalinina   R=8,W=1809…   default  
+    16901    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16902    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16903    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16904    nps3mlp_g…   -          Waiting    kalinina   R=8,W=1809…   default  
+    16905    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16906    nps3mlp_g…   -          Waiting    kalinina   R=32,W=180…   default  
+    16907    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16908    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16909    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16910    nps3mlp_g…   -          Waiting    kalinina   R=32,W=180…   default  
+    16911    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16912    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16913    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16914    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16915    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16916    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16917    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16918    nps3mlp_g…   -          Waiting    kalinina   R=8,W=1809…   default  
+    16934    nps3mlp_g…   -          Waiting    kalinina   R=8,W=1809…   default  
+    16935    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16936    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16937    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16938    nps3mlp_g…   -          Waiting    kalinina   R=8,W=1809…   default  
+    16939    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16940    nps3mlp_g…   -          Waiting    kalinina   R=8,W=1809…   default  
+    16941    nps3mlp_g…   -          Waiting    kalinina   R=32,W=180…   default  
+    16942    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16943    nps3mlp_g…   -          Waiting    kalinina   R=32,W=180…   default  
+    16944    nps3mlp_g…   -          Waiting    kalinina   R=32,W=180…   default  
+    16945    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16946    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16947    nps3mlp_g…   -          Waiting    kalinina   R=32,W=180…   default  
+    16948    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+    16950    nps3mlp_g…   -          Waiting    kalinina   R=10,W=180…   default  
+Synchronizing script logs.
+Job 16867 (nps3mlp_gat_residual_CRAL-TRIO_s2)
+  Epoch: current 145 | checkpoint 21 | best rolling-5 balanced accuracy 0.713994
+  Latest train balanced accuracy: 0.995895
+  Checkpoint valid:  predicted 0/1 = 72/100 | actual 0/1 = 63/109
+Job 16870 (nps3mlp_gat_residual_START_s0)
+  Epoch: current 62 | checkpoint 2 | best rolling-5 balanced accuracy 0.530637
+  Latest train balanced accuracy: 0.988982
+  Checkpoint valid:  predicted 0/1 = 17/101 | actual 0/1 = 16/102
+Job 16871 (nps3mlp_gat_residual_START_s1)
+  Epoch: current 63 | checkpoint 54 | best rolling-5 balanced accuracy 0.745103
+  Latest train balanced accuracy: 0.984388
+  Checkpoint valid:  predicted 0/1 = 56/66 | actual 0/1 = 23/99
+Job 16872 (nps3mlp_gat_residual_START_s2)
+  Epoch: current 75 | checkpoint 70 | best rolling-5 balanced accuracy 0.726339
+  Latest train balanced accuracy: 0.980670
+  Checkpoint valid:  predicted 0/1 = 68/56 | actual 0/1 = 28/96
+Job 16873 (nps3mlp_gat_residual_START_s3)
+  Epoch: current 54 | checkpoint 32 | best rolling-5 balanced accuracy 0.655232
+  Latest train balanced accuracy: 0.981520
+  Checkpoint valid:  predicted 0/1 = 77/47 | actual 0/1 = 25/99
+Job 16874 (nps3mlp_gat_residual_START_s4)
+  Epoch: current 68 | checkpoint 26 | best rolling-5 balanced accuracy 0.666875
+  Latest train balanced accuracy: 0.990597
+  Checkpoint valid:  predicted 0/1 = 79/47 | actual 0/1 = 30/96
+Job 16875 (nps3mlp_gat_residual_lipocalin_s0)
+  Epoch: current 53 | checkpoint 1 | best rolling-5 balanced accuracy 0.537923
+  Latest train balanced accuracy: 0.992429
+  Checkpoint valid:  predicted 0/1 = 63/73 | actual 0/1 = 90/46
+Job 16876 (nps3mlp_gat_residual_lipocalin_s1)
+  Epoch: current 48 | checkpoint 25 | best rolling-5 balanced accuracy 0.584120
+  Latest train balanced accuracy: 0.991030
+  Checkpoint valid:  predicted 0/1 = 100/23 | actual 0/1 = 79/44
+Job 16877 (nps3mlp_gat_residual_lipocalin_s2)
+  Epoch: current 45 | checkpoint 31 | best rolling-5 balanced accuracy 0.634583
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 16878 (nps3mlp_gat_residual_lipocalin_s3)
+  Epoch: current 45 | checkpoint 34 | best rolling-5 balanced accuracy 0.688755
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 16879 (nps3mlp_gat_residual_lipocalin_s4)
+  Epoch: current 41 | checkpoint 40 | best rolling-5 balanced accuracy 0.575417
+  Latest train balanced accuracy: 0.989585
+  Checkpoint valid:  predicted 0/1 = 96/32 | actual 0/1 = 80/48
+Job 16880 (nps3mlp_gat_residual_GLTP_s0)
+  Epoch: current 44 | checkpoint 1 | best rolling-5 balanced accuracy 0.500000
+  Latest train balanced accuracy: 0.979556
+  Checkpoint valid:  predicted 0/1 = 0/55 | actual 0/1 = 13/42
+Job 16881 (nps3mlp_gat_residual_GLTP_s1)
+  Epoch: current 25 | checkpoint 14 | best rolling-5 balanced accuracy 0.470588
+  Latest train balanced accuracy: 0.935483
+  Checkpoint valid:  predicted 0/1 = 53/1 | actual 0/1 = 17/37
+Job 16882 (nps3mlp_gat_residual_GLTP_s2)
+  Epoch: current 14 | checkpoint 1 | best rolling-5 balanced accuracy 0.342105
+  Latest train balanced accuracy: 0.922001
+  Checkpoint valid:  predicted 0/1 = 54/6 | actual 0/1 = 19/41
+Job 16883 (nps3mlp_gat_residual_GLTP_s3)
+  Epoch: current 12 | checkpoint 11 | best rolling-5 balanced accuracy 0.483814
+  Latest train balanced accuracy: 0.864827
+  Checkpoint valid:  predicted 0/1 = 53/2 | actual 0/1 = 16/39
+Job 16884 (nps3mlp_gat_residual_GLTP_s4)
+  Epoch: current 11 | checkpoint 8 | best rolling-5 balanced accuracy 0.465000
+  Latest train balanced accuracy: 0.864200
+  Checkpoint valid:  predicted 0/1 = 58/2 | actual 0/1 = 20/40
+Job 16885 (nps3mlp_gat_residual_IP_trans_s0)
+  Epoch: current 0 | checkpoint 0 | best rolling-5 balanced accuracy n/a
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Completed OAR job IDs:
+16866
+Synchronizing results from completed jobs.
+Updating metrics table and feature contributions.
+Added 0 new metric rows to /home/kalinina/DL_project/metrics_summary.csv
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=17 waiting=48 other=1 total=66 pending_queue=46. Checking again in 300 seconds.
+
+
+******************************************************
+                RESTRICTED ACCESS
+
+      If you can't access, please, make sure
+            you've accepted the charter
+      https://perseus.univ-grenoble-alpes.fr/
+
+******************************************************
+

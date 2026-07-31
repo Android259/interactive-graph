@@ -1,0 +1,468 @@
+Waiting for exclusive access to GPU GPU-07051c84-6055-5aa1-c139-5359cf18a1cd.
+=== GROUP: scp2 | VARIANT: nps3mlp_dpt01_gm_focal | SEED: 3 | GPU: NVIDIA A100-PCIE-40GB ===
+
+number of parameters : 1403984
+train : (1242, 12)
+valid : (44, 12)
+test : (45, 12)
+class weights : [1.1739130020141602, 0.8709677457809448]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.647368
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.556842
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.392632
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.575789
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.496842
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.542105
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.490526
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.582105
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.456842
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.477895
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.445263
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.510526
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.440000
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.326316
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.471579
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.420000
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.406316
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.471579
+EPOCH 19:
+VALIDATION
+valid epoch balanced_accuracy: 0.286316
+EPOCH 20:
+VALIDATION
+valid epoch balanced_accuracy: 0.472632
+EPOCH 21:
+VALIDATION
+valid epoch balanced_accuracy: 0.385263
+EPOCH 22:
+VALIDATION
+valid epoch balanced_accuracy: 0.549474
+EPOCH 23:
+VALIDATION
+valid epoch balanced_accuracy: 0.411579
+EPOCH 24:
+VALIDATION
+valid epoch balanced_accuracy: 0.484211
+EPOCH 25:
+VALIDATION
+valid epoch balanced_accuracy: 0.412632
+EPOCH 26:
+VALIDATION
+valid epoch balanced_accuracy: 0.516842
+EPOCH 27:
+VALIDATION
+valid epoch balanced_accuracy: 0.440000
+EPOCH 28:
+VALIDATION
+valid epoch balanced_accuracy: 0.570526
+EPOCH 29:
+VALIDATION
+valid epoch balanced_accuracy: 0.545263
+EPOCH 30:
+VALIDATION
+valid epoch balanced_accuracy: 0.486316
+EPOCH 31:
+VALIDATION
+valid epoch balanced_accuracy: 0.525263
+EPOCH 32:
+VALIDATION
+valid epoch balanced_accuracy: 0.491579
+EPOCH 33:
+VALIDATION
+valid epoch balanced_accuracy: 0.583158
+EPOCH 34:
+VALIDATION
+valid epoch balanced_accuracy: 0.406316
+EPOCH 35:
+VALIDATION
+valid epoch balanced_accuracy: 0.418947
+EPOCH 36:
+VALIDATION
+valid epoch balanced_accuracy: 0.571579
+EPOCH 37:
+VALIDATION
+valid epoch balanced_accuracy: 0.420000
+EPOCH 38:
+VALIDATION
+valid epoch balanced_accuracy: 0.615789
+EPOCH 39:
+VALIDATION
+valid epoch balanced_accuracy: 0.412632
+EPOCH 40:
+VALIDATION
+valid epoch balanced_accuracy: 0.565263
+EPOCH 41:
+VALIDATION
+valid epoch balanced_accuracy: 0.623158
+EPOCH 42:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 43:
+VALIDATION
+valid epoch balanced_accuracy: 0.497895
+EPOCH 44:
+VALIDATION
+valid epoch balanced_accuracy: 0.464211
+EPOCH 45:
+VALIDATION
+valid epoch balanced_accuracy: 0.418947
+EPOCH 46:
+VALIDATION
+valid epoch balanced_accuracy: 0.398947
+EPOCH 47:
+VALIDATION
+valid epoch balanced_accuracy: 0.477895
+EPOCH 48:
+VALIDATION
+valid epoch balanced_accuracy: 0.497895
+EPOCH 49:
+VALIDATION
+valid epoch balanced_accuracy: 0.420000
+EPOCH 50:
+VALIDATION
+valid epoch balanced_accuracy: 0.525263
+EPOCH 51:
+VALIDATION
+valid epoch balanced_accuracy: 0.531579
+EPOCH 52:
+VALIDATION
+valid epoch balanced_accuracy: 0.510526
+EPOCH 53:
+VALIDATION
+valid epoch balanced_accuracy: 0.551579
+EPOCH 54:
+VALIDATION
+valid epoch balanced_accuracy: 0.517895
+EPOCH 55:
+VALIDATION
+valid epoch balanced_accuracy: 0.444211
+EPOCH 56:
+VALIDATION
+valid epoch balanced_accuracy: 0.542105
+EPOCH 57:
+VALIDATION
+valid epoch balanced_accuracy: 0.531579
+EPOCH 58:
+VALIDATION
+valid epoch balanced_accuracy: 0.398947
+EPOCH 59:
+VALIDATION
+valid epoch balanced_accuracy: 0.398947
+EPOCH 60:
+VALIDATION
+valid epoch balanced_accuracy: 0.451579
+EPOCH 61:
+VALIDATION
+valid epoch balanced_accuracy: 0.524211
+EPOCH 62:
+VALIDATION
+valid epoch balanced_accuracy: 0.537895
+EPOCH 63:
+VALIDATION
+valid epoch balanced_accuracy: 0.545263
+EPOCH 64:
+VALIDATION
+valid epoch balanced_accuracy: 0.571579
+EPOCH 65:
+VALIDATION
+valid epoch balanced_accuracy: 0.504211
+EPOCH 66:
+VALIDATION
+valid epoch balanced_accuracy: 0.575789
+EPOCH 67:
+VALIDATION
+valid epoch balanced_accuracy: 0.564211
+EPOCH 68:
+VALIDATION
+valid epoch balanced_accuracy: 0.556842
+EPOCH 69:
+VALIDATION
+valid epoch balanced_accuracy: 0.503158
+EPOCH 70:
+VALIDATION
+valid epoch balanced_accuracy: 0.426316
+EPOCH 71:
+VALIDATION
+valid epoch balanced_accuracy: 0.531579
+EPOCH 72:
+VALIDATION
+valid epoch balanced_accuracy: 0.438947
+EPOCH 73:
+VALIDATION
+valid epoch balanced_accuracy: 0.457895
+EPOCH 74:
+VALIDATION
+valid epoch balanced_accuracy: 0.577895
+EPOCH 75:
+VALIDATION
+valid epoch balanced_accuracy: 0.466316
+EPOCH 76:
+VALIDATION
+valid epoch balanced_accuracy: 0.537895
+EPOCH 77:
+VALIDATION
+valid epoch balanced_accuracy: 0.551579
+EPOCH 78:
+VALIDATION
+valid epoch balanced_accuracy: 0.531579
+EPOCH 79:
+VALIDATION
+valid epoch balanced_accuracy: 0.571579
+EPOCH 80:
+VALIDATION
+valid epoch balanced_accuracy: 0.465263
+EPOCH 81:
+VALIDATION
+valid epoch balanced_accuracy: 0.551579
+EPOCH 82:
+VALIDATION
+valid epoch balanced_accuracy: 0.491579
+EPOCH 83:
+VALIDATION
+valid epoch balanced_accuracy: 0.503158
+EPOCH 84:
+VALIDATION
+valid epoch balanced_accuracy: 0.610526
+EPOCH 85:
+VALIDATION
+valid epoch balanced_accuracy: 0.551579
+EPOCH 86:
+VALIDATION
+valid epoch balanced_accuracy: 0.452632
+EPOCH 87:
+VALIDATION
+valid epoch balanced_accuracy: 0.591579
+EPOCH 88:
+VALIDATION
+valid epoch balanced_accuracy: 0.577895
+EPOCH 89:
+VALIDATION
+valid epoch balanced_accuracy: 0.492632
+EPOCH 90:
+VALIDATION
+valid epoch balanced_accuracy: 0.511579
+EPOCH 91:
+VALIDATION
+valid epoch balanced_accuracy: 0.537895
+EPOCH 92:
+VALIDATION
+valid epoch balanced_accuracy: 0.557895
+EPOCH 93:
+VALIDATION
+valid epoch balanced_accuracy: 0.531579
+EPOCH 94:
+VALIDATION
+valid epoch balanced_accuracy: 0.615789
+EPOCH 95:
+VALIDATION
+valid epoch balanced_accuracy: 0.518947
+EPOCH 96:
+VALIDATION
+valid epoch balanced_accuracy: 0.565263
+EPOCH 97:
+VALIDATION
+valid epoch balanced_accuracy: 0.570526
+EPOCH 98:
+VALIDATION
+valid epoch balanced_accuracy: 0.663158
+EPOCH 99:
+VALIDATION
+valid epoch balanced_accuracy: 0.471579
+EPOCH 100:
+VALIDATION
+valid epoch balanced_accuracy: 0.557895
+EPOCH 101:
+VALIDATION
+valid epoch balanced_accuracy: 0.590526
+EPOCH 102:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 103:
+VALIDATION
+valid epoch balanced_accuracy: 0.616842
+EPOCH 104:
+VALIDATION
+valid epoch balanced_accuracy: 0.537895
+EPOCH 105:
+VALIDATION
+valid epoch balanced_accuracy: 0.478947
+EPOCH 106:
+VALIDATION
+valid epoch balanced_accuracy: 0.636842
+EPOCH 107:
+VALIDATION
+valid epoch balanced_accuracy: 0.584211
+EPOCH 108:
+VALIDATION
+valid epoch balanced_accuracy: 0.616842
+EPOCH 109:
+VALIDATION
+valid epoch balanced_accuracy: 0.604211
+EPOCH 110:
+VALIDATION
+valid epoch balanced_accuracy: 0.491579
+EPOCH 111:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 112:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 113:
+VALIDATION
+valid epoch balanced_accuracy: 0.491579
+EPOCH 114:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 115:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 116:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 117:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 118:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 119:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 120:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 121:
+VALIDATION
+valid epoch balanced_accuracy: 0.511579
+EPOCH 122:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 123:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 124:
+VALIDATION
+valid epoch balanced_accuracy: 0.505263
+EPOCH 125:
+VALIDATION
+valid epoch balanced_accuracy: 0.511579
+EPOCH 126:
+VALIDATION
+valid epoch balanced_accuracy: 0.517895
+EPOCH 127:
+VALIDATION
+valid epoch balanced_accuracy: 0.477895
+EPOCH 128:
+VALIDATION
+valid epoch balanced_accuracy: 0.471579
+EPOCH 129:
+VALIDATION
+valid epoch balanced_accuracy: 0.451579
+EPOCH 130:
+VALIDATION
+valid epoch balanced_accuracy: 0.517895
+EPOCH 131:
+VALIDATION
+valid epoch balanced_accuracy: 0.437895
+EPOCH 132:
+VALIDATION
+valid epoch balanced_accuracy: 0.517895
+EPOCH 133:
+VALIDATION
+valid epoch balanced_accuracy: 0.511579
+EPOCH 134:
+VALIDATION
+valid epoch balanced_accuracy: 0.537895
+EPOCH 135:
+VALIDATION
+valid epoch balanced_accuracy: 0.530526
+EPOCH 136:
+VALIDATION
+valid epoch balanced_accuracy: 0.545263
+EPOCH 137:
+VALIDATION
+valid epoch balanced_accuracy: 0.530526
+EPOCH 138:
+VALIDATION
+valid epoch balanced_accuracy: 0.550526
+EPOCH 139:
+VALIDATION
+valid epoch balanced_accuracy: 0.602105
+EPOCH 140:
+VALIDATION
+valid epoch balanced_accuracy: 0.536842
+EPOCH 141:
+VALIDATION
+valid epoch balanced_accuracy: 0.485263
+EPOCH 142:
+VALIDATION
+valid epoch balanced_accuracy: 0.603158
+EPOCH 143:
+VALIDATION
+valid epoch balanced_accuracy: 0.525263
+EPOCH 144:
+VALIDATION
+valid epoch balanced_accuracy: 0.577895
+EPOCH 145:
+VALIDATION
+valid epoch balanced_accuracy: 0.564211
+EPOCH 146:
+VALIDATION
+valid epoch balanced_accuracy: 0.525263
+EPOCH 147:
+VALIDATION
+valid epoch balanced_accuracy: 0.551579
+EPOCH 148:
+VALIDATION
+valid epoch balanced_accuracy: 0.498947
+EPOCH 149:
+VALIDATION
+valid epoch balanced_accuracy: 0.551579
+EPOCH 150:
+VALIDATION
+valid epoch balanced_accuracy: 0.531579
+accuracy: 0.733333
+sensitivity: 0.833333
+precision: 0.714286
+specificity: 0.619048
+IoU: 0.625000
+FAR: 0.380952
+F1: 0.769231
+balanced_accuracy: 0.726190
+loss: 0.660493

@@ -1,0 +1,26 @@
+best_epoch: 1
+best_valid_balanced_accuracy: 0.500000
+total: 77
+real_positive: 62
+real_negative: 15
+predicted_positive: 0
+predicted_negative: 77
+TP: 0
+FP: 0
+TN: 15
+FN: 62
+accuracy: 0.194805
+sensitivity: 0.000000
+precision: undefined
+specificity: 1.000000
+IoU: 0.000000
+FAR: 0.000000
+F1: 0.000000
+balanced_accuracy: 0.500000
+loss: 0.705952
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity       IoU       FAR        F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  --------  --------  --------  -----------------  --------
+GLTPD1       29             21              8                   0                  29   0   0   8  21  0.275862     0.000000  undefined     1.000000  0.000000  0.000000  0.000000           0.500000  0.706330
+RLBP1        48             41              7                   0                  48   0   0   7  41  0.145833     0.000000  undefined     1.000000  0.000000  0.000000  0.000000           0.500000  0.705724

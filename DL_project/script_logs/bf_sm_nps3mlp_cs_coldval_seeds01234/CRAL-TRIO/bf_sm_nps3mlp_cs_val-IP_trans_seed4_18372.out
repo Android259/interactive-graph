@@ -1,0 +1,64 @@
+Waiting for exclusive access to GPU GPU-1f970a8d-5ea1-9387-78d9-ee2cd6dc4bab.
+=== TEST: CRAL-TRIO | VAL: IP_trans | VARIANT: bf_sm_nps3mlp_cs | SEED: 4 | GPU: Tesla V100-SXM2-32GB ===
+
+number of parameters : 1403982
+train : (974, 12)
+valid : (130, 12)
+test : (408, 12)
+class weights : [1.0, 1.0]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.638462
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.446154
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.492308
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.484615
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.530769
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.561538
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.484615
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.553846
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.569231
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.476923
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.515385
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.546154
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.530769
+EPOCH 19:

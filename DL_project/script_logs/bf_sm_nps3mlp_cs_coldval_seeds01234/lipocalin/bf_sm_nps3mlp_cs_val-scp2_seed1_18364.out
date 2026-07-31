@@ -1,0 +1,61 @@
+Waiting for exclusive access to GPU GPU-38eaf59c-ac40-2dca-8023-1fe983fb0570.
+=== TEST: lipocalin | VAL: scp2 | VARIANT: bf_sm_nps3mlp_cs | SEED: 1 | GPU: NVIDIA A100-PCIE-40GB ===
+
+number of parameters : 1403982
+train : (1246, 12)
+valid : (86, 12)
+test : (180, 12)
+class weights : [1.0, 1.0]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.406977
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.418605
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.383721
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.360465
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.372093
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.302326
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.325581
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.476744
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.406977
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.488372
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.476744
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.441860
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.441860
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.348837
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.465116
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.453488
+EPOCH 18:

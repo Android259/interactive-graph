@@ -1,0 +1,79 @@
+Waiting for exclusive access to GPU GPU-6df3662d-f25f-4e85-f491-9dffe06d9102.
+=== GROUP: GLTP | VARIANT: nps3mlp_gine_residual | SEED: 4 | GPU: Tesla V100-SXM2-32GB ===
+
+number of parameters : 757256
+train : (1212, 12)
+valid : (60, 12)
+test : (59, 12)
+class weights : [1.1284916400909424, 0.897777795791626]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.275000
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.337500
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.262500
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.287500
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.437500
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.187500
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.200000
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.350000
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.275000
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.300000
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.237500
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.325000
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.275000
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.175000
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.175000
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.175000
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.237500
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.300000
+EPOCH 19:
+VALIDATION
+valid epoch balanced_accuracy: 0.300000
+EPOCH 20:
+VALIDATION
+valid epoch balanced_accuracy: 0.187500
+EPOCH 21:
+VALIDATION
+valid epoch balanced_accuracy: 0.175000
+EPOCH 22:
+VALIDATION
+valid epoch balanced_accuracy: 0.200000
+EPOCH 23:
+VALIDATION
+valid epoch balanced_accuracy: 0.200000
+EPOCH 24:

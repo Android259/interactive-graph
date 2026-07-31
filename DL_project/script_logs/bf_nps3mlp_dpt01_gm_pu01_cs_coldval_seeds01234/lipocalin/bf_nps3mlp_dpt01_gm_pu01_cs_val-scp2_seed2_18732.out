@@ -1,0 +1,55 @@
+Waiting for exclusive access to GPU GPU-e38fd50b-f28d-bca0-1506-1209c3351206.
+=== TEST: lipocalin | VAL: scp2 | VARIANT: bf_nps3mlp_dpt01_gm_pu01_cs | SEED: 2 | GPU: Tesla V100-SXM2-32GB ===
+
+number of parameters : 1403984
+train : (1246, 12)
+valid : (86, 12)
+test : (180, 12)
+class weights : [1.0, 1.0]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.418605
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.627907
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.558140
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.476744
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.523256
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.511628
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.558140
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.546512
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.523256
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.476744
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.465116
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.465116
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.523256
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.511628
+EPOCH 16:

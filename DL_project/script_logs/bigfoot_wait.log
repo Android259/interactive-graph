@@ -1,0 +1,231 @@
+Reusing shared SSH connection to kalinina@bigfoot.
+Using active Bigfoot queue: /home/kalinina/DL_project/.bigfoot_job_queues/active
+Reusing shared SSH connection to kalinina@bigfoot.
+Bigfoot queue: submitted=0 waiting_before=38 max_waiting=50 pending=0.
+Current OAR jobs for kalinina:
+    18777    bf_nps3mlp…   1:59:02    Running   kalinina   R=8,J=P,Q=…   default  
+    18778    bf_nps3mlp…   1:59:02    Running   kalinina   R=10,J=P,Q…   default  
+    18779    bf_nps3mlp…   1:59:02    Running   kalinina   R=10,J=P,Q…   default  
+    18780    bf_nps3mlp…   1:59:02    Running   kalinina   R=10,J=P,Q…   default  
+    18781    bf_nps3mlp…   1:58:45    Running   kalinina   R=10,J=P,Q…   default  
+    18782    bf_nps3mlp…   1:37:01    Running   kalinina   R=32,J=P,Q…   default  
+    18783    bf_nps3mlp…   1:21:54    Running   kalinina   R=8,J=P,Q=…   default  
+    18784    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18785    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18786    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18787    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18788    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18789    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18790    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18791    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18792    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18793    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18794    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18795    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18796    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18797    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18798    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18799    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18800    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18801    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18802    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18803    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18804    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18805    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18806    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18807    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18808    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18809    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18810    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18811    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18812    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18813    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18814    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18815    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18816    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18817    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18818    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18819    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18820    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18821    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+Synchronizing script logs.
+Job 18777 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s0)
+  Epoch: current 94 | checkpoint 29 | best rolling-5 balanced accuracy 0.597674
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18778 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s1)
+  Epoch: current 79 | checkpoint 22 | best rolling-5 balanced accuracy 0.625581
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18779 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s2)
+  Epoch: current 81 | checkpoint 3 | best rolling-5 balanced accuracy 0.550388
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18780 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s3)
+  Epoch: current 80 | checkpoint 26 | best rolling-5 balanced accuracy 0.623256
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18781 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s4)
+  Epoch: current 101 | checkpoint 14 | best rolling-5 balanced accuracy 0.576744
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18782 (bf_nps3mlp_dpt01_gm_pu01_cs_CRAL-TRIO_vIP_trans_s0)
+  Epoch: current 92 | checkpoint 14 | best rolling-5 balanced accuracy 0.607692
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18783 (bf_nps3mlp_dpt01_gm_pu01_cs_CRAL-TRIO_vIP_trans_s1)
+  Epoch: current 78 | checkpoint 26 | best rolling-5 balanced accuracy 0.543077
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Synchronizing results.
+Updating metrics table and feature contributions.
+Added 9 new metric rows to /home/kalinina/DL_project/metrics_summary.csv
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=7 waiting=38 other=0 total=45 pending_queue=0. Checking again in 300 seconds.
+Reusing shared SSH connection to kalinina@bigfoot.
+Bigfoot queue: submitted=0 waiting_before=38 max_waiting=50 pending=0.
+Current OAR jobs for kalinina:
+    18777    bf_nps3mlp…   2:04:12    Running   kalinina   R=8,J=P,Q=…   default  
+    18778    bf_nps3mlp…   2:04:12    Running   kalinina   R=10,J=P,Q…   default  
+    18779    bf_nps3mlp…   2:04:12    Running   kalinina   R=10,J=P,Q…   default  
+    18780    bf_nps3mlp…   2:04:12    Running   kalinina   R=10,J=P,Q…   default  
+    18781    bf_nps3mlp…   2:03:55    Running   kalinina   R=10,J=P,Q…   default  
+    18782    bf_nps3mlp…   1:42:11    Running   kalinina   R=32,J=P,Q…   default  
+    18783    bf_nps3mlp…   1:27:04    Running   kalinina   R=8,J=P,Q=…   default  
+    18784    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18785    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18786    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18787    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18788    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18789    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18790    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18791    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18792    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18793    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18794    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18795    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18796    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18797    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18798    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18799    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18800    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18801    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18802    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18803    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18804    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18805    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18806    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18807    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18808    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18809    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18810    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18811    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18812    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18813    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18814    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18815    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18816    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18817    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18818    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18819    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18820    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18821    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+Synchronizing script logs.
+Job 18777 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s0)
+  Epoch: current 99 | checkpoint 29 | best rolling-5 balanced accuracy 0.597674
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18778 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s1)
+  Epoch: current 83 | checkpoint 22 | best rolling-5 balanced accuracy 0.625581
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18779 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s2)
+  Epoch: current 84 | checkpoint 3 | best rolling-5 balanced accuracy 0.550388
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18780 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s3)
+  Epoch: current 84 | checkpoint 26 | best rolling-5 balanced accuracy 0.623256
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18781 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s4)
+  Epoch: current 105 | checkpoint 14 | best rolling-5 balanced accuracy 0.576744
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18782 (bf_nps3mlp_dpt01_gm_pu01_cs_CRAL-TRIO_vIP_trans_s0)
+  Epoch: current 96 | checkpoint 14 | best rolling-5 balanced accuracy 0.607692
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18783 (bf_nps3mlp_dpt01_gm_pu01_cs_CRAL-TRIO_vIP_trans_s1)
+  Epoch: current 83 | checkpoint 26 | best rolling-5 balanced accuracy 0.543077
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Synchronizing results.
+Updating metrics table and feature contributions.
+Added 9 new metric rows to /home/kalinina/DL_project/metrics_summary.csv
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=7 waiting=38 other=0 total=45 pending_queue=0. Checking again in 300 seconds.
+Reusing shared SSH connection to kalinina@bigfoot.
+Bigfoot queue: submitted=0 waiting_before=38 max_waiting=50 pending=0.
+Current OAR jobs for kalinina:
+    18777    bf_nps3mlp…   2:09:21    Running   kalinina   R=8,J=P,Q=…   default  
+    18778    bf_nps3mlp…   2:09:21    Running   kalinina   R=10,J=P,Q…   default  
+    18779    bf_nps3mlp…   2:09:21    Running   kalinina   R=10,J=P,Q…   default  
+    18780    bf_nps3mlp…   2:09:21    Running   kalinina   R=10,J=P,Q…   default  
+    18781    bf_nps3mlp…   2:09:04    Running   kalinina   R=10,J=P,Q…   default  
+    18782    bf_nps3mlp…   1:47:20    Running   kalinina   R=32,J=P,Q…   default  
+    18783    bf_nps3mlp…   1:32:13    Running   kalinina   R=8,J=P,Q=…   default  
+    18784    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18785    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18786    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18787    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18788    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18789    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18790    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18791    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18792    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18793    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18794    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18795    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18796    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18797    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18798    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18799    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18800    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18801    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18802    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18803    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18804    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18805    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18806    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18807    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18808    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18809    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18810    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18811    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18812    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18813    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18814    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18815    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18816    bf_nps3mlp…   -          Waiting   kalinina   R=8,W=1809…   default  
+    18817    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18818    bf_nps3mlp…   -          Waiting   kalinina   R=32,W=180…   default  
+    18819    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18820    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+    18821    bf_nps3mlp…   -          Waiting   kalinina   R=10,W=180…   default  
+Synchronizing script logs.
+Job 18777 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s0)
+  Epoch: current 103 | checkpoint 29 | best rolling-5 balanced accuracy 0.597674
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18778 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s1)
+  Epoch: current 86 | checkpoint 22 | best rolling-5 balanced accuracy 0.625581
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18779 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s2)
+  Epoch: current 88 | checkpoint 3 | best rolling-5 balanced accuracy 0.550388
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a
+Job 18780 (bf_nps3mlp_dpt01_gm_pu01_cs_lipocalin_vscp2_s3)
+  Epoch: current 87 | checkpoint 26 | best rolling-5 balanced accuracy 0.623256
+  Latest train balanced accuracy: n/a
+  Checkpoint valid:  predicted 0/1 = n/a/n/a | actual 0/1 = n/a/n/a

@@ -1,0 +1,93 @@
+label: pos_bias_lr3e4_amp
+third_layers_in_mlps: 0
+cross_attention: 1
+protein_self_attention: 1
+lipid_self_attention: 1
+double_attention: 0
+m: 4
+lr: 0.001
+weight_decay: 0.0
+hiddim: 64
+ep: 150
+seed: 0
+excluded_groups: ["CRAL-TRIO"]
+excluded_subgroups: []
+batch: 16
+num_workers: 4
+lipid_fragments_treatment: 0
+protein_pooling: 0
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+ordinary_prot_pooling: 1
+prot_attention_pos_bias: 0
+prot_pooling_by_pockets: 0
+tanimoto_weight: 0
+class_weights: 0
+protein_group_weight: 0
+grab_loss: 0
+type_opt: 0
+plmon: 1
+buryon: 1
+loss_type: 1
+pool_type: 1
+HEADS: 8
+training_duration_sec: 9733.148342
+epochs_completed: 150
+best_epoch: 10
+best_valid_balanced_accuracy: 0.578571
+best_valid_F1: 0.775665
+final_train_balanced_accuracy: 0.500000
+final_valid_balanced_accuracy: 0.500000
+best_to_final_drop: 0.078571
+mean_valid_balanced_accuracy: 0.494727
+auc_valid_balanced_accuracy: 0.494969
+valid_balanced_accuracy_std: 0.028760
+min_train_loss: 0.609810
+final_train_loss: 0.686789
+min_valid_loss: 0.677212
+final_valid_loss: 0.678568
+train_loss_reduction: 0.007408
+valid_loss_reduction: 0.019326
+epochs_to_best: 10
+epochs_without_improvement: 140
+mean_train_valid_gap: 0.013843
+max_train_valid_gap: 0.246427
+overfitting_onset_epoch: 9
+overfitting_epochs: 2
+nan_epoch_count: 0
+collapse_epoch_count: 138
+converged: 1
+run_status: complete
+total: 171
+real_positive: 102
+real_negative: 69
+predicted_positive: 163
+predicted_negative: 8
+TP: 102
+FP: 61
+TN: 8
+FN: 0
+accuracy: 0.643275
+sensitivity: 1.000000
+precision: 0.625767
+specificity: 0.115942
+IoU: 0.625767
+FAR: 0.884058
+F1: 0.769811
+balanced_accuracy: 0.557971
+loss: 0.783346
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity       IoU       FAR        F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  --------  --------  --------  -----------------  --------
+ATCAY        10              1              9                  10                   0   1   9   0   0  0.100000     1.000000   0.100000     0.000000  0.100000  1.000000  0.181818           0.500000  0.926368
+BNIPL         8              1              7                   7                   1   1   6   1   0  0.250000     1.000000   0.142857     0.142857  0.142857  0.857143  0.250000           0.571429  0.920670
+RLBP1        51             40             11                  49                   2  40   9   2   0  0.823529     1.000000   0.816327     0.181818  0.816327  0.818182  0.898876           0.590909  0.751286
+SEC14L2       8              3              5                   8                   0   3   5   0   0  0.375000     1.000000   0.375000     0.000000  0.375000  1.000000  0.545455           0.500000  0.789277
+SEC14L4       7              2              5                   7                   0   2   5   0   0  0.285714     1.000000   0.285714     0.000000  0.285714  1.000000  0.444444           0.500000  0.925415
+SEC14L5       4              1              3                   3                   1   1   2   1   0  0.500000     1.000000   0.333333     0.333333  0.333333  0.666667  0.500000           0.666667  1.026739
+SEC14L6      18              8             10                  17                   1   8   9   1   0  0.500000     1.000000   0.470588     0.100000  0.470588  0.900000  0.640000           0.550000  0.619183
+TTPA         19              7             12                  16                   3   7   9   3   0  0.526316     1.000000   0.437500     0.250000  0.437500  0.750000  0.608696           0.625000  0.866713
+TTPAL        46             39              7                  46                   0  39   7   0   0  0.847826     1.000000   0.847826     0.000000  0.847826  1.000000  0.917647           0.500000  0.749905

@@ -1,0 +1,248 @@
+
+number of parameters : 1075404
+train : (1257, 12)
+valid : (38, 12)
+test : (39, 12)
+class weights : [1.1303956508636475, 0.8965763449668884]
+data extracted
+
+NOTE: Using experimental fast data loading logic. To disable, pass
+    "--load_fast=false" and report issues on GitHub. More details:
+    https://github.com/tensorflow/tensorboard/issues/4784
+
+EPOCH 1:
+train batch 1: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 1/40
+train accuracy : 0.65625
+train pred 0/1 : 0/32 label 0/1 : 11/21
+train batch 2: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 2/40
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+train batch 3: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 3/40
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+train batch 4: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 4/40
+train accuracy : 0.53125
+train pred 0/1 : 32/0 label 0/1 : 17/15
+train batch 5: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 5/40
+train accuracy : 0.34375
+train pred 0/1 : 32/0 label 0/1 : 11/21
+train batch 6: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 6/40
+train accuracy : 0.40625
+train pred 0/1 : 32/0 label 0/1 : 13/19
+train batch 7: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 7/40
+train accuracy : 0.59375
+train pred 0/1 : 32/0 label 0/1 : 19/13
+train batch 8: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 8/40
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 9: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 9/40
+train accuracy : 0.40625
+train pred 0/1 : 32/0 label 0/1 : 13/19
+train batch 10: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 10/40
+train accuracy : 0.375
+train pred 0/1 : 32/0 label 0/1 : 12/20
+train batch 11: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 11/40
+train accuracy : 0.3125
+train pred 0/1 : 32/0 label 0/1 : 10/22
+train batch 12: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 12/40
+train accuracy : 0.4375
+train pred 0/1 : 32/0 label 0/1 : 14/18
+train batch 13: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 13/40
+train accuracy : 0.5625
+train pred 0/1 : 0/32 label 0/1 : 14/18
+train batch 14: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 14/40
+train accuracy : 0.6875
+train pred 0/1 : 0/32 label 0/1 : 10/22
+train batch 15: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 15/40
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+train batch 16: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 16/40
+train accuracy : 0.65625
+train pred 0/1 : 0/32 label 0/1 : 11/21
+train batch 17: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 17/40
+train accuracy : 0.6875
+train pred 0/1 : 0/32 label 0/1 : 10/22
+train batch 18: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 18/40
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+train batch 19: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 19/40
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+train batch 20: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 20/40
+train accuracy : 0.65625
+train pred 0/1 : 0/32 label 0/1 : 11/21
+train batch 21: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 21/40
+train accuracy : 0.40625
+train pred 0/1 : 0/32 label 0/1 : 19/13
+train batch 22: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 22/40
+train accuracy : 0.71875
+train pred 0/1 : 0/32 label 0/1 : 9/23
+train batch 23: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 23/40
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+train batch 24: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 24/40
+train accuracy : 0.40625
+train pred 0/1 : 0/32 label 0/1 : 19/13
+train batch 25: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 25/40
+train accuracy : 0.78125
+train pred 0/1 : 0/32 label 0/1 : 7/25
+train batch 26: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 26/40
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+train batch 27: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 27/40
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+train batch 28: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 28/40
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+train batch 29: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 29/40
+train accuracy : 0.59375
+train pred 0/1 : 0/32 label 0/1 : 13/19
+train batch 30: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 30/40
+train accuracy : 0.6875
+train pred 0/1 : 0/32 label 0/1 : 10/22
+train batch 31: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 31/40
+train accuracy : 0.5
+train pred 0/1 : 0/32 label 0/1 : 16/16
+train batch 32: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 32/40
+train accuracy : 0.40625
+train pred 0/1 : 32/0 label 0/1 : 13/19
+train batch 33: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 33/40
+train accuracy : 0.46875
+train pred 0/1 : 32/0 label 0/1 : 15/17
+train batch 34: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 34/40
+train accuracy : 0.4375
+train pred 0/1 : 32/0 label 0/1 : 14/18
+train batch 35: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 35/40
+train accuracy : 0.5625
+train pred 0/1 : 32/0 label 0/1 : 18/14
+train batch 36: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 36/40
+train accuracy : 0.40625
+train pred 0/1 : 32/0 label 0/1 : 13/19
+train batch 37: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 37/40
+train accuracy : 0.34375
+train pred 0/1 : 32/0 label 0/1 : 11/21
+train batch 38: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 38/40
+train accuracy : 0.625
+train pred 0/1 : 32/0 label 0/1 : 20/12
+train batch 39: predictions shape=(32, 2), labels shape=(32,)
+epoch : 1
+batch : 39/40
+train accuracy : 0.5
+train pred 0/1 : 32/0 label 0/1 : 16/16
+train batch 40: predictions shape=(9, 2), labels shape=(9,)
+epoch : 1
+batch : 40/40
+train accuracy : 0.4444444477558136
+train pred 0/1 : 9/0 label 0/1 : 4/5
+VALIDATION
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 641, in <module>
+    countrain, countval, train_metrics, valid_metrics = epoch(epoch_number,countrain,countval)
+  File "/home/kalinina/DL_project/./training/new_train.py", line 440, in epoch
+    outl = model(**forward_args)
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/kalinina/DL_project/architecture/interaction_classification.py", line 88, in forward
+    prot1 = self.protein1(
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/kalinina/DL_project/architecture/protein_encoder.py", line 97, in forward
+    self.attention(
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/kalinina/DL_project/architecture/self_attention.py", line 116, in forward
+    outl, _ = self.self_attention(x, x, x, attn_mask=attn_bias)
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/modules/activation.py", line 1373, in forward
+    attn_output, attn_output_weights = F.multi_head_attention_forward(
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/functional.py", line 6374, in multi_head_attention_forward
+    attn_output_weights = softmax(attn_output_weights, dim=-1)
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/nn/functional.py", line 2140, in softmax
+    ret = input.softmax(dim)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 6.38 GiB. GPU 0 has a total capacity of 39.49 GiB of which 5.32 GiB is free. Process 289470 has 24.88 GiB memory in use. Including non-PyTorch memory, this process has 9.27 GiB memory in use. Of the allocated memory 7.76 GiB is allocated by PyTorch, and 1.02 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

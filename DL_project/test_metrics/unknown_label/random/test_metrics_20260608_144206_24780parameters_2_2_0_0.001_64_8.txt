@@ -1,0 +1,113 @@
+third_layers_in_mlps: 0
+cross_attention: 0
+protein_self_attention: 0
+lipid_self_attention: 0
+double_attention: 0
+m: 2
+lr: 0.001
+weight_decay: 0.0
+hiddim: 8
+ep: 1
+seed: 0
+excluded_groups: []
+excluded_subgroups: []
+batch: 64
+num_workers: 0
+lipid_fragments_treatment: 0
+protein_pooling: 0
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+ordinary_prot_pooling: 1
+prot_CA_for_pockets: 0
+prot_pooling_by_pockets: 0
+tanimoto_weight: 1
+protein_group_weight: 0
+grab_loss: 1
+type_opt: 0
+plmon: 1
+buryon: 1
+loss_type: 1
+pool_type: 1
+HEADS: 2
+training_duration_sec: 292.253044
+epochs_completed: 1
+best_epoch: 1
+best_valid_balanced_accuracy: 0.500000
+best_valid_F1: 0.666667
+final_train_balanced_accuracy: 0.500000
+final_valid_balanced_accuracy: 0.500000
+best_to_final_drop: 0.000000
+mean_valid_balanced_accuracy: 0.500000
+auc_valid_balanced_accuracy: 0.500000
+valid_balanced_accuracy_std: 0.000000
+min_train_loss: 1.293121
+final_train_loss: 1.293121
+min_valid_loss: 0.712010
+final_valid_loss: 0.712010
+train_loss_reduction: 0.000000
+valid_loss_reduction: 0.000000
+epochs_to_best: 1
+epochs_without_improvement: 0
+mean_train_valid_gap: 0.000000
+max_train_valid_gap: 0.000000
+overfitting_onset_epoch: undefined
+overfitting_epochs: 0
+nan_epoch_count: 0
+collapse_epoch_count: 1
+converged: 0
+run_status: complete
+total: 100
+real_positive: 58
+real_negative: 42
+predicted_positive: 100
+predicted_negative: 0
+TP: 58
+FP: 42
+TN: 0
+FN: 0
+accuracy: 0.580000
+sensitivity: 1.000000
+precision: 0.580000
+specificity: 0.000000
+IoU: 0.580000
+FAR: 1.000000
+F1: 0.734177
+balanced_accuracy: 0.500000
+loss: 0.680827
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity       IoU        FAR        F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  --------  ---------  --------  -----------------  --------
+ATCAY         2              0              2                   2                   0   0   2   0   0  0.000000    undefined   0.000000     0.000000  0.000000   1.000000  0.000000          undefined  0.690316
+BNIPL         2              0              2                   2                   0   0   2   0   0  0.000000    undefined   0.000000     0.000000  0.000000   1.000000  0.000000          undefined  0.682902
+BPI           3              3              0                   3                   0   3   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.685374
+BPIFB2        1              1              0                   1                   0   1   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.675489
+CRABP2        1              0              1                   1                   0   0   1   0   0  0.000000    undefined   0.000000     0.000000  0.000000   1.000000  0.000000          undefined  0.675489
+FABP1         4              3              1                   4                   0   3   1   0   0  0.750000     1.000000   0.750000     0.000000  0.750000   1.000000  0.857143           0.500000  0.682902
+FABP5         3              2              1                   3                   0   2   1   0   0  0.666667     1.000000   0.666667     0.000000  0.666667   1.000000  0.800000           0.500000  0.685374
+FABP7         6              2              4                   6                   0   2   4   0   0  0.333333     1.000000   0.333333     0.000000  0.333333   1.000000  0.500000           0.500000  0.675489
+GLTP          1              1              0                   1                   0   1   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.690316
+GLTPD1        1              1              0                   1                   0   1   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.690316
+GM2A          2              1              1                   2                   0   1   1   0   0  0.500000     1.000000   0.500000     0.000000  0.500000   1.000000  0.666667           0.500000  0.690316
+HSDL2         2              1              1                   2                   0   1   1   0   0  0.500000     1.000000   0.500000     0.000000  0.500000   1.000000  0.666667           0.500000  0.675489
+LCN1          5              3              2                   5                   0   3   2   0   0  0.600000     1.000000   0.600000     0.000000  0.600000   1.000000  0.750000           0.500000  0.684385
+OSBPL9        4              0              4                   4                   0   0   4   0   0  0.000000    undefined   0.000000     0.000000  0.000000   1.000000  0.000000          undefined  0.679196
+PITPNA        2              2              0                   2                   0   2   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.682902
+PITPNB        4              4              0                   4                   0   4   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.679196
+PMP2          1              1              0                   1                   0   1   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.675489
+RBP4          1              0              1                   1                   0   0   1   0   0  0.000000    undefined   0.000000     0.000000  0.000000   1.000000  0.000000          undefined  0.690316
+RBP5          3              0              3                   3                   0   0   3   0   0  0.000000    undefined   0.000000     0.000000  0.000000   1.000000  0.000000          undefined  0.675489
+RLBP1         8              8              0                   8                   0   8   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.679196
+SCP2          3              1              2                   3                   0   1   2   0   0  0.333333     1.000000   0.333333     0.000000  0.333333   1.000000  0.500000           0.500000  0.685374
+SCP2D1        3              3              0                   3                   0   3   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.675489
+SEC14L2       1              1              0                   1                   0   1   0   0   0  1.000000     1.000000   1.000000    undefined  1.000000  undefined  1.000000          undefined  0.675489
+SEC14L4       3              0              3                   3                   0   0   3   0   0  0.000000    undefined   0.000000     0.000000  0.000000   1.000000  0.000000          undefined  0.680431
+SEC14L5       1              0              1                   1                   0   0   1   0   0  0.000000    undefined   0.000000     0.000000  0.000000   1.000000  0.000000          undefined  0.675489
+SEC14L6       2              0              2                   2                   0   0   2   0   0  0.000000    undefined   0.000000     0.000000  0.000000   1.000000  0.000000          undefined  0.682902
+STARD10      10              7              3                  10                   0   7   3   0   0  0.700000     1.000000   0.700000     0.000000  0.700000   1.000000  0.823529           0.500000  0.679937
+STARD11       3              1              2                   3                   0   1   2   0   0  0.333333     1.000000   0.333333     0.000000  0.333333   1.000000  0.500000           0.500000  0.675489
+STARD2        8              6              2                   8                   0   6   2   0   0  0.750000     1.000000   0.750000     0.000000  0.750000   1.000000  0.857143           0.500000  0.682902
+TTPA          3              1              2                   3                   0   1   2   0   0  0.333333     1.000000   0.333333     0.000000  0.333333   1.000000  0.500000           0.500000  0.675489
+TTPAL         7              5              2                   7                   0   5   2   0   0  0.714286     1.000000   0.714286     0.000000  0.714286   1.000000  0.833333           0.500000  0.681843

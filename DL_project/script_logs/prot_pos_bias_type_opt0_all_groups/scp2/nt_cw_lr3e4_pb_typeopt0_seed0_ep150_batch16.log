@@ -1,0 +1,110 @@
+
+number of parameters : 1075406
+train : (1228, 12)
+valid : (53, 12)
+test : (53, 12)
+class weights : [1.1922329664230347, 0.8611500859260559]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.657328
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.644397
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.459770
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.627155
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.626437
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.507184
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.474138
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.466236
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.500718
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.684626
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.369253
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.507902
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.466236
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.757902
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.317529
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.563218
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.671695
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.566810
+EPOCH 19:
+VALIDATION
+valid epoch balanced_accuracy: 0.486351
+EPOCH 20:
+VALIDATION
+valid epoch balanced_accuracy: 0.545977
+EPOCH 21:
+VALIDATION
+valid epoch balanced_accuracy: 0.563218
+EPOCH 22:
+VALIDATION
+valid epoch balanced_accuracy: 0.490661
+EPOCH 23:
+VALIDATION
+valid epoch balanced_accuracy: 0.691810
+EPOCH 24:
+VALIDATION
+valid epoch balanced_accuracy: 0.608477
+EPOCH 25:
+VALIDATION
+valid epoch balanced_accuracy: 0.684626
+EPOCH 26:
+VALIDATION
+valid epoch balanced_accuracy: 0.434626
+EPOCH 27:
+VALIDATION
+valid epoch balanced_accuracy: 0.348420
+EPOCH 28:
+VALIDATION
+valid epoch balanced_accuracy: 0.404454
+EPOCH 29:
+VALIDATION
+valid epoch balanced_accuracy: 0.448994
+EPOCH 30:
+VALIDATION
+valid epoch balanced_accuracy: 0.403736
+EPOCH 31:
+VALIDATION
+valid epoch balanced_accuracy: 0.792385
+EARLY STOPPING: rolling validation balanced accuracy did not improve for 30 epochs and validation loss increased over the same window.
+accuracy: 0.679245
+sensitivity: 0.736842
+precision: 0.538462
+specificity: 0.647059
+IoU: 0.451613
+FAR: 0.352941
+F1: 0.622222
+balanced_accuracy: 0.691950
+loss: 0.602727

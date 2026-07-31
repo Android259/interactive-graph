@@ -1,0 +1,26 @@
+best_epoch: 1
+best_valid_balanced_accuracy: 0.500000
+total: 79
+real_positive: 56
+real_negative: 23
+predicted_positive: 79
+predicted_negative: 0
+TP: 56
+FP: 23
+TN: 0
+FN: 0
+accuracy: 0.708861
+sensitivity: 1.000000
+precision: 0.708861
+specificity: 0.000000
+IoU: 0.708861
+FAR: 1.000000
+F1: 0.829630
+balanced_accuracy: 0.500000
+loss: 0.580752
+
+per_protein_subgroup_metrics:
+subgroup,total,real_positive,real_negative,predicted_positive,predicted_negative,TP,FP,TN,FN,accuracy,sensitivity,precision,specificity,IoU,FAR,F1,balanced_accuracy,loss
+RLBP1,42,38,4,42,0,38,4,0,0,0.904762,1.000000,0.904762,0.000000,0.904762,1.000000,0.950000,0.500000,0.586822
+SEC14L2,14,7,7,14,0,7,7,0,0,0.500000,1.000000,0.500000,0.000000,0.500000,1.000000,0.666667,0.500000,0.556512
+STARD11,23,11,12,23,0,11,12,0,0,0.478261,1.000000,0.478261,0.000000,0.478261,1.000000,0.647059,0.500000,0.584421

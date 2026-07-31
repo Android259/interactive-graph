@@ -1,0 +1,208 @@
+Waiting for exclusive access to GPU GPU-d6f2d203-5a7d-2b85-03a9-8ad92df5a755.
+=== GROUP: CRAL-TRIO | VARIANT: lr7e5 | SEED: 1 | LR: 0.00007 | WEIGHT_DECAY: 0 | GPU: NVIDIA A100-PCIE-40GB ===
+
+number of parameters : 1075406
+train : (970, 12)
+valid : (180, 12)
+test : (181, 12)
+class weights : [1.1602870225906372, 0.8786231875419617]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.609524
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.622857
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.739048
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.553333
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.650476
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.597143
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.635238
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.615238
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.667619
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.617143
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.645714
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.676190
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.617143
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.661905
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.651429
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.612381
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.599048
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.633333
+EPOCH 19:
+VALIDATION
+valid epoch balanced_accuracy: 0.645714
+EPOCH 20:
+VALIDATION
+valid epoch balanced_accuracy: 0.584762
+EPOCH 21:
+VALIDATION
+valid epoch balanced_accuracy: 0.616190
+EPOCH 22:
+VALIDATION
+valid epoch balanced_accuracy: 0.616190
+EPOCH 23:
+VALIDATION
+valid epoch balanced_accuracy: 0.659048
+EPOCH 24:
+VALIDATION
+valid epoch balanced_accuracy: 0.590476
+EPOCH 25:
+VALIDATION
+valid epoch balanced_accuracy: 0.550476
+EPOCH 26:
+VALIDATION
+valid epoch balanced_accuracy: 0.531429
+EPOCH 27:
+VALIDATION
+valid epoch balanced_accuracy: 0.499048
+EPOCH 28:
+VALIDATION
+valid epoch balanced_accuracy: 0.478095
+EPOCH 29:
+VALIDATION
+valid epoch balanced_accuracy: 0.607619
+EPOCH 30:
+VALIDATION
+valid epoch balanced_accuracy: 0.634286
+EPOCH 31:
+VALIDATION
+valid epoch balanced_accuracy: 0.570476
+EPOCH 32:
+VALIDATION
+valid epoch balanced_accuracy: 0.621905
+EPOCH 33:
+VALIDATION
+valid epoch balanced_accuracy: 0.501905
+EPOCH 34:
+VALIDATION
+valid epoch balanced_accuracy: 0.663810
+EPOCH 35:
+VALIDATION
+valid epoch balanced_accuracy: 0.535238
+EPOCH 36:
+VALIDATION
+valid epoch balanced_accuracy: 0.593333
+EPOCH 37:
+VALIDATION
+valid epoch balanced_accuracy: 0.619048
+EPOCH 38:
+VALIDATION
+valid epoch balanced_accuracy: 0.565714
+EPOCH 39:
+VALIDATION
+valid epoch balanced_accuracy: 0.623810
+EPOCH 40:
+VALIDATION
+valid epoch balanced_accuracy: 0.647619
+EPOCH 41:
+VALIDATION
+valid epoch balanced_accuracy: 0.620952
+EPOCH 42:
+VALIDATION
+valid epoch balanced_accuracy: 0.578095
+EPOCH 43:
+VALIDATION
+valid epoch balanced_accuracy: 0.606667
+EPOCH 44:
+VALIDATION
+valid epoch balanced_accuracy: 0.613333
+EPOCH 45:
+VALIDATION
+valid epoch balanced_accuracy: 0.632381
+EPOCH 46:
+VALIDATION
+valid epoch balanced_accuracy: 0.627619
+EPOCH 47:
+VALIDATION
+valid epoch balanced_accuracy: 0.628571
+EPOCH 48:
+VALIDATION
+valid epoch balanced_accuracy: 0.614286
+EPOCH 49:
+VALIDATION
+valid epoch balanced_accuracy: 0.612381
+EPOCH 50:
+VALIDATION
+valid epoch balanced_accuracy: 0.650476
+EPOCH 51:
+VALIDATION
+valid epoch balanced_accuracy: 0.660952
+EPOCH 52:
+VALIDATION
+valid epoch balanced_accuracy: 0.650476
+EPOCH 53:
+VALIDATION
+valid epoch balanced_accuracy: 0.612381
+EPOCH 54:
+VALIDATION
+valid epoch balanced_accuracy: 0.647619
+EPOCH 55:
+VALIDATION
+valid epoch balanced_accuracy: 0.609524
+EPOCH 56:
+VALIDATION
+valid epoch balanced_accuracy: 0.533333
+EPOCH 57:
+VALIDATION
+valid epoch balanced_accuracy: 0.637143
+EPOCH 58:
+VALIDATION
+valid epoch balanced_accuracy: 0.650476
+EPOCH 59:
+VALIDATION
+valid epoch balanced_accuracy: 0.624762
+EPOCH 60:
+VALIDATION
+valid epoch balanced_accuracy: 0.610476
+EPOCH 61:
+VALIDATION
+valid epoch balanced_accuracy: 0.645714
+EPOCH 62:
+VALIDATION
+valid epoch balanced_accuracy: 0.625714
+EPOCH 63:
+VALIDATION
+valid epoch balanced_accuracy: 0.622857
+EARLY STOPPING: rolling validation balanced accuracy did not improve for 60 epochs and validation loss increased over the same window.
+accuracy: 0.679558
+sensitivity: 0.828283
+precision: 0.666667
+specificity: 0.500000
+IoU: 0.585714
+FAR: 0.500000
+F1: 0.738739
+balanced_accuracy: 0.664141
+loss: 0.627296

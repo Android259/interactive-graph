@@ -1,0 +1,86 @@
+label: t_cw_lr1e3
+third_layers_in_mlps: 0
+cross_attention: 1
+protein_self_attention: 1
+lipid_self_attention: 1
+double_attention: 0
+m: 4
+lr: 0.001
+weight_decay: 0.0
+hiddim: 64
+ep: 150
+seed: 0
+excluded_groups: ["START"]
+excluded_subgroups: []
+batch: 16
+num_workers: 4
+lipid_fragments_treatment: 0
+protein_pooling: 0
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+ordinary_prot_pooling: 1
+prot_attention_pos_bias: 0
+prot_pooling_by_pockets: 0
+tanimoto_weight: 1
+protein_group_weight: 0
+grab_loss: 0
+type_opt: 0
+plmon: 1
+buryon: 1
+loss_type: 1
+pool_type: 1
+HEADS: 8
+training_duration_sec: 9396.676099
+epochs_completed: 150
+best_epoch: 6
+best_valid_balanced_accuracy: 0.627063
+best_valid_F1: 0.905830
+final_train_balanced_accuracy: 0.500000
+final_valid_balanced_accuracy: 0.500000
+best_to_final_drop: 0.127063
+mean_valid_balanced_accuracy: 0.499920
+auc_valid_balanced_accuracy: 0.499946
+valid_balanced_accuracy_std: 0.023411
+min_train_loss: 0.581248
+final_train_loss: 0.693358
+min_valid_loss: 0.511805
+final_valid_loss: 0.700759
+train_loss_reduction: -0.010452
+valid_loss_reduction: 0.114244
+epochs_to_best: 6
+epochs_without_improvement: 144
+mean_train_valid_gap: 0.020755
+max_train_valid_gap: 0.269314
+overfitting_onset_epoch: 2
+overfitting_epochs: 4
+nan_epoch_count: 0
+collapse_epoch_count: 139
+converged: 1
+run_status: complete
+total: 123
+real_positive: 99
+real_negative: 24
+predicted_positive: 111
+predicted_negative: 12
+TP: 93
+FP: 18
+TN: 6
+FN: 6
+accuracy: 0.804878
+sensitivity: 0.939394
+precision: 0.837838
+specificity: 0.250000
+IoU: 0.794872
+FAR: 0.750000
+F1: 0.885714
+balanced_accuracy: 0.594697
+loss: 0.525877
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity       IoU       FAR        F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  --------  --------  --------  -----------------  --------
+STARD10      51             44              7                  51                   0  44   7   0   0  0.862745     1.000000   0.862745     0.000000  0.862745  1.000000  0.926316           0.500000  0.508847
+STARD11      20              9             11                   9                  11   3   6   5   6  0.400000     0.333333   0.333333     0.454545  0.200000  0.545455  0.333333           0.393939  0.540944
+STARD2       52             46              6                  51                   1  46   5   1   0  0.903846     1.000000   0.901961     0.166667  0.901961  0.833333  0.948454           0.583333  0.536784

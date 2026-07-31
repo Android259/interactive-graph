@@ -1,0 +1,87 @@
+label: nt_cw_lr3e4_pb_typeopt0
+third_layers_in_mlps: 0
+cross_attention: 1
+protein_self_attention: 1
+lipid_self_attention: 1
+double_attention: 0
+m: 4
+lr: 0.001
+weight_decay: 0.0
+hiddim: 64
+ep: 150
+seed: 0
+excluded_groups: ["IP_trans"]
+excluded_subgroups: []
+batch: 16
+num_workers: 4
+lipid_fragments_treatment: 0
+protein_pooling: 0
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+ordinary_prot_pooling: 1
+prot_attention_pos_bias: 0
+prot_pooling_by_pockets: 0
+tanimoto_weight: 0
+class_weights: 0
+protein_group_weight: 0
+grab_loss: 0
+type_opt: 0
+plmon: 1
+buryon: 1
+loss_type: 1
+pool_type: 1
+HEADS: 8
+training_duration_sec: 10174.142995
+epochs_completed: 150
+best_epoch: 1
+best_valid_balanced_accuracy: 0.500000
+best_valid_F1: 0.715789
+final_train_balanced_accuracy: 0.500000
+final_valid_balanced_accuracy: 0.500000
+best_to_final_drop: 0.000000
+mean_valid_balanced_accuracy: 0.500000
+auc_valid_balanced_accuracy: 0.500000
+valid_balanced_accuracy_std: 0.000000
+min_train_loss: 0.605171
+final_train_loss: 0.683477
+min_valid_loss: 0.686647
+final_valid_loss: 0.686763
+train_loss_reduction: 0.000870
+valid_loss_reduction: 0.004601
+epochs_to_best: 1
+epochs_without_improvement: 149
+mean_train_valid_gap: 0.057584
+max_train_valid_gap: 0.156292
+overfitting_onset_epoch: undefined
+overfitting_epochs: 0
+nan_epoch_count: 0
+collapse_epoch_count: 150
+converged: 1
+run_status: complete
+total: 61
+real_positive: 31
+real_negative: 30
+predicted_positive: 61
+predicted_negative: 0
+TP: 31
+FP: 30
+TN: 0
+FN: 0
+accuracy: 0.508197
+sensitivity: 1.000000
+precision: 0.508197
+specificity: 0.000000
+IoU: 0.508197
+FAR: 1.000000
+F1: 0.673913
+balanced_accuracy: 0.500000
+loss: 0.712536
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity       IoU       FAR        F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  --------  --------  --------  -----------------  --------
+PITPNA       20              9             11                  20                   0   9  11   0   0  0.450000     1.000000   0.450000     0.000000  0.450000  1.000000  0.620690           0.500000  0.737310
+PITPNB       24             15              9                  24                   0  15   9   0   0  0.625000     1.000000   0.625000     0.000000  0.625000  1.000000  0.769231           0.500000  0.662272
+PITPNC1      17              7             10                  17                   0   7  10   0   0  0.411765     1.000000   0.411765     0.000000  0.411765  1.000000  0.583333           0.500000  0.754351

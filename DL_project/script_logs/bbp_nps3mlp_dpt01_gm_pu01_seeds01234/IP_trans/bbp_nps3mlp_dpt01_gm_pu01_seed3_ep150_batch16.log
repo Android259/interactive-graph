@@ -1,0 +1,618 @@
+
+number of parameters : 1403984
+train : (1382, 12)
+valid : (65, 12)
+test : (65, 12)
+PU rho : 0.550000
+class weights : [1.0, 1.0]
+balanced batches : 87 per epoch covering all 1382 train rows, target 8 positive + 8 unlabeled
+data extracted
+EPOCH 1:
+PU nnPU correction: 0/87 batches, min negative_loss=0.208180, mean negative_loss=0.306240
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 2:
+PU nnPU correction: 0/87 batches, min negative_loss=0.251738, mean negative_loss=0.379151
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 3:
+PU nnPU correction: 0/87 batches, min negative_loss=0.447919, mean negative_loss=0.448917
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 4:
+PU nnPU correction: 0/87 batches, min negative_loss=0.073442, mean negative_loss=0.399857
+VALIDATION
+valid epoch balanced_accuracy: 0.646073
+EPOCH 5:
+PU nnPU correction: 0/87 batches, min negative_loss=0.075814, mean negative_loss=0.284673
+VALIDATION
+valid epoch balanced_accuracy: 0.618295
+EPOCH 6:
+PU nnPU correction: 0/87 batches, min negative_loss=0.137615, mean negative_loss=0.290833
+VALIDATION
+valid epoch balanced_accuracy: 0.646073
+EPOCH 7:
+PU nnPU correction: 0/87 batches, min negative_loss=0.012996, mean negative_loss=0.292017
+VALIDATION
+valid epoch balanced_accuracy: 0.663314
+EPOCH 8:
+PU nnPU correction: 0/87 batches, min negative_loss=0.077154, mean negative_loss=0.299300
+VALIDATION
+valid epoch balanced_accuracy: 0.652778
+EPOCH 9:
+PU nnPU correction: 0/87 batches, min negative_loss=0.097931, mean negative_loss=0.293218
+VALIDATION
+valid epoch balanced_accuracy: 0.652778
+EPOCH 10:
+PU nnPU correction: 0/87 batches, min negative_loss=0.028049, mean negative_loss=0.295624
+VALIDATION
+valid epoch balanced_accuracy: 0.673851
+EPOCH 11:
+PU nnPU correction: 11/87 batches, min negative_loss=-0.018625, mean negative_loss=0.159325
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 12:
+PU nnPU correction: 27/87 batches, min negative_loss=-0.012470, mean negative_loss=0.052585
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 13:
+PU nnPU correction: 20/87 batches, min negative_loss=-0.018681, mean negative_loss=0.052411
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 14:
+PU nnPU correction: 15/87 batches, min negative_loss=-0.018610, mean negative_loss=0.052521
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 15:
+PU nnPU correction: 27/87 batches, min negative_loss=-0.018705, mean negative_loss=0.052644
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 16:
+PU nnPU correction: 20/87 batches, min negative_loss=-0.024894, mean negative_loss=0.053117
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 17:
+PU nnPU correction: 19/87 batches, min negative_loss=-0.018688, mean negative_loss=0.052536
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 18:
+PU nnPU correction: 22/87 batches, min negative_loss=-0.024736, mean negative_loss=0.050792
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 19:
+PU nnPU correction: 22/87 batches, min negative_loss=-0.002947, mean negative_loss=0.001013
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 20:
+PU nnPU correction: 14/87 batches, min negative_loss=-0.000019, mean negative_loss=0.000072
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 21:
+PU nnPU correction: 6/87 batches, min negative_loss=-0.000008, mean negative_loss=0.000027
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 22:
+PU nnPU correction: 2/87 batches, min negative_loss=-0.000002, mean negative_loss=0.000022
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 23:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000001, mean negative_loss=0.000016
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 24:
+PU nnPU correction: 3/87 batches, min negative_loss=-0.000001, mean negative_loss=0.000012
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 25:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000001, mean negative_loss=0.000013
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 26:
+PU nnPU correction: 1/87 batches, min negative_loss=-0.000001, mean negative_loss=0.000011
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 27:
+PU nnPU correction: 2/87 batches, min negative_loss=-0.000001, mean negative_loss=0.000010
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 28:
+PU nnPU correction: 2/87 batches, min negative_loss=-0.000001, mean negative_loss=0.000010
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 29:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000002, mean negative_loss=0.000012
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 30:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000001, mean negative_loss=0.000010
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 31:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000001, mean negative_loss=0.000011
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 32:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000000, mean negative_loss=0.000011
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 33:
+PU nnPU correction: 3/87 batches, min negative_loss=-0.000004, mean negative_loss=0.000011
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 34:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000001, mean negative_loss=0.000012
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 35:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000002, mean negative_loss=0.000012
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 36:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000001, mean negative_loss=0.000013
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 37:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000002, mean negative_loss=0.000016
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 38:
+PU nnPU correction: 1/87 batches, min negative_loss=-0.000000, mean negative_loss=0.000018
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 39:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000002, mean negative_loss=0.000020
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 40:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000004, mean negative_loss=0.000025
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 41:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000007, mean negative_loss=0.000035
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 42:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000002, mean negative_loss=0.000046
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 43:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000011, mean negative_loss=0.000056
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 44:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000022, mean negative_loss=0.000086
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 45:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000032, mean negative_loss=0.000255
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 46:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000288, mean negative_loss=0.064195
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 47:
+PU nnPU correction: 0/87 batches, min negative_loss=0.319704, mean negative_loss=0.436285
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 48:
+PU nnPU correction: 0/87 batches, min negative_loss=0.284821, mean negative_loss=0.437355
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 49:
+PU nnPU correction: 0/87 batches, min negative_loss=0.263069, mean negative_loss=0.400715
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 50:
+PU nnPU correction: 0/87 batches, min negative_loss=0.207103, mean negative_loss=0.397168
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 51:
+PU nnPU correction: 0/87 batches, min negative_loss=0.223468, mean negative_loss=0.399464
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 52:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449838, mean negative_loss=0.449962
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 53:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449889, mean negative_loss=0.449966
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 54:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449910, mean negative_loss=0.449972
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 55:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449912, mean negative_loss=0.449976
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 56:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449945, mean negative_loss=0.449981
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 57:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449928, mean negative_loss=0.449979
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 58:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449933, mean negative_loss=0.449980
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 59:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449946, mean negative_loss=0.449982
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 60:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449910, mean negative_loss=0.449983
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 61:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449935, mean negative_loss=0.449984
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 62:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449917, mean negative_loss=0.449984
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 63:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449962, mean negative_loss=0.449987
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 64:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449943, mean negative_loss=0.449986
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 65:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449876, mean negative_loss=0.449985
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 66:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449941, mean negative_loss=0.449987
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 67:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449957, mean negative_loss=0.449987
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 68:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449903, mean negative_loss=0.449987
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 69:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449927, mean negative_loss=0.449988
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 70:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449971, mean negative_loss=0.449990
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 71:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449940, mean negative_loss=0.449989
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 72:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449954, mean negative_loss=0.449987
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 73:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449951, mean negative_loss=0.449990
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 74:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449934, mean negative_loss=0.449988
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 75:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449946, mean negative_loss=0.449989
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 76:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449956, mean negative_loss=0.449989
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 77:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449809, mean negative_loss=0.449989
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 78:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449971, mean negative_loss=0.449991
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 79:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449957, mean negative_loss=0.449990
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 80:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449957, mean negative_loss=0.449991
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 81:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449948, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 82:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449975, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 83:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449964, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 84:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449945, mean negative_loss=0.449992
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 85:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449978, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 86:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449968, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 87:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449975, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 88:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449960, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 89:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449977, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 90:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449968, mean negative_loss=0.449992
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 91:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449938, mean negative_loss=0.449992
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 92:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449927, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 93:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449969, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 94:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449976, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 95:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449964, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 96:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449974, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 97:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449980, mean negative_loss=0.449996
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 98:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449964, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 99:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449979, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 100:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449974, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 101:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449965, mean negative_loss=0.449992
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 102:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449934, mean negative_loss=0.449991
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 103:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449954, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 104:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449965, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 105:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449963, mean negative_loss=0.449995
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 106:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449978, mean negative_loss=0.449996
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 107:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449972, mean negative_loss=0.449995
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 108:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449959, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 109:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449941, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 110:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449936, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 111:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449963, mean negative_loss=0.449995
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 112:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449968, mean negative_loss=0.449995
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 113:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449981, mean negative_loss=0.449995
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 114:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449948, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 115:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449961, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 116:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449976, mean negative_loss=0.449995
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 117:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449962, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 118:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449960, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 119:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449969, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 120:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449967, mean negative_loss=0.449991
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 121:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449950, mean negative_loss=0.449991
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 122:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449930, mean negative_loss=0.449988
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 123:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449957, mean negative_loss=0.449991
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 124:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449982, mean negative_loss=0.449996
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 125:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449971, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 126:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449963, mean negative_loss=0.449994
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 127:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449988, mean negative_loss=0.449997
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 128:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449976, mean negative_loss=0.449995
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 129:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449974, mean negative_loss=0.449993
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 130:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449932, mean negative_loss=0.449990
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 131:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449939, mean negative_loss=0.449990
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 132:
+PU nnPU correction: 0/87 batches, min negative_loss=0.449948, mean negative_loss=0.449985
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 133:
+PU nnPU correction: 0/87 batches, min negative_loss=0.325456, mean negative_loss=0.442922
+VALIDATION
+valid epoch balanced_accuracy: 0.569444
+EPOCH 134:
+PU nnPU correction: 0/87 batches, min negative_loss=0.141094, mean negative_loss=0.351148
+VALIDATION
+valid epoch balanced_accuracy: 0.618295
+EPOCH 135:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000199, mean negative_loss=0.202269
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 136:
+PU nnPU correction: 0/87 batches, min negative_loss=0.000135, mean negative_loss=0.006537
+VALIDATION
+valid epoch balanced_accuracy: 0.537356
+EPOCH 137:
+PU nnPU correction: 0/87 batches, min negative_loss=0.020058, mean negative_loss=0.269053
+VALIDATION
+valid epoch balanced_accuracy: 0.701628
+EPOCH 138:
+PU nnPU correction: 4/87 batches, min negative_loss=-0.030592, mean negative_loss=0.194073
+VALIDATION
+valid epoch balanced_accuracy: 0.666667
+EPOCH 139:
+PU nnPU correction: 1/87 batches, min negative_loss=-0.027005, mean negative_loss=0.237430
+VALIDATION
+valid epoch balanced_accuracy: 0.687739
+EPOCH 140:
+PU nnPU correction: 1/87 batches, min negative_loss=-0.025957, mean negative_loss=0.262709
+VALIDATION
+valid epoch balanced_accuracy: 0.687739
+EPOCH 141:
+PU nnPU correction: 0/87 batches, min negative_loss=0.027298, mean negative_loss=0.270978
+VALIDATION
+valid epoch balanced_accuracy: 0.611111
+EPOCH 142:
+PU nnPU correction: 0/87 batches, min negative_loss=0.031357, mean negative_loss=0.255722
+VALIDATION
+valid epoch balanced_accuracy: 0.726054
+EPOCH 143:
+PU nnPU correction: 0/87 batches, min negative_loss=0.024704, mean negative_loss=0.261926
+VALIDATION
+valid epoch balanced_accuracy: 0.666667
+EPOCH 144:
+PU nnPU correction: 0/87 batches, min negative_loss=0.027529, mean negative_loss=0.266981
+VALIDATION
+valid epoch balanced_accuracy: 0.712165
+EPOCH 145:
+PU nnPU correction: 0/87 batches, min negative_loss=0.025100, mean negative_loss=0.208713
+VALIDATION
+valid epoch balanced_accuracy: 0.650383
+EPOCH 146:
+PU nnPU correction: 0/87 batches, min negative_loss=0.019045, mean negative_loss=0.169396
+VALIDATION
+valid epoch balanced_accuracy: 0.726054
+EPOCH 147:
+PU nnPU correction: 1/87 batches, min negative_loss=-0.037304, mean negative_loss=0.208081
+VALIDATION
+valid epoch balanced_accuracy: 0.680556
+EPOCH 148:
+PU nnPU correction: 0/87 batches, min negative_loss=0.034608, mean negative_loss=0.261949
+VALIDATION
+valid epoch balanced_accuracy: 0.680556
+EPOCH 149:
+PU nnPU correction: 0/87 batches, min negative_loss=0.116517, mean negative_loss=0.263949
+VALIDATION
+valid epoch balanced_accuracy: 0.701628
+EPOCH 150:
+PU nnPU correction: 1/87 batches, min negative_loss=-0.024122, mean negative_loss=0.202134
+VALIDATION
+valid epoch balanced_accuracy: 0.664272
+accuracy: 0.738462
+sensitivity: 0.916667
+precision: 0.702128
+specificity: 0.517241
+IoU: 0.660000
+FAR: 0.482759
+F1: 0.795181
+balanced_accuracy: 0.716954
+loss: 0.272400

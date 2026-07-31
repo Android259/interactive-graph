@@ -1,0 +1,38 @@
+=== COMMON + ATTENTION, NO TANIMOTO WEIGHT | excluded group: ML | seed: 0 | GPU: NVIDIA A100-PCIE-40GB | batch: 32 ===
+
+number of parameters : 1075404
+train : (1302, 12)
+valid : (16, 12)
+test : (16, 12)
+class weights : [1.1708632707595825, 0.872654139995575]
+data extracted
+
+NOTE: Using experimental fast data loading logic. To disable, pass
+    "--load_fast=false" and report issues on GitHub. More details:
+    https://github.com/tensorflow/tensorboard/issues/4784
+
+EPOCH 1:
+epoch : 1
+batch : 1/41
+train accuracy : 0.5625
+train pred 0/1 : 0/32 label 0/1 : 14/18
+epoch : 1
+batch : 2/41
+train accuracy : 0.3125
+train pred 0/1 : 32/0 label 0/1 : 10/22
+epoch : 1
+batch : 3/41
+train accuracy : 0.46875
+train pred 0/1 : 0/32 label 0/1 : 17/15
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 636, in <module>
+    countrain, countval, train_metrics, valid_metrics = epoch(epoch_number,countrain,countval)
+  File "/home/kalinina/DL_project/./training/new_train.py", line 399, in epoch
+    los.backward()
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/_tensor.py", line 626, in backward
+    torch.autograd.backward(
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/autograd/__init__.py", line 347, in backward
+    _engine_run_backward(
+  File "/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/torch/autograd/graph.py", line 823, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.51 GiB. GPU 0 has a total capacity of 39.49 GiB of which 819.00 MiB is free. Process 10907 has 31.41 GiB memory in use. Including non-PyTorch memory, this process has 7.26 GiB memory in use. Of the allocated memory 5.34 GiB is allocated by PyTorch, and 1.43 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

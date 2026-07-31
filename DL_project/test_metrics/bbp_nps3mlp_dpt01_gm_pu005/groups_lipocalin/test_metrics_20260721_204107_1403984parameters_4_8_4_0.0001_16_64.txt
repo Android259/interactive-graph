@@ -1,0 +1,163 @@
+third_layers_in_mlps: 1
+cross_attention: 1
+protein_self_attention: 1
+lipid_self_attention: 1
+double_attention: 0
+single_gat_layer: 1
+transformer_conv: 0
+gine_conv: 0
+protein_gine_residual: 0
+attention_residual_gates: 0
+protein_gat_residual: 0
+structured_sparsity: 0
+sparsity_mode: l0
+sparsity_lambda: 0.0
+target_sparsity: None
+sparsity_gate_ffn: 0
+sparsity_gate_heads: 0
+sparsity_gate_blocks: 0
+sparsity_gate_third_layer: 0
+sparsity_gate_cross_attention: 0
+gate_all_mlp_hidden: 0
+bilevel: 0
+bilevel_dropout: 0
+bilevel_lr: 0.001
+concrete_dropout_reg: 1e-05
+concrete_dropout_weight_reg: 1e-06
+protein_disable_pre_sa_mlp: 0
+protein_disable_post_sa_mlp: 1
+lipid_disable_post_sa_mlp: 1
+protein_gat_graph_norm: 0
+protein_output_graph_norm: 0
+lipid_gat_graph_norm: 0
+lipid_output_graph_norm: 0
+label: bbp_nps3mlp_dpt01_gm_pu005
+m: 4
+final_m: 4
+dropout: 0.1
+final_dropout: 0.1
+lr: 0.0001
+weight_decay: 1e-05
+hiddim: 64
+ep: 150
+checkpoint_window: 5
+seed: 4
+excluded_groups: ["lipocalin"]
+excluded_subgroups: []
+balance_excluded_group_negatives: 0
+balance_negatives_by_family: 0
+balanced_proteins: 1
+balanced_batches: 1
+test_group: 
+cold_split: 0
+batch: 16
+num_workers: 4
+lipid_fragments_treatment: concat
+protein_pooling: attention_pos_bias
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+lipid_graph_isomers: 0
+ordinary_prot_pooling: 0
+prot_attention_pos_bias: 1
+prot_pooling_by_pockets: 0
+prot_pos_bias_per_head: 0
+bidirectional_edges: 0
+tanimoto_weight: 0
+class_weights: 1
+protein_group_weight: 0
+protein_class_weight: 0
+protein_class_sqrt_weight: 0
+grab_loss: 0
+pu_loss: 1
+disable_early_stopping: 1
+testmode: 0
+pu_rho: 0.5249999999999999
+pu_unlabeled_positive_fraction: 0.05
+pu_beta: 0.0
+pu_gamma: 1.0
+focal_loss: 0
+focal_gamma: 2.0
+logit_adjustment: 0
+logit_adjustment_tau: 1.0
+type_opt: 0
+plmon: 1
+plm_sequential_compression: 0
+plm_compression_dim: 10
+buryon: 1
+loss_type: cross_entropy
+pool_type: gem
+act_fn: leakyrelu
+HEADS: 8
+lr_warmup_cosine: 0
+lr_warmup_epochs: 0
+lr_min_factor: 0.1
+swa: 0
+swa_start_frac: 0.75
+swa_lr: None
+save_checkpoint: 0
+save_model: 0
+training_duration_sec: 8206.441465
+epochs_completed: 150
+checkpoint_epoch: 31
+checkpoint_valid_balanced_accuracy: 0.500000
+checkpoint_rolling_valid_balanced_accuracy: 0.500000
+max_valid_balanced_accuracy_epoch: 16
+max_valid_balanced_accuracy: 0.522222
+best_valid_F1: 0.516129
+final_train_balanced_accuracy: 0.500000
+final_valid_balanced_accuracy: 0.500000
+checkpoint_to_final_drop: 0.000000
+mean_valid_balanced_accuracy: 0.493111
+auc_valid_balanced_accuracy: 0.493363
+valid_balanced_accuracy_std: 0.018622
+min_train_loss: 0.295412
+final_train_loss: 0.525000
+min_valid_loss: 0.478662
+final_valid_loss: 0.525000
+train_loss_reduction: -0.043485
+valid_loss_reduction: 0.003045
+epochs_to_checkpoint: 31
+epochs_since_checkpoint: 119
+mean_train_valid_gap: 0.033045
+max_train_valid_gap: 0.246997
+overfitting_onset_epoch: 4
+overfitting_epochs: 7
+nan_epoch_count: 0
+collapse_epoch_count: 123
+converged: 1
+run_status: complete
+discovered_widths: 
+discovered_dropout: 
+total: 90
+real_positive: 45
+real_negative: 45
+predicted_positive: 0
+predicted_negative: 90
+TP: 0
+FP: 0
+TN: 45
+FN: 45
+accuracy: 0.500000
+sensitivity: 0.000000
+precision: undefined
+specificity: 1.000000
+IoU: 0.000000
+FAR: 0.000000
+F1: 0.000000
+balanced_accuracy: 0.500000
+loss: 0.525000
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity        IoU        FAR         F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  ---------  ---------  ---------  -----------------  --------
+FABP1        28             13             15                   0                  28   0   0  15  13  0.535714     0.000000  undefined     1.000000   0.000000   0.000000   0.000000           0.500000  0.525000
+FABP5        14              7              7                   0                  14   0   0   7   7  0.500000     0.000000  undefined     1.000000   0.000000   0.000000   0.000000           0.500000  0.525000
+FABP7         5              2              3                   0                   5   0   0   3   2  0.600000     0.000000  undefined     1.000000   0.000000   0.000000   0.000000           0.500000  0.525000
+LCN1         23             10             13                   0                  23   0   0  13  10  0.565217     0.000000  undefined     1.000000   0.000000   0.000000   0.000000           0.500000  0.525000
+LCN15         5              4              1                   0                   5   0   0   1   4  0.200000     0.000000  undefined     1.000000   0.000000   0.000000   0.000000           0.500000  0.525001
+PMP2         11              7              4                   0                  11   0   0   4   7  0.363636     0.000000  undefined     1.000000   0.000000   0.000000   0.000000           0.500000  0.525000
+RBP1          1              1              0                   0                   1   0   0   0   1  0.000000     0.000000  undefined    undefined   0.000000  undefined   0.000000          undefined  0.525000
+RBP4          2              1              1                   0                   2   0   0   1   1  0.500000     0.000000  undefined     1.000000   0.000000   0.000000   0.000000           0.500000  0.525000
+RBP5          1              0              1                   0                   1   0   0   1   0  1.000000    undefined  undefined     1.000000  undefined   0.000000  undefined          undefined  0.525000

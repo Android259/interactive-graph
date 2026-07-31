@@ -1,0 +1,10 @@
+Waiting for exclusive access to GPU GPU-d5bb7f78-734e-955a-e73d-007c399f84e6.
+=== GROUP: GLTP | VARIANT: bidir_edges_standard | SEED: 0 | GPU: Tesla V100-SXM2-32GB ===
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 34, in <module>
+    conf = read_configuration()
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 428, in read_configuration
+    return read_named_configuration(argv)
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 416, in read_named_configuration
+    raise ValueError(f"Unknown parameter: {argument}")
+ValueError: Unknown parameter: --bidirectional_edges

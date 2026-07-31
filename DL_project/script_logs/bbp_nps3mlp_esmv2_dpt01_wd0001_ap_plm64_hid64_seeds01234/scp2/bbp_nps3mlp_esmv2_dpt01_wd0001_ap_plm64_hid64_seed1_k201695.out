@@ -1,0 +1,18 @@
+Waiting for exclusive access to GPU GPU-390ff8ef-bac6-d8e4-9b30-2629fa07d7da.
+=== GROUP: scp2 | VARIANT: bbp_nps3mlp_esmv2_dpt01_wd0001_ap_plm64_hid64 | SEED: 1 | GPU: NVIDIA H200 ===
+
+number of parameters : 1542407
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 73, in <module>
+    csv = read_csv(os.path.join(path, dataset_file))
+  File "/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/pandas/io/parsers/readers.py", line 1026, in read_csv
+    return _read(filepath_or_buffer, kwds)
+  File "/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/pandas/io/parsers/readers.py", line 620, in _read
+    parser = TextFileReader(filepath_or_buffer, **kwds)
+  File "/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/pandas/io/parsers/readers.py", line 1620, in __init__
+    self._engine = self._make_engine(f, self.engine)
+  File "/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/pandas/io/parsers/readers.py", line 1880, in _make_engine
+    self.handles = get_handle(
+  File "/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/pandas/io/common.py", line 873, in get_handle
+    handle = open(
+FileNotFoundError: [Errno 2] No such file or directory: '/home/kalinina/DL_project/data/Processed_Negative_Interaction_Corrected_Domains.csv'

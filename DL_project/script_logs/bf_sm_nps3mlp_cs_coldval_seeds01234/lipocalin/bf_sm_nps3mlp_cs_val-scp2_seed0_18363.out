@@ -1,0 +1,40 @@
+Waiting for exclusive access to GPU GPU-d6f2d203-5a7d-2b85-03a9-8ad92df5a755.
+=== TEST: lipocalin | VAL: scp2 | VARIANT: bf_sm_nps3mlp_cs | SEED: 0 | GPU: NVIDIA A100-PCIE-40GB ===
+
+number of parameters : 1403982
+train : (1246, 12)
+valid : (86, 12)
+test : (180, 12)
+class weights : [1.0, 1.0]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.627907
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.453488
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.406977
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.453488
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.441860
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.418605
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.418605
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.418605
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.383721
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.453488
+EPOCH 11:

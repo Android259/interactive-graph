@@ -1,0 +1,94 @@
+label: nt_cw_lr1e3
+third_layers_in_mlps: 0
+cross_attention: 1
+protein_self_attention: 1
+lipid_self_attention: 1
+double_attention: 0
+m: 4
+lr: 0.0003
+weight_decay: 0.0
+hiddim: 64
+ep: 150
+seed: 0
+excluded_groups: ["lipocalin"]
+excluded_subgroups: []
+batch: 16
+num_workers: 4
+lipid_fragments_treatment: 0
+protein_pooling: 0
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+ordinary_prot_pooling: 1
+prot_attention_pos_bias: 0
+prot_pooling_by_pockets: 0
+tanimoto_weight: 0
+class_weights: 1
+protein_group_weight: 0
+grab_loss: 0
+type_opt: 1
+plmon: 1
+buryon: 1
+loss_type: 1
+pool_type: 1
+HEADS: 8
+training_duration_sec: 10009.613019
+epochs_completed: 150
+best_epoch: 78
+best_valid_balanced_accuracy: 0.693750
+best_valid_F1: 0.618557
+final_train_balanced_accuracy: 0.991561
+final_valid_balanced_accuracy: 0.556250
+best_to_final_drop: 0.137500
+mean_valid_balanced_accuracy: 0.572097
+auc_valid_balanced_accuracy: 0.572427
+valid_balanced_accuracy_std: 0.059740
+min_train_loss: 0.013721
+final_train_loss: 0.016479
+min_valid_loss: 0.711685
+final_valid_loss: 2.671615
+train_loss_reduction: 0.661176
+valid_loss_reduction: -1.875876
+epochs_to_best: 78
+epochs_without_improvement: 72
+mean_train_valid_gap: 0.368832
+max_train_valid_gap: 0.510087
+overfitting_onset_epoch: 2
+overfitting_epochs: 37
+nan_epoch_count: 0
+collapse_epoch_count: 0
+converged: 0
+run_status: complete
+total: 129
+real_positive: 42
+real_negative: 87
+predicted_positive: 39
+predicted_negative: 90
+TP: 22
+FP: 17
+TN: 70
+FN: 20
+accuracy: 0.713178
+sensitivity: 0.523810
+precision: 0.564103
+specificity: 0.804598
+IoU: 0.372881
+FAR: 0.195402
+F1: 0.543210
+balanced_accuracy: 0.664204
+loss: 1.209021
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity        IoU       FAR         F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  ---------  --------  ---------  -----------------  --------
+CRABP2        7              0              7                   0                   7   0   0   7   0  1.000000    undefined  undefined     1.000000  undefined  0.000000  undefined          undefined  0.172250
+FABP1        26             16             10                   7                  19   7   0  10   9  0.653846     0.437500   1.000000     1.000000   0.437500  0.000000   0.608696           0.718750  2.099940
+FABP5        16              5             11                   0                  16   0   0  11   5  0.687500     0.000000  undefined     1.000000   0.000000  0.000000   0.000000           0.500000  0.900500
+FABP7        15              5             10                   6                   9   3   3   7   2  0.666667     0.600000   0.500000     0.700000   0.375000  0.300000   0.545455           0.650000  1.398780
+LCN1         16             10              6                  12                   4   9   3   3   1  0.750000     0.900000   0.750000     0.500000   0.692308  0.500000   0.818182           0.700000  0.769272
+LCN15        11              2              9                   4                   7   0   4   5   2  0.454545     0.000000   0.000000     0.555556   0.000000  0.444444   0.000000           0.277778  1.540735
+PMP2          8              3              5                   5                   3   3   2   3   0  0.750000     1.000000   0.600000     0.600000   0.600000  0.400000   0.750000           0.800000  0.479839
+RBP1         10              0             10                   3                   7   0   3   7   0  0.700000    undefined   0.000000     0.700000   0.000000  0.300000   0.000000          undefined  0.390247
+RBP4         16              1             15                   2                  14   0   2  13   1  0.812500     0.000000   0.000000     0.866667   0.000000  0.133333   0.000000           0.433333  1.730322
+RBP5          4              0              4                   0                   4   0   0   4   0  1.000000    undefined  undefined     1.000000  undefined  0.000000  undefined          undefined  0.021748

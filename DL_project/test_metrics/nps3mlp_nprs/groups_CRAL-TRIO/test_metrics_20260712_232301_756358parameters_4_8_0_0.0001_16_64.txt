@@ -1,0 +1,141 @@
+third_layers_in_mlps: 1
+cross_attention: 1
+protein_self_attention: 1
+lipid_self_attention: 1
+double_attention: 0
+single_gat_layer: 1
+transformer_conv: 0
+gine_conv: 1
+protein_gine_residual: 0
+attention_residual_gates: 0
+protein_gat_residual: 0
+protein_disable_pre_sa_mlp: 1
+protein_disable_post_sa_mlp: 1
+lipid_disable_post_sa_mlp: 1
+protein_gat_graph_norm: 0
+protein_output_graph_norm: 0
+lipid_gat_graph_norm: 0
+lipid_output_graph_norm: 0
+label: nps3mlp_nprs
+m: 4
+final_m: 4
+dropout: 0.0
+final_dropout: 0.0
+lr: 0.0001
+weight_decay: 1e-05
+hiddim: 64
+ep: 150
+checkpoint_window: 5
+seed: 0
+excluded_groups: ["CRAL-TRIO"]
+excluded_subgroups: []
+balance_excluded_group_negatives: 0
+test_group: 
+batch: 16
+num_workers: 4
+lipid_fragments_treatment: concat
+protein_pooling: attention_pos_bias
+lipid_concat: 1
+lipid_random_choice: 0
+lipid_fragments_mask: 0
+lipid_isomers: 0
+lipid_graph_isomers: 0
+ordinary_prot_pooling: 0
+prot_attention_pos_bias: 1
+prot_pooling_by_pockets: 0
+prot_pos_bias_per_head: 0
+bidirectional_edges: 0
+tanimoto_weight: 0
+class_weights: 1
+protein_group_weight: 0
+protein_class_weight: 0
+protein_class_sqrt_weight: 0
+grab_loss: 0
+pu_loss: 0
+disable_early_stopping: 1
+testmode: 0
+pu_rho: 0.2
+pu_unlabeled_positive_fraction: None
+pu_beta: 0.0
+pu_gamma: 1.0
+focal_loss: 0
+focal_gamma: 2.0
+logit_adjustment: 0
+logit_adjustment_tau: 1.0
+type_opt: 0
+plmon: 1
+plm_sequential_compression: 0
+plm_compression_dim: 10
+buryon: 1
+loss_type: cross_entropy
+pool_type: max
+act_fn: leakyrelu
+HEADS: 8
+lr_warmup_cosine: 0
+lr_warmup_epochs: 3
+lr_min_factor: 0.1
+swa: 0
+swa_start_frac: 0.75
+swa_lr: None
+save_checkpoint: 0
+training_duration_sec: 9675.901479
+epochs_completed: 150
+checkpoint_epoch: 76
+checkpoint_valid_balanced_accuracy: 0.660278
+checkpoint_rolling_valid_balanced_accuracy: 0.674889
+max_valid_balanced_accuracy_epoch: 97
+max_valid_balanced_accuracy: 0.698333
+best_valid_F1: 0.781250
+final_train_balanced_accuracy: 0.994740
+final_valid_balanced_accuracy: 0.677222
+checkpoint_to_final_drop: -0.016944
+mean_valid_balanced_accuracy: 0.628911
+auc_valid_balanced_accuracy: 0.629691
+valid_balanced_accuracy_std: 0.053675
+min_train_loss: 0.008020
+final_train_loss: 0.013841
+min_valid_loss: 0.666618
+final_valid_loss: 1.748792
+train_loss_reduction: 0.658818
+valid_loss_reduction: -1.038715
+epochs_to_checkpoint: 76
+epochs_since_checkpoint: 74
+mean_train_valid_gap: 0.339416
+max_train_valid_gap: 0.522487
+overfitting_onset_epoch: 5
+overfitting_epochs: 41
+nan_epoch_count: 0
+collapse_epoch_count: 0
+converged: 0
+run_status: complete
+total: 172
+real_positive: 104
+real_negative: 68
+predicted_positive: 95
+predicted_negative: 77
+TP: 67
+FP: 28
+TN: 40
+FN: 37
+accuracy: 0.622093
+sensitivity: 0.644231
+precision: 0.705263
+specificity: 0.588235
+IoU: 0.507576
+FAR: 0.411765
+F1: 0.673367
+balanced_accuracy: 0.616233
+loss: 1.699237
+
+per_protein_subgroup_metrics:
+subgroup  total  real_positive  real_negative  predicted_positive  predicted_negative  TP  FP  TN  FN  accuracy  sensitivity  precision  specificity       IoU       FAR        F1  balanced_accuracy      loss
+--------  -----  -------------  -------------  ------------------  ------------------  --  --  --  --  --------  -----------  ---------  -----------  --------  --------  --------  -----------------  --------
+ATCAY         4              1              3                   3                   1   1   2   1   0  0.500000     1.000000   0.333333     0.333333  0.333333  0.666667  0.500000           0.666667  3.304099
+BNIPL        11              1             10                   8                   3   1   7   3   0  0.363636     1.000000   0.125000     0.300000  0.125000  0.700000  0.222222           0.650000  3.109438
+RLBP1        43             41              2                  24                  19  24   0   2  17  0.604651     0.585366   1.000000     1.000000  0.585366  0.000000  0.738462           0.792683  1.525589
+SEC14L2      10              3              7                   5                   5   2   3   4   1  0.600000     0.666667   0.400000     0.571429  0.333333  0.428571  0.500000           0.619048  0.881328
+SEC14L4      14              2             12                   4                  10   0   4   8   2  0.571429     0.000000   0.000000     0.666667  0.000000  0.333333  0.000000           0.333333  2.934436
+SEC14L5      12              1             11                   4                   8   1   3   8   0  0.750000     1.000000   0.250000     0.727273  0.250000  0.272727  0.400000           0.863636  1.551033
+SEC14L6      16              8              8                  11                   5   8   3   5   0  0.812500     1.000000   0.727273     0.625000  0.727273  0.375000  0.842105           0.812500  1.142286
+TTPA         16              7              9                  11                   5   6   5   4   1  0.625000     0.857143   0.545455     0.444444  0.500000  0.555556  0.666667           0.650794  1.667470
+TTPAL        46             40              6                  25                  21  24   1   5  16  0.630435     0.600000   0.960000     0.833333  0.585366  0.166667  0.738462           0.716667  1.430096

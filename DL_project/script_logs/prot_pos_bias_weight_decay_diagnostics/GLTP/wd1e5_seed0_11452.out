@@ -1,0 +1,10 @@
+Waiting for exclusive access to GPU GPU-45d882aa-be45-3db7-bd3a-06da9fcaf3b1.
+=== GROUP: GLTP | VARIANT: wd1e5 | SEED: 0 | WEIGHT_DECAY: 0.00001 | GPU: NVIDIA A100-PCIE-40GB ===
+
+number of parameters : 1075406
+train : (1224, 12)
+valid : (55, 12)
+test : (55, 12)
+class weights : [1.1147540807724, 0.9066666960716248]
+data extracted
+EPOCH 1:

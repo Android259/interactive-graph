@@ -1,0 +1,265 @@
+Opening shared SSH connection to kalinina@bigfoot.
+Resuming oldest Bigfoot queue with pending jobs: /home/kalinina/DL_project/.bigfoot_job_queues/prot_pos_bias_no_post_sa_mlp_standard_seeds01234
+# INFO:  Moldable instance:  1  Estimated nb resources:  8  Walltime:  36000
+OAR_JOB_ID=15190
+Bigfoot queue: submitted=1 active_before=53 limit=54 pending=44.
+Current OAR jobs for kalinina:
+    15079    pu_rho_OSB…   3:08:02    Running   kalinina   R=8,J=P,Q=…   default  
+    15081    pu_rho_OSB…   2:47:01    Running   kalinina   R=8,J=P,Q=…   default  
+    15084    pu_rho_OSB…   2:43:38    Running   kalinina   R=8,J=P,Q=…   default  
+    15087    pu_rho_OSB…   2:08:01    Running   kalinina   R=10,J=P,Q…   default  
+    15135    pu_rho_OSB…   1:47:29    Running   kalinina   R=8,J=P,Q=…   default  
+    15136    pu_rho_OSB…   1:39:18    Running   kalinina   R=10,J=P,Q…   default  
+    15138    pu_rho_OSB…   1:28:02    Running   kalinina   R=10,J=P,Q…   default  
+    15139    pu_rho_OSB…   1:20:37    Running   kalinina   R=10,J=P,Q…   default  
+    15140    pu_rho_STA…   1:11:26    Running   kalinina   R=8,J=P,Q=…   default  
+    15141    pu_rho_STA…   1:01:30    Running   kalinina   R=10,J=P,Q…   default  
+    15142    pu_rho_STA…   0:55:18    Running   kalinina   R=10,J=P,Q…   default  
+    15143    pu_rho_STA…   0:47:40    Running   kalinina   R=10,J=P,Q…   default  
+    15144    pu_rho_STA…   0:45:08    Running   kalinina   R=10,J=P,Q…   default  
+    15145    pu_rho_STA…   0:12:03    Running   kalinina   R=8,J=P,Q=…   default  
+    15146    pu_rho_STA…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15147    pu_rho_STA…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15148    pu_rho_STA…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15149    pu_rho_STA…   -          Waiting   kalinina   R=10,W=144…   default  
+    15150    pu_rho_STA…   -          Waiting   kalinina   R=10,W=144…   default  
+    15151    pu_rho_STA…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15152    pu_rho_STA…   -          Waiting   kalinina   R=10,W=144…   default  
+    15153    pu_rho_STA…   -          Waiting   kalinina   R=10,W=144…   default  
+    15154    pu_rho_STA…   -          Waiting   kalinina   R=10,W=144…   default  
+    15155    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15156    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15157    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15158    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15159    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15160    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15161    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15162    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15163    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15164    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15165    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15166    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15167    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15168    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15169    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15172    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15174    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15175    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15176    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15177    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15178    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15179    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15180    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15181    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15182    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15183    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15184    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15185    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15186    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15188    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15190    nopost_CRA…   -          Waiting   kalinina   R=8,W=10:0…   default  
+Synchronizing script logs.
+Job 15079 (pu_rho_OSBP_pu_rho030_s1)
+  Epoch: current 137 | checkpoint 102 | best rolling-5 balanced accuracy 0.721428
+  Latest train balanced accuracy: 0.920246
+  Checkpoint valid:  predicted 0/1 = 15/2 | actual 0/1 = 14/3
+Job 15081 (pu_rho_OSBP_pu_rho020_s2)
+  Epoch: current 111 | checkpoint 69 | best rolling-5 balanced accuracy 0.929824
+  Latest train balanced accuracy: 0.865122
+  Checkpoint valid:  predicted 0/1 = 19/3 | actual 0/1 = 19/3
+Job 15084 (pu_rho_OSBP_pu_rho030_s2)
+  Epoch: current 109 | checkpoint 107 | best rolling-5 balanced accuracy 0.884210
+  Latest train balanced accuracy: 0.916528
+  Checkpoint valid:  predicted 0/1 = 16/6 | actual 0/1 = 19/3
+Job 15087 (pu_rho_OSBP_pu_rho010_s3)
+  Epoch: current 86 | checkpoint 61 | best rolling-5 balanced accuracy 0.528571
+  Latest train balanced accuracy: 0.785428
+  Checkpoint valid:  predicted 0/1 = 14/4 | actual 0/1 = 14/4
+Job 15135 (pu_rho_OSBP_pu_rho020_s3)
+  Epoch: current 70 | checkpoint 46 | best rolling-5 balanced accuracy 0.564286
+  Latest train balanced accuracy: 0.809960
+  Checkpoint valid:  predicted 0/1 = 13/5 | actual 0/1 = 14/4
+Job 15136 (pu_rho_OSBP_pu_rho030_s3)
+  Epoch: current 84 | checkpoint 66 | best rolling-5 balanced accuracy 0.550000
+  Latest train balanced accuracy: 0.879674
+  Checkpoint valid:  predicted 0/1 = 4/14 | actual 0/1 = 14/4
+Job 15138 (pu_rho_OSBP_pu_rho020_s4)
+  Epoch: current 61 | checkpoint 1 | best rolling-5 balanced accuracy 0.500000
+  Latest train balanced accuracy: 0.815722
+  Checkpoint valid:  predicted 0/1 = 23/0 | actual 0/1 = 21/2
+Job 15139 (pu_rho_OSBP_pu_rho030_s4)
+  Epoch: current 55 | checkpoint 1 | best rolling-5 balanced accuracy 0.500000
+  Latest train balanced accuracy: 0.844321
+  Checkpoint valid:  predicted 0/1 = 23/0 | actual 0/1 = 21/2
+Job 15140 (pu_rho_START_pu_rho010_s0)
+  Epoch: current 59 | checkpoint 52 | best rolling-5 balanced accuracy 0.548284
+  Latest train balanced accuracy: 0.808368
+  Checkpoint valid:  predicted 0/1 = 98/20 | actual 0/1 = 16/102
+Job 15141 (pu_rho_START_pu_rho020_s0)
+  Epoch: current 47 | checkpoint 7 | best rolling-5 balanced accuracy 0.585784
+  Latest train balanced accuracy: 0.839891
+  Checkpoint valid:  predicted 0/1 = 88/30 | actual 0/1 = 16/102
+Job 15142 (pu_rho_START_pu_rho030_s0)
+  Epoch: current 42 | checkpoint 13 | best rolling-5 balanced accuracy 0.527083
+  Latest train balanced accuracy: 0.829906
+  Checkpoint valid:  predicted 0/1 = 69/49 | actual 0/1 = 16/102
+Job 15143 (pu_rho_START_pu_rho010_s1)
+  Epoch: current 36 | checkpoint 21 | best rolling-5 balanced accuracy 0.579051
+  Latest train balanced accuracy: 0.669802
+  Checkpoint valid:  predicted 0/1 = 101/21 | actual 0/1 = 23/99
+Job 15144 (pu_rho_START_pu_rho020_s1)
+  Epoch: current 35 | checkpoint 21 | best rolling-5 balanced accuracy 0.628722
+  Latest train balanced accuracy: 0.772861
+  Checkpoint valid:  predicted 0/1 = 95/27 | actual 0/1 = 23/99
+Job 15145 (pu_rho_START_pu_rho030_s1)
+  Epoch: current 11 | checkpoint 9 | best rolling-5 balanced accuracy 0.589460
+  Latest train balanced accuracy: 0.739195
+  Checkpoint valid:  predicted 0/1 = 43/79 | actual 0/1 = 23/99
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=14 waiting=40 other=0 total=54 pending_queue=44. Checking again in 300 seconds.
+# INFO:  Moldable instance:  1  Estimated nb resources:  8  Walltime:  36000
+OAR_JOB_ID=15191
+Bigfoot queue: submitted=1 active_before=53 limit=54 pending=43.
+Current OAR jobs for kalinina:
+    15079    pu_rho_OSB…   3:13:18    Running   kalinina   R=8,J=P,Q=…   default  
+    15081    pu_rho_OSB…   2:52:17    Running   kalinina   R=8,J=P,Q=…   default  
+    15084    pu_rho_OSB…   2:48:54    Running   kalinina   R=8,J=P,Q=…   default  
+    15087    pu_rho_OSB…   2:13:17    Running   kalinina   R=10,J=P,Q…   default  
+    15135    pu_rho_OSB…   1:52:45    Running   kalinina   R=8,J=P,Q=…   default  
+    15136    pu_rho_OSB…   1:44:34    Running   kalinina   R=10,J=P,Q…   default  
+    15139    pu_rho_OSB…   1:25:53    Running   kalinina   R=10,J=P,Q…   default  
+    15140    pu_rho_STA…   1:16:42    Running   kalinina   R=8,J=P,Q=…   default  
+    15141    pu_rho_STA…   1:06:46    Running   kalinina   R=10,J=P,Q…   default  
+    15142    pu_rho_STA…   1:00:34    Running   kalinina   R=10,J=P,Q…   default  
+    15143    pu_rho_STA…   0:52:56    Running   kalinina   R=10,J=P,Q…   default  
+    15144    pu_rho_STA…   0:50:24    Running   kalinina   R=10,J=P,Q…   default  
+    15145    pu_rho_STA…   0:17:19    Running   kalinina   R=8,J=P,Q=…   default  
+    15146    pu_rho_STA…   0:04:14    Running   kalinina   R=10,J=P,Q…   default  
+    15147    pu_rho_STA…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15148    pu_rho_STA…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15149    pu_rho_STA…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15150    pu_rho_STA…   -          Waiting   kalinina   R=10,W=144…   default  
+    15151    pu_rho_STA…   -          Waiting   kalinina   R=10,W=144…   default  
+    15152    pu_rho_STA…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15153    pu_rho_STA…   -          Waiting   kalinina   R=10,W=144…   default  
+    15154    pu_rho_STA…   -          Waiting   kalinina   R=10,W=144…   default  
+    15155    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15156    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15157    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15158    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15159    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15160    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15161    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15162    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15163    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15164    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15165    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15166    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15167    pu_rho_lip…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15168    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15169    pu_rho_lip…   -          Waiting   kalinina   R=10,W=144…   default  
+    15172    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15174    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15175    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15176    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15177    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15178    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15179    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15180    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15181    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15182    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15183    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15184    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15185    pu_rho_scp…   -          Waiting   kalinina   R=8,W=1449…   default  
+    15186    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15188    pu_rho_scp…   -          Waiting   kalinina   R=10,W=144…   default  
+    15190    nopost_CRA…   -          Waiting   kalinina   R=8,W=3609…   default  
+    15191    nopost_CRA…   -          Waiting   kalinina   R=8,W=10:0…   default  
+Synchronizing script logs.
+Job 15079 (pu_rho_OSBP_pu_rho030_s1)
+  Epoch: current 140 | checkpoint 102 | best rolling-5 balanced accuracy 0.721428
+  Latest train balanced accuracy: 0.909735
+  Checkpoint valid:  predicted 0/1 = 15/2 | actual 0/1 = 14/3
+Job 15081 (pu_rho_OSBP_pu_rho020_s2)
+  Epoch: current 114 | checkpoint 69 | best rolling-5 balanced accuracy 0.929824
+  Latest train balanced accuracy: 0.831699
+  Checkpoint valid:  predicted 0/1 = 19/3 | actual 0/1 = 19/3
+Job 15084 (pu_rho_OSBP_pu_rho030_s2)
+  Epoch: current 112 | checkpoint 107 | best rolling-5 balanced accuracy 0.884210
+  Latest train balanced accuracy: 0.898782
+  Checkpoint valid:  predicted 0/1 = 16/6 | actual 0/1 = 19/3
+Job 15087 (pu_rho_OSBP_pu_rho010_s3)
+  Epoch: current 89 | checkpoint 61 | best rolling-5 balanced accuracy 0.528571
+  Latest train balanced accuracy: 0.771815
+  Checkpoint valid:  predicted 0/1 = 14/4 | actual 0/1 = 14/4
+Job 15135 (pu_rho_OSBP_pu_rho020_s3)
+  Epoch: current 73 | checkpoint 46 | best rolling-5 balanced accuracy 0.564286
+  Latest train balanced accuracy: 0.794659
+  Checkpoint valid:  predicted 0/1 = 13/5 | actual 0/1 = 14/4
+Job 15136 (pu_rho_OSBP_pu_rho030_s3)
+  Epoch: current 88 | checkpoint 66 | best rolling-5 balanced accuracy 0.550000
+  Latest train balanced accuracy: 0.878781
+  Checkpoint valid:  predicted 0/1 = 4/14 | actual 0/1 = 14/4
+Job 15139 (pu_rho_OSBP_pu_rho030_s4)
+  Epoch: current 59 | checkpoint 1 | best rolling-5 balanced accuracy 0.500000
+  Latest train balanced accuracy: 0.840834
+  Checkpoint valid:  predicted 0/1 = 23/0 | actual 0/1 = 21/2
+Job 15140 (pu_rho_START_pu_rho010_s0)
+  Epoch: current 63 | checkpoint 52 | best rolling-5 balanced accuracy 0.548284
+  Latest train balanced accuracy: 0.723779
+  Checkpoint valid:  predicted 0/1 = 98/20 | actual 0/1 = 16/102
+Job 15141 (pu_rho_START_pu_rho020_s0)
+  Epoch: current 51 | checkpoint 7 | best rolling-5 balanced accuracy 0.585784
+  Latest train balanced accuracy: 0.799821
+  Checkpoint valid:  predicted 0/1 = 88/30 | actual 0/1 = 16/102
+Job 15142 (pu_rho_START_pu_rho030_s0)
+  Epoch: current 46 | checkpoint 13 | best rolling-5 balanced accuracy 0.527083
+  Latest train balanced accuracy: 0.881278
+  Checkpoint valid:  predicted 0/1 = 69/49 | actual 0/1 = 16/102
+Job 15143 (pu_rho_START_pu_rho010_s1)
+  Epoch: current 40 | checkpoint 21 | best rolling-5 balanced accuracy 0.579051
+  Latest train balanced accuracy: 0.680553
+  Checkpoint valid:  predicted 0/1 = 101/21 | actual 0/1 = 23/99
+Job 15144 (pu_rho_START_pu_rho020_s1)
+  Epoch: current 39 | checkpoint 37 | best rolling-5 balanced accuracy 0.641063
+  Latest train balanced accuracy: 0.761170
+  Checkpoint valid:  predicted 0/1 = 87/35 | actual 0/1 = 23/99
+Job 15145 (pu_rho_START_pu_rho030_s1)
+  Epoch: current 15 | checkpoint 14 | best rolling-5 balanced accuracy 0.637505
+  Latest train balanced accuracy: 0.715368
+  Checkpoint valid:  predicted 0/1 = 69/53 | actual 0/1 = 23/99
+Job 15146 (pu_rho_START_pu_rho010_s2)
+  Epoch: current 3 | checkpoint 1 | best rolling-5 balanced accuracy 0.500000
+  Latest train balanced accuracy: 0.500000
+  Checkpoint valid:  predicted 0/1 = 124/0 | actual 0/1 = 28/96
+Completed OAR job IDs:
+15138
+Synchronizing results from completed jobs.
+Updating metrics table and feature contributions.
+Added 0 new metric rows to /home/kalinina/DL_project/metrics_summary.csv
+Next waiting job start: OAR has not scheduled one yet.
+OAR jobs: running=14 waiting=40 other=0 total=54 pending_queue=43. Checking again in 300 seconds.
+mux_client_request_session: read from master failed: Broken pipe
+
+
+******************************************************
+                RESTRICTED ACCESS
+      If you can't access, please, make sure 
+            you've accepted the charter 
+      https://perseus.univ-grenoble-alpes.fr/
+******************************************************
+
+
+
+Bigfoot queue: submitted=0 waiting_before=49 max_waiting=54 pending=0.
+
+
+******************************************************
+                RESTRICTED ACCESS
+
+      If you can't access, please, make sure
+            you've accepted the charter
+      https://perseus.univ-grenoble-alpes.fr/
+
+******************************************************
+

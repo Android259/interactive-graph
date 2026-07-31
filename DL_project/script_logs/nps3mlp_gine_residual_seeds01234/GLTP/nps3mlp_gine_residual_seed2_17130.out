@@ -1,0 +1,145 @@
+Waiting for exclusive access to GPU GPU-d2c1fa97-b0f2-cca7-54e2-63aaa00daece.
+=== GROUP: GLTP | VARIANT: nps3mlp_gine_residual | SEED: 2 | GPU: NVIDIA A100-PCIE-40GB ===
+
+number of parameters : 757256
+train : (1210, 12)
+valid : (60, 12)
+test : (61, 12)
+class weights : [1.1308411359786987, 0.8962963223457336]
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.473684
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.392811
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.340180
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.340180
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.340180
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.154044
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.368421
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.394737
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.289474
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.421053
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.421053
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.447368
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.236842
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.315789
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.421053
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.368421
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.368421
+EPOCH 19:
+VALIDATION
+valid epoch balanced_accuracy: 0.421053
+EPOCH 20:
+VALIDATION
+valid epoch balanced_accuracy: 0.289474
+EPOCH 21:
+VALIDATION
+valid epoch balanced_accuracy: 0.394737
+EPOCH 22:
+VALIDATION
+valid epoch balanced_accuracy: 0.394737
+EPOCH 23:
+VALIDATION
+valid epoch balanced_accuracy: 0.394737
+EPOCH 24:
+VALIDATION
+valid epoch balanced_accuracy: 0.289474
+EPOCH 25:
+VALIDATION
+valid epoch balanced_accuracy: 0.289474
+EPOCH 26:
+VALIDATION
+valid epoch balanced_accuracy: 0.315789
+EPOCH 27:
+VALIDATION
+valid epoch balanced_accuracy: 0.394737
+EPOCH 28:
+VALIDATION
+valid epoch balanced_accuracy: 0.263158
+EPOCH 29:
+VALIDATION
+valid epoch balanced_accuracy: 0.289474
+EPOCH 30:
+VALIDATION
+valid epoch balanced_accuracy: 0.315789
+EPOCH 31:
+VALIDATION
+valid epoch balanced_accuracy: 0.236842
+EPOCH 32:
+VALIDATION
+valid epoch balanced_accuracy: 0.263158
+EPOCH 33:
+VALIDATION
+valid epoch balanced_accuracy: 0.342105
+EPOCH 34:
+VALIDATION
+valid epoch balanced_accuracy: 0.263158
+EPOCH 35:
+VALIDATION
+valid epoch balanced_accuracy: 0.315789
+EPOCH 36:
+VALIDATION
+valid epoch balanced_accuracy: 0.368421
+EPOCH 37:
+VALIDATION
+valid epoch balanced_accuracy: 0.315789
+EPOCH 38:
+VALIDATION
+valid epoch balanced_accuracy: 0.289474
+EPOCH 39:
+VALIDATION
+valid epoch balanced_accuracy: 0.315789
+EPOCH 40:
+VALIDATION
+valid epoch balanced_accuracy: 0.368421
+EPOCH 41:
+VALIDATION
+valid epoch balanced_accuracy: 0.289474
+EPOCH 42:
+VALIDATION
+valid epoch balanced_accuracy: 0.289474
+EPOCH 43:
+VALIDATION
+valid epoch balanced_accuracy: 0.342105
+EPOCH 44:
+VALIDATION
+valid epoch balanced_accuracy: 0.368421
+EPOCH 45:
+VALIDATION
+valid epoch balanced_accuracy: 0.342105
+EPOCH 46:
