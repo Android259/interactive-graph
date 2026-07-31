@@ -1,0 +1,23 @@
+# Scheduler artifacts: per-cluster job queues and session markers are runtime
+# state created on the cluster, not source. They were tracked before the Kraken
+# port; `git rm -r --cached` was used to untrack them without deleting them.
+.bigfoot_job_queue/
+.bigfoot_job_queues/
+.kraken_job_queues/
+.bigfoot_session_*
+.kraken_session_*
+OAR.*.stdout
+OAR.*.stderr
+
+__pycache__/
+*.pyc
+
+# Timestamped safety copies of the metrics table.
+metrics_summary.csv.bak_*
+
+# run/, models/ and test_metrics/ are deliberately tracked -- do not add them.
+
+# torch.profiler traces from scripts/profile_training.py: large, timestamped,
+# and reproducible from source -- not worth tracking.
+profiler_runs/
+

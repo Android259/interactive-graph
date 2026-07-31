@@ -1,0 +1,7 @@
+--protein_disable_post_sa_mlp
+--lipid_disable_post_sa_mlp
+--third_layers_in_mlps
+--protein_gat_graph_norm
+--protein_output_graph_norm
+--lipid_gat_graph_norm
+--lipid_output_graph_norm

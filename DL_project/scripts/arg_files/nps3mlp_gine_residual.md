@@ -1,0 +1,5 @@
+--protein_disable_post_sa_mlp
+--lipid_disable_post_sa_mlp
+--third_layers_in_mlps
+--gine_conv
+--protein_gine_residual

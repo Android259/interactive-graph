@@ -1,0 +1,1 @@
+--lr=0.001 --weight_decay=0 --protein_pooling=ordinary --tanimoto_weight

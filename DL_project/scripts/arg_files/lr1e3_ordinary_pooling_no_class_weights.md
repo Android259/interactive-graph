@@ -1,0 +1,1 @@
+--lr=0.001 --protein_pooling=ordinary --no_class_weights

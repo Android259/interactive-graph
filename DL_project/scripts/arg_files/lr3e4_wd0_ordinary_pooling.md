@@ -1,0 +1,1 @@
+--lr=0.0003 --weight_decay=0 --protein_pooling=ordinary

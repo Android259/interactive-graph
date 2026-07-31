@@ -1,0 +1,7 @@
+--protein_disable_post_sa_mlp
+--lipid_disable_post_sa_mlp
+--third_layers_in_mlps
+--dropout=0.15
+--pool_type="gem"
+--protein_gat_residual
+--attention_residual_gates

@@ -1,0 +1,301 @@
+pair_id,LTPProtein,ProteinDomain,FullIdentityOfLipid,Lipid,Screen,nearest_positive_lipid_same_protein,nearest_positive_tanimoto,exact_lipid_positive_family_protein_count,exact_lipid_positive_family_proteins,same_screen_family_protein_count,same_screen_family_proteins
+5771,CRABP2,lipocalin,hexadecenoate,FA(16:1),in vitro,heptadecenoate,1.0,5,FABP1;FABP5;FABP7;PMP2;RBP5,5,FABP1;FABP5;FABP7;PMP2;RBP5
+8493,RBP5,lipocalin,heptadecenoate,FA(17:1),in vitro,hexadecenoate,1.0,5,CRABP2;FABP1;FABP5;FABP7;PMP2,5,CRABP2;FABP1;FABP5;FABP7;PMP2
+5766,CRABP2,lipocalin,nonadecenoate,FA(19:1),in vitro,heptadecenoate,1.0,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+8499,RBP5,lipocalin,nonadecenoate,FA(19:1),in vitro,hexadecenoate,1.0,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+5768,CRABP2,lipocalin,octadecadienoate,FA(18:2),in vitro,heptadecenoate,0.9565217391304348,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+8501,RBP5,lipocalin,octadecadienoate,FA(18:2),in vitro,hexadecenoate,0.9565217391304348,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+5827,CRABP2,lipocalin,octadecenoate,FA(18:1),in vitro,heptadecenoate,0.9166666666666666,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+8559,RBP5,lipocalin,octadecenoate,FA(18:1),in vitro,hexadecenoate,0.9166666666666666,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+5765,CRABP2,lipocalin,eicosatetraenoate,FA(20:4),in vitro,heptadecenoate,0.7777777777777778,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+8498,RBP5,lipocalin,eicosatetraenoate,FA(20:4),in vitro,hexadecenoate,0.7777777777777778,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+5769,CRABP2,lipocalin,docosapentaenoate,FA(22:5),in vitro,heptadecenoate,0.7142857142857143,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+8502,RBP5,lipocalin,docosapentaenoate,FA(22:5),in vitro,hexadecenoate,0.7142857142857143,4,FABP1;FABP5;FABP7;PMP2,4,FABP1;FABP5;FABP7;PMP2
+6667,FABP7,lipocalin,eicosatrienoate,FA(20:3),in vitro,eicosatetraenoate,0.8888888888888888,3,FABP1;FABP5;PMP2,3,FABP1;FABP5;PMP2
+5770,CRABP2,lipocalin,eicosatrienoate,FA(20:3),in vitro,heptadecenoate,0.8846153846153846,3,FABP1;FABP5;PMP2,3,FABP1;FABP5;PMP2
+8503,RBP5,lipocalin,eicosatrienoate,FA(20:3),in vitro,hexadecenoate,0.8846153846153846,3,FABP1;FABP5;PMP2,3,FABP1;FABP5;PMP2
+6072,FABP1,lipocalin,eicosapentaenoate,FA(20:5),in vitro,eicosatetraenoate,0.75,3,FABP5;FABP7;PMP2,3,FABP5;FABP7;PMP2
+4451,SEC14L2,CRAL-TRIO,Phosphatidylglycerol (32:2),PG(32:2),in vitro,Phosphatidylinositol (36:2),0.7096774193548387,3,RLBP1;TTPA;TTPAL,3,RLBP1;TTPA;TTPAL
+10460,TTPAL,CRAL-TRIO,Phosphatidylcholine (34:1),PC(34:1),in cellulo,Phosphatidylcholine (36:2),1.0,3,ATCAY;RLBP1;SEC14L6,2,ATCAY;SEC14L6
+1066,BNIPL,CRAL-TRIO,Phosphatidylcholine (34:1),PC(34:1),in cellulo,Phosphatidylcholine (O-32:1),0.8571428571428571,3,ATCAY;RLBP1;SEC14L6,2,ATCAY;SEC14L6
+8704,RLBP1,CRAL-TRIO,Phosphatidylcholine (32:1),PC(32:1),in cellulo,Phosphatidylcholine (34:1),1.0,2,ATCAY;SEC14L6,2,ATCAY;SEC14L6
+10259,TTPA,CRAL-TRIO,Phosphatidylglycerol (36:2),PG(36:2),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),1.0,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+10461,TTPAL,CRAL-TRIO,Phosphatidylcholine (32:1),PC(32:1),in cellulo,Phosphatidylcholine (36:2),1.0,2,ATCAY;SEC14L6,2,ATCAY;SEC14L6
+5393,STARD11,START,Phosphatidylcholine (36:2),PC(36:2),in cellulo,Phosphatidylcholine (34:1),1.0,2,STARD10;STARD2,2,STARD10;STARD2
+5394,STARD11,START,Phosphatidylcholine (30:1),PC(30:1),in cellulo,Phosphatidylcholine (34:1),1.0,2,STARD10;STARD2,2,STARD10;STARD2
+5438,STARD11,START,Phosphatidylcholine (34:2),PC(34:2),in cellulo,Phosphatidylcholine (34:1),1.0,2,STARD10;STARD2,2,STARD10;STARD2
+5375,STARD11,START,Phosphatidylcholine (36:3),PC(36:3),in cellulo,Phosphatidylcholine (34:1),0.9454545454545454,2,STARD10;STARD2,2,STARD10;STARD2
+5397,STARD11,START,Phosphatidylcholine (34:3),PC(34:3),in cellulo,Phosphatidylcholine (34:1),0.9454545454545454,2,STARD10;STARD2,2,STARD10;STARD2
+5427,STARD11,START,Phosphatidylcholine (36:4),PC(36:4),in cellulo,Phosphatidylcholine (34:1),0.9444444444444444,2,STARD10;STARD2,2,STARD10;STARD2
+5429,STARD11,START,Phosphatidylcholine (38:5),PC(38:5),in cellulo,Phosphatidylcholine (34:1),0.9444444444444444,2,STARD10;STARD2,2,STARD10;STARD2
+5430,STARD11,START,Phosphatidylcholine (38:6),PC(38:6),in cellulo,Phosphatidylcholine (34:1),0.9444444444444444,2,STARD10;STARD2,2,STARD10;STARD2
+5434,STARD11,START,Phosphatidylcholine (40:7),PC(40:7),in cellulo,Phosphatidylcholine (34:1),0.9444444444444444,2,STARD10;STARD2,2,STARD10;STARD2
+5446,STARD11,START,Phosphatidylcholine (38:4),PC(38:4),in cellulo,Phosphatidylcholine (34:1),0.9444444444444444,2,STARD10;STARD2,2,STARD10;STARD2
+5444,STARD11,START,Phosphatidylcholine (38:7),PC(38:7),in cellulo,Phosphatidylcholine (34:1),0.9090909090909091,2,STARD10;STARD2,2,STARD10;STARD2
+10310,TTPA,CRAL-TRIO,Cardiolipin (70:3),CL(70:3),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+10312,TTPA,CRAL-TRIO,Cardiolipin (69:3),CL(69:3),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+10316,TTPA,CRAL-TRIO,Cardiolipin (67:2),CL(67:2),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+10372,TTPA,CRAL-TRIO,Cardiolipin (68:3),CL(68:3),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+10431,TTPA,CRAL-TRIO,Phosphatidylglycerol (28:0),PG(28:0),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),0.875,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+756,ATCAY,CRAL-TRIO,Phosphatidylcholine (O-32:1),PC(O-32:1),in cellulo,Phosphatidylcholine (34:1),0.8571428571428571,2,BNIPL;SEC14L6,2,BNIPL;SEC14L6
+1067,BNIPL,CRAL-TRIO,Phosphatidylcholine (32:1),PC(32:1),in cellulo,Phosphatidylcholine (O-32:1),0.8571428571428571,2,ATCAY;SEC14L6,2,ATCAY;SEC14L6
+8705,RLBP1,CRAL-TRIO,Phosphatidylcholine (O-32:1),PC(O-32:1),in cellulo,Phosphatidylcholine (34:1),0.8571428571428571,2,BNIPL;SEC14L6,2,BNIPL;SEC14L6
+10462,TTPAL,CRAL-TRIO,Phosphatidylcholine (O-32:1),PC(O-32:1),in cellulo,Phosphatidylcholine (36:2),0.8571428571428571,2,BNIPL;SEC14L6,2,BNIPL;SEC14L6
+5370,STARD11,START,Phosphatidylcholine (O-32:1),PC(O-32:1),in cellulo,Phosphatidylcholine (34:1),0.8571428571428571,2,STARD10;STARD2,2,STARD10;STARD2
+5371,STARD11,START,Phosphatidylcholine (O-34:1),PC(O-34:1),in cellulo,Phosphatidylcholine (34:1),0.8571428571428571,2,STARD10;STARD2,2,STARD10;STARD2
+5381,STARD11,START,Phosphatidylcholine (O-36:2),PC(O-36:2),in cellulo,Phosphatidylcholine (34:1),0.8545454545454545,2,STARD10;STARD2,2,STARD10;STARD2
+5382,STARD11,START,Phosphatidylcholine (O-34:2),PC(O-34:2),in cellulo,Phosphatidylcholine (34:1),0.8275862068965517,2,STARD10;STARD2,2,STARD10;STARD2
+5443,STARD11,START,Phosphatidylcholine (O-36:4); Lysophosphatidylcholine (36:4),PC(O-36:4)/LPC(36:4),in cellulo,Phosphatidylcholine (34:1),0.7704918032786885,2,STARD10;STARD2,2,STARD10;STARD2
+10325,TTPA,CRAL-TRIO,Phosphatidylethanolamine (36:1),PE(36:1),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),0.75,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+5432,STARD11,START,Lysophosphatidylcholine (38:5); Phosphatidylcholine (O-38:5),PC(O-38:5)/LPC(38:5),in cellulo,Phosphatidylcholine (34:1),0.75,2,STARD10;STARD2,2,STARD10;STARD2
+4429,SEC14L2,CRAL-TRIO,Cardiolipin (70:3),CL(70:3),in vitro,Phosphatidylinositol (36:2),0.7413793103448276,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+4431,SEC14L2,CRAL-TRIO,Cardiolipin (69:3),CL(69:3),in vitro,Phosphatidylinositol (36:2),0.7413793103448276,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+4435,SEC14L2,CRAL-TRIO,Cardiolipin (67:2),CL(67:2),in vitro,Phosphatidylinositol (36:2),0.7413793103448276,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+4496,SEC14L2,CRAL-TRIO,Cardiolipin (68:3),CL(68:3),in vitro,Phosphatidylinositol (36:2),0.7413793103448276,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+4374,SEC14L2,CRAL-TRIO,Phosphatidylglycerol (36:2),PG(36:2),in vitro,Phosphatidylinositol (36:2),0.7096774193548387,2,RLBP1;TTPAL,2,RLBP1;TTPAL
+5373,STARD11,START,Phosphatidylcholine (32:2),PC(32:2),in cellulo,Phosphatidylcholine (34:1),1.0,2,STARD10;STARD2,1,STARD10
+5377,STARD11,START,Phosphatidylcholine (38:2),PC(38:2),in cellulo,Phosphatidylcholine (34:1),1.0,2,STARD10;STARD2,1,STARD10
+5396,STARD11,START,Phosphatidylcholine (35:2),PC(35:2),in cellulo,Phosphatidylcholine (34:1),1.0,2,STARD10;STARD2,1,STARD10
+779,ATCAY,CRAL-TRIO,Phosphatidylcholine (36:2),PC(36:2),in cellulo,Phosphatidylcholine (34:1),1.0,2,RLBP1;TTPAL,0,
+4594,SEC14L6,CRAL-TRIO,Phosphatidylcholine (36:2),PC(36:2),in cellulo,Phosphatidylcholine (33:1),1.0,2,RLBP1;TTPAL,0,
+1090,BNIPL,CRAL-TRIO,Phosphatidylcholine (36:2),PC(36:2),in cellulo,Phosphatidylcholine (O-32:1),0.8571428571428571,2,RLBP1;TTPAL,0,
+758,ATCAY,CRAL-TRIO,Phosphatidylcholine (36:1),PC(36:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,SEC14L6,1,SEC14L6
+759,ATCAY,CRAL-TRIO,Phosphatidylcholine (32:2),PC(32:2),in cellulo,Phosphatidylcholine (34:1),1.0,1,SEC14L6,1,SEC14L6
+762,ATCAY,CRAL-TRIO,Phosphatidylcholine (33:1),PC(33:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,SEC14L6,1,SEC14L6
+1068,BNIPL,CRAL-TRIO,Phosphatidylcholine (O-34:1),PC(O-34:1),in cellulo,Phosphatidylcholine (O-32:1),1.0,1,SEC14L6,1,SEC14L6
+8707,RLBP1,CRAL-TRIO,Phosphatidylcholine (36:1),PC(36:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,SEC14L6,1,SEC14L6
+8708,RLBP1,CRAL-TRIO,Phosphatidylcholine (32:2),PC(32:2),in cellulo,Phosphatidylcholine (34:1),1.0,1,SEC14L6,1,SEC14L6
+8709,RLBP1,CRAL-TRIO,Phosphatidylcholine (36:3),PC(36:3),in cellulo,Phosphatidylcholine (38:3),1.0,1,SEC14L6,1,SEC14L6
+8710,RLBP1,CRAL-TRIO,Phosphatidylcholine (33:1),PC(33:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,SEC14L6,1,SEC14L6
+8829,RLBP1,CRAL-TRIO,Bismonoacylglycerolphosphate (32:2);Phosphatidylglycerol (32:2),PG/BMP(32:2),in vitro,Phosphatidylglycerol (38:2);Bismonoacylglycerolphosphate (38:2),1.0,1,TTPA,1,TTPA
+8834,RLBP1,CRAL-TRIO,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),PG/BMP(32:1),in vitro,Phosphatidylglycerol (38:2);Bismonoacylglycerolphosphate (38:2),1.0,1,TTPA,1,TTPA
+8884,RLBP1,CRAL-TRIO,Bismonoacylglycerolphosphate (38:2);Phosphatidylglycerol (38:2),PG/BMP(38:2),in vitro,Phosphatidylglycerol (38:2);Bismonoacylglycerolphosphate (38:2),1.0,1,TTPAL,1,TTPAL
+8951,RLBP1,CRAL-TRIO,Phosphatidylglycerol (32:0),PG(32:0),in vitro,Phosphatidylglycerol (28:0),1.0,1,TTPAL,1,TTPAL
+10327,TTPA,CRAL-TRIO,Phosphatidylglycerol (38:2);Bismonoacylglycerolphosphate (38:2),PG/BMP(38:2),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),1.0,1,RLBP1,1,RLBP1
+10376,TTPA,CRAL-TRIO,Bismonoacylglycerolphosphate (38:2);Phosphatidylglycerol (38:2),PG/BMP(38:2),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),1.0,1,TTPAL,1,TTPAL
+10436,TTPA,CRAL-TRIO,Phosphatidylglycerophosphate (32:1),PGP(32:1),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),1.0,1,RLBP1,1,RLBP1
+10464,TTPAL,CRAL-TRIO,Phosphatidylcholine (36:1),PC(36:1),in cellulo,Phosphatidylcholine (36:2),1.0,1,SEC14L6,1,SEC14L6
+10465,TTPAL,CRAL-TRIO,Phosphatidylcholine (32:2),PC(32:2),in cellulo,Phosphatidylcholine (36:2),1.0,1,SEC14L6,1,SEC14L6
+10466,TTPAL,CRAL-TRIO,Phosphatidylcholine (36:3),PC(36:3),in cellulo,Phosphatidylcholine (36:2),1.0,1,SEC14L6,1,SEC14L6
+10467,TTPAL,CRAL-TRIO,Phosphatidylcholine (33:1),PC(33:1),in cellulo,Phosphatidylcholine (36:2),1.0,1,SEC14L6,1,SEC14L6
+10583,TTPAL,CRAL-TRIO,Bismonoacylglycerolphosphate (32:2);Phosphatidylglycerol (32:2),PG/BMP(32:2),in vitro,Phosphatidylglycerol (32:2),1.0,1,TTPA,1,TTPA
+10588,TTPAL,CRAL-TRIO,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),PG/BMP(32:1),in vitro,Phosphatidylglycerol (32:2),1.0,1,TTPA,1,TTPA
+10600,TTPAL,CRAL-TRIO,Cardiolipin (64:2),CL(64:2),in vitro,Cardiolipin (67:2),1.0,1,RLBP1,1,RLBP1
+10601,TTPAL,CRAL-TRIO,Cardiolipin (70:4),CL(70:4),in vitro,Cardiolipin (67:2),1.0,1,RLBP1,1,RLBP1
+10602,TTPAL,CRAL-TRIO,Cardiolipin (67:3),CL(67:3),in vitro,Cardiolipin (67:2),1.0,1,RLBP1,1,RLBP1
+10603,TTPAL,CRAL-TRIO,Cardiolipin (68:4),CL(68:4),in vitro,Cardiolipin (67:2),1.0,1,RLBP1,1,RLBP1
+10609,TTPAL,CRAL-TRIO,Phosphatidylglycerol (38:2);Bismonoacylglycerolphosphate (38:2),PG/BMP(38:2),in vitro,Phosphatidylglycerol (32:2),1.0,1,RLBP1,1,RLBP1
+10685,TTPAL,CRAL-TRIO,Cardiolipin (66:2),CL(66:2),in vitro,Cardiolipin (67:2),1.0,1,RLBP1,1,RLBP1
+10686,TTPAL,CRAL-TRIO,Cardiolipin (66:3),CL(66:3),in vitro,Cardiolipin (67:2),1.0,1,RLBP1,1,RLBP1
+10687,TTPAL,CRAL-TRIO,Phosphatidylglycerophosphate (32:1),PGP(32:1),in vitro,Phosphatidylglycerol (32:2),1.0,1,RLBP1,1,RLBP1
+3205,PITPNA,IP_trans,Phosphatidylcholine (40:4),PC(40:4),in vitro,Phosphatidylcholine (38:4),1.0,1,PITPNB,1,PITPNB
+3206,PITPNA,IP_trans,Phosphatidylcholine (37:4),PC(37:4),in vitro,Phosphatidylcholine (38:4),1.0,1,PITPNB,1,PITPNB
+3375,PITPNB,IP_trans,Phosphatidylcholine (33:1),PC(33:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,PITPNA,1,PITPNA
+3389,PITPNB,IP_trans,Phosphatidylcholine (30:1),PC(30:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,PITPNA,1,PITPNA
+3500,PITPNB,IP_trans,Phosphatidylcholine (34:0),PC(34:0),in vitro,Phosphatidylcholine (30:0),1.0,1,PITPNA,1,PITPNA
+1377,BPI,LBP_BPI_CETP,Phosphatidylcholine (30:1),PC(30:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,BPIFB2,1,BPIFB2
+1379,BPI,LBP_BPI_CETP,Phosphatidylcholine (35:2),PC(35:2),in cellulo,Phosphatidylcholine (34:1),1.0,1,BPIFB2,1,BPIFB2
+1380,BPI,LBP_BPI_CETP,Phosphatidylcholine (34:3),PC(34:3),in cellulo,Phosphatidylcholine (38:2),1.0,1,BPIFB2,1,BPIFB2
+1381,BPI,LBP_BPI_CETP,Phosphatidylcholine (35:1),PC(35:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,BPIFB2,1,BPIFB2
+1383,BPI,LBP_BPI_CETP,Phosphatidylcholine (O-32:2),PC(O-32:2),in cellulo,Phosphatidylcholine (O-36:2),1.0,1,BPIFB2,1,BPIFB2
+1661,BPIFB2,LBP_BPI_CETP,Phosphatidylcholine (38:2),PC(38:2),in cellulo,Phosphatidylcholine (34:1),1.0,1,BPI,1,BPI
+1663,BPIFB2,LBP_BPI_CETP,Phosphatidylcholine (19:1),PC(19:1),in cellulo,Phosphatidylcholine (17:1),1.0,1,BPI,1,BPI
+1666,BPIFB2,LBP_BPI_CETP,Phosphatidylcholine (32:0),PC(32:0),in cellulo,Phosphatidylcholine (30:0),1.0,1,BPI,1,BPI
+5123,STARD10,START,Phosphatidylcholine (36:1),PC(36:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+5124,STARD10,START,Phosphatidylcholine (33:1),PC(33:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+5129,STARD10,START,Phosphatidylcholine (31:1),PC(31:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+5136,STARD10,START,Phosphatidylcholine (35:1),PC(35:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+5138,STARD10,START,Phosphatidylcholine (O-32:2),PC(O-32:2),in cellulo,Phosphatidylcholine (O-36:2),1.0,1,STARD2,1,STARD2
+5169,STARD10,START,Phosphatidylcholine (O-38:7),PC(O-38:7),in cellulo,Phosphatidylcholine (O-40:7),1.0,1,STARD2,1,STARD2
+5172,STARD10,START,Phosphatidylcholine (38:3),PC(38:3),in cellulo,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5174,STARD10,START,Phosphatidylcholine (36:5),PC(36:5),in cellulo,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5175,STARD10,START,Phosphatidylcholine (O-36:1),PC(O-36:1),in cellulo,Phosphatidylcholine (O-36:2),1.0,1,STARD2,1,STARD2
+5176,STARD10,START,Phosphatidylcholine (36:6),PC(36:6),in cellulo,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5232,STARD10,START,Phosphatidylcholine (40:4),PC(40:4),in vitro,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5233,STARD10,START,Phosphatidylcholine (37:4),PC(37:4),in vitro,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5271,STARD10,START,Phosphatidylcholine (O-36:5);Lysophosphatidylcholine (36:5),PC(O-36:5)/LPC(36:5),in vitro,Phosphatidylcholine (O-36:4); Lysophosphatidylcholine (36:4),1.0,1,STARD2,1,STARD2
+5272,STARD10,START,Phosphatidylcholine (O-36:6);Lysophosphatidylcholine (36:6),PC(O-36:6)/LPC(36:6),in vitro,Phosphatidylcholine (O-36:4); Lysophosphatidylcholine (36:4),1.0,1,STARD2,1,STARD2
+5273,STARD10,START,Phosphatidylcholine (O-37:6),PC(O-37:6),in vitro,Phosphatidylcholine (O-36:4); Lysophosphatidylcholine (36:4),1.0,1,STARD2,1,STARD2
+5274,STARD10,START,Phosphatidylcholine (O-34:3),PC(O-34:3),in vitro,Phosphatidylcholine (O-36:2),1.0,1,STARD2,1,STARD2
+5276,STARD10,START,Phosphatidylcholine (O-36:3),PC(O-36:3),in vitro,Phosphatidylcholine (O-36:2),1.0,1,STARD2,1,STARD2
+5277,STARD10,START,Phosphatidylcholine (O-34:4);Lysophosphatidylcholine (34:4),PC(O-34:4)/LPC(34:4),in vitro,Phosphatidylcholine (40:7),1.0,1,STARD2,1,STARD2
+5278,STARD10,START,Lysophosphatidylcholine (36:4);Phosphatidylcholine (O-36:4),PC(O-36:4)/LPC(36:4),in vitro,Phosphatidylcholine (O-36:4); Lysophosphatidylcholine (36:4),1.0,1,STARD2,1,STARD2
+5279,STARD10,START,Phosphatidylcholine (40:8),PC(40:8),in vitro,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5280,STARD10,START,Phosphatidylcholine (42:8),PC(42:8),in vitro,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5281,STARD10,START,Phosphatidylcholine (37:5),PC(37:5),in vitro,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5282,STARD10,START,Phosphatidylcholine (39:6),PC(39:6),in vitro,Phosphatidylcholine (40:7),1.0,1,STARD2,1,STARD2
+5284,STARD10,START,Lysophosphatidylcholine (34:5);Phosphatidylcholine (O-34:5),PC(O-34:5)/LPC(34:5),in vitro,Phosphatidylcholine (O-36:4); Lysophosphatidylcholine (36:4),1.0,1,STARD2,1,STARD2
+5285,STARD10,START,Phosphatidylcholine (O-32:3),PC(O-32:3),in vitro,Phosphatidylcholine (O-36:4); Lysophosphatidylcholine (36:4),1.0,1,STARD2,1,STARD2
+5286,STARD10,START,Phosphatidylcholine (34:4),PC(34:4),in vitro,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5287,STARD10,START,Phosphatidylcholine (35:4),PC(35:4),in vitro,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5361,STARD10,START,: Phosphatidylcholine (32:2),PC(32:2),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+5365,STARD10,START,Phosphatidylcholine (40:6),PC(40:6),in cellulo,Phosphatidylcholine (38:4),1.0,1,STARD2,1,STARD2
+5366,STARD10,START,Phosphatidylcholine (O-36:5); Lysophosphatidylcholine (36:5),PC(O-36:5)/LPC(36:5),in cellulo,Phosphatidylcholine (O-36:4); Lysophosphatidylcholine (36:4),1.0,1,STARD2,1,STARD2
+5367,STARD10,START,Lysophosphatidylcholine (38:5);Phosphatidylcholine (O-38:5),PC(O-38:5)/LPC(38:5),in vitro,Lysophosphatidylcholine (38:5); Phosphatidylcholine (O-38:5),1.0,1,STARD2,1,STARD2
+5372,STARD11,START,Phosphatidylcholine (36:1),PC(36:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+5376,STARD11,START,Phosphatidylcholine (33:1),PC(33:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+5386,STARD11,START,Phosphatidylcholine (31:1),PC(31:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+5398,STARD11,START,Phosphatidylcholine (35:1),PC(35:1),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+5428,STARD11,START,Phosphatidylcholine (33:2),PC(33:2),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD10,1,STARD10
+5652,STARD11,START,: Phosphatidylcholine (32:2),PC(32:2),in cellulo,Phosphatidylcholine (34:1),1.0,1,STARD2,1,STARD2
+4917,STARD2,START,Phosphatidylcholine (33:2),PC(33:2),in cellulo,Phosphatidylcholine (40:4),1.0,1,STARD10,1,STARD10
+6073,FABP1,lipocalin,docosatetraenoate,FA(22:4),in vitro,eicosatetraenoate,1.0,1,FABP5,1,FABP5
+6098,FABP1,lipocalin,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),PG/BMP(32:1),in vitro,Phosphatidylglycerol (36:2),1.0,1,LCN15,1,LCN15
+6135,FABP1,lipocalin,Phosphatidylglycerol (32:2),PG(32:2),in vitro,Phosphatidylglycerol (36:2),1.0,1,LCN15,1,LCN15
+6668,FABP7,lipocalin,docosatetraenoate,FA(22:4),in vitro,eicosatetraenoate,1.0,1,FABP5,1,FABP5
+7274,LCN15,lipocalin,Phosphatidylglycerol (36:2),PG(36:2),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),1.0,1,FABP1,1,FABP1
+8195,PMP2,lipocalin,docosatetraenoate,FA(22:4),in vitro,eicosatetraenoate,1.0,1,FABP5,1,FABP5
+9089,SCP2,scp2,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),PG/BMP(32:1),in vitro,Phosphatidylglycerol (32:2),1.0,1,SCP2D1,1,SCP2D1
+9132,SCP2,scp2,Bismonoacylglycerolphosphate (36:2);Phosphatidylglycerol (36:2),PG/BMP(36:2),in vitro,Phosphatidylglycerol (32:2),1.0,1,SCP2D1,1,SCP2D1
+9133,SCP2,scp2,Phosphatidylglycerol (34:1);Bismonoacylglycerolphosphate (34:1),PG/BMP(34:1),in vitro,Phosphatidylglycerol (32:2),1.0,1,SCP2D1,1,SCP2D1
+9424,SCP2D1,scp2,Phosphatidylglycerol (32:2),PG(32:2),in vitro,Bismonoacylglycerolphosphate (36:2);Phosphatidylglycerol (36:2),1.0,1,SCP2,1,SCP2
+1079,BNIPL,CRAL-TRIO,Phosphatidylcholine (O-34:2),PC(O-34:2),in cellulo,Phosphatidylcholine (O-32:1),0.9811320754716981,1,SEC14L6,1,SEC14L6
+5275,STARD10,START,Phosphatidylcholine (O-35:5),PC(O-35:5),in vitro,Phosphatidylcholine (40:7),0.9649122807017544,1,STARD2,1,STARD2
+5290,STARD10,START,Phosphatidylcholine (O-37:4),PC(O-37:4),in vitro,Phosphatidylcholine (O-36:2),0.9636363636363636,1,STARD2,1,STARD2
+5289,STARD10,START,Phosphatidylcholine (42:10),PC(42:10),in vitro,Phosphatidylcholine (40:7),0.95,1,STARD2,1,STARD2
+5283,STARD10,START,Phosphatidylcholine (O-33:3),PC(O-33:3),in vitro,Phosphatidylcholine (O-34:2),0.9473684210526315,1,STARD2,1,STARD2
+761,ATCAY,CRAL-TRIO,Phosphatidylcholine (36:3),PC(36:3),in cellulo,Phosphatidylcholine (34:1),0.9454545454545454,1,SEC14L6,1,SEC14L6
+5447,STARD11,START,Phosphatidylcholine (36:5),PC(36:5),in cellulo,Phosphatidylcholine (34:1),0.9454545454545454,1,STARD2,1,STARD2
+5500,STARD11,START,Phosphatidylcholine (37:4),PC(37:4),in vitro,Phosphatidylcholine (34:1),0.9454545454545454,1,STARD2,1,STARD2
+5557,STARD11,START,Phosphatidylcholine (37:5),PC(37:5),in vitro,Phosphatidylcholine (34:1),0.9454545454545454,1,STARD2,1,STARD2
+5558,STARD11,START,Phosphatidylcholine (39:6),PC(39:6),in vitro,Phosphatidylcholine (34:1),0.9454545454545454,1,STARD2,1,STARD2
+5562,STARD11,START,Phosphatidylcholine (34:4),PC(34:4),in vitro,Phosphatidylcholine (34:1),0.9454545454545454,1,STARD2,1,STARD2
+5563,STARD11,START,Phosphatidylcholine (35:4),PC(35:4),in vitro,Phosphatidylcholine (34:1),0.9454545454545454,1,STARD2,1,STARD2
+5442,STARD11,START,Phosphatidylcholine (38:3),PC(38:3),in cellulo,Phosphatidylcholine (34:1),0.9444444444444444,1,STARD2,1,STARD2
+5499,STARD11,START,Phosphatidylcholine (40:4),PC(40:4),in vitro,Phosphatidylcholine (34:1),0.9444444444444444,1,STARD2,1,STARD2
+5656,STARD11,START,Phosphatidylcholine (40:6),PC(40:6),in cellulo,Phosphatidylcholine (34:1),0.9444444444444444,1,STARD2,1,STARD2
+5165,STARD10,START,Phosphatidylcholine (O-38:6),PC(O-38:6),in cellulo,Phosphatidylcholine (O-40:7),0.9344262295081968,1,STARD2,1,STARD2
+5173,STARD10,START,Phosphatidylcholine (O-40:6),PC(O-40:6),in cellulo,Phosphatidylcholine (O-40:7),0.9344262295081968,1,STARD2,1,STARD2
+5556,STARD11,START,Phosphatidylcholine (42:8),PC(42:8),in vitro,Phosphatidylcholine (34:1),0.9272727272727272,1,STARD2,1,STARD2
+5449,STARD11,START,Phosphatidylcholine (36:6),PC(36:6),in cellulo,Phosphatidylcholine (34:1),0.9259259259259259,1,STARD2,1,STARD2
+8798,RLBP1,CRAL-TRIO,heptadecenoate,FA(17:1),in vitro,octadecenoate,0.9166666666666666,1,SEC14L4,1,SEC14L4
+8807,RLBP1,CRAL-TRIO,hexadecenoate,FA(16:1),in vitro,octadecenoate,0.9166666666666666,1,SEC14L4,1,SEC14L4
+10555,TTPAL,CRAL-TRIO,heptadecenoate,FA(17:1),in vitro,octadecenoate,0.9166666666666666,1,SEC14L4,1,SEC14L4
+10562,TTPAL,CRAL-TRIO,hexadecenoate,FA(16:1),in vitro,octadecenoate,0.9166666666666666,1,SEC14L4,1,SEC14L4
+5553,STARD11,START,Phosphatidylcholine (O-34:4);Lysophosphatidylcholine (34:4),PC(O-34:4)/LPC(34:4),in vitro,Phosphatidylcholine (34:1),0.9107142857142857,1,STARD2,1,STARD2
+10313,TTPA,CRAL-TRIO,Cardiolipin (64:2),CL(64:2),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,1,RLBP1,1,RLBP1
+10314,TTPA,CRAL-TRIO,Cardiolipin (70:4),CL(70:4),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,1,RLBP1,1,RLBP1
+10315,TTPA,CRAL-TRIO,Cardiolipin (67:3),CL(67:3),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,1,RLBP1,1,RLBP1
+10317,TTPA,CRAL-TRIO,Cardiolipin (68:4),CL(68:4),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,1,RLBP1,1,RLBP1
+10427,TTPA,CRAL-TRIO,Cardiolipin (66:2),CL(66:2),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,1,RLBP1,1,RLBP1
+10428,TTPA,CRAL-TRIO,Cardiolipin (66:3),CL(66:3),in vitro,Phosphatidylglycerol (32:2),0.9038461538461539,1,RLBP1,1,RLBP1
+5551,STARD11,START,Phosphatidylcholine (O-35:5),PC(O-35:5),in vitro,Phosphatidylcholine (34:1),0.8947368421052632,1,STARD2,1,STARD2
+5555,STARD11,START,Phosphatidylcholine (40:8),PC(40:8),in vitro,Phosphatidylcholine (34:1),0.8947368421052632,1,STARD2,1,STARD2
+6971,HSDL2,scp2,eicosatetraenoate,FA(20:4),in vitro,docosatrienoate,0.8888888888888888,1,SCP2D1,1,SCP2D1
+9364,SCP2D1,scp2,docosatrienoate,FA(22:3),in vitro,eicosatetraenoate,0.8888888888888888,1,HSDL2,1,HSDL2
+764,ATCAY,CRAL-TRIO,Phosphatidylcholine (30:0),PC(30:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,SEC14L6,1,SEC14L6
+773,ATCAY,CRAL-TRIO,Phosphatidylcholine (32:0),PC(32:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,SEC14L6,1,SEC14L6
+1096,BNIPL,CRAL-TRIO,Phosphatidylcholine (O-32:0),PC(O-32:0),in cellulo,Phosphatidylcholine (O-32:1),0.8823529411764706,1,SEC14L6,1,SEC14L6
+1098,BNIPL,CRAL-TRIO,Lysophosphatidylcholine (30:0); Phosphatidylcholine (O-30:0),PC(O-30:0)/LPC(30:0),in cellulo,Phosphatidylcholine (O-32:1),0.8823529411764706,1,SEC14L6,1,SEC14L6
+8712,RLBP1,CRAL-TRIO,Phosphatidylcholine (30:0),PC(30:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,SEC14L6,1,SEC14L6
+8719,RLBP1,CRAL-TRIO,Phosphatidylcholine (32:0),PC(32:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,SEC14L6,1,SEC14L6
+10469,TTPAL,CRAL-TRIO,Phosphatidylcholine (30:0),PC(30:0),in cellulo,Phosphatidylcholine (36:2),0.8823529411764706,1,SEC14L6,1,SEC14L6
+10476,TTPAL,CRAL-TRIO,Phosphatidylcholine (32:0),PC(32:0),in cellulo,Phosphatidylcholine (36:2),0.8823529411764706,1,SEC14L6,1,SEC14L6
+1382,BPI,LBP_BPI_CETP,Phosphatidylcholine (O-32:0),PC(O-32:0),in cellulo,Phosphatidylcholine (O-36:2),0.8823529411764706,1,BPIFB2,1,BPIFB2
+1384,BPI,LBP_BPI_CETP,Lysophosphatidylcholine (30:0); Phosphatidylcholine (O-30:0),PC(O-30:0)/LPC(30:0),in cellulo,Phosphatidylcholine (O-36:2),0.8823529411764706,1,BPIFB2,1,BPIFB2
+5125,STARD10,START,Phosphatidylcholine (30:0),PC(30:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,STARD2,1,STARD2
+5166,STARD10,START,Phosphatidylcholine (31:0),PC(31:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,STARD2,1,STARD2
+5378,STARD11,START,Phosphatidylcholine (30:0),PC(30:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,STARD2,1,STARD2
+5433,STARD11,START,Phosphatidylcholine (31:0),PC(31:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,STARD2,1,STARD2
+10458,TTPA,CRAL-TRIO,Phosphatidylglycerol (32:0),PG(32:0),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),0.875,1,TTPAL,1,TTPAL
+8715,RLBP1,CRAL-TRIO,Phosphatidylcholine (O-34:2),PC(O-34:2),in cellulo,Phosphatidylcholine (38:3),0.8620689655172413,1,SEC14L6,1,SEC14L6
+10472,TTPAL,CRAL-TRIO,Phosphatidylcholine (O-34:2),PC(O-34:2),in cellulo,Phosphatidylcholine (36:2),0.8620689655172413,1,SEC14L6,1,SEC14L6
+757,ATCAY,CRAL-TRIO,Phosphatidylcholine (O-34:1),PC(O-34:1),in cellulo,Phosphatidylcholine (34:1),0.8571428571428571,1,SEC14L6,1,SEC14L6
+1069,BNIPL,CRAL-TRIO,Phosphatidylcholine (36:1),PC(36:1),in cellulo,Phosphatidylcholine (O-32:1),0.8571428571428571,1,SEC14L6,1,SEC14L6
+1070,BNIPL,CRAL-TRIO,Phosphatidylcholine (32:2),PC(32:2),in cellulo,Phosphatidylcholine (O-32:1),0.8571428571428571,1,SEC14L6,1,SEC14L6
+1073,BNIPL,CRAL-TRIO,Phosphatidylcholine (33:1),PC(33:1),in cellulo,Phosphatidylcholine (O-32:1),0.8571428571428571,1,SEC14L6,1,SEC14L6
+8706,RLBP1,CRAL-TRIO,Phosphatidylcholine (O-34:1),PC(O-34:1),in cellulo,Phosphatidylcholine (34:1),0.8571428571428571,1,SEC14L6,1,SEC14L6
+10463,TTPAL,CRAL-TRIO,Phosphatidylcholine (O-34:1),PC(O-34:1),in cellulo,Phosphatidylcholine (36:2),0.8571428571428571,1,SEC14L6,1,SEC14L6
+5448,STARD11,START,Phosphatidylcholine (O-36:1),PC(O-36:1),in cellulo,Phosphatidylcholine (34:1),0.8545454545454545,1,STARD2,1,STARD2
+768,ATCAY,CRAL-TRIO,Phosphatidylcholine (O-34:2),PC(O-34:2),in cellulo,Phosphatidylcholine (34:1),0.8275862068965517,1,SEC14L6,1,SEC14L6
+5400,STARD11,START,Phosphatidylcholine (O-32:2),PC(O-32:2),in cellulo,Phosphatidylcholine (34:1),0.8275862068965517,1,STARD2,1,STARD2
+5565,STARD11,START,Phosphatidylcholine (42:10),PC(42:10),in vitro,Phosphatidylcholine (34:1),0.8275862068965517,1,STARD2,1,STARD2
+5550,STARD11,START,Phosphatidylcholine (O-34:3),PC(O-34:3),in vitro,Phosphatidylcholine (34:1),0.8245614035087719,1,STARD2,1,STARD2
+5552,STARD11,START,Phosphatidylcholine (O-36:3),PC(O-36:3),in vitro,Phosphatidylcholine (34:1),0.8245614035087719,1,STARD2,1,STARD2
+8800,RLBP1,CRAL-TRIO,Lysophosphatidylglycerol (18:1),LPG(18:1),in vitro,Phosphatidylglycerol (38:2);Bismonoacylglycerolphosphate (38:2),0.82,1,TTPAL,1,TTPAL
+10262,TTPA,CRAL-TRIO,Lysophosphatidylglycerol (18:1),LPG(18:1),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),0.82,1,TTPAL,1,TTPAL
+2065,GLTP,GLTP,Bismonoacylglycerolphosphate (32:2);Phosphatidylglycerol (32:2),PG/BMP(32:2),in vitro,Lysophosphatidylglycerol (18:1),0.82,1,GLTPD1,1,GLTPD1
+2311,GLTPD1,GLTP,Lysophosphatidylglycerol (18:1),LPG(18:1),in vitro,Bismonoacylglycerolphosphate (32:2);Phosphatidylglycerol (32:2),0.82,1,GLTP,1,GLTP
+7277,LCN15,lipocalin,Lysophosphatidylglycerol (18:1),LPG(18:1),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),0.82,1,FABP1,1,FABP1
+10321,TTPA,CRAL-TRIO,Phosphatidylglycerophosphate (36:2),PGP(36:2),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),0.8148148148148148,1,RLBP1,1,RLBP1
+10437,TTPA,CRAL-TRIO,Phosphatidylglycerophosphate (34:2),PGP(34:2),in vitro,Phosphatidylglycerol (32:1);Bismonoacylglycerolphosphate (32:1),0.8148148148148148,1,RLBP1,1,RLBP1
+10605,TTPAL,CRAL-TRIO,Phosphatidylglycerophosphate (36:2),PGP(36:2),in vitro,Phosphatidylglycerol (32:2),0.8148148148148148,1,RLBP1,1,RLBP1
+10688,TTPAL,CRAL-TRIO,Phosphatidylglycerophosphate (34:2),PGP(34:2),in vitro,Phosphatidylglycerol (32:2),0.8148148148148148,1,RLBP1,1,RLBP1
+7028,HSDL2,scp2,octadecenoate,FA(18:1),in vitro,docosatrienoate,0.8148148148148148,1,SCP2D1,1,SCP2D1
+1072,BNIPL,CRAL-TRIO,Phosphatidylcholine (36:3),PC(36:3),in cellulo,Phosphatidylcholine (O-32:1),0.8135593220338984,1,SEC14L6,1,SEC14L6
+5559,STARD11,START,Phosphatidylcholine (O-33:3),PC(O-33:3),in vitro,Phosphatidylcholine (34:1),0.7868852459016393,1,STARD2,1,STARD2
+9127,SCP2,scp2,Lysophosphatidylethanolamine (16:1);Phosphatidylethanolamine (O-16:1),PE(O-16:1)/LPE(16:1),in vitro,Lysophosphatidylglycerol (18:1),0.78,1,SCP2D1,1,SCP2D1
+5566,STARD11,START,Phosphatidylcholine (O-37:4),PC(O-37:4),in vitro,Phosphatidylcholine (34:1),0.7796610169491526,1,STARD2,1,STARD2
+5773,CRABP2,lipocalin,docosatetraenoate,FA(22:4),in vitro,heptadecenoate,0.7777777777777778,1,FABP5,1,FABP5
+8505,RBP5,lipocalin,docosatetraenoate,FA(22:4),in vitro,hexadecenoate,0.7777777777777778,1,FABP5,1,FABP5
+5547,STARD11,START,Phosphatidylcholine (O-36:5);Lysophosphatidylcholine (36:5),PC(O-36:5)/LPC(36:5),in vitro,Phosphatidylcholine (34:1),0.7704918032786885,1,STARD2,1,STARD2
+5548,STARD11,START,Phosphatidylcholine (O-36:6);Lysophosphatidylcholine (36:6),PC(O-36:6)/LPC(36:6),in vitro,Phosphatidylcholine (34:1),0.7704918032786885,1,STARD2,1,STARD2
+5549,STARD11,START,Phosphatidylcholine (O-37:6),PC(O-37:6),in vitro,Phosphatidylcholine (34:1),0.7704918032786885,1,STARD2,1,STARD2
+5554,STARD11,START,Lysophosphatidylcholine (36:4);Phosphatidylcholine (O-36:4),PC(O-36:4)/LPC(36:4),in vitro,Phosphatidylcholine (34:1),0.7704918032786885,1,STARD2,1,STARD2
+5560,STARD11,START,Lysophosphatidylcholine (34:5);Phosphatidylcholine (O-34:5),PC(O-34:5)/LPC(34:5),in vitro,Phosphatidylcholine (34:1),0.7704918032786885,1,STARD2,1,STARD2
+5561,STARD11,START,Phosphatidylcholine (O-32:3),PC(O-32:3),in vitro,Phosphatidylcholine (34:1),0.7704918032786885,1,STARD2,1,STARD2
+5657,STARD11,START,Phosphatidylcholine (O-36:5); Lysophosphatidylcholine (36:5),PC(O-36:5)/LPC(36:5),in cellulo,Phosphatidylcholine (34:1),0.7704918032786885,1,STARD2,1,STARD2
+5658,STARD11,START,Lysophosphatidylcholine (38:5);Phosphatidylcholine (O-38:5),PC(O-38:5)/LPC(38:5),in vitro,Phosphatidylcholine (34:1),0.75,1,STARD2,1,STARD2
+8723,RLBP1,CRAL-TRIO,Phosphatidylinositol (38:4),PI(38:4),in cellulo,Cardiolipin (70:4),0.7457627118644068,1,SEC14L2,1,SEC14L2
+4433,SEC14L2,CRAL-TRIO,Cardiolipin (70:4),CL(70:4),in vitro,Phosphatidylinositol (38:4),0.7457627118644068,1,RLBP1,1,RLBP1
+4436,SEC14L2,CRAL-TRIO,Cardiolipin (68:4),CL(68:4),in vitro,Phosphatidylinositol (38:4),0.7457627118644068,1,RLBP1,1,RLBP1
+785,ATCAY,CRAL-TRIO,Phosphatidylcholine (O-32:0),PC(O-32:0),in cellulo,Phosphatidylcholine (34:1),0.7454545454545455,1,SEC14L6,1,SEC14L6
+787,ATCAY,CRAL-TRIO,Lysophosphatidylcholine (30:0); Phosphatidylcholine (O-30:0),PC(O-30:0)/LPC(30:0),in cellulo,Phosphatidylcholine (34:1),0.7454545454545455,1,SEC14L6,1,SEC14L6
+1075,BNIPL,CRAL-TRIO,Phosphatidylcholine (30:0),PC(30:0),in cellulo,Phosphatidylcholine (O-32:1),0.7454545454545455,1,SEC14L6,1,SEC14L6
+1084,BNIPL,CRAL-TRIO,Phosphatidylcholine (32:0),PC(32:0),in cellulo,Phosphatidylcholine (O-32:1),0.7454545454545455,1,SEC14L6,1,SEC14L6
+8730,RLBP1,CRAL-TRIO,Phosphatidylcholine (O-32:0),PC(O-32:0),in cellulo,Phosphatidylcholine (34:1),0.7454545454545455,1,SEC14L6,1,SEC14L6
+8732,RLBP1,CRAL-TRIO,Lysophosphatidylcholine (30:0); Phosphatidylcholine (O-30:0),PC(O-30:0)/LPC(30:0),in cellulo,Phosphatidylcholine (34:1),0.7454545454545455,1,SEC14L6,1,SEC14L6
+10486,TTPAL,CRAL-TRIO,Phosphatidylcholine (O-32:0),PC(O-32:0),in cellulo,Phosphatidylcholine (36:2),0.7454545454545455,1,SEC14L6,1,SEC14L6
+10488,TTPAL,CRAL-TRIO,Lysophosphatidylcholine (30:0); Phosphatidylcholine (O-30:0),PC(O-30:0)/LPC(30:0),in cellulo,Phosphatidylcholine (36:2),0.7454545454545455,1,SEC14L6,1,SEC14L6
+8722,RLBP1,CRAL-TRIO,Phosphatidylinositol (36:2),PI(36:2),in cellulo,Cardiolipin (67:3),0.7413793103448276,1,SEC14L2,1,SEC14L2
+4432,SEC14L2,CRAL-TRIO,Cardiolipin (64:2),CL(64:2),in vitro,Phosphatidylinositol (36:2),0.7413793103448276,1,RLBP1,1,RLBP1
+4434,SEC14L2,CRAL-TRIO,Cardiolipin (67:3),CL(67:3),in vitro,Phosphatidylinositol (36:2),0.7413793103448276,1,RLBP1,1,RLBP1
+4552,SEC14L2,CRAL-TRIO,Cardiolipin (66:2),CL(66:2),in vitro,Phosphatidylinositol (36:2),0.7413793103448276,1,RLBP1,1,RLBP1
+4553,SEC14L2,CRAL-TRIO,Cardiolipin (66:3),CL(66:3),in vitro,Phosphatidylinositol (36:2),0.7413793103448276,1,RLBP1,1,RLBP1
+10478,TTPAL,CRAL-TRIO,Phosphatidylinositol (36:2),PI(36:2),in cellulo,Cardiolipin (67:2),0.7413793103448276,1,SEC14L2,1,SEC14L2
+10479,TTPAL,CRAL-TRIO,Phosphatidylinositol (38:4),PI(38:4),in cellulo,Cardiolipin (67:2),0.7413793103448276,1,SEC14L2,1,SEC14L2
+5431,STARD11,START,Phosphatidylcholine (O-38:6),PC(O-38:6),in cellulo,Phosphatidylcholine (34:1),0.71875,1,STARD2,1,STARD2
+5445,STARD11,START,Phosphatidylcholine (O-40:6),PC(O-40:6),in cellulo,Phosphatidylcholine (34:1),0.71875,1,STARD2,1,STARD2
+1286,BNIPL,CRAL-TRIO,Phosphatidylcholine (O-18:1);Lysophosphatidylcholine (18:1),PC(O-18:1)/LPC(18:1),in vitro,Phosphatidylcholine (O-32:1),0.7142857142857143,1,TTPAL,1,TTPAL
+4788,SEC14L6,CRAL-TRIO,Phosphatidylcholine (O-18:1);Lysophosphatidylcholine (18:1),PC(O-18:1)/LPC(18:1),in vitro,Phosphatidylcholine (O-34:1),0.7142857142857143,1,TTPAL,1,TTPAL
+5974,FABP1,lipocalin,Phosphatidylcholine (O-32:1),PC(O-32:1),in cellulo,Lysophosphatidylcholine (18:1);Phosphatidylcholine (O-18:1),0.7142857142857143,1,LCN1,1,LCN1
+5975,FABP1,lipocalin,Phosphatidylcholine (O-34:1),PC(O-34:1),in cellulo,Lysophosphatidylcholine (18:1);Phosphatidylcholine (O-18:1),0.7142857142857143,1,LCN1,1,LCN1
+5985,FABP1,lipocalin,Phosphatidylcholine (O-36:2),PC(O-36:2),in cellulo,Lysophosphatidylcholine (18:1);Phosphatidylcholine (O-18:1),0.7142857142857143,1,LCN1,1,LCN1
+2869,LCN1,lipocalin,Lysophosphatidylcholine (18:1);Phosphatidylcholine (O-18:1),PC(O-18:1)/LPC(18:1),in vitro,Phosphatidylcholine (O-36:2),0.7142857142857143,1,FABP1,1,FABP1
+4406,SEC14L2,CRAL-TRIO,Bismonoacylglycerolphosphate (32:2);Phosphatidylglycerol (32:2),PG/BMP(32:2),in vitro,Phosphatidylinositol (36:2),0.7096774193548387,1,TTPA,1,TTPA
+10180,TTPA,CRAL-TRIO,Phosphatidylinositol (36:2),PI(36:2),in cellulo,Phosphatidylglycerol (32:2),0.7096774193548387,1,SEC14L2,1,SEC14L2
+3160,PITPNA,IP_trans,Phosphatidylglycerol (36:2),PG(36:2),in vitro,Phosphatidylinositol (36:2),0.7096774193548387,1,PITPNB,1,PITPNB
+1385,BPI,LBP_BPI_CETP,Phosphatidylglycerol (36:2); Bismonoacylglycerolphosphate (36:2),PG/BMP(36:2),in cellulo,Phosphatidylinositol (36:2),0.7096774193548387,1,BPIFB2,1,BPIFB2
+1669,BPIFB2,LBP_BPI_CETP,Phosphatidylinositol (36:2),PI(36:2),in cellulo,Phosphatidylglycerol (36:2); Bismonoacylglycerolphosphate (36:2),0.7096774193548387,1,BPI,1,BPI
+5178,STARD10,START,Triacylglycerol (48:3),TAG(48:3),in cellulo,Phosphatidylglycerol (32:2),0.7058823529411765,1,STARD11,1,STARD11
+5179,STARD10,START,Triacylglycerol (50:2),TAG(50:2),in cellulo,Phosphatidylglycerol (32:2),0.7058823529411765,1,STARD11,1,STARD11
+5183,STARD10,START,Triacylglycerol (53:2),TAG(53:2),in cellulo,Phosphatidylglycerol (32:2),0.7058823529411765,1,STARD11,1,STARD11
+5185,STARD10,START,Triacylglycerol (47:2),TAG(47:2),in cellulo,Phosphatidylglycerol (32:2),0.7058823529411765,1,STARD11,1,STARD11
+5186,STARD10,START,Triacylglycerol (46:3),TAG(46:3),in cellulo,Phosphatidylglycerol (32:2),0.7058823529411765,1,STARD11,1,STARD11
+5453,STARD11,START,Phosphatidylglycerol (36:2),PG(36:2),in vitro,Triacylglycerol (47:2),0.7058823529411765,1,STARD10,1,STARD10
+5485,STARD11,START,Bismonoacylglycerolphosphate (32:2);Phosphatidylglycerol (32:2),PG/BMP(32:2),in vitro,Triacylglycerol (47:2),0.7058823529411765,1,STARD10,1,STARD10
+5530,STARD11,START,Phosphatidylglycerol (32:2),PG(32:2),in vitro,Triacylglycerol (47:2),0.7058823529411765,1,STARD10,1,STARD10
+5568,STARD11,START,Phosphatidylglycerol (32:3);Bismonoacylglycerolphosphate (32:3),PG/BMP(32:3),in vitro,Triacylglycerol (47:2),0.7058823529411765,1,STARD10,1,STARD10
+7039,HSDL2,scp2,Phosphatidylglycerol (32:2),PG(32:2),in vitro,Triacylglycerol (54:2),0.7058823529411765,1,SCP2,1,SCP2
+7049,HSDL2,scp2,Bismonoacylglycerolphosphate (36:2);Phosphatidylglycerol (36:2),PG/BMP(36:2),in vitro,Triacylglycerol (54:2),0.7058823529411765,1,SCP2D1,1,SCP2D1
+9086,SCP2,scp2,Triacylglycerol (54:2),TAG(54:2),in vitro,Phosphatidylglycerol (32:2),0.7058823529411765,1,HSDL2,1,HSDL2
+9385,SCP2D1,scp2,Triacylglycerol (54:2),TAG(54:2),in vitro,Bismonoacylglycerolphosphate (36:2);Phosphatidylglycerol (36:2),0.7058823529411765,1,HSDL2,1,HSDL2
+10181,TTPA,CRAL-TRIO,Phosphatidylinositol (38:4),PI(38:4),in cellulo,Phosphatidylglycerol (32:2),0.7049180327868853,1,SEC14L2,1,SEC14L2
+7889,PITPNC1,IP_trans,Phosphatidylglycerol (36:2),PG(36:2),in vitro,Phosphatidylinositol (38:4),0.7049180327868853,1,PITPNB,1,PITPNB
+1670,BPIFB2,LBP_BPI_CETP,Phosphatidylinositol (38:4),PI(38:4),in cellulo,Phosphatidylglycerol (36:2); Bismonoacylglycerolphosphate (36:2),0.7049180327868853,1,BPI,1,BPI
+4641,SEC14L6,CRAL-TRIO,Phosphatidylcholine (38:3),PC(38:3),in cellulo,Phosphatidylcholine (32:2),1.0,1,RLBP1,0,
+10529,TTPAL,CRAL-TRIO,Phosphatidylcholine (38:3),PC(38:3),in cellulo,Phosphatidylcholine (36:2),1.0,1,RLBP1,0,
+3095,PITPNA,IP_trans,Phosphatidylcholine (35:2),PC(35:2),in cellulo,Phosphatidylcholine (34:1),1.0,1,PITPNB,0,
+3372,PITPNB,IP_trans,Phosphatidylcholine (32:2),PC(32:2),in cellulo,Phosphatidylcholine (40:4),1.0,1,PITPNA,0,
+3374,PITPNB,IP_trans,Phosphatidylcholine (36:3),PC(36:3),in cellulo,Phosphatidylcholine (40:4),1.0,1,PITPNA,0,
+3387,PITPNB,IP_trans,Phosphatidylinositol (36:2),PI(36:2),in cellulo,Phosphatidylinositol (38:4),1.0,1,PITPNA,0,
+3419,PITPNB,IP_trans,Phosphatidylcholine (36:4),PC(36:4),in cellulo,Phosphatidylcholine (40:4),1.0,1,PITPNA,0,
+3421,PITPNB,IP_trans,Phosphatidylcholine (38:5),PC(38:5),in cellulo,Phosphatidylcholine (40:4),1.0,1,PITPNA,0,
+3436,PITPNB,IP_trans,Phosphatidylcholine (36:5),PC(36:5),in cellulo,Phosphatidylcholine (40:4),1.0,1,PITPNA,0,
+7811,PITPNC1,IP_trans,Phosphatidylinositol (36:2),PI(36:2),in cellulo,Phosphatidylinositol (38:4),1.0,1,PITPNA,0,
+5161,STARD10,START,Phosphatidylcholine (O-37:7),PC(O-37:7),in cellulo,Phosphatidylcholine (O-36:4); Lysophosphatidylcholine (36:4),1.0,1,STARD2,0,
+828,ATCAY,CRAL-TRIO,Phosphatidylcholine (38:3),PC(38:3),in cellulo,Phosphatidylcholine (34:1),0.9444444444444444,1,RLBP1,0,
+5130,STARD10,START,Phosphatidylcholine (32:0),PC(32:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,STARD2,0,
+5387,STARD11,START,Phosphatidylcholine (32:0),PC(32:0),in cellulo,Phosphatidylcholine (34:1),0.8823529411764706,1,STARD2,0,
+1139,BNIPL,CRAL-TRIO,Phosphatidylcholine (38:3),PC(38:3),in cellulo,Phosphatidylcholine (O-32:1),0.8103448275862069,1,RLBP1,0,
+5423,STARD11,START,Phosphatidylcholine (O-37:7),PC(O-37:7),in cellulo,Phosphatidylcholine (34:1),0.7704918032786885,1,STARD2,0,

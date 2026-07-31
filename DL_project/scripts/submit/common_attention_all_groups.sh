@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT="${PROJECT:-pr-molgen}"
+RUN_NAME="ca_t"
+
+PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
+CONDA_SH="${CONDA_SH:-/home/kalinina/miniconda3/etc/profile.d/conda.sh}"
+CONDA_ENV="${CONDA_ENV:-Kalinin_project_LP}"
+GPU_PROPERTY="${GPU_PROPERTY:-(gpumodel='A100' OR gpumodel='V100')}"
+WALLTIME="${WALLTIME:-4:00:00}"
+EP="${EP:-150}"
+A100_BATCH="${A100_BATCH:-16}"
+V100_BATCH="${V100_BATCH:-16}"
+NUM_WORKERS="${NUM_WORKERS:-4}"
+SEED="${SEED:-0}"
+HIDDIM="${HIDDIM:-64}"
+HEADS="${HEADS:-8}"
+MIN_FREE_GPU_MIB="${MIN_FREE_GPU_MIB:-16384}"
+GPU_WAIT_SECONDS="${GPU_WAIT_SECONDS:-60}"
+LOG_ROOT="${LOG_ROOT:-${PROJECT_DIR}/script_logs/common_attention_all_groups}"
+
+EXCLUDED_GROUPS=(
+    "CRAL-TRIO"
+    "START"
+    "lipocalin"
+    "GLTP"
+    "IP_trans"
+    "LBP_BPI_CETP"
+    "scp2"
+    "ML"
+    "OSBP"
+)
+
+mkdir -p "${LOG_ROOT}"
+
+for group in "${EXCLUDED_GROUPS[@]}"; do
+    safe_group="${group//\//_}"
+    job_name="${RUN_NAME}_${safe_group}"
+
+    printf -v train_command \
+        'gpu_name="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)"; case "${gpu_name}" in *A100*) batch=%q ;; *V100*) batch=%q ;; *) printf "Unsupported GPU model: %%s\n" "${gpu_name}" >&2; exit 1 ;; esac; gpu_uuid="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n 1 | tr -cd "A-Za-z0-9_-")"; exec 9>"/tmp/dl-project-${gpu_uuid}.lock"; printf "Waiting for exclusive access to GPU %%s.\n" "${gpu_uuid}"; flock 9; while true; do free_gpu_mib="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -n 1 | tr -d " ")"; if [[ "${free_gpu_mib}" =~ ^[0-9]+$ ]] && (( free_gpu_mib >= %q )); then break; fi; printf "Waiting for GPU memory: free=%%s MiB, required=%%s MiB. Checking again in %%s seconds.\n" "${free_gpu_mib:-unknown}" %q %q; sleep %q; done; log_file=%q/${batch}_%q_seed%q_ep%q.log; printf "=== COMMON + ATTENTION | excluded group: %%s | seed: %%s | GPU: %%s | batch: %%s ===\n" %q %q "${gpu_name}" "${batch}"; PYTHONUNBUFFERED=1 python ./training/new_train.py --lipid_fragments_treatment=concat --plmon --buryon --protein_pooling=ordinary --tanimoto_weight --loss_type=cross_entropy --pool_type=max --HEADS=%q --hiddim=%q --m=4 --lr=0.001 --batch="${batch}" --ep=%q --num_workers=%q --seed=%q --protein_self_attention --lipid_self_attention --cross_attention --excluded_groups=%q 2>&1 | tee "${log_file}"' \
+        "${A100_BATCH}" "${V100_BATCH}" "${MIN_FREE_GPU_MIB}" \
+        "${MIN_FREE_GPU_MIB}" "${GPU_WAIT_SECONDS}" "${GPU_WAIT_SECONDS}" \
+        "${LOG_ROOT}" "${safe_group}" \
+        "${SEED}" "${EP}" "${group}" "${SEED}" "${HEADS}" "${HIDDIM}" \
+        "${EP}" "${NUM_WORKERS}" "${SEED}" "${group}"
+
+    printf -v job_command \
+        'cd %q && source %q && conda activate %q && bash -o pipefail -c %q' \
+        "${PROJECT_DIR}" "${CONDA_SH}" "${CONDA_ENV}" "${train_command}"
+
+    oarsub \
+        --name "${job_name}" \
+        -l "/nodes=1/gpu=1,walltime=${WALLTIME}" \
+        -p "${GPU_PROPERTY}" \
+        --project "${PROJECT}" \
+        -O "${LOG_ROOT}/${safe_group}_%jobid%.out" \
+        -E "${LOG_ROOT}/${safe_group}_%jobid%.err" \
+        "${job_command}"
+done

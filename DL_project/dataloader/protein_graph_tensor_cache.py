@@ -1,0 +1,150 @@
+"""Build and validate the binary cache for precomputed protein graph CSVs."""
+
+import json
+import os
+from pathlib import Path
+
+import pandas
+import torch
+
+
+CACHE_FORMAT_VERSION = 1
+CACHE_FILE = "protein_graph_tensors.pt"
+MANIFEST_FILE = "protein_graph_tensors.manifest.json"
+
+
+def _source_record(path, root_dir):
+    stat = path.stat()
+    return {
+        "path": str(path.relative_to(root_dir)),
+        "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
+
+
+def _pocket_tensor(path):
+    lines = path.read_text().splitlines()
+    if os.path.normpath(path).endswith(
+        os.path.normpath("graphs/RET4/pocketness.pdb")
+    ):
+        lines = lines[:-1]
+    residue_has_pocket_atom = {}
+    for line in lines:
+        residue_has_pocket_atom[line[22:28].strip()] = 0
+    for line in lines:
+        if line[13:17].strip() in {"C", "CA", "CB", "O", "N"}:
+            continue
+        residue_has_pocket_atom[line[22:28].strip()] += int(line[62])
+    return torch.tensor(
+        [value > 0 for value in residue_has_pocket_atom.values()],
+        dtype=torch.bool,
+    )
+
+
+def _base_graph(nodes_path, edges_path, pocket_path):
+    vertices = pandas.read_csv(nodes_path)
+    edges = pandas.read_csv(edges_path)
+    residue_to_node = {
+        int(residue_id): index
+        for index, residue_id in enumerate(vertices["ID_resSeq"])
+    }
+    edge_index = torch.tensor(
+        edges[["ID1_resSeq", "ID2_resSeq"]].values,
+        dtype=torch.long,
+    )
+    edge_index.apply_(lambda value: residue_to_node.get(value, 0))
+    return {
+        "x": torch.tensor(
+            vertices[
+                ["residue_type", "residue_sas_area", "residue_volume"]
+            ].values,
+            dtype=torch.float32,
+        ),
+        "edge_index": edge_index.t().contiguous(),
+        "edge_attr": torch.tensor(
+            edges[["distance", "area", "boundary"]].values,
+            dtype=torch.float32,
+        ),
+        "bury": torch.tensor(
+            vertices["residue_mean_buriedness"].values,
+            dtype=torch.float32,
+        ),
+        "pocket": _pocket_tensor(pocket_path),
+    }, vertices
+
+
+def _geometric_graph(path, vertices):
+    geometric = pandas.read_csv(path)
+    expected_ids = vertices[
+        ["ID_chainID", "ID_resSeq", "ID_iCode"]
+    ].astype(str).reset_index(drop=True)
+    actual_ids = geometric[
+        ["ID_chainID", "ID_resSeq", "ID_iCode"]
+    ].astype(str).reset_index(drop=True)
+    if not expected_ids.equals(actual_ids):
+        raise ValueError(f"{path}: residue rows do not align with protein nodes")
+
+    identifier_columns = {"ID_chainID", "ID_resSeq", "ID_iCode"}
+    return {
+        column: torch.tensor(geometric[column].values)
+        for column in geometric.columns
+        if column not in identifier_columns
+        and pandas.api.types.is_numeric_dtype(geometric[column])
+    }
+
+
+def build_protein_graph_tensor_cache(root_dir):
+    root_dir = Path(root_dir).resolve()
+    graphs_dir = root_dir / "graphs"
+    payload = {}
+    sources = []
+    for protein_dir in sorted(path for path in graphs_dir.iterdir() if path.is_dir()):
+        nodes_path = protein_dir / "coarse_graph_nodes.csv"
+        edges_path = protein_dir / "coarse_graph_links.csv"
+        pocket_path = protein_dir / "pocketness.pdb"
+        if not (nodes_path.exists() and edges_path.exists() and pocket_path.exists()):
+            continue
+        base, vertices = _base_graph(nodes_path, edges_path, pocket_path)
+        entry = {"base": base}
+        source_paths = [nodes_path, edges_path, pocket_path]
+        geometric_path = protein_dir / "geometric_transformer_nodes.csv"
+        if geometric_path.exists():
+            entry["geometric"] = _geometric_graph(geometric_path, vertices)
+            source_paths.append(geometric_path)
+        payload[protein_dir.name] = entry
+        sources.extend(_source_record(path, root_dir) for path in source_paths)
+
+    cache_path = root_dir / CACHE_FILE
+    manifest_path = root_dir / MANIFEST_FILE
+    torch.save(payload, cache_path)
+    manifest = {
+        "format_version": CACHE_FORMAT_VERSION,
+        "cache_file": CACHE_FILE,
+        "proteins": sorted(payload),
+        "sources": sources,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+    return cache_path, manifest_path, len(payload)
+
+
+def load_protein_graph_tensor_cache(root_dir):
+    root_dir = Path(root_dir).resolve()
+    cache_path = root_dir / CACHE_FILE
+    manifest_path = root_dir / MANIFEST_FILE
+    if not cache_path.exists() or not manifest_path.exists():
+        return {}
+    try:
+        manifest = json.loads(manifest_path.read_text())
+        if manifest.get("format_version") != CACHE_FORMAT_VERSION:
+            return {}
+        for source in manifest["sources"]:
+            path = root_dir / source["path"]
+            stat = path.stat()
+            if (
+                stat.st_size != source["size"]
+                or stat.st_mtime_ns != source["mtime_ns"]
+            ):
+                return {}
+        return torch.load(cache_path, map_location="cpu", weights_only=True)
+    except (OSError, KeyError, ValueError, json.JSONDecodeError):
+        return {}

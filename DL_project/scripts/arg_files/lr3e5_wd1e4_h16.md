@@ -1,0 +1,1 @@
+--lr=3e-05 --weight_decay=0.0001 --hiddim=16

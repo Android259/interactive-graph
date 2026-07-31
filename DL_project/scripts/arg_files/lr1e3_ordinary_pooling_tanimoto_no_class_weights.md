@@ -1,0 +1,1 @@
+--lr=0.001 --protein_pooling=ordinary --tanimoto_weight --no_class_weights
