@@ -1,0 +1,1 @@
+["--label=bf_sm_nps3mlp_cs", "--protein_disable_post_sa_mlp", "--lipid_disable_post_sa_mlp", "--third_layers_in_mlps", "--balance_negatives_by_family", "--save_model", "--cold_split", "--seed=4", "--excluded_groups=LBP_BPI_CETP,IP_trans", "--test_group=LBP_BPI_CETP"]

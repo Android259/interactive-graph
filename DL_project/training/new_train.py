@@ -262,6 +262,35 @@ theta_params = [
     if id(p) not in gate_param_ids and id(p) not in dropout_logit_ids
 ]
 
+lipid_branch_param_ids = (
+    {id(p) for p in model.lipid_branch_parameters()}
+    if conf.lipid_path_handicap
+    else set()
+)
+
+
+def split_lipid_branch(groups):
+    """Give the lipid branch its own optimizer group so its lr can be handicapped.
+
+    Splitting by PARAMETER, not by a hook on the graph, is what makes the handicap
+    stay off the protein: past cross-attention the lipid activations are a function of
+    both partners, so anything attached there would slow the protein encoder too. Each
+    split group inherits its parent's settings (weight decay above all) and differs
+    only in lr, and is tagged so apply_lipid_path_handicap can find it again.
+    """
+    if not lipid_branch_param_ids:
+        return groups
+    split = []
+    for group in groups:
+        lipid = [p for p in group["params"] if id(p) in lipid_branch_param_ids]
+        rest = [p for p in group["params"] if id(p) not in lipid_branch_param_ids]
+        if rest:
+            split.append({**group, "params": rest})
+        if lipid:
+            split.append({**group, "params": lipid, "lipid_branch": True})
+    return split
+
+
 hyper_optimizer = None
 if conf.bilevel and gate_params:
     # theta (with weight decay) + dropout logits (no weight decay) on train; the main
@@ -269,24 +298,54 @@ if conf.bilevel and gate_params:
     main_groups = [{"params": theta_params, "weight_decay": conf.weight_decay}]
     if dropout_logit_params:
         main_groups.append({"params": dropout_logit_params, "weight_decay": 0.0})
-    optimizer = torch.optim.Adam(main_groups, lr=conf.lr)
+    optimizer = torch.optim.Adam(split_lipid_branch(main_groups), lr=conf.lr)
     hyper_optimizer = torch.optim.Adam(gate_params, lr=conf.bilevel_lr)
 elif dropout_logit_params:
     # Not bilevel: everything trains on the train objective, but keep dropout logits out
     # of weight decay. Gates (if any) are learned via the train-loss penalty below.
     optimizer = torch.optim.Adam(
-        [
-            {"params": theta_params + gate_params, "weight_decay": conf.weight_decay},
-            {"params": dropout_logit_params, "weight_decay": 0.0},
-        ],
+        split_lipid_branch(
+            [
+                {
+                    "params": theta_params + gate_params,
+                    "weight_decay": conf.weight_decay,
+                },
+                {"params": dropout_logit_params, "weight_decay": 0.0},
+            ]
+        ),
         lr=conf.lr,
     )
 else:
     optimizer = torch.optim.Adam(
-        model.parameters(),
+        split_lipid_branch([{"params": list(model.parameters())}]),
         lr=conf.lr,
         weight_decay=conf.weight_decay,
     )
+
+
+# Rewritten at the top of every epoch from conf.ramped_lipid_path_weight; defined here
+# so the TensorBoard logger has it whatever order the first epoch runs in.
+lipid_path_weight_now = conf.lipid_path_weight
+# Resolved once. param_groups is a stable list of stable dicts, so holding the dicts
+# themselves saves rescanning it on every epoch and every log line, and keeps the
+# handicap's two call sites from each re-deriving which group is which.
+lipid_lr_groups = [g for g in optimizer.param_groups if g.get("lipid_branch")]
+lipid_lr_reference = next(
+    (g for g in optimizer.param_groups if not g.get("lipid_branch")), None
+)
+
+
+def apply_lipid_path_handicap(weight):
+    """Set the lipid branch's lr to ``weight`` times the rest of the model's.
+
+    Read off a sibling group rather than off conf.lr so whatever the lr schedule has
+    done this epoch is inherited: lr_warmup_cosine rewrites every group's lr from its
+    own previous value, so anchoring to conf.lr would silently undo the warm-up and the
+    cosine decay for the lipid branch alone. Called at the top of each epoch, after the
+    previous epoch's scheduler step.
+    """
+    for group in lipid_lr_groups:
+        group["lr"] = lipid_lr_reference["lr"] * weight
 
 
 def _endless_batches(loader):
@@ -497,9 +556,14 @@ def log_adversary_metrics(writer, epoch_index, stats):
         writer.add_scalar(
             "epoch/dann lambda", model.final_layer.dann_lambda_now, epoch_index + 1
         )
-    if conf.lipid_path_weight != 1.0:
+    if conf.lipid_path_handicap:
+        # The lr the handicap actually produced, not just the multiplier: the multiplier
+        # alone would hide whatever the lr schedule did underneath it.
         writer.add_scalar(
-            "epoch/lipid path weight", model.lipid_path_weight_now, epoch_index + 1
+            "epoch/lipid path weight", lipid_path_weight_now, epoch_index + 1
+        )
+        writer.add_scalar(
+            "epoch/lipid branch lr", lipid_lr_groups[0]["lr"], epoch_index + 1
         )
 
 
@@ -1258,9 +1322,11 @@ for eepoch in range(EPOCHS):
         model.final_layer.dann_lambda_now = conf.ramped_dann_lambda(
             fit_progress if conf.dann_lambda_ramp_by_fit else epoch_progress
         )
-    # Epoch index rather than epoch_progress: this is a warm-up measured in epochs, so
-    # its length must not change when EPOCHS does.
-    model.lipid_path_weight_now = conf.ramped_lipid_path_weight(epoch_number)
+    if conf.lipid_path_handicap:
+        # Epoch index rather than epoch_progress: this is a warm-up measured in epochs,
+        # so its length must not change when EPOCHS does.
+        lipid_path_weight_now = conf.ramped_lipid_path_weight(epoch_number)
+        apply_lipid_path_handicap(lipid_path_weight_now)
     model.train(True)
     countrain, countval, train_metrics, valid_metrics = epoch(epoch_number,countrain,countval)
     if uses_fit_ramp:

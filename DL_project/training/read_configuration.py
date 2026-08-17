@@ -251,20 +251,65 @@ class ModelConfig:
     dann_class_conditional: bool = True
     dann_lambda_ramp: bool = False
     dann_lambda_ramp_by_fit: bool = False
-    # Scale the gradient reaching the lipid branch, leaving the forward pass exactly
-    # as it was. 1.0 is the current behaviour; below 1.0 the lipid encoder learns
-    # proportionally slower while the protein branch keeps its full step, which is the
-    # warm-up remedy for the protein path never being used: matched runs put lipid_only
-    # at 0.621 test BA against 0.603 for the full model, i.e. the protein branch
-    # currently costs more than it adds, and one explanation is that the lipid path
-    # reaches a good solution first and the protein path stops receiving useful
-    # gradient. Unlike the adversary this does not push the lipid representation to be
-    # unpredictive -- it only slows it down, so nothing that transfers is destroyed.
-    lipid_path_weight: float = 1.0
-    # Epochs over which lipid_path_weight ramps linearly back to 1.0 (0 = constant).
-    # Epoch 0 uses lipid_path_weight, epoch >= this uses 1.0, so the handicap is a
-    # warm-up rather than a permanent change to the optimisation problem.
-    lipid_path_weight_ramp_epochs: int = 0
+    # Give the lipid branch a smaller learning rate than the rest of the model, leaving
+    # the forward pass exactly as it was: the lipid stream learns proportionally slower
+    # while the protein branch keeps its full step, which is the warm-up remedy for the
+    # protein path never being used. Matched runs put lipid_only at 0.621 test BA
+    # against 0.603 for the full model, i.e. the protein branch currently costs more
+    # than it adds, and one explanation is that the lipid path reaches a good solution
+    # first and the protein path stops receiving useful gradient. Unlike the adversary
+    # this does not push the lipid representation to be unpredictive -- it only slows it
+    # down, so nothing that transfers is destroyed.
+    #
+    # Implemented as a separate optimizer param group, not as a gradient scale on the
+    # activations, for two reasons. Adam's step m/sqrt(v) is invariant to a constant
+    # rescaling of the gradient, so scaling the lipid gradient is very nearly a no-op
+    # under this optimizer (what little it does is a relative weight-decay boost, since
+    # torch.optim.Adam's coupled L2 is added AFTER the scale). And selecting parameters
+    # is the only way to keep the handicap off the protein: past cross-attention the
+    # lipid activations are a function of both partners, so a hook there would run back
+    # into the protein encoder through the very interaction channel this exists to
+    # protect. InteractionClassification.lipid_branch_parameters draws the boundary.
+    #
+    # The two numbers below only apply when this is on, and nothing about the handicap
+    # runs when it is off: no split param group, no per-epoch schedule.
+    lipid_path_handicap: bool = False
+    # The lipid branch's lr as a fraction of the rest of the model's, at epoch 0, in
+    # [0, 1). 0.0 is rejected as a default choice rather than by validate(): a frozen
+    # lipid encoder means the head spends the first epochs learning to read a random
+    # projection, which is a different intervention than a head start.
+    lipid_path_weight: float = 0.1
+    # Epochs over which lipid_path_weight ramps linearly back to 1.0 (0 = never ramps,
+    # a permanent handicap rather than a warm-up). Epoch 0 uses lipid_path_weight,
+    # epoch >= this uses 1.0.
+    #
+    # Neither number means anything alone; what the pair buys is how many epochs of
+    # lipid learning the ramp REMOVES. A linear ramp lets the lipid branch through
+    # R*(w0+1)/2 effective epochs out of R, so
+    #
+    #     delay = R * (1 - w0) / 2
+    #
+    # and 0.1/50 removes 22.5 epochs of lipid training.
+    #
+    # R is set by how long the handicap has to PERSIST to still matter at the end, not
+    # by how long the lipid path's early phase lasts. A short ramp is self-defeating on
+    # a 150-epoch run: lift it at epoch 10 and the lipid branch has 140 epochs at full
+    # speed to reassert itself and erase whatever room the protein branch was given.
+    # (An earlier version capped R at 10 to keep the full model's median peak, epoch 16,
+    # outside the ramp. That was backwards -- the point of the handicap is to move that
+    # peak, so a peak reached under it is the thing being measured, not a contaminated
+    # reading.) 50 leaves 100 epochs of unhandicapped training after it, and the 90th
+    # percentile of runs peaks by epoch ~113, so the budget still covers them.
+    #
+    # ramp_epochs=0 -- a permanent handicap, never lifted -- is the logical extreme of
+    # the same argument and is supported; it is not the default only because it changes
+    # the optimisation problem for the whole run rather than front-loading the change.
+    #
+    # What is NOT known is how long the protein branch actually needs; protonly is
+    # degenerate (a constant predictor, peak at epoch 1), so the protein side has no
+    # convergence timescale in this data. The delay is the thing to vary if these need
+    # tuning.
+    lipid_path_weight_ramp_epochs: int = 50
     # Match negatives to positives inside every (family, lipid class) cell, which removes
     # the per-lipid-class prior the coarser samplers leave behind (measured: per-class
     # positive rate 0.25-0.68 -> 0.50-0.51). It does NOT also balance per protein --
@@ -662,15 +707,16 @@ class ModelConfig:
                 "protein_pockets_only already restricts the nodes; "
                 "protein_pooling=pooling_by_pockets would filter an all-pocket set"
             )
-        if self.lipid_path_weight < 0.0:
-            raise ValueError("lipid_path_weight must be non-negative")
+        # Checked whatever lipid_path_handicap says, so a typo in a value is caught at
+        # parse time rather than lying dormant until someone turns the handicap on.
+        if not 0.0 <= self.lipid_path_weight < 1.0:
+            raise ValueError(
+                "lipid_path_weight is the lipid branch's handicap and must be in "
+                "[0, 1); at 1.0 there is no handicap, above it the lipid branch is "
+                "sped up instead"
+            )
         if self.lipid_path_weight_ramp_epochs < 0:
             raise ValueError("lipid_path_weight_ramp_epochs must be non-negative")
-        if self.lipid_path_weight_ramp_epochs and self.lipid_path_weight == 1.0:
-            raise ValueError(
-                "lipid_path_weight_ramp_epochs ramps lipid_path_weight up to 1.0, so "
-                "it does nothing at lipid_path_weight=1.0; set a starting weight below 1"
-            )
         if self.hiddim <= 0:
             raise ValueError("hiddim must be greater than zero")
         if self.checkpoint_window <= 0:
@@ -945,6 +991,14 @@ class ModelConfig:
             raise ValueError(
                 "adversarial_grl cannot be combined with lipid_only/protein_only"
             )
+        if self.lipid_path_handicap and (self.lipid_only or self.protein_only):
+            # The handicap buys the protein branch a head start over the lipid branch,
+            # which needs both to exist. Under protein_only the lipid output is zeroed,
+            # so it slows a branch nothing reads; under lipid_only the lipid branch is
+            # the whole model, so it is just a lower global learning rate.
+            raise ValueError(
+                "lipid_path_handicap cannot be combined with lipid_only/protein_only"
+            )
         if self.adv_weight < 0.0:
             raise ValueError("adv_weight must be non-negative")
         if self.adv_lambda < 0.0:
@@ -1028,6 +1082,8 @@ class ModelConfig:
         this is a head start for the protein branch, not an adversary that has to stay
         weak while representations are noise: the useful part is the early epochs, and
         a sigmoid spends them all near the starting value.
+
+        Assumes ``lipid_path_handicap``; callers gate, as they do for ramped_adv_lambda.
         """
         if not self.lipid_path_weight_ramp_epochs:
             return self.lipid_path_weight
@@ -1192,6 +1248,8 @@ SIMPLE_BOOL_FLAGS = {
     "--adv_lambda_ramp": "adv_lambda_ramp",
     "adv_lambda_ramp_by_fit": "adv_lambda_ramp_by_fit",
     "--adv_lambda_ramp_by_fit": "adv_lambda_ramp_by_fit",
+    "lipid_path_handicap": "lipid_path_handicap",
+    "--lipid_path_handicap": "lipid_path_handicap",
     "dann_family": "dann_family",
     "--dann_family": "dann_family",
     "dann_lambda_ramp": "dann_lambda_ramp",

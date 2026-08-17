@@ -2,7 +2,7 @@ import torch
 
 try:
     from .cross_attention import CrossAttention
-    from .final_layer import Final_Layer, grad_scale
+    from .final_layer import Final_Layer
     from .lipid_encoder import Lipid_encoder
     from .protein_encoder import Protein_encoder
     from .mlp_utils import ConcreteDropout
@@ -10,7 +10,7 @@ try:
     from training.read_configuration import ModelConfig
 except ImportError:
     from cross_attention import CrossAttention
-    from final_layer import Final_Layer, grad_scale
+    from final_layer import Final_Layer
     from lipid_encoder import Lipid_encoder
     from protein_encoder import Protein_encoder
     from mlp_utils import ConcreteDropout
@@ -39,11 +39,59 @@ class InteractionClassification(torch.nn.Module):
                 self.config.hiddim, self.config.hiddim, self.config
             )
         self.final_layer = Final_Layer(self.config)
-        # Per-epoch training state lives on the model, never on conf: the run report
-        # dumps vars(conf), so writing it there would record a mid-training value as if
-        # it were a hyperparameter of the whole run. The training loop rewrites this
-        # once per epoch from conf.ramped_lipid_path_weight.
-        self.lipid_path_weight_now = self.config.lipid_path_weight
+
+    def lipid_branch_parameters(self):
+        """The lipid stream's own parameters, from the encoder through its pooling.
+
+        What lipid_path_handicap slows. The boundary is deliberate: everything that
+        transforms the lipid stream is in, but ``lip_cross_attention`` is NOT. That
+        block's weights are how the lipid reads the protein -- the interaction channel
+        the handicap exists to make room for -- so slowing it would work against the
+        point. ``lip_adversary`` is also out: it is a probe attached to the lipid
+        stream, not part of it, and handicapping a probe only weakens the measurement.
+
+        A parameter list rather than a gradient hook because the optimiser is Adam,
+        whose step m/sqrt(v) is invariant to a constant rescaling of the gradient --
+        scaling the lipid gradient would be very nearly a no-op. Selecting parameters
+        also keeps the handicap off the protein, which a hook on the post-attention
+        lipid activations could not do: cross-attention makes that tensor a function of
+        both partners, so its gradient runs back into the protein encoder as well.
+        """
+        modules = [self.lipid1]
+        if self.config.double_attention:
+            modules.append(self.lipid2)
+        for name in ("cross_attention1", "cross_attention2"):
+            block = getattr(self, name, None)
+            if block is None:
+                continue
+            modules.extend(
+                part
+                for part in (
+                    block.lipFFN, block.lip_ln1, block.lip_ln2,
+                    getattr(block, "lip_attn_gate", None),
+                    getattr(block, "lip_ffn_gate", None),
+                )
+                if part is not None
+            )
+        modules.extend(
+            pool
+            for pool in (
+                getattr(self.final_layer, "lip_attn_pool", None),
+                getattr(self.final_layer, "lip_gem_pool", None),
+            )
+            if pool is not None
+        )
+        seen, params = set(), []
+        for module in modules:
+            owned = (
+                [module] if isinstance(module, torch.nn.Parameter)
+                else module.parameters()
+            )
+            for parameter in owned:
+                if id(parameter) not in seen:
+                    seen.add(id(parameter))
+                    params.append(parameter)
+        return params
 
     def set_rnabang_normalization(self, stats):
         self.protein1.set_rnabang_normalization(stats)
@@ -279,11 +327,6 @@ class InteractionClassification(torch.nn.Module):
             lip1 = self.lipid1(
                 lip, lip_batch, lip_self_att_mask, fast_layout=lip_layout
             )
-
-        # Hand the lipid branch a smaller gradient step than the protein branch. Placed
-        # on lip1 so every downstream consumer -- the adversary, cross-attention and
-        # pooling -- keeps its full gradient and only the lipid encoder is slowed.
-        lip1 = grad_scale(lip1, self.lipid_path_weight_now)
 
         # Adversarial anti-shortcut: run the per-partner adversaries on the
         # PRE-cross-attention representations, the only point where each partner is
