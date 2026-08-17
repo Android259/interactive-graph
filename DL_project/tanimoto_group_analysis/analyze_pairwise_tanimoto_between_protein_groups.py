@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Pairwise Tanimoto similarity of positive-interaction lipids BETWEEN protein groups.
+# Writes a group x group matrix and a long-form table of the sampled pair distances.
 import argparse
 import os
 

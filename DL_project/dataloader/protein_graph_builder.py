@@ -8,10 +8,96 @@ import pandas
 import torch
 from torch_geometric.data import Data
 
-from dataloader.protein_registry import protein_record
-
 MAX_INCIDENT_EDGES = 21
 EDGE_QUANTILES = (0, 10, 25, 50, 75, 90, 100)
+
+# Base protein node vector. Positional: several paths index node[:, 0..2] directly
+# (residue type, SASA, volume), so anything optional must be appended after these.
+BASE_NODE_COLUMNS = ("residue_type", "residue_sas_area", "residue_volume")
+# Appended by --protein_extra_node_features, in this order.
+EXTRA_NODE_COLUMNS = ("residue_mean_ev28", "residue_mean_ev56")
+# + hydrophobicity, which is derived rather than read. Must equal the increment
+# ModelConfig.validate applies to protein_node_feature_count.
+EXTRA_NODE_FEATURE_COUNT = len(EXTRA_NODE_COLUMNS) + 1
+
+# Kyte & Doolittle (1982) hydropathy index, indexed by Voronota's residue_type code.
+# That code is the alphabetical rank of the three-letter name, verified against
+# ID_resName over all 35 proteins in data/graphs (one name per code, no collisions):
+# ALA=0 ARG=1 ASN=2 ASP=3 CYS=4 GLN=5 GLU=6 GLY=7 HIS=8 ILE=9
+# LEU=10 LYS=11 MET=12 PHE=13 PRO=14 SER=15 THR=16 TRP=17 TYR=18 VAL=19
+KYTE_DOOLITTLE = (
+    1.8, -4.5, -3.5, -3.5, 2.5, -3.5, -3.5, -0.4, -3.2, 4.5,
+    3.8, -3.9, 1.9, 2.8, -1.6, -0.8, -0.7, -0.9, -1.3, 4.2,
+)
+
+
+# One descriptor of the binding cavity per protein, in this order. Aggregated over the
+# pocket residues of coarse_graph_nodes.csv; ModelConfig.pocket_descriptor_count must
+# equal len(POCKET_DESCRIPTOR_NAMES).
+POCKET_DESCRIPTOR_NAMES = (
+    "log_pocket_residues",     # size, but also a protein-size proxy -- see the flag docs
+    "pocket_residue_share",    # scale-free size
+    "log_pocket_volume",
+    "pocket_volume_share",
+    "log_pocket_sasa",         # the one entry with signal independent of protein size
+    "pocket_sasa_share",
+    "apolar_sasa_share",       # chemistry of the cavity wall
+    "mean_hydropathy",
+    "mean_ev14",               # enclosure at three probe radii
+    "mean_ev28",
+    "mean_ev56",
+    "mean_buriedness",
+    "mean_voromqa_depth",
+    "max_voromqa_depth",
+)
+
+
+def pocket_descriptor(vertices, pocket, config=None):
+    """Aggregate one cavity descriptor from a protein's residue table and pocket mask.
+
+    Returns ``[1, len(POCKET_DESCRIPTOR_NAMES)]`` so PyG collation stacks one row per
+    sample. Sizes are log1p-compressed because they span two orders of magnitude across
+    proteins and the shares next to them are bounded; the train-only standardisation
+    installed later handles the rest.
+    """
+    mask = pocket.bool().numpy() if hasattr(pocket, "bool") else pocket
+    site = vertices[mask]
+    if len(site) == 0:
+        raise ValueError("pocket_descriptors requires at least one pocket residue")
+    hydropathy = torch.tensor(KYTE_DOOLITTLE)[
+        torch.tensor(site["residue_type"].to_numpy(copy=True)).long()
+    ].numpy()
+    sasa = site["residue_sas_area"].values
+    total_sasa = float(vertices["residue_sas_area"].sum())
+    total_volume = float(vertices["residue_volume"].sum())
+    pocket_sasa = float(sasa.sum())
+    pocket_volume = float(site["residue_volume"].sum())
+    values = (
+        float(torch.log1p(torch.tensor(float(len(site))))),
+        len(site) / max(len(vertices), 1),
+        float(torch.log1p(torch.tensor(pocket_volume))),
+        pocket_volume / max(total_volume, 1e-9),
+        float(torch.log1p(torch.tensor(pocket_sasa))),
+        pocket_sasa / max(total_sasa, 1e-9),
+        float(sasa[hydropathy > 0].sum() / max(pocket_sasa, 1e-9)),
+        float(hydropathy.mean()),
+        float(site["residue_mean_ev14"].mean()),
+        float(site["residue_mean_ev28"].mean()),
+        float(site["residue_mean_ev56"].mean()),
+        float(site["residue_mean_buriedness"].mean()),
+        float(site["residue_mean_voromqa_depth"].mean()),
+        float(site["residue_mean_voromqa_depth"].max()),
+    )
+    if len(values) != len(POCKET_DESCRIPTOR_NAMES):
+        raise ValueError("pocket descriptor list and name list disagree")
+    return torch.tensor(values, dtype=torch.float32).unsqueeze(0)
+
+
+def protein_node_columns(config):
+    """Voronota columns making up the protein node vector for this configuration."""
+    if getattr(config, "protein_extra_node_features", False):
+        return list(BASE_NODE_COLUMNS) + list(EXTRA_NODE_COLUMNS)
+    return list(BASE_NODE_COLUMNS)
 
 
 def rnabang_edge_node_mode(config):
@@ -30,7 +116,7 @@ def rnabang_edge_node_mode(config):
 
 class ProteinGraphData(Data):
     def __inc__(self, key, value, *args, **kwargs):
-        if key == "sample_index":
+        if key == "pair_id":
             return 0
         return super().__inc__(key, value, *args, **kwargs)
 
@@ -42,6 +128,69 @@ class ProteinGraphBuilder:
             [geometric[column].to(dtype=dtype) for column in columns],
             dim=-1,
         )
+
+    def _check_node_width(self, parts, nodes_path):
+        """Node vector width must match what the encoder's input layer was sized for.
+
+        Also the guard against a stale data/protein_graph_tensors.pt: the cache stores
+        ``x`` as it was built, so enabling protein_extra_node_features without
+        rebuilding it would otherwise hand a 3-wide tensor to a 6-wide layer and fail
+        somewhere inside the GAT instead of here.
+        """
+        expected = getattr(self.config, "protein_node_feature_count", 3)
+        width = int(parts["x"].shape[1])
+        if width != expected:
+            raise ValueError(
+                f"{nodes_path}: protein node vector is {width} wide but the encoder "
+                f"is sized for {expected}. With --protein_extra_node_features, "
+                "rebuild the tensor cache "
+                "(data/build_protein_graph_tensor_cache.py) or delete "
+                "data/protein_graph_tensors.pt"
+            )
+        return parts
+
+    def _restrict_to_pockets(self, parts):
+        """Drop every non-pocket residue from one protein's tensors.
+
+        Node tensors are subset and the graph keeps only edges whose *both* endpoints
+        survive, renumbered to the compacted node range. This is a stronger statement
+        than ``attention_by_pockets``: there the GAT still propagates over the whole
+        protein and only attention keys are restricted, here the rest of the structure
+        is not in the graph at all. Median pocket is 33 of 203 residues, so the
+        surviving graph is small and may be disconnected -- edges between two pocket
+        residues on opposite sides of the cavity do not exist in the contact graph.
+
+        ``edge_node_degree`` / ``edge_node_pairs`` are precomputed descriptions of each
+        residue's contact environment in the *full* protein. They are subset, not
+        recomputed, deliberately: they encode how buried the residue is, which is a
+        property of the intact structure and is exactly what a pocket-only graph can no
+        longer derive on its own.
+        """
+        if not getattr(self.config, "protein_pockets_only", False):
+            return parts
+        keep = parts["pocket"].bool()
+        kept = int(keep.sum())
+        if kept == 0:
+            raise ValueError(
+                "protein_pockets_only left a protein with no residues; its "
+                "pocketness.pdb marks no side-chain atom as pocket"
+            )
+        renumber = torch.full((keep.numel(),), -1, dtype=torch.long)
+        renumber[keep] = torch.arange(kept)
+        edge_index = parts["edge_index"]
+        edge_keep = keep[edge_index[0]] & keep[edge_index[1]]
+        restricted = dict(parts)
+        restricted["edge_index"] = renumber[edge_index[:, edge_keep]]
+        restricted["edge_attr"] = parts["edge_attr"][edge_keep]
+        for name in (
+            "x", "bury", "plm", "pocket", "geometric_node_attr", "edge_node_pairs",
+            "edge_node_degree", "frame_rotation", "frame_translation",
+            "node_confidence",
+        ):
+            value = restricted.get(name)
+            if value is not None:
+                restricted[name] = value[keep]
+        return restricted
 
     def _cached_protein_parts(
         self, cached, plm, node_confidence, nodes_path
@@ -93,7 +242,32 @@ class ProteinGraphBuilder:
                 )
         if node_confidence is not None:
             parts["node_confidence"] = node_confidence
+        if getattr(self.config, "pocket_descriptors", False):
+            parts["pocket_descriptor"] = cached.get(
+                "pocket_descriptor"
+            ) if cached.get("pocket_descriptor") is not None else (
+                self._memoized_pocket_descriptor(nodes_path, parts["pocket"])
+            )
         return parts
+
+    def _memoized_pocket_descriptor(self, nodes_path, pocket):
+        """Cavity descriptor for one protein, read from its residue table once.
+
+        The on-disk tensor cache predates this flag and does not carry the descriptor.
+        Rather than force a rebuild of data/protein_graph_tensors.pt, recompute it here
+        and keep it: the descriptor depends on the protein alone, so one CSV read per
+        protein covers every interaction row that mentions it -- the same reasoning the
+        surrounding per-protein cache is built on.
+        """
+        memo = getattr(self, "_pocket_descriptor_memo", None)
+        if memo is None:
+            memo = {}
+            self._pocket_descriptor_memo = memo
+        cached = memo.get(nodes_path)
+        if cached is None:
+            cached = pocket_descriptor(pandas.read_csv(nodes_path), pocket, self.config)
+            memo[nodes_path] = cached
+        return cached
 
     def _load_node_confidence(self, path):
         """Per-node real pLDDT/B-factor-derived confidence, aligned to graph node order.
@@ -146,6 +320,10 @@ class ProteinGraphBuilder:
             # collation cannot mix a real tensor and a missing/None value for one key
             # across a batch.
             graph_kwargs["node_confidence"] = parts["node_confidence"]
+        if "pocket_descriptor" in parts:
+            # [1, D] per protein, so PyG concatenates it to [num_graphs, D] -- one row
+            # per sample, aligned with the pooled partners rather than with nodes.
+            graph_kwargs["pocket_descriptor"] = parts["pocket_descriptor"]
         return ProteinGraphData(**graph_kwargs)
 
     @staticmethod
@@ -155,6 +333,22 @@ class ProteinGraphBuilder:
             values.mean(dim=0),
             values.std(dim=0, unbiased=False).clamp_min(1e-6),
         )
+
+    def pocket_descriptor_stats(self):
+        """Mean/std of the cavity descriptor over unique TRAIN proteins only.
+
+        Same rule as every other statistic here: validation and test proteins never
+        contribute, so a held-out family cannot shift the scale the model was fitted
+        under. Returns None when the flag is off.
+        """
+        if not getattr(self.config, "pocket_descriptors", False):
+            return None
+        descriptors = torch.cat([
+            self.protein_graph_parts(name)[0]["pocket_descriptor"]
+            for name in sorted(self.csvtrain["LTPProtein"].unique())
+        ])
+        mean, std = self._feature_mean_std(descriptors)
+        return {"pocket_descriptor_mean": mean, "pocket_descriptor_std": std}
 
     def rnabang_normalization_stats(self):
         """Compute fixed statistics from unique training proteins only."""
@@ -221,8 +415,11 @@ class ProteinGraphBuilder:
         protein_name = os.path.basename(os.path.dirname(nodes))
         cached = getattr(self, "_protein_tensor_cache", {}).get(protein_name)
         if cached is not None:
-            return self._cached_protein_parts(
-                cached, plm, node_confidence, nodes
+            return self._restrict_to_pockets(
+                self._check_node_width(
+                    self._cached_protein_parts(cached, plm, node_confidence, nodes),
+                    nodes,
+                )
             )
 
         vertices=pandas.read_csv(nodes)
@@ -233,7 +430,18 @@ class ProteinGraphBuilder:
         bury=torch.tensor(vertices["residue_mean_buriedness"].values, dtype=torch.float32)
         #x=torch.tensor(vertices[["residue_type", "residue_sas_area", "residue_volume", "residue_mean_ev28", "residue_mean_ev56", "hydrophobicity"]].values, dtype=torch.float32) 
         #x=torch.tensor(vertices[["residue_type", "residue_sas_area", "residue_volume", "residue_mean_ev28", "residue_mean_ev56"]].values, dtype=torch.float32)
-        x=torch.tensor(vertices[["residue_type", "residue_sas_area", "residue_volume"]].values, dtype=torch.float32)
+        x=torch.tensor(vertices[protein_node_columns(self.config)].values, dtype=torch.float32)
+        if getattr(self.config, "protein_extra_node_features", False):
+            residue_type = x[:, 0].long()
+            if torch.any((residue_type < 0) | (residue_type >= len(KYTE_DOOLITTLE))):
+                raise ValueError(
+                    f"{nodes}: residue_type outside 0..{len(KYTE_DOOLITTLE) - 1}, "
+                    "so the hydropathy lookup would be wrong rather than merely absent"
+                )
+            hydrophobicity = torch.tensor(
+                KYTE_DOOLITTLE, dtype=torch.float32
+            )[residue_type]
+            x = torch.cat((x, hydrophobicity.unsqueeze(-1)), dim=-1)
         edge_index=torch.tensor(edges[["ID1_resSeq","ID2_resSeq"]].values, dtype=torch.int64) 
         edge_attr=torch.tensor(edges[["distance","area","boundary"]].values, dtype=torch.float32) #maybe a problem here? about how the edges are indexed OH YES THERE IS
         #also can we pool covalent bond y/n from the non coarse grained structure?
@@ -265,7 +473,7 @@ class ProteinGraphBuilder:
 
         with open(pok,"r") as f:
             lines = f.readlines()
-            if os.path.normpath(pok).endswith(os.path.normpath("graphs/RET4/pocketness.pdb")):
+            if os.path.normpath(pok).endswith(os.path.normpath("graphs/RBP4/pocketness.pdb")):
                 lines = lines[:-1]
             for line in lines:
                     dic[line[22:28].strip()]=0
@@ -281,6 +489,11 @@ class ProteinGraphBuilder:
             "x": x, "edge_index": edge_index.t().contiguous(), "edge_attr": edge_attr,
             "bury": bury, "plm": plm, "pocket": poket,
         }
+        if getattr(self.config, "pocket_descriptors", False):
+            # Computed on the intact residue table on purpose: the shares compare the
+            # pocket against the whole protein, which protein_pockets_only would have
+            # already thrown away by the time _restrict_to_pockets runs.
+            parts["pocket_descriptor"] = pocket_descriptor(vertices, poket, self.config)
         use_precomputed_geometric_nodes = (
             getattr(self.config, "geometric_transformer", False)
             or getattr(self.config, "rnabang_frozen_node_adapter", False)
@@ -355,7 +568,7 @@ class ProteinGraphBuilder:
         #print(poket.shape)
         #print(f"poket shape : {poket.shape}")
         #print(f"x shape : {x.shape}")
-        return parts
+        return self._restrict_to_pockets(self._check_node_width(parts, nodes))
 
     def _frozen_edge_node_features(self, geometric):
         """Select one mutually exclusive precomputed edge→node representation."""
@@ -400,6 +613,24 @@ class ProteinGraphBuilder:
             raise ValueError(f"unknown RNA-BAnG edge-to-node mode: {mode}")
         return columns
 
+    def protein_family(self, prot_file):
+        """The protein's family, straight from the interaction table's ProteinDomain.
+
+        ProteinDomain is a per-protein constant in the table (verified: exactly one
+        value per LTPProtein across all 35), so it is the family. It used to be copied
+        into data/protein_registry.csv and read back from there; the table is the
+        source, and a second copy could only drift from it.
+        """
+        domains = self.csvt.loc[
+            self.csvt["LTPProtein"] == prot_file, "ProteinDomain"
+        ].unique()
+        if len(domains) != 1:
+            raise ValueError(
+                f"{prot_file!r}: expected exactly one ProteinDomain in the interaction "
+                f"table, found {list(domains)}"
+            )
+        return str(domains[0])
+
     def protein_graph_parts(self, prot_file):
         """Graph tensors and family one-hot of one protein, parsed once per protein.
 
@@ -411,8 +642,10 @@ class ProteinGraphBuilder:
         if cached is not None:
             return cached
 
-        record = protein_record(prot_file, self.ROOT_DIR)
-        prot_file_emb = record["artifact_stem"]
+        # Artifacts are filed under the interaction table's own protein name, so the
+        # name in LTPProtein IS the directory / file prefix -- no rename map, no
+        # registry lookup.
+        prot_file_emb = prot_file
 
         node_file = self.ROOT_DIR+"/graphs/"+prot_file_emb+"/coarse_graph_nodes.csv"
         edge_file = self.ROOT_DIR+"/graphs/"+prot_file_emb+"/coarse_graph_links.csv"
@@ -448,15 +681,38 @@ class ProteinGraphBuilder:
                 )
             with open(embed_files[0], "rb") as f:
                 esm3_tensor = pickle.load(f)
-            if use_esm3_v2:
-                esm3_tensor = esm3_tensor[1:-1]
-            else:
-                # Historical v1 special-token trimming is part of the existing
-                # ESM3/node alignment contract.
-                extra_trim = record["esm3_v1_extra_trim_pairs"]
-                if extra_trim:
-                    esm3_tensor = esm3_tensor[extra_trim:-extra_trim]
-                esm3_tensor = esm3_tensor[1:-1]
+            # Both variants have one row per residue plus a BOS/EOS pair, and every
+            # protein's graph now has one node per residue of the sequence ESM3 saw
+            # (MSE residues are converted, not dropped -- see
+            # preprocessing/convert_mse_to_met.py), so this is the whole adjustment.
+            esm3_tensor = esm3_tensor[1:-1]
+
+        frozen_replacement = (
+            self.config.frozen_protein_embedding()
+            if hasattr(self.config, "frozen_protein_embedding") else None
+        )
+        frozen_tensor = None
+        if frozen_replacement is not None:
+            suffix, expected_dim = frozen_replacement
+            frozen_path = os.path.join(
+                self.ROOT_DIR, f"embedding_{suffix}", f"{prot_file_emb}_{suffix}.pkl"
+            )
+            if not os.path.isfile(frozen_path):
+                raise FileNotFoundError(
+                    f"Expected {frozen_path}; generate it before training with this "
+                    "flag (see proposals.md and preprocessing/embed_protein_rnabang.py "
+                    "for the alignment contract: one row per coarse_graph_nodes.csv row)"
+                )
+            with open(frozen_path, "rb") as handle:
+                frozen_tensor = torch.as_tensor(
+                    pickle.load(handle), dtype=torch.float32
+                )
+            if frozen_tensor.shape[-1] != expected_dim:
+                raise ValueError(
+                    f"{frozen_path}: width {frozen_tensor.shape[-1]} but the encoder "
+                    f"is sized for {expected_dim}; set the matching "
+                    "--<name>_embedding_dim"
+                )
 
         rnabang_tensor = None
         if use_rnabang:
@@ -480,15 +736,23 @@ class ProteinGraphBuilder:
             getattr(self.config, "rnabang_with_esm3", False)
             or getattr(self.config, "rnabang_residual_with_esm3", False)
         ):
-            plm_tensor = torch.cat(
-                (
-                    torch.as_tensor(esm3_tensor, dtype=torch.float32),
-                    rnabang_tensor,
-                ),
-                dim=-1,
+            # The frozen replacement takes ESM3's slot in the concatenation, so these
+            # modes compose with it: cat(ProteinMPNN, RNA-BAnG) rather than
+            # cat(ESM3, RNA-BAnG). Scales differ wildly between sources -- see the bng
+            # post-mortem in proposals.md -- so whatever goes in here should be brought
+            # to a comparable magnitude before it can contribute.
+            first = (
+                frozen_tensor
+                if frozen_tensor is not None
+                else torch.as_tensor(esm3_tensor, dtype=torch.float32)
             )
+            plm_tensor = torch.cat((first, rnabang_tensor), dim=-1)
         elif use_rnabang:
             plm_tensor = rnabang_tensor
+        elif frozen_tensor is not None:
+            # Replaces ESM3 outright: validate() rejects combining this with any
+            # RNA-BAnG mode, so exactly one source reaches the encoder.
+            plm_tensor = frozen_tensor
         else:
             plm_tensor = esm3_tensor
         with open(node_file, 'r') as f:
@@ -506,7 +770,7 @@ class ProteinGraphBuilder:
             )
 
 
-        family = record["family"]
+        family = self.protein_family(prot_file)
         fam_enc =["CRAL-TRIO","LBP_BPI_CETP","GLTP","ML","lipocalin","START","IP_trans","scp2","OSBP"]
         tenfam=torch.zeros(9)
         for i in range(len(fam_enc)):

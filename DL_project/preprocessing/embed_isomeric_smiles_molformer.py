@@ -163,6 +163,16 @@ def main():
         action="store_true",
         help="Trust input SMILES are already canonical isomeric strings.",
     )
+    parser.add_argument(
+        "--merge",
+        type=Path,
+        default=None,
+        help=(
+            "Existing embedding pickle to extend: its entries are carried over "
+            "unchanged and the newly encoded ones are added, so a table can be "
+            "completed without re-encoding what it already holds."
+        ),
+    )
     args = parser.parse_args()
 
     import torch
@@ -210,11 +220,21 @@ def main():
         device=device,
     )
 
+    merged = 0
+    if args.merge is not None:
+        with open(args.merge, "rb") as handle:
+            existing = pkl.load(handle)
+        merged = len(existing)
+        existing.update(embeddings)
+        embeddings = existing
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "wb") as handle:
         pkl.dump(embeddings, handle)
 
     print(f"input SMILES: {len(loaded_smiles)}")
+    if args.merge is not None:
+        print(f"carried over from {args.merge}: {merged}")
     print(f"embedded SMILES: {len(embeddings)}")
     print(f"invalid skipped: {len(invalid)}")
     print(f"output: {args.output}")

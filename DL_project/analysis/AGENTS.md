@@ -29,8 +29,20 @@ metrics_summary.csv
 - `plot_group_learning_curve.py` — whole-group learning curves averaged over
   matched seeds (reads TensorBoard runs).
 - `plot_metric_by_subgroup.py` — per-protein-subgroup metrics from test reports.
-- Both are invoked by `scripts/generate_config_graphics.sh`; figures land in
-  `graphics/`.
+- Both are invoked by `scripts/tools/generate_config_graphics.sh`; figures land
+  in `graphics/`.
+
+## Not Here
+
+Tanimoto similarity of the lipids each protein group binds lives in
+`tanimoto_group_analysis/`, next to the CSVs it produces.
+
+## One-Offs
+
+- `scratch_count.py` — rebuilds a run's `ModelConfig` from its test report and
+  counts the parameters the discovered gate widths would remove. Reads paths
+  relative to the project root, so run it from there:
+  `python3 analysis/scratch_count.py`.
 
 ## Run Reorganizers
 

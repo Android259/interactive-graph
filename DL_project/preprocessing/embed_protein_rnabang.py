@@ -10,8 +10,17 @@ Run this script from the RNA-BAnG conda environment:
 By default every PDB in data/esm3_input is encoded and written as
 data/embedding_RNABANG/<stem>_RNABANG.pkl. These PDBs were already normalized
 against coarse_graph_nodes.csv, which is the alignment required by the loader.
-No RNA is supplied: MainNetwork.forward_aa() stops after the pretrained protein
-embedder and all ten protein self/geometric-attention blocks.
+No RNA is supplied: the protein branch never reads the nucleic-acid branch, so
+every block used here is a function of the protein alone.
+
+The representation is taken after the FIRST protein block, not after all ten.
+Depth in this tower costs independent directions monotonically: measured over 8
+project proteins, the centered spectrum of the 128-wide output has an effective
+rank of 15.3 at the embedder, 23.0 after block 1, 6.5 after block 5 and 4.5
+after block 10, with PC1 rising from 0.13 to 0.60. The last block -- what
+MainNetwork.forward_aa() returns -- is the most collapsed point in the tower,
+because the later blocks specialize toward RNA/DNA binding, which is not the
+task here. Set EXTRACTION_BLOCK to compare depths; None restores forward_aa().
 """
 
 import argparse
@@ -30,6 +39,39 @@ RNABANG_ROOT = PROJECT_ROOT / "external" / "RNA-BAnG"
 DEFAULT_INPUT_DIR = PROJECT_ROOT / "data" / "esm3_input"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "embedding_RNABANG"
 DEFAULT_CHECKPOINT = RNABANG_ROOT / "ckpt" / "icml.pth"
+# Index of the protein block whose output is written out. 0 is the first block;
+# None runs the whole tower, reproducing the previous rank-4.5 representation.
+EXTRACTION_BLOCK = 0
+
+
+def encode_protein(model, features):
+    """Run the protein tower and return the output of EXTRACTION_BLOCK.
+
+    A forward hook is used rather than calling the block directly: RNA-BAnG's
+    trunk takes its positional and frame arguments in an order that differs from
+    MainNetwork.forward_aa's own signature, and reproducing that call here would
+    silently break if the vendored checkout changes. The whole tower still runs;
+    the discarded blocks cost nothing at this scale.
+    """
+    if EXTRACTION_BLOCK is None:
+        return model.forward_aa(features)
+    captured = {}
+    block = model.main_model.trunk[f"encoder_aa_{EXTRACTION_BLOCK}"]
+    handle = block.register_forward_hook(
+        lambda module, inputs, output: captured.update(
+            value=output[0] if isinstance(output, (tuple, list)) else output
+        )
+    )
+    try:
+        model.forward_aa(features)
+    finally:
+        handle.remove()
+    if "value" not in captured:
+        raise RuntimeError(
+            f"encoder_aa_{EXTRACTION_BLOCK} did not run; the RNA-BAnG trunk "
+            "layout changed"
+        )
+    return captured["value"]
 
 
 def load_model(checkpoint_path, device):
@@ -99,7 +141,7 @@ def embed_one(pdb_path, output_dir, model, processor, embedding_dim, device):
         for key, value in features.items()
     }
     with torch.inference_mode():
-        representation = model.forward_aa(features).squeeze(0).float().cpu()
+        representation = encode_protein(model, features).squeeze(0).float().cpu()
 
     expected_rows = graph_node_count(pdb_path.stem)
     if tuple(representation.shape) != (expected_rows, embedding_dim):

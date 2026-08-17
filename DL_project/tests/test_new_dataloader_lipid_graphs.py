@@ -48,6 +48,8 @@ def make_dataset(config=None, graph_dir=None):
     # object.__new__, so the per-lipid caches have to be supplied here.
     dataset._lipid_graph_cache = {}
     dataset._lipid_graph_table_cache = {}
+    dataset._lipid_encoding_cache = {}
+    dataset._lipid_candidate_key_cache = {}
     return dataset
 
 
@@ -102,6 +104,7 @@ def make_embedding_dataset(**overrides):
         "lipid_random_choice": False,
         "lipid_fragments_mask": False,
         "lipid_isomers": False,
+        "lipid_first_fragment_only": True,
     }
     values.update(overrides)
     config = SimpleNamespace(**values)
@@ -136,6 +139,112 @@ def test_lipid_encoding_preserves_fragment_mask_shape():
 
     assert torch.equal(encoding, dataset.smiles_encoding["CC"].squeeze())
     assert fragment_batch.tolist() == [0, 0]
+
+
+def test_lipid_encoding_concatenates_every_fragment_when_flag_is_off():
+    dataset = make_embedding_dataset(
+        lipid_concat=True, lipid_first_fragment_only=False
+    )
+
+    encoding = dataset.lipid_encoding("0", "CC;CCC")
+
+    expected = torch.cat(
+        [dataset.smiles_encoding["CC"], dataset.smiles_encoding["CCC"]], dim=1
+    ).squeeze()
+    assert torch.equal(encoding, expected)
+
+
+def test_lipid_encoding_marks_every_fragment_when_flag_is_off():
+    dataset = make_embedding_dataset(
+        lipid_fragments_mask=True, lipid_first_fragment_only=False
+    )
+
+    encoding, fragment_batch = dataset.lipid_encoding("0", "CC;CCC")
+
+    expected = torch.cat(
+        [dataset.smiles_encoding["CC"], dataset.smiles_encoding["CCC"]], dim=1
+    ).squeeze()
+    assert torch.equal(encoding, expected)
+    assert fragment_batch.tolist() == [0, 0, 1, 1]
+
+
+def test_lipid_encoding_random_choice_draws_among_all_fragments(monkeypatch):
+    dataset = make_embedding_dataset(
+        lipid_random_choice=True, lipid_first_fragment_only=False
+    )
+    monkeypatch.setattr(
+        "dataloader.lipid_graph_builder.random.choice", lambda values: values[-1]
+    )
+
+    encoding = dataset.lipid_encoding("0", "CC;CCC")
+
+    assert torch.equal(encoding, dataset.smiles_encoding["CCC"].squeeze())
+
+
+def test_cached_lipid_encoding_redraws_on_every_access(monkeypatch):
+    dataset = make_embedding_dataset(
+        lipid_random_choice=True, lipid_first_fragment_only=False
+    )
+    drawn = iter([0, 1, 1, 0])
+    monkeypatch.setattr(
+        "dataloader.lipid_graph_builder.random.choice",
+        lambda values: values[next(drawn)],
+    )
+
+    seen = [
+        dataset.cached_lipid_encoding("0", "CC;CCC") for _ in range(4)
+    ]
+
+    # The draw must not be frozen by the cache: persistent workers would keep the
+    # first pick for the whole run and random_choice would stop augmenting.
+    picked = [int(torch.equal(e, dataset.smiles_encoding["CCC"].squeeze())) for e in seen]
+    assert picked == [0, 1, 1, 0]
+    assert dataset._lipid_encoding_cache == {}
+    assert dataset._lipid_candidate_key_cache == {("0", "CC;CCC"): ("CC", "CCC")}
+
+
+def test_warm_lipid_encoding_does_not_draw_under_random_choice(monkeypatch):
+    dataset = make_embedding_dataset(
+        lipid_random_choice=True, lipid_first_fragment_only=False
+    )
+
+    def fail(values):
+        raise AssertionError("warming must not consume the random stream")
+
+    monkeypatch.setattr("dataloader.lipid_graph_builder.random.choice", fail)
+
+    dataset.warm_lipid_encoding("0", "CC;CCC")
+
+    assert dataset._lipid_candidate_key_cache == {("0", "CC;CCC"): ("CC", "CCC")}
+
+
+def test_lipid_encoding_skips_empty_and_duplicate_fragments():
+    dataset = make_embedding_dataset(
+        lipid_concat=True, lipid_first_fragment_only=False
+    )
+
+    encoding = dataset.lipid_encoding("0", "CC; CCC; CC; ")
+
+    expected = torch.cat(
+        [dataset.smiles_encoding["CC"], dataset.smiles_encoding["CCC"]], dim=1
+    ).squeeze()
+    assert torch.equal(encoding, expected)
+
+
+def test_lipid_encoding_reports_a_fragment_missing_from_the_embedding_table():
+    dataset = make_embedding_dataset(
+        lipid_concat=True, lipid_first_fragment_only=False
+    )
+
+    with pytest.raises(KeyError, match="missing from the embedding table"):
+        dataset.lipid_encoding("0", "CC;CCCC")
+
+
+def test_lipid_encoding_rejects_fragments_without_a_parsable_smiles():
+    dataset = make_embedding_dataset(lipid_concat=True)
+
+    with pytest.raises(ValueError, match="no parsable lipid SMILES"):
+        dataset.lipid_encoding("0", "0; ")
 
 
 def test_canonical_lipid_smiles_list_skips_invalid_and_deduplicates():
@@ -223,23 +332,23 @@ def test_lipid_graph_data_offsets_lipid_batch_when_batched():
 def test_protein_graph_data_preserves_original_pair_ids_when_batched():
     first = ProteinGraphData(
         x=torch.ones((2, 1)),
-        sample_index=torch.tensor([10]),
+        pair_id=torch.tensor([10]),
     )
     second = ProteinGraphData(
         x=torch.ones((3, 1)),
-        sample_index=torch.tensor([20]),
+        pair_id=torch.tensor([20]),
     )
 
     batch = next(iter(DataLoader([first, second], batch_size=2)))
 
-    assert batch.sample_index.tolist() == [10, 20]
+    assert batch.pair_id.tolist() == [10, 20]
 
 
 def test_grab_graph_uses_only_train_sources(tmp_path):
     dataset = make_dataset()
     dataset.ROOT_DIR = str(tmp_path)
     dataset.csv = pd.DataFrame({
-        "_tanimoto_orig_idx": [0, 1],
+        "pair_id": [0, 1],
         "Interaction": [0, 1],
     })
     pd.DataFrame({

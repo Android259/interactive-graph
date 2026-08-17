@@ -69,7 +69,7 @@ class Protein_encoder(torch.nn.Module):
             elif getattr(self.config, "rnabang_edge_set_transformer", False):
                 self.edge_node_encoder = SetTransformerEdgeEncoder()
                 edge_feature_dim = self.edge_node_encoder.output_dim
-            elif getattr(self.config, "rnabang_edge_sorted", False):
+            elif getattr(self.config, "rnabang_edge_topk_by_area", False):
                 edge_feature_dim = 43
             elif getattr(self.config, "rnabang_edge_pna", False):
                 edge_feature_dim = 13
@@ -137,10 +137,42 @@ class Protein_encoder(torch.nn.Module):
             self.rnabang_residual_alpha = torch.nn.Parameter(torch.zeros(1))
 
         if start:
-            indim = 3
+            # residue_type, SASA, volume, plus the optional Voronota extras appended
+            # after them by the loader (see protein_graph_builder.EXTRA_NODE_COLUMNS).
+            indim = getattr(self.config, "protein_node_feature_count", 3)
+            # The cavity descriptor conditions the protein encoding from the start:
+            # broadcast to every residue and concatenated next to plm and buriedness,
+            # so the GAT, the self-attention and -- the point -- the cross-attention
+            # the lipid reads all see it. Injecting it at pooling instead would leave
+            # the interaction itself blind to the shape of the cavity.
+            #
+            # Standardisation lives here rather than in the loader because the
+            # statistics must come from train proteins only; the buffers are filled by
+            # set_pocket_descriptor_normalization before the first epoch.
+            self.pocket_descriptor_count = int(
+                getattr(self.config, "pocket_descriptor_count", 0)
+            )
+            if self.pocket_descriptor_count:
+                self.register_buffer(
+                    "pocket_descriptor_mean", torch.zeros(self.pocket_descriptor_count)
+                )
+                self.register_buffer(
+                    "pocket_descriptor_std", torch.ones(self.pocket_descriptor_count)
+                )
+                indim += self.pocket_descriptor_count
             plm_output_dim = self.config.plm_compression_dim
             plm_input_dim = 1536
-            if getattr(self.config, "rnabang_replace_esm3", False):
+            frozen_replacement = (
+                self.config.frozen_protein_embedding()
+                if hasattr(self.config, "frozen_protein_embedding") else None
+            )
+            if frozen_replacement is not None:
+                # Replaces ESM3's contribution, including inside the RNA-BAnG
+                # concatenation modes, which validate() allows to compose with it.
+                plm_input_dim = frozen_replacement[1]
+                if getattr(self.config, "rnabang_with_esm3", False):
+                    plm_input_dim += self.config.rnabang_embedding_dim
+            elif getattr(self.config, "rnabang_replace_esm3", False):
                 plm_input_dim = self.config.rnabang_embedding_dim
             elif getattr(self.config, "rnabang_with_esm3", False):
                 plm_input_dim += self.config.rnabang_embedding_dim
@@ -317,6 +349,30 @@ class Protein_encoder(torch.nn.Module):
         degree.index_add_(0, target, ones)
         return out + aggregate / degree.clamp_min(1).unsqueeze(-1)
 
+    def set_pocket_descriptor_normalization(self, stats):
+        """Install fixed descriptor statistics computed from train proteins only."""
+        if not getattr(self, "pocket_descriptor_count", 0) or stats is None:
+            return
+        for name in ("pocket_descriptor_mean", "pocket_descriptor_std"):
+            target = getattr(self, name)
+            value = stats[name].to(device=target.device, dtype=target.dtype)
+            if value.shape != target.shape:
+                raise ValueError(
+                    f"{name} shape {tuple(value.shape)} != {tuple(target.shape)}"
+                )
+            target.copy_(value)
+
+    def expand_pocket_descriptor(self, node, batch, pocket_descriptor):
+        """Standardise the per-protein descriptor and broadcast it over that protein's nodes."""
+        if not getattr(self, "pocket_descriptor_count", 0):
+            return node
+        if pocket_descriptor is None:
+            raise ValueError("pocket_descriptors requires pocket_descriptor")
+        scaled = (
+            pocket_descriptor.to(node.dtype) - self.pocket_descriptor_mean
+        ) / self.pocket_descriptor_std
+        return torch.cat((node, scaled[batch]), dim=-1)
+
     def set_rnabang_normalization(self, stats):
         """Install fixed feature statistics computed from train proteins only."""
         if not self.use_rnabang_frozen_node_adapter:
@@ -338,7 +394,8 @@ class Protein_encoder(torch.nn.Module):
         self, config, node, edgidx, plm, e_attr, batch, bury, attn_mask,
         pocket_mask, start=True, fast_layout=None, frame_rotation=None,
         frame_translation=None, geometric_node_attr=None, edge_node_pairs=None,
-        edge_node_degree=None
+        edge_node_degree=None, pocket_layout=None, pocket_index=None,
+        pocket_descriptor=None
     ):
         """Encode protein nodes while preserving graph-node alignment."""
         if self.use_rnabang_frozen_node_adapter:
@@ -391,9 +448,9 @@ class Protein_encoder(torch.nn.Module):
                 edge_features = (
                     edge_features - self.edge_feature_mean.to(node.dtype)
                 ) / self.edge_feature_std.to(node.dtype)
-                if getattr(self.config, "rnabang_edge_sorted", False):
+                if getattr(self.config, "rnabang_edge_topk_by_area", False):
                     if edge_node_degree is None:
-                        raise ValueError("sorted edge mode requires edge degree")
+                        raise ValueError("top-k edge mode requires edge degree")
                     ranks = torch.arange(
                         21, device=edge_features.device
                     ).unsqueeze(0)
@@ -419,6 +476,7 @@ class Protein_encoder(torch.nn.Module):
                 out = self.attention(
                     out, attn_mask, pocket_mask, batch=batch,
                     fast_layout=fast_layout,
+                    pocket_layout=pocket_layout, pocket_index=pocket_index,
                 )
             out = self.post_sa(out)
             return apply_norm(
@@ -429,7 +487,14 @@ class Protein_encoder(torch.nn.Module):
             rnabang_residual = None
             if self.config.plmon:
                 if self.rnabang_residual_with_esm3:
-                    expected_dim = 1536 + self.config.rnabang_embedding_dim
+                    # The leading block is ESM3 unless a frozen replacement took its
+                    # slot in the concatenation, in which case it is that instead.
+                    replacement = (
+                        self.config.frozen_protein_embedding()
+                        if hasattr(self.config, "frozen_protein_embedding") else None
+                    )
+                    leading_dim = 1536 if replacement is None else replacement[1]
+                    expected_dim = leading_dim + self.config.rnabang_embedding_dim
                     if plm.shape[-1] != expected_dim:
                         raise ValueError(
                             "rnabang_residual_with_esm3 expected PLM width "
@@ -437,7 +502,7 @@ class Protein_encoder(torch.nn.Module):
                         )
                     plm, rnabang_residual = torch.split(
                         plm,
-                        [1536, self.config.rnabang_embedding_dim],
+                        [leading_dim, self.config.rnabang_embedding_dim],
                         dim=-1,
                     )
                 # Old PLM projection:
@@ -446,6 +511,7 @@ class Protein_encoder(torch.nn.Module):
                 node = torch.cat((node, plm), -1)
             if self.config.buryon:
                 node = torch.cat((node, bury.unsqueeze(1)), -1)
+            node = self.expand_pocket_descriptor(node, batch, pocket_descriptor)
 
         if self.use_geometric_transformer:
             if frame_rotation is None or frame_translation is None:
@@ -521,6 +587,7 @@ class Protein_encoder(torch.nn.Module):
                 self.attention(
                     attention_input, attn_mask, pocket_mask, batch=batch,
                     fast_layout=fast_layout,
+                    pocket_layout=pocket_layout, pocket_index=pocket_index,
                 )
             )
         else:

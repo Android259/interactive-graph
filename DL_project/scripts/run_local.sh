@@ -2,20 +2,24 @@
 # Local entry point: run this project's group x seed grid as parallel processes
 # on this machine, instead of queuing OAR jobs on bigfoot/kraken.
 #
-# Analogous to run_bigfoot.sh / run_kraken.sh + submit_all_groups_all_seeds.sh,
+# Analogous to run_bigfoot.sh / run_kraken.sh + launch/submit_grid.sh,
 # but there is only one local target, so sync/preflight/oarsub/wait_and_sync do
 # not apply: this script resolves the args file, builds the group x seed grid,
 # and runs it directly through a bounded local job queue.
 #
-# Usage: bash scripts/run_local.sh [--complete] [--seeds=LIST] [--groups=LIST] ARGS_FILE
+# Usage: bash scripts/run_local.sh [--complete] [--seeds=LIST] [--groups=LIST]
+#                                  [--no_groups=LIST] ARGS_FILE
 # Example: bash scripts/run_local.sh scripts/arg_files/standard.md
 # Example: bash scripts/run_local.sh --seeds=0,1,2 nps3mlp_gat_residual
+# Example: bash scripts/run_local.sh --no_groups=GLTP nps3mlp_gat_residual
 #
-#   --seeds=LIST   Comma/space-separated seeds. Default: 0,1,2,3,4 (same as
-#                   run_cluster.sh).
-#   --groups=LIST  Comma/space-separated excluded groups. Default: the 9
-#                   canonical groups.
-#   --complete     Run only requested group/seed pairs without final test_metrics.
+#   --seeds=LIST     Comma/space-separated seeds. Default: 0,1,2,3,4 (same as
+#                     run_cluster.sh).
+#   --groups=LIST    Comma/space-separated excluded groups. Default: the 9
+#                     canonical groups.
+#   --no_groups=LIST Drop these groups from the list above, so leaving one group
+#                     out of a full run does not mean spelling out the other 8.
+#   --complete       Run only requested group/seed pairs without final test_metrics.
 #
 # Parallelism, threads-per-job and workers-per-job are not flags -- like every
 # other cluster-dependent setting in this project (PROJECT, GPU_RESOURCES,
@@ -39,9 +43,11 @@
 #   MAX_OMP_THREADS_PER_JOB Upper bound for one training process. Default: 4,
 #                           the measured optimum on the local 12-CPU machine.
 #   RESERVED_MEM_GIB        RAM held back from the job-count cap, same idea as
-#                           RESERVED_CORES but for memory. Default: 9 (this
-#                           machine's measured idle baseline).
-#   MEM_PER_JOB_GIB         RAM budgeted per job for that cap. Default: 4 --
+#                           RESERVED_CORES but for memory. Default: 2 -- margin
+#                           on top of the free memory the kernel reports, NOT an
+#                           assumption about how much the desktop is using (that
+#                           is measured, see below).
+#   MEM_PER_JOB_GIB         RAM budgeted per job for that cap. Default: 2 --
 #                           the MARGINAL cost of one more concurrent job, not
 #                           one job's own RSS in isolation (summing isolated
 #                           RSS overestimates: shared libtorch/MKL pages are
@@ -79,9 +85,10 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 usage() {
-    printf 'Usage: bash %s [--complete] [--seeds=LIST] [--groups=LIST] ARGS_FILE\n' "${0##*/}" >&2
+    printf 'Usage: bash %s [--complete] [--seeds=LIST] [--groups=LIST] [--no_groups=LIST] ARGS_FILE\n' "${0##*/}" >&2
     printf 'Example: bash %s scripts/arg_files/standard.md\n' "${0##*/}" >&2
     printf 'Example: bash %s --seeds=0,1,2 nps3mlp_gat_residual\n' "${0##*/}" >&2
+    printf 'Example: bash %s --no_groups=GLTP nps3mlp_gat_residual\n' "${0##*/}" >&2
 }
 
 # -h/--help must short-circuit before self-detach: it does not launch
@@ -96,9 +103,9 @@ for _arg in "$@"; do
 done
 
 # Self-detach so closing the terminal (or losing the SSH session to this
-# machine) does not kill a grid that is still running -- same intent as
-# scripts/wait_and_sync.sh's tmux daemon, but tmux is not installed on every
-# machine this runs on (checked here at run time, nothing is installed to fix
+# machine) does not kill a grid that is still running. Unlike a cluster job,
+# which OAR keeps running whatever happens here, a local grid IS this machine's
+# process. tmux is not installed on every machine this runs on (checked here at run time, nothing is installed to fix
 # that) and the caller may not be able to install it either, so this falls
 # back to setsid+nohup, which need nothing beyond coreutils/util-linux that
 # every one of this project's machines already has. Both paths give the same
@@ -106,8 +113,8 @@ done
 # launched them; only the log-tailing in this terminal stops on Ctrl-C or on
 # the client machine going away.
 #
-# RUN_LOCAL_TMUX=0 opts out of both (matches wait_and_sync.sh's WAIT_TMUX=0),
-# and the relaunch sets it so the detached copy does not try to detach again.
+# RUN_LOCAL_TMUX=0 opts out of both, and the relaunch sets it so the detached
+# copy does not try to detach again.
 LOCAL_RUN_SESSION="local_run"
 # FIFO of invocations queued behind an already-active run, one %q-encoded
 # argv per line -- see the "already active" branches below, where a second
@@ -172,7 +179,7 @@ fi
 # python3 is already on PATH (with a warning) rather than hard-failing, same
 # as parameters.sh: some environments genuinely have no conda and still work.
 if [[ "${CONDA_DEFAULT_ENV:-}" != "Kalinin_project_LP" ]]; then
-    if ! source "${SCRIPT_DIR}/activate_training_env.sh"; then
+    if ! source "${SCRIPT_DIR}/lib/activate_training_env.sh"; then
         printf 'Could not activate the Kalinin_project_LP conda env; using current python3: %s\n' \
             "$(command -v python3 || echo 'not found')" >&2
     fi
@@ -191,6 +198,10 @@ while (( $# > 0 )); do
             ;;
         --groups=*)
             GROUPS_ARG="${1#*=}"
+            shift
+            ;;
+        --no_groups=*)
+            SKIP_GROUPS_ARG="${1#*=}"
             shift
             ;;
         -h|--help)
@@ -216,53 +227,74 @@ fi
 
 ARGS_FILE="${POSITIONALS[0]}"
 
-# Same resolution as scripts/test_run.sh / scripts/parameters.sh: a path as
-# given, a bare stem under scripts/arg_files, or that stem with .md appended.
-if [[ -f "${ARGS_FILE}" ]]; then
-    :
-elif [[ -f "${SCRIPT_DIR}/arg_files/${ARGS_FILE}.md" ]]; then
-    ARGS_FILE="${SCRIPT_DIR}/arg_files/${ARGS_FILE}.md"
-elif [[ -f "${SCRIPT_DIR}/arg_files/${ARGS_FILE}" ]]; then
-    ARGS_FILE="${SCRIPT_DIR}/arg_files/${ARGS_FILE}"
-else
+# A path as given, a bare stem under scripts/arg_files, or that stem with .md
+# appended -- the same three spellings every other launcher accepts, from the one
+# implementation in scripts/lib/args_file_lib.sh.
+# shellcheck source=scripts/lib/args_file_lib.sh
+source "${SCRIPT_DIR}/lib/args_file_lib.sh"
+
+if ! ARGS_FILE="$(resolve_args_file "${ARGS_FILE}")"; then
     printf 'Arguments file not found: %s\n' "${ARGS_FILE}" >&2
     exit 1
 fi
 
-if grep -qE '^--cold_split([[:space:]=]|$)' "${ARGS_FILE}"; then
+if args_file_has_flag "${ARGS_FILE}" --cold_split; then
     printf '%s uses --cold_split, which this script does not implement (it needs\n' "${ARGS_FILE}" >&2
-    printf 'the per-group val/test pairing from submit_cold_val_test_all_seeds.sh).\n' >&2
+    printf 'the per-group val/test pairing that launch/submit_grid.sh applies).\n' >&2
     printf 'Run it on a cluster instead: bash scripts/run_bigfoot.sh %s\n' "${ARGS_FILE}" >&2
     exit 2
 fi
 
 variant="$(basename "${ARGS_FILE}" .md)"
-# Strip quotes around a flag's value (scripts/parameters.sh does the same, for
-# the same reason): --pool_type="gem" survives unquoted word-splitting fine
-# when this is interpolated below, but bash does not re-interpret quote
-# characters inside an already-expanded variable, so the literal quotes would
-# reach read_configuration.py as part of the value and fail its POOL_TYPES
-# check. Without this, any arg file with a quoted string value (arg_files/
-# *GRL_dp_rmpft*.md's --pool_type="gem" among them) fails at config parsing,
-# before a single job's process even starts.
-args_template="$(grep '^--' "${ARGS_FILE}" | sed -E 's/^(--[^=]+=)"?([^"]*)"?$/\1\2/' | tr '\n' ' ')"
+args_template="$(args_file_flags "${ARGS_FILE}")"
 
-excl_groups=(
-    "CRAL-TRIO"
-    "START"
-    "lipocalin"
-    "GLTP"
-    "IP_trans"
-    "LBP_BPI_CETP"
-    "scp2"
-    "ML"
-    "OSBP"
-)
-seeds=(0 1 2 3 4)
+# shellcheck source=scripts/settings.sh
+source "${SCRIPT_DIR}/settings.sh"
+excl_groups=("${PROTEIN_GROUPS[@]}")
+seeds=("${DEFAULT_SEEDS[@]}")
 
 if [[ -n "${GROUPS_ARG:-}" ]]; then
     read -r -a excl_groups <<< "${GROUPS_ARG//,/ }"
 fi
+
+# --no_groups is the complement of --groups: drop these from whatever list is
+# active (the 9 canonical groups, or an explicit --groups), which is what a full
+# run minus one group wants -- the whitelist alone forces spelling out the other
+# eight. Names are matched by normalize_group_name (scripts/settings.sh),
+# so the same spellings that work for --excluded_groups work here
+# (case-insensitive, - and _ interchangeable: cral_trio == CRAL-TRIO).
+if [[ -n "${SKIP_GROUPS_ARG:-}" ]]; then
+    read -r -a skip_groups <<< "${SKIP_GROUPS_ARG//,/ }"
+    declare -A skip_matched=()
+    kept_groups=()
+    for group in "${excl_groups[@]}"; do
+        keep=1
+        for skipped in "${skip_groups[@]}"; do
+            if [[ "$(normalize_group_name "${group}")" \
+                  == "$(normalize_group_name "${skipped}")" ]]; then
+                keep=0
+                skip_matched["$(normalize_group_name "${skipped}")"]=1
+            fi
+        done
+        (( keep == 1 )) && kept_groups+=("${group}")
+    done
+    # A name that matches nothing is an error, not a silent no-op: the whole
+    # point of this flag is NOT running a group, so a typo would quietly spend
+    # hours training the very group the caller meant to leave out.
+    for skipped in "${skip_groups[@]}"; do
+        if [[ -z "${skip_matched["$(normalize_group_name "${skipped}")"]:-}" ]]; then
+            printf -- '--no_groups names a group that is not being run: %s\n' "${skipped}" >&2
+            printf 'Groups in this run: %s\n' "${excl_groups[*]}" >&2
+            exit 2
+        fi
+    done
+    if (( ${#kept_groups[@]} == 0 )); then
+        printf -- '--no_groups excluded every group; nothing left to run.\n' >&2
+        exit 2
+    fi
+    excl_groups=("${kept_groups[@]}")
+fi
+
 if [[ -n "${SEEDS_ARG:-}" ]]; then
     read -r -a seeds <<< "${SEEDS_ARG//,/ }"
     for _seed in "${seeds[@]}"; do
@@ -275,27 +307,21 @@ fi
 
 # Flatten the group x seed grid into two parallel arrays up front, so the
 # launch loop below just indexes a job count instead of nesting the nproc/N
-# split inside two loops.
+# split inside two loops. The grid itself, and the skipping of pairs that
+# already have a final test report, come from scripts/lib/grid_lib.sh -- the same
+# ones the cluster submitters use, so --complete means the same thing here.
+# shellcheck source=scripts/lib/grid_lib.sh
+source "${SCRIPT_DIR}/lib/grid_lib.sh"
+
+grid_load_completed "${variant}" "${PROJECT_ROOT}/test_metrics" 0
+
 job_groups=()
 job_seeds=()
-declare -A completed_pairs=()
-if [[ "${COMPLETE_ONLY:-0}" == "1" ]]; then
-    while IFS= read -r pair; do
-        [[ -n "${pair}" ]] && completed_pairs["${pair}"]=1
-    done < <(python3 "${SCRIPT_DIR}/list_completed_experiments.py" \
-        "${variant}" --reports-root "${PROJECT_ROOT}/test_metrics")
-fi
-for group in "${excl_groups[@]}"; do
-    for seed in "${seeds[@]}"; do
-        if [[ -n "${completed_pairs["${group}:${seed}"]:-}" ]]; then
-            printf 'Skipping completed experiment: group=%s seed=%s.\n' \
-                "${group}" "${seed}"
-            continue
-        fi
-        job_groups+=("${group}")
-        job_seeds+=("${seed}")
-    done
-done
+while IFS=$'\t' read -r group seed; do
+    [[ -n "${group}" ]] || continue
+    job_groups+=("${group}")
+    job_seeds+=("${seed}")
+done < <(grid_pairs "${excl_groups[*]}" "${seeds[*]}")
 total_jobs=${#job_groups[@]}
 if (( total_jobs == 0 )); then
     printf 'All requested group/seed pairs already have final test_metrics.\n'
@@ -330,18 +356,32 @@ if (( usable_cores < 1 )); then usable_cores=1; fi
 # margin (this was one config over one ~3-minute, 3-epoch window, not a full
 # multi-hour run where e.g. a new best-epoch checkpoint's
 # copy.deepcopy(model.state_dict()) could add a transient spike this did not
-# catch).
-MEM_PER_JOB_GIB="${MEM_PER_JOB_GIB:-4}"
+# catch). A later, finer measurement on the 12-CPU/13 GiB laptop put it lower:
+# per-process PSS (which, unlike RSS, splits those shared pages across the
+# processes mapping them instead of counting them once per process) came to
+# 1.25 GiB for the main process and 0.72 GiB for its one DataLoader worker --
+# 2.0 GiB per job, on the same heavy adversarial_grl+adv_deep config. Hence 2
+# Hence 2. A config heavier than any measured here wants an explicit
+# MEM_PER_JOB_GIB, which is what the override is for.
+MEM_PER_JOB_GIB="${MEM_PER_JOB_GIB:-2}"
 # Memory equivalent of RESERVED_CORES: kept separate (not derived from it)
 # because the two resources are unrelated, and the failure mode here is worse
 # than a slow desktop -- the OOM killer picks whatever it wants, which is how
-# GNOME Shell itself died rather than one of the training jobs. Set from the
-# same measurement: idle baseline on this machine was ~8.5 GiB, so reserving
-# only 6 (an earlier, unmeasured guess) left jobs assuming they could use RAM
-# the desktop was already sitting on.
-RESERVED_MEM_GIB="${RESERVED_MEM_GIB:-9}"
+# GNOME Shell itself died rather than one of the training jobs.
+#
+# What the jobs' budget is taken FROM is MemAvailable -- the kernel's own
+# estimate of what can be allocated right now without swapping -- not MemTotal
+# minus a guessed idle baseline. The old form (MemTotal - 9, where 9 was one
+# particular desktop's measured footprint) travelled badly: the same constant on
+# a 13 GiB laptop left (13-9)/4 = 1, i.e. no parallelism at all, while that
+# machine actually had ~10 GiB free. Whatever the desktop, browser and editors
+# are using is already subtracted from MemAvailable, on the machine in hand, at
+# the moment of the run -- nothing has to be assumed about it. RESERVED_MEM_GIB
+# is therefore margin on top of an already conservative number, hence 2 not 9.
+RESERVED_MEM_GIB="${RESERVED_MEM_GIB:-2}"
 total_mem_gib=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 / 1024 ))
-mem_available_gib=$(( total_mem_gib - RESERVED_MEM_GIB ))
+mem_free_gib=$(( $(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) / 1024 / 1024 ))
+mem_available_gib=$(( mem_free_gib - RESERVED_MEM_GIB ))
 if (( mem_available_gib < MEM_PER_JOB_GIB )); then mem_available_gib=${MEM_PER_JOB_GIB}; fi
 mem_max_jobs=$(( mem_available_gib / MEM_PER_JOB_GIB ))
 if (( mem_max_jobs < 1 )); then mem_max_jobs=1; fi
@@ -367,9 +407,36 @@ if (( OMP_THREADS_PER_JOB > MAX_OMP_THREADS_PER_JOB )); then
 fi
 NUM_WORKERS_PER_JOB="${NUM_WORKERS_PER_JOB:-1}"
 
+# Pin each job to one last-level-cache domain. Unpinned, the kernel is free to
+# move a job's threads between domains, and on a machine whose L3 is split (the
+# 6-core Ryzen here has two 4 MiB domains, cpu 0-5 and cpu 6-11) every such
+# migration throws away that job's cached working set -- the model's parameters
+# alone are ~3 MB, nearly a whole domain -- and it has to be fetched from RAM
+# again. Pinning removes the migrations and nothing else: the thread COUNT is
+# untouched, so at::parallel_for splits every reduction exactly as before and the
+# run's numbers stay bit-identical. That is the whole point -- this file must not
+# acquire a speedup that costs a metric.
+#
+# Domains are read off the machine rather than hardcoded, because they differ per
+# CPU (one domain on a desktop Zen with a single CCX, two here, more on a server).
+# A kernel that does not expose index3, or a machine without taskset, simply runs
+# unpinned exactly as before.
+#
+# Jobs are handed domains round-robin by launch index. Since jobs launch in order
+# and LOCAL_JOBS of them run at a time, consecutive indices are what is
+# concurrently live, so round-robin spreads them evenly over the domains without
+# this script having to track which slot freed up.
+JOB_CPU_DOMAINS=()
+if command -v taskset >/dev/null 2>&1; then
+    while IFS= read -r cpu_domain; do
+        [[ -n "${cpu_domain}" ]] && JOB_CPU_DOMAINS+=("${cpu_domain}")
+    done < <(cat /sys/devices/system/cpu/cpu*/cache/index3/shared_cpu_list \
+        2>/dev/null | sort -u)
+fi
+
 output_dir_root="script_logs/${variant}_seeds$(IFS=; echo "${seeds[*]}")"
 
-# Tag matching wait_progress_table.sh's LOCAL_JOB_TAG there: bigfoot's OAR
+# Tag matching lib/progress_table.sh's LOCAL_JOB_TAG there: bigfoot's OAR
 # .out files carry no tag, kraken's carry "k", this carries "l" -- three
 # disjoint id namespaces (two clusters' OAR job ids, this script's pids) over
 # the same tag+id naming, which is what lets script_logs/ hold all three
@@ -377,7 +444,7 @@ output_dir_root="script_logs/${variant}_seeds$(IFS=; echo "${seeds[*]}")"
 LOCAL_JOB_TAG="l"
 
 # Jobs this invocation has not started yet, as "variant<TAB>group<TAB>seed"
-# lines -- wait_and_sync.sh/wait_and_sync2.sh read this to show a "(queued)"
+# lines -- the watchers read this to show a "(queued)"
 # row for each and to count WAITING in the summary table, the same way
 # .bigfoot_job_queues/active/pending.commands does for OAR. Popped from the
 # top as each job launches; removed entirely on exit (the trap below), success
@@ -396,8 +463,31 @@ printf 'LOCAL_JOBS=%d OMP_THREADS_PER_JOB=%d NUM_WORKERS_PER_JOB=%d\n' \
     "${LOCAL_JOBS}" "${OMP_THREADS_PER_JOB}" "${NUM_WORKERS_PER_JOB}"
 printf '  cores: %d usable of %d (%d reserved for the desktop)\n' \
     "${usable_cores}" "${nproc_count}" "${RESERVED_CORES}"
-printf '  memory: %d GiB usable of %d (%d reserved), %d GiB/job -> caps at %d concurrent job(s)\n' \
-    "${mem_available_gib}" "${total_mem_gib}" "${RESERVED_MEM_GIB}" "${MEM_PER_JOB_GIB}" "${mem_max_jobs}"
+printf '  memory: %d GiB usable of %d free now (%d total, %d reserved), %d GiB/job -> caps at %d concurrent job(s)\n' \
+    "${mem_available_gib}" "${mem_free_gib}" "${total_mem_gib}" "${RESERVED_MEM_GIB}" \
+    "${MEM_PER_JOB_GIB}" "${mem_max_jobs}"
+if (( ${#JOB_CPU_DOMAINS[@]} > 0 )); then
+    printf '  pinning: %d cache domain(s), one per job round-robin: %s\n' \
+        "${#JOB_CPU_DOMAINS[@]}" "${JOB_CPU_DOMAINS[*]}"
+else
+    printf '  pinning: none (no taskset or no cache topology exposed)\n'
+fi
+
+# Build the memory-mapped lipid embedding store before the first job starts. Each job
+# would otherwise unpickle the whole table into itself -- 267 MiB resident and about a
+# gigabyte of transient peak for the deterministic table -- so on this machine four
+# concurrent jobs paid for it four times, and that peak, not the cores, is what the
+# MEM_PER_JOB_GIB cap above is mostly budgeting for. Built once here, the table is
+# mapped instead of read and the jobs share one copy through the page cache.
+#
+# Here rather than inside a job because LOCAL_JOBS of them start a second apart and
+# would race to write the same archive. Never fatal: without the store the jobs read
+# the pickle exactly as before, which is slower and heavier but not wrong. Already
+# current means no work, so relaunching a grid costs nothing.
+if ! python3 "${PROJECT_ROOT}/data/build_lipid_embedding_store.py" \
+    --args_file="${ARGS_FILE}"; then
+    printf 'WARNING: could not build the embedding store; jobs will read the pickle.\n' >&2
+fi
 
 pids=()
 failed=0
@@ -417,13 +507,34 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     # deterministic single-process debugging). Only fill it in when the args
     # file is silent about it.
     num_workers_flag=()
-    if ! grep -qE '^--num_workers(=|$)' "${ARGS_FILE}"; then
+    if ! args_file_has_flag "${ARGS_FILE}" --num_workers; then
         num_workers_flag=(--num_workers="${NUM_WORKERS_PER_JOB}")
     fi
 
+    pin_command=()
+    if (( ${#JOB_CPU_DOMAINS[@]} > 0 )); then
+        pin_command=(taskset -c \
+            "${JOB_CPU_DOMAINS[job_index % ${#JOB_CPU_DOMAINS[@]}]}")
+    fi
+
+    # OMP_WAIT_POLICY=PASSIVE: libgomp's default is to spin on a running CPU while
+    # waiting for the rest of the team, which pays off only when the waiting
+    # thread has a core to itself. It does not here -- the default job count puts
+    # LOCAL_JOBS x OMP_THREADS_PER_JOB threads on fewer physical cores than that
+    # (4 x 2 on 6 cores, measured on this machine), and at batch 8 the model
+    # enters and leaves thousands of tiny parallel regions per second, so the
+    # spinning is mostly burning cycles a neighbouring job could have used.
+    # PASSIVE makes a waiting thread sleep instead. Scheduling only: the thread
+    # count and therefore the arithmetic are untouched.
+    #
+    # MALLOC_ARENA_MAX=2: glibc otherwise opens up to 8 x ncores malloc arenas per
+    # process and each one keeps its own free lists, so freed memory stays spread
+    # across arenas and out of the kernel's reach. Capping them holds RSS down
+    # with no effect on what is allocated.
     # shellcheck disable=SC2086
     OMP_NUM_THREADS="${OMP_THREADS_PER_JOB}" MKL_NUM_THREADS="${OMP_THREADS_PER_JOB}" \
-    PYTHONUNBUFFERED=1 python3 ./training/new_train.py \
+    OMP_WAIT_POLICY=PASSIVE MALLOC_ARENA_MAX=2 \
+    PYTHONUNBUFFERED=1 "${pin_command[@]}" python3 ./training/new_train.py \
         ${args_template} \
         --label="${variant}" \
         --seed="${seed}" \
@@ -433,7 +544,7 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     pids+=($!)
 
     # Job-id-tagged .out, symlinked to the friendlier stable-named .log so
-    # scripts/wait_progress_table.sh's local-jobs lookup (print_local_progress,
+    # scripts/lib/progress_table.sh's local-jobs lookup (print_local_progress,
     # keyed on "*_l<pid>.out", the same convention as the cluster's
     # "*_<tag><oar job id>.out") can find this run while it is live. The pid is
     # only known after backgrounding, so this comes after `pids+=($!)`, not

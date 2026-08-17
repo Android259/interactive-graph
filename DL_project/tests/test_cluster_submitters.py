@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-QUEUE_HELPER = REPO / "scripts" / "cluster_queue_remote.sh"
-SUBMITTER = "scripts/submit_all_groups_all_seeds.sh"
+QUEUE_HELPER = REPO / "scripts" / "cluster" / "cluster_queue_remote.sh"
+SUBMITTER = "scripts/launch/submit_grid.sh"
 # standard.md holds no `--` lines, which trips `grep`+`pipefail` in the
 # submitters; use a config that actually carries flags.
 ARGS_FILE = "scripts/arg_files/dropout01.md"
@@ -29,23 +29,29 @@ KRAKEN = {"GPU_MODEL_GLOB": "*H100*|*H200*"}
 def capture(tmp_path, env_overrides):
     """Return the oarsub command lines the submitter would issue."""
     work = tmp_path / "repo"
-    (work / "scripts").mkdir(parents=True)
-    for name in (
-        "submit_all_groups_all_seeds.sh",
-        "submit_cold_val_test_all_seeds.sh",
-        "cluster_queue_remote.sh",
-        "pack_lib.sh",
-        "run_experiment_pack.sh",
-        "list_completed_experiments.py",
+    # Same layout as the real tree: the submitters find their libraries by
+    # project-relative path, so a flat copy would not resolve.
+    for sub in ("launch", "lib", "cluster"):
+        (work / "scripts" / sub).mkdir(parents=True)
+    shutil.copy(REPO / "scripts" / "settings.sh", work / "scripts" / "settings.sh")
+    for relative in (
+        "launch/submit_grid.sh",
+        "launch/run_experiment_pack.sh",
+        "launch/run_one_experiment.sh",
+        "cluster/cluster_queue_remote.sh",
+        "lib/pack_lib.sh",
+        "lib/list_completed_experiments.py",
+        "lib/args_file_lib.sh",
+        "lib/grid_lib.sh",
     ):
-        shutil.copy(REPO / "scripts" / name, work / "scripts" / name)
+        shutil.copy(REPO / "scripts" / relative, work / "scripts" / relative)
     shutil.copytree(REPO / "scripts" / "arg_files", work / "scripts" / "arg_files")
 
     queue = tmp_path / "queue"
     env = dict(os.environ)
     env.update(env_overrides)
     subprocess.run(
-        ["bash", str(work / "scripts" / "cluster_queue_remote.sh"),
+        ["bash", str(work / "scripts" / "cluster" / "cluster_queue_remote.sh"),
          "capture", str(queue), SUBMITTER, str(tmp_path / "marker"), ARGS_FILE],
         cwd=work, env=env, check=True, capture_output=True, text=True,
     )
@@ -115,7 +121,7 @@ def test_job_id_tag_separates_the_clusters_oar_filenames(tmp_path):
 )
 def test_pack_hardware_profiles_cover_cluster_gpu_models(gpu_name, expected):
     command = (
-        f'source "{REPO / "scripts" / "pack_lib.sh"}"; '
+        f'source "{REPO / "scripts" / "lib" / "pack_lib.sh"}"; '
         f'pack_hardware_profile "{gpu_name}"'
     )
     result = subprocess.run(
@@ -137,7 +143,7 @@ def test_pack_hardware_profiles_cover_cluster_gpu_models(gpu_name, expected):
 def test_cluster_profiles_enable_hardware_aware_packing(cluster, expected):
     command = (
         f'CLUSTER_NAME="{cluster}"; '
-        f'source "{REPO / "scripts" / "cluster_common.sh"}"; '
+        f'source "{REPO / "scripts" / "lib" / "cluster_common.sh"}"; '
         'printf "%s\\t%s\\t%s\\t%s\\n" '
         '"${PACK_SIZE}" "${PACK_PARALLEL}" '
         '"${PACK_WALLTIME_PARALLEL}" "${PACK_HARDWARE_AUTO}"'
@@ -242,7 +248,7 @@ def test_pack_runner_resolves_slots_from_allocated_gpu(
     )
 
     result = subprocess.run(
-        ["bash", str(REPO / "scripts" / "run_experiment_pack.sh"), ""],
+        ["bash", str(REPO / "scripts" / "launch" / "run_experiment_pack.sh"), ""],
         cwd=REPO,
         env=env,
         check=True,

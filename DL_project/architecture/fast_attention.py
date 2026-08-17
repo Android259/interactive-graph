@@ -36,11 +36,21 @@ import torch.nn.functional as F
 class GroupedAttentionLayout:
     """Reusable mapping between flat graph nodes and one padded dense batch."""
 
-    def __init__(self, batch, num_graphs):
+    def __init__(self, batch, num_graphs, width=None):
         self.batch = batch
         self.num_graphs = num_graphs
         counts = torch.bincount(batch, minlength=num_graphs)
-        self.max_nodes = int(counts.max()) if counts.numel() else 0
+        # width pins the padded rectangle instead of fitting it to the largest group.
+        # The graph attention leaves it None and gets the tightest rectangle, which is
+        # the point of the dense layout. A caller whose input was already padded to a
+        # fixed width passes that width, because shrinking it changes the shapes the
+        # arithmetic runs on and with them the last bits of the result -- measured at
+        # ~4e-07 on the edge-set encoder, whose degrees reach the cap in exactly one node
+        # out of 7804, so the rectangle would otherwise shrink in almost every batch.
+        self.max_nodes = (
+            width if width is not None
+            else (int(counts.max()) if counts.numel() else 0)
+        )
         starts = torch.cumsum(counts, dim=0) - counts
         # PyG batches are graph-major, so subtracting each graph's flat start gives
         # the reusable within-graph position without another scatter/cumsum per site.
@@ -62,11 +72,11 @@ class GroupedAttentionLayout:
         return dense[self.batch, self.offsets]
 
 
-def make_grouped_attention_layout(batch, num_graphs=None):
+def make_grouped_attention_layout(batch, num_graphs=None, width=None):
     """Build the static flat↔dense mapping once for all attention sites."""
     if num_graphs is None:
         num_graphs = int(batch.max()) + 1
-    return GroupedAttentionLayout(batch, num_graphs)
+    return GroupedAttentionLayout(batch, num_graphs, width=width)
 
 
 def _check_supported(mha):
@@ -109,6 +119,8 @@ def grouped_attention(
     key_bias=None,
     q_layout=None,
     kv_layout=None,
+    q_dense=None,
+    kv_dense=None,
 ):
     """Attend within each graph only, returning ``(q_x.shape[0], dim)``.
 
@@ -127,20 +139,57 @@ def grouped_attention(
 
     q_layout = q_layout or make_grouped_attention_layout(q_batch, num_graphs)
     kv_layout = kv_layout or make_grouped_attention_layout(kv_batch, num_graphs)
-    q_dense = q_layout.pack(q_x)
-    kv_dense = kv_layout.pack(kv_x)
+    # Packing allocates a (graphs, max_nodes, dim) zero tensor and scatters the flat
+    # values into it. Doing it twice for the same input is pure waste -- the second
+    # result is byte-identical to the first, and it costs the allocation, the scatter,
+    # and a matching gather in the backward pass. Two ways in:
+    #
+    # * Self-attention hands the SAME tensor and layout as query and key, exactly as
+    #   nn.MultiheadAttention's own `if q is k` fast path expects, so the identity check
+    #   below collapses the two packs into one.
+    # * Cross-attention calls this twice per layer with the roles swapped (lip as query
+    #   then as key, prot the other way round), so the duplicate spans two calls and no
+    #   check inside one of them can see it. There the caller packs each partner once and
+    #   passes the result in.
+    #
+    # Neither path computes anything: this only decides whether an identical tensor is
+    # built again or reused, so results are unchanged bit for bit.
+    if q_dense is None:
+        q_dense = q_layout.pack(q_x)
+    if kv_dense is None:
+        kv_dense = (
+            q_dense
+            if (kv_x is q_x and kv_layout is q_layout)
+            else kv_layout.pack(kv_x)
+        )
     q_valid = q_layout.valid
     kv_valid = kv_layout.valid
     graphs, q_len, _ = q_dense.shape
     kv_len = kv_dense.shape[1]
 
-    # Packed QKV weights, sliced so cross-attention (q and kv from different partners)
-    # uses the same projections nn.MultiheadAttention would have used.
+    # Packed QKV weights, projected exactly the way nn.MultiheadAttention's own
+    # _in_projection_packed does it: one matmul when query and key are the same tensor,
+    # otherwise one for the query and one shared by key and value, which always come from
+    # the same input. Three separate projections was this file's own invention and it
+    # loses twice -- three dispatches instead of one, and BLAS repacking the same input
+    # matrix into its internal blocked layout once per call instead of once in total.
+    #
+    # Merging changes the problem's shape (3*dim outputs instead of dim), and BLAS picks
+    # its blocking over the reduction axis from the shape, so this is only safe because it
+    # was measured: bit-identical to the three separate projections at (graphs, len, dim)
+    # of (8,400,64), (8,72,64), (8,600,64), (16,400,64) and (8,400,128). The reduction
+    # axis is `dim` either way and MKL kept the same blocking over it. Re-check before
+    # trusting it at a hiddim far from these.
     weight, bias = mha.in_proj_weight, mha.in_proj_bias
-    q_bias, k_bias, v_bias = (None, None, None) if bias is None else bias.chunk(3)
-    query = F.linear(q_dense, weight[:dim], q_bias)
-    key = F.linear(kv_dense, weight[dim:2 * dim], k_bias)
-    value = F.linear(kv_dense, weight[2 * dim:], v_bias)
+    if kv_dense is q_dense:
+        query, key, value = F.linear(q_dense, weight, bias).chunk(3, dim=-1)
+    else:
+        q_weight, kv_weight = weight.split([dim, 2 * dim])
+        q_bias, kv_bias = (
+            (None, None) if bias is None else bias.split([dim, 2 * dim])
+        )
+        query = F.linear(q_dense, q_weight, q_bias)
+        key, value = F.linear(kv_dense, kv_weight, kv_bias).chunk(2, dim=-1)
 
     def split_heads(tensor, length):
         return tensor.view(graphs, length, heads, head_dim).transpose(1, 2)

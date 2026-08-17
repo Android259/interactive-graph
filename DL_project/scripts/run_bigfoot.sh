@@ -9,4 +9,4 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export CLUSTER_NAME="bigfoot"
 
-exec bash "${SCRIPT_DIR}/run_cluster.sh" "$@"
+exec bash "${SCRIPT_DIR}/launch/run_cluster.sh" "$@"

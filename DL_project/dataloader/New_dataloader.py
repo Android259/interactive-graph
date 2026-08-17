@@ -12,7 +12,9 @@ import pandas
 import torch
 from torch_geometric.data import Data, Dataset
 
+from dataloader.dataset_source import interaction_csv_path
 from dataloader.grab_dataset_graph import GrabDatasetGraphMixin
+from dataloader.lipid_embedding_store import load_lipid_embedding_store
 from dataloader.lipid_graph_builder import LipidGraphBuilder
 from dataloader.lipid_isomer_graph_builder import (
     LipidGraphData,
@@ -20,6 +22,7 @@ from dataloader.lipid_isomer_graph_builder import (
 )
 from dataloader.protein_graph_builder import ProteinGraphBuilder, ProteinGraphData
 from dataloader.protein_graph_tensor_cache import load_protein_graph_tensor_cache
+from dataloader.tanimoto_compact import load_compact
 from dataloader.sampler import (
     lipid_class_series,
     rebalance_excluded_group_negatives,
@@ -60,8 +63,8 @@ class PLIDataset(
 
         self._configure_sampling(config)
         self.csvtrue, self.csvfalse = self._sample_interactions(csv, seed)
-        self.csvtrue["_tanimoto_orig_idx"] = self.csvtrue.index
-        self.csvfalse["_tanimoto_orig_idx"] = self.csvfalse.index
+        self.csvtrue["pair_id"] = self.csvtrue.index
+        self.csvfalse["pair_id"] = self.csvfalse.index
 
         sampled_csv = pandas.concat([self.csvtrue, self.csvfalse])
         self.csvt = sampled_csv.set_index(
@@ -70,7 +73,7 @@ class PLIDataset(
         del self.csvtrue, self.csvfalse, sampled_csv
 
         self.csvtrain, self.csvalidate, self.csvtest = self._split_interactions(seed)
-        self.train_orig_indexes = torch.as_tensor(self.csvtrain["_tanimoto_orig_idx"].values, dtype=torch.long)
+        self.train_orig_indexes = torch.as_tensor(self.csvtrain["pair_id"].values, dtype=torch.long)
 
         # Two files with very different costs and very different reach:
         #
@@ -87,40 +90,115 @@ class PLIDataset(
         # /data/*.csv and the embedding dirs, not *.npy). When it went missing on
         # Bigfoot, all 45 jobs of a batch died in `__init__` within seconds -- including
         # the ones that never asked for Tanimoto weights.
-        tanimoto_batch_path = root_dir + "/Total_multiple_lipid_batch.npy"
-        tanimoto_batch = np.load(tanimoto_batch_path, mmap_mode="r")
-        train_idx = self.train_orig_indexes.numpy()
-        selected = np.flatnonzero(np.isin(tanimoto_batch, train_idx))
-        self.train_tanimoto_batch = torch.from_numpy(
-            np.array(tanimoto_batch[selected], copy=True)
-        )
+        # Only Tanimoto weighting needs this file. The protein-group and protein-class
+        # weights use id2pos purely as *cell addresses*: get_protein_weights writes
+        # weights[id2pos[pair_id]] and the loss reads that same cell back through
+        # tanimoto_pos, so any bijection row-id -> 0..N-1 yields the identical vector.
+        # get_tanimoto_weights is the one that cannot: it averages similarity over the
+        # matrix rows belonging to one interaction, and which rows those are is exactly
+        # what this file records and what no renumbering can reconstruct.
+        #
+        # Ranking the train row ids reproduces the file's own bijection rather than
+        # merely an equivalent one, because the file covers the interaction table
+        # completely -- 11018 rows, 11018 distinct ids, none missing, checked against
+        # Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed_CandidatesCompleted.csv.
+        # Both maps are then "rank among the sorted train ids", entry for entry. Should a
+        # future table stop covering every row, the two would diverge: the file's map
+        # omits the uncovered ids and id2pos.get(..., -1) hands those rows position -1,
+        # which indexes the LAST weight rather than raising, so they would silently carry
+        # another protein's weight. The ranked map has a position for every train row and
+        # cannot do that.
+        self._needs_tanimoto_rows = bool(self.config.tanimoto_weight)
 
+        self.train_tanimoto_batch = None
         self.train_tanimoto_matrix = None
-        if self.config.tanimoto_weight:
-            tanimoto_matrix_path = root_dir + "/Total_tanimoto_matrix_uint8.npy"
-            tanimoto_matrix = np.load(tanimoto_matrix_path, mmap_mode="r")
-            self.train_tanimoto_matrix = torch.from_numpy(
-                np.array(tanimoto_matrix[np.ix_(selected, selected)], copy=True)
+        if self._needs_tanimoto_rows:
+            train_idx = self.train_orig_indexes.numpy()
+            # The compact pair (preprocessing/build_tanimoto_compact.py) stores one row
+            # per distinct structure instead of one per candidate instance, so it
+            # expands to the identical submatrix out of 1.4 MiB rather than slicing it
+            # out of a 2.89 GB file with random access. Byte-identical by construction --
+            # see dataloader/tanimoto_compact.py -- and verified against the full matrix.
+            #
+            # Which pair: the isomeric artifacts for an isomeric run, matching the
+            # canonicalization the loader itself uses. NOTE this is a real change for
+            # --lipid_isomers --tanimoto_weight runs, which previously got the
+            # non-isomeric similarities because only one full matrix ever existed; those
+            # runs are not comparable with earlier ones. Non-isomeric runs are unaffected.
+            compact = load_compact(
+                root_dir,
+                source_csv=interaction_csv_path(root_dir),
+                isomeric=bool(getattr(self.config, "lipid_isomers", False)),
             )
-            del tanimoto_matrix
-        del tanimoto_batch
-        gc.collect()
+            if compact is not None:
+                selected = np.flatnonzero(np.isin(compact.row_ids, train_idx))
+                self.train_tanimoto_batch = torch.from_numpy(
+                    np.array(compact.row_ids[selected], copy=True)
+                )
+                self.train_tanimoto_matrix = torch.from_numpy(
+                    compact.submatrix(selected)
+                )
+            else:
+                tanimoto_batch_path = root_dir + "/Total_multiple_lipid_batch.npy"
+                tanimoto_batch = np.load(tanimoto_batch_path, mmap_mode="r")
+                selected = np.flatnonzero(np.isin(tanimoto_batch, train_idx))
+                self.train_tanimoto_batch = torch.from_numpy(
+                    np.array(tanimoto_batch[selected], copy=True)
+                )
+                tanimoto_matrix_path = root_dir + "/Total_tanimoto_matrix_uint8.npy"
+                tanimoto_matrix = np.load(tanimoto_matrix_path, mmap_mode="r")
+                self.train_tanimoto_matrix = torch.from_numpy(
+                    np.array(tanimoto_matrix[np.ix_(selected, selected)], copy=True)
+                )
+                del tanimoto_matrix, tanimoto_batch
+            gc.collect()
 
-        unique_batch_ids = torch.unique(self.train_tanimoto_batch, sorted=True)
-        self.id2pos = {int(g): int((unique_batch_ids == g).nonzero(as_tuple=True)[0]) for g in unique_batch_ids.tolist()}
+            unique_batch_ids = torch.unique(self.train_tanimoto_batch, sorted=True)
+            self.id2pos = {int(g): int((unique_batch_ids == g).nonzero(as_tuple=True)[0]) for g in unique_batch_ids.tolist()}
+        else:
+            # Same mapping the file's own path builds (see above), without the file: the
+            # pass of np.isin over all 53762 matrix rows and the quadratic scan that
+            # turned them into id2pos are both startup work that a run without
+            # --tanimoto_weight never had a use for.
+            self.id2pos = {
+                int(pair_id): position
+                for position, pair_id in enumerate(
+                    sorted(set(self.train_orig_indexes.tolist()))
+                )
+            }
 
         self._indices = None
         self.transform = None
 
         self.smiles_encoding = None
         if not getattr(self.config, "lipid_graph_isomers", False):
+            # The non-isomeric table is the deterministic rebuild: 1226 entries, every
+            # candidate of every row (the previous one held 434 and covered all
+            # candidates of only 44% of rows), and all of them encoded with the
+            # checkpoint's trained random-feature matrix. MoLFormer's linear attention
+            # resamples that matrix on every forward, so the older table gave each entry
+            # its own draw and could not be reproduced -- two encodings of one SMILES
+            # differ by up to 8.8 on values spanning +-10. Runs on the two tables are
+            # therefore not comparable; lipid_SMILES_embedding.pkl is kept for the old
+            # ones. The isomeric table still has the old behaviour and is due the same
+            # rebuild.
             lipid_embedding_file = (
                 "lipid_SMILES_isomeric_embedding.pkl"
                 if self.config.lipid_isomers
-                else "lipid_SMILES_embedding.pkl"
+                else "lipid_SMILES_embedding_deterministic.pkl"
             )
-            with open(os.path.join(self.ROOT_DIR, lipid_embedding_file), "rb") as f:
-                self.smiles_encoding = pickle.load(f)
+            # Prefer the memory-mapped store, so concurrent jobs share one copy of the
+            # table through the page cache instead of unpickling 267 MiB apiece (see
+            # dataloader/lipid_embedding_store.py, and data/build_lipid_embedding_store.py
+            # which writes it). Same tensors either way; None means no store has been
+            # built for this table yet, or the table has been regenerated since, and the
+            # pickle is read exactly as before.
+            self.smiles_encoding = load_lipid_embedding_store(
+                self.ROOT_DIR, lipid_embedding_file
+            )
+            if self.smiles_encoding is None:
+                with open(os.path.join(self.ROOT_DIR, lipid_embedding_file), "rb") as f:
+                    self.smiles_encoding = pickle.load(f)
         self.lipid_graph_dir = os.path.join(self.ROOT_DIR, "lipid_graphs")
         self.lipid_graph_index = {}
         # Per-sample rebuild caches. Every entry is a pure function of inputs that are
@@ -141,8 +219,22 @@ class PLIDataset(
         self._protein_graph_cache = {}
         self._protein_tensor_cache = load_protein_graph_tensor_cache(self.ROOT_DIR)
         self._lipid_encoding_cache = {}
+        # lipid_random_choice fills this one instead: the drawn encoding must not be
+        # cached (that would freeze the draw for the whole run), only the canonical
+        # keys it draws from. See LipidGraphBuilder._drawn_lipid_encoding.
+        self._lipid_candidate_key_cache = {}
         self._lipid_graph_cache = {}
         self._complete_edge_index_cache = {}
+        # Assembled samples, keyed by pair_id -- see get(). Only sound while a row's
+        # sample is a pure function of the row: lipid_random_choice draws a fresh
+        # candidate on every access by design, and a cached sample would freeze that draw
+        # for the whole run, degenerating the mode into "one arbitrary fixed candidate per
+        # row" -- precisely what it exists to replace. It can be supported by caching the
+        # protein graph plus one Data per candidate and drawing among them, but that has
+        # to be checked against the random stream first, so for now the mode simply keeps
+        # rebuilding.
+        self._sample_cache = {}
+        self._sample_cache_enabled = not self.config.lipid_random_choice
         lipid_graph_index_path = os.path.join(self.lipid_graph_dir, "lipid_graph_index.csv")
         if getattr(self.config, "lipid_graph_isomers", False) and os.path.exists(lipid_graph_index_path):
             lipid_graph_index = pandas.read_csv(lipid_graph_index_path)
@@ -189,9 +281,9 @@ class PLIDataset(
                         'PGP':[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
                         'CL':[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]}
 
-        self._default_lipid_label = torch.tensor(
-            self.labelOH["PC"], dtype=torch.int
-        )
+        # labelOH itself stays: the isomer graph path reads it for the real per-lipid
+        # class. What is gone is the constant "PC" tensor that used to be attached to
+        # every sample of the embedding path as `liplab` -- see finish_sample.
 
     def _configure_sampling(self, config):
         self.balance_excluded_group_negatives = getattr(
@@ -289,7 +381,7 @@ class PLIDataset(
         weight_by_group = dict(zip(groups, group_weights.tolist()))
         protein_group_weights = torch.zeros(len(self.id2pos), dtype=torch.float32)
         for pair_id, protein_name in zip(
-            self.csvtrain["_tanimoto_orig_idx"].astype(int),
+            self.csvtrain["pair_id"].astype(int),
             protein_names,
         ):
             position = self.id2pos[int(pair_id)]
@@ -309,7 +401,7 @@ class PLIDataset(
         weights = torch.zeros(len(self.id2pos), dtype=torch.float32)
 
         for pair_id, protein_name, label in zip(
-            self.csvtrain["_tanimoto_orig_idx"].astype(int),
+            self.csvtrain["pair_id"].astype(int),
             protein_names,
             labels,
         ):
@@ -324,32 +416,42 @@ class PLIDataset(
 
         Called before the DataLoader forks its workers, so the workers inherit one warm
         cache copy-on-write instead of each filling its own during the first epoch.
-        Lipid warming is skipped under lipid_random_choice, where the encoding path
-        draws from the RNG and pre-touching rows would shift the random stream.
+
+        Under lipid_random_choice the warmed entry is the row's candidate key list, not
+        an encoding, so warming performs no draw and leaves the random stream where it
+        was. (It used to skip lipid warming here precisely because the draw sat inside
+        the cache; it no longer does.) The isomer-graph path still draws inside
+        make_graph_lipid, so that one stays skipped.
 
         Returns the entry count of each cache, for reporting.
         """
         frame = self.csv if csv is None else csv
         for prot_file in frame["LTPProtein"].dropna().unique().tolist():
             self.protein_graph_parts(prot_file)
-        if not self.config.lipid_random_choice:
+        isomer_graphs = getattr(self.config, "lipid_graph_isomers", False)
+        if not (isomer_graphs and self.config.lipid_random_choice):
             seen = set()
             for _, row in frame.iterrows():
                 key = (str(row["SmileGlobal"]), str(row["SmileFragment"]))
                 if key in seen:
                     continue
                 seen.add(key)
-                if getattr(self.config, "lipid_graph_isomers", False):
+                if isomer_graphs:
                     self.make_graph_lipid(
                         row["SmileGlobal"], row["SmileFragment"]
                     )
                 else:
-                    self.cached_lipid_encoding(
+                    self.warm_lipid_encoding(
                         row["SmileGlobal"], row["SmileFragment"]
                     )
         return {
             "proteins": len(self._protein_graph_cache),
-            "lipid_encodings": len(self._lipid_encoding_cache),
+            # Exactly one of the two is used per run, so their sum is "lipid rows
+            # warmed" in either mode.
+            "lipid_encodings": (
+                len(self._lipid_encoding_cache)
+                + len(self._lipid_candidate_key_cache)
+            ),
             "lipid_graphs": len(self._lipid_graph_cache),
         }
 
@@ -413,6 +515,31 @@ class PLIDataset(
         #lenght of combinations or lenght of structures/smiles?
         return len(self.csv)
 
+    def _weight_positions(self, pair_ids):
+        """Each row's slot in the sample-weight vector, or -1 when it has none.
+
+        id2pos maps a pair id to its rank among the sorted train pair ids -- both of the
+        branches that build it in __init__ do exactly that -- so the lookup is a binary
+        search over its sorted keys rather than a dict walk. That replaces a Python loop
+        over every row of the split; the integers it produces are the same ones
+        ``id2pos.get(pair_id, -1)`` produced.
+
+        Validation and test rows are not in id2pos at all -- weights exist for train rows
+        only -- and they keep the -1 the dict lookup gave them. Note -1 indexes the LAST
+        weight rather than raising, which is safe only because the loss reads these
+        positions in the training loop alone.
+        """
+        known = np.sort(np.fromiter(self.id2pos, dtype=np.int64, count=len(self.id2pos)))
+        if known.size == 0:
+            return np.full(len(pair_ids), -1, dtype=np.int64)
+        # searchsorted gives the insertion point, which for an absent id is the slot of
+        # some other id -- so every hit has to be confirmed by comparing back.
+        positions = np.searchsorted(known, pair_ids)
+        inside = positions < known.size
+        found = np.zeros(len(pair_ids), dtype=bool)
+        found[inside] = known[positions[inside]] == np.asarray(pair_ids)[inside]
+        return np.where(found, positions, -1)
+
     def _prepare_indexed_fields(self):
         """Materialize the columns and scalar tensors read by every get()."""
         self._protein_by_idx = self.csv["LTPProtein"].to_numpy(copy=False)
@@ -424,24 +551,33 @@ class PLIDataset(
             self.csv["Interaction"].to_numpy(),
             dtype=torch.long,
         )
-        orig_indexes = self.csv["_tanimoto_orig_idx"].to_numpy()
-        self._sample_index_tensor = torch.tensor(
-            orig_indexes, dtype=torch.long
+        orig_indexes = self.csv["pair_id"].to_numpy()
+        # The sample cache's key, per row of this split (see get()).
+        self._pair_id_by_idx = orig_indexes
+        # Only the GRAB loss reads a sample's original row id: it keys the pair-graph
+        # coefficients by it (batch_pair_ids in new_train.py). ProteinGraphData.__inc__
+        # exempts it from PyG's node-index shifting, which is handling of the field, not a
+        # second use of it -- nothing else in the project touches it. Without --grab_loss
+        # it is therefore built, sliced per sample and concatenated per batch for nobody.
+        self._pair_id_tensor = (
+            torch.tensor(orig_indexes, dtype=torch.long).view(-1, 1)
+            if self.config.grab_loss
+            else None
+        )
+        self._tanimoto_pos_tensor = torch.as_tensor(
+            self._weight_positions(orig_indexes), dtype=torch.long
         ).view(-1, 1)
-        self._tanimoto_pos_tensor = torch.tensor(
-            [
-                self.id2pos.get(int(orig_idx), -1)
-                for orig_idx in orig_indexes
-            ],
-            dtype=torch.long,
-        ).view(-1, 1)
-        self._protein_id_tensor = torch.tensor(
-            [
-                self.protein_name_to_id[protein]
-                for protein in self._protein_by_idx
-            ],
-            dtype=torch.long,
-        ).view(-1, 1)
+        self._protein_id_tensor = (
+            torch.tensor(
+                [
+                    self.protein_name_to_id[protein]
+                    for protein in self._protein_by_idx
+                ],
+                dtype=torch.long,
+            ).view(-1, 1)
+            if getattr(self, "_needs_protein_id", True)
+            else None
+        )
 
     def __iter__(self):
         train_dataset = copy.copy(self)
@@ -450,6 +586,14 @@ class PLIDataset(
         train_dataset.csv = self.csvtrain
         valid_dataset.csv = self.csvalidate
         test_dataset.csv = self.csvtest
+        # protein_id exists so run_test() can split the test metrics by protein. Only the
+        # test split is ever asked for that, yet the field used to ride along in every
+        # training and validation batch too -- one more tensor to slice per sample and one
+        # more torch.cat per collation, for 150 epochs, read by no one. Marked per clone
+        # here, before the fields are materialized, so the other two never build it.
+        train_dataset._needs_protein_id = False
+        valid_dataset._needs_protein_id = False
+        test_dataset._needs_protein_id = True
         train_dataset._prepare_indexed_fields()
         valid_dataset._prepare_indexed_fields()
         test_dataset._prepare_indexed_fields()
@@ -459,6 +603,23 @@ class PLIDataset(
         return iter((train_dataset, valid_dataset, test_dataset))
 
     def get(self, idx):
+        # Assembling a sample is a pure function of its row: the same protein graph, the
+        # same lipid encoding, the same label, every epoch. It was nevertheless rebuilt
+        # once per epoch -- 150 times per run for each row -- so the cache below keeps the
+        # first result and the other 149 accesses become a dict lookup.
+        #
+        # Keyed by pair_id, never by idx. idx is the position inside THIS split, and the
+        # three splits share these dicts (copy.copy in __iter__ is shallow, deliberately,
+        # so the protein and lipid caches are filled once rather than three times). Train
+        # row 0, validation row 0 and test row 0 are three different rows of data, so an
+        # idx-keyed cache would serve one split's sample to another -- silently, with no
+        # error and no crash, just wrong numbers. pair_id is the row's position in the
+        # interaction table and is unique across all three.
+        pair_id = int(self._pair_id_by_idx[idx])
+        cached = self._sample_cache.get(pair_id)
+        if cached is not None:
+            return cached
+
         protein = self._protein_by_idx[idx]
         smile_global = self._smile_global_by_idx[idx]
         smile_fragment = self._smile_fragment_by_idx[idx]
@@ -480,7 +641,7 @@ class PLIDataset(
         protein_graph = self.assemble_protein_graph(
             parts, self._interaction_tensor[idx], tenfam
         )
-        return self.finish_sample(
+        sample = self.finish_sample(
             idx,
             protein_graph,
             lipid_enc,
@@ -488,6 +649,9 @@ class PLIDataset(
             smile_global,
             smile_fragment,
         )
+        if self._sample_cache_enabled:
+            self._sample_cache[pair_id] = sample
+        return sample
 
 
     def finish_sample(
@@ -502,9 +666,14 @@ class PLIDataset(
         """Attach the per-row identifiers and build the lipid side of one sample."""
         #print(f"pocket shape : {pok.shape}")
         #print(pok)
-        protein_graph.sample_index = self._sample_index_tensor[idx]
+        # Both are None when this run has no reader for them (see
+        # _prepare_indexed_fields). Skipping the attachment is what removes their
+        # torch.cat from every collation; nothing that produces a number reads either.
+        if self._pair_id_tensor is not None:
+            protein_graph.pair_id = self._pair_id_tensor[idx]
         protein_graph.tanimoto_pos = self._tanimoto_pos_tensor[idx]
-        protein_graph.protein_id = self._protein_id_tensor[idx]
+        if self._protein_id_tensor is not None:
+            protein_graph.protein_id = self._protein_id_tensor[idx]
         if getattr(self.config, "lipid_graph_isomers", False):
             lipid_graph = self.make_graph_lipid(
                 smile_global, smile_fragment
@@ -521,9 +690,16 @@ class PLIDataset(
             #
             # Key order matters -- PyG collates a batch store key by key -- so the
             # remaining keys keep the order the two literal Data() calls used.
+            # No liplab here any more either. It was the 34-wide lipid-class one-hot, but
+            # on this path it was never the sample's class: it was a fixed
+            # labelOH["PC"] handed to every lipid alike. Nothing in the project read it --
+            # the only readers of a lipid label are in the isomer path, which builds its
+            # own from the real class -- so it was a constant vector concatenated into
+            # every batch for 150 epochs and then dropped. Removing it takes one
+            # torch.cat out of every collation and cannot change a computed number,
+            # because no computation ever saw it.
             lipid_kwargs = {
                 "x": lipid_enc,
-                "liplab": self._default_lipid_label,
             }
             if self.config.lipid_fragments_mask:
                 lipid_kwargs["lipid_batch"] = lipid_batch

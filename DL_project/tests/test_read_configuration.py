@@ -19,6 +19,30 @@ def test_model_config_lipid_fragment_modes_are_mutually_exclusive():
     assert config.lipid_random_choice is False
 
 
+def test_lipid_first_fragment_only_defaults_on_and_composes_with_every_treatment():
+    for treatment in ("concat", "random_choice", "fragments_mask"):
+        config = ModelConfig(lipid_fragments_treatment=treatment)
+
+        config.validate()
+
+        assert config.lipid_first_fragment_only is True
+
+
+@pytest.mark.parametrize(
+    "argument",
+    ["--no_lipid_first_fragment_only", "--lipid_first_fragment_only=0"],
+)
+def test_read_configuration_turns_off_lipid_first_fragment_only(argument):
+    config = read_named_configuration([
+        "train.py",
+        "--lipid_fragments_treatment=fragments_mask",
+        argument,
+    ])
+
+    assert config.lipid_first_fragment_only is False
+    assert config.lipid_fragments_mask is True
+
+
 def test_read_configuration_parses_new_boolean_flags():
     config = read_named_configuration([
         "train.py",
@@ -92,7 +116,7 @@ def test_rnabang_residue_type_embedding_flag_and_dependency():
     "flag,field",
     [
         ("--rnabang_edge_current", "rnabang_edge_current"),
-        ("--rnabang_edge_sorted", "rnabang_edge_sorted"),
+        ("--rnabang_edge_topk_by_area", "rnabang_edge_topk_by_area"),
         ("--rnabang_edge_deepsets", "rnabang_edge_deepsets"),
         ("--rnabang_edge_pna", "rnabang_edge_pna"),
         ("--rnabang_edge_quantiles", "rnabang_edge_quantiles"),
@@ -112,7 +136,7 @@ def test_rnabang_edge_modes_are_mutually_exclusive():
     with pytest.raises(ValueError, match="mutually exclusive"):
         ModelConfig(
             rnabang_frozen_node_adapter=True,
-            rnabang_edge_sorted=True,
+            rnabang_edge_topk_by_area=True,
             rnabang_edge_pna=True,
         ).validate()
 

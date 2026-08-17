@@ -41,6 +41,33 @@ def grad_reverse(x, lambda_=1.0):
     return _GradientReversal.apply(x, lambda_)
 
 
+class _GradientScale(torch.autograd.Function):
+    """Identity forward; multiplies the gradient by a non-negative weight backward.
+
+    The same trick as _GradientReversal without the sign flip. Used to hand the lipid
+    branch a smaller learning step than the protein branch while leaving the function
+    the model computes untouched -- unlike scaling the activations, which the following
+    LayerNorm would undo, and unlike a lower learning rate, which would also slow the
+    shared layers downstream of both branches.
+    """
+
+    @staticmethod
+    def forward(ctx, x, weight):
+        ctx.weight = float(weight)
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return ctx.weight * grad_output, None  # None: no grad for weight
+
+
+def grad_scale(x, weight=1.0):
+    """Scale the gradient flowing back through x (forward is identity)."""
+    if weight == 1.0:
+        return x
+    return _GradientScale.apply(x, weight)
+
+
 # Width of the one-hot family vector the dataloader attaches as prot.family
 # (New_dataloader.fam_enc). The family DANN head predicts over exactly these.
 PROTEIN_FAMILY_COUNT = 9

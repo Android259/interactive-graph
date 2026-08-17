@@ -26,7 +26,15 @@ class CrossAttention(torch.nn.Module):
         self.lip_cross_attention = torch.nn.MultiheadAttention(lip_dim, self.config.HEADS)
         self.prot_cross_attention = torch.nn.MultiheadAttention(prot_dim, self.config.HEADS)
 
-        if self.config.prot_attention_pos_bias:
+        self.attention_by_pockets = bool(
+            getattr(self.config, "pocket_attention_cross", False)
+        )
+        # See ProteinSelfAttention.__init__: with non-pocket keys removed the bias would
+        # be a constant over the survivors, hence a parameter without gradient.
+        if self.config.prot_attention_pos_bias and not self.attention_by_pockets:
+            # Under pocket_attention_sites=self the cross site is unrestricted, so its
+            # soft bias survives and still trains; validate() only rejects the
+            # combination when both sites are restricted and nothing would be left.
             bias_shape = (
                 (self.config.HEADS,)
                 if getattr(self.config, "prot_pos_bias_per_head", False)
@@ -115,6 +123,9 @@ class CrossAttention(torch.nn.Module):
         attention_bias = attention_bias.masked_fill(lip_mask, float("-inf"))
 
         pocket_key_mask = pocket_mask.unsqueeze(0).expand_as(lip_mask)
+        if self.attention_by_pockets:
+            # The lipid may only look at binding-site residues.
+            return attention_bias.masked_fill(~pocket_key_mask, float("-inf"))
         pocket_term = (same_batch & pocket_key_mask).to(lip.dtype)
         if getattr(self.config, "prot_pos_bias_per_head", False):
             per_head_bias = self.pocket_attention_bias.view(-1, 1, 1)
@@ -128,7 +139,8 @@ class CrossAttention(torch.nn.Module):
 
         Protein nodes are the keys of the lipid-side cross-attention, and the bias
         depends only on the key, so the fast path broadcasts this over queries instead
-        of filling an (lipid_nodes x protein_nodes) matrix with it.
+        of filling an (lipid_nodes x protein_nodes) matrix with it. attention_by_pockets
+        never reaches here: on the fast path it compacts the key layout instead.
         """
         if pocket_mask is None:
             return None
@@ -138,7 +150,8 @@ class CrossAttention(torch.nn.Module):
         return pocket_term * self.pocket_attention_bias
 
     def forward(self, lip, prot, lip_mask, prot_mask, pocket_mask=None,
-                lip_batch=None, prot_batch=None, lip_layout=None, prot_layout=None):
+                lip_batch=None, prot_batch=None, lip_layout=None, prot_layout=None,
+                pocket_layout=None, pocket_index=None):
         # Current compact variant:
         # lipid_query = lip.unsqueeze(1)
         # lipid_key = prot.unsqueeze(1)
@@ -178,14 +191,36 @@ class CrossAttention(torch.nn.Module):
 
         if can_use_grouped_attention(self.config, lip_batch) and prot_batch is not None:
             num_graphs = int(max(int(lip_batch.max()), int(prot_batch.max()))) + 1
-            lip_outs = grouped_attention(
-                self.lip_cross_attention, lip, lip_batch, prot, prot_batch, num_graphs,
-                key_bias=self.make_lip_key_bias(pocket_mask, lip),
-                q_layout=lip_layout, kv_layout=prot_layout,
-            )
+            # The two calls use the same two tensors with the roles swapped, so left to
+            # itself each would pack both partners and the pair would be packed twice
+            # over. Packing here instead costs the same two scatters once and hands the
+            # identical tensors to both directions. Reuse only -- nothing is recomputed,
+            # so the attention sees exactly what it saw before.
+            lip_dense = lip_layout.pack(lip)
+            prot_dense = prot_layout.pack(prot)
+            if pocket_index is not None:
+                # Only the lipid-query direction reads protein keys, so only its key
+                # axis compacts. The protein-query direction below keeps every residue
+                # as a query and attends over lipid nodes, which pockets do not touch.
+                pocket_prot = prot[pocket_index]
+                lip_outs = grouped_attention(
+                    self.lip_cross_attention, lip, lip_batch, pocket_prot,
+                    prot_batch[pocket_index], num_graphs,
+                    q_layout=lip_layout, kv_layout=pocket_layout,
+                    q_dense=lip_dense, kv_dense=pocket_layout.pack(pocket_prot),
+                )
+            else:
+                lip_outs = grouped_attention(
+                    self.lip_cross_attention, lip, lip_batch, prot, prot_batch,
+                    num_graphs,
+                    key_bias=self.make_lip_key_bias(pocket_mask, lip),
+                    q_layout=lip_layout, kv_layout=prot_layout,
+                    q_dense=lip_dense, kv_dense=prot_dense,
+                )
             prot_outs = grouped_attention(
                 self.prot_cross_attention, prot, prot_batch, lip, lip_batch, num_graphs,
                 q_layout=prot_layout, kv_layout=lip_layout,
+                q_dense=prot_dense, kv_dense=lip_dense,
             )
             return self.finish(lip_in, prot_in, lip, prot, lip_outs, prot_outs)
 

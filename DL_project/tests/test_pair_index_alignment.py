@@ -170,7 +170,7 @@ def test_split_protein_balanced_keeps_all_positives_and_1to1_totals():
 def test_pair_id_position_mapping_is_bijective_and_contiguous():
     dataset = make_dataset(
         {
-            "_tanimoto_orig_idx": [30, 10, 20],
+            "pair_id": [30, 10, 20],
             "LTPProtein": ["P3", "P1", "P2"],
             "Interaction": [1, 0, 1],
         },
@@ -178,7 +178,7 @@ def test_pair_id_position_mapping_is_bijective_and_contiguous():
     )
 
     assert set(dataset.id2pos) == set(
-        dataset.csvtrain["_tanimoto_orig_idx"].astype(int)
+        dataset.csvtrain["pair_id"].astype(int)
     )
     assert sorted(dataset.id2pos.values()) == list(range(len(dataset.id2pos)))
     assert [
@@ -190,7 +190,7 @@ def test_pair_id_position_mapping_is_bijective_and_contiguous():
 def test_protein_weights_are_indexed_by_tanimoto_position_not_csv_row_order():
     dataset = make_dataset(
         {
-            "_tanimoto_orig_idx": [30, 10, 20, 40],
+            "pair_id": [30, 10, 20, 40],
             "LTPProtein": ["RARE", "COMMON", "COMMON", "COMMON"],
             "Interaction": [1, 0, 1, 0],
         },
@@ -201,7 +201,7 @@ def test_protein_weights_are_indexed_by_tanimoto_position_not_csv_row_order():
 
     assert weights.tolist() == pytest.approx([0.25, 0.25, 0.75, 0.25])
     for pair_id, protein_name in zip(
-        dataset.csvtrain["_tanimoto_orig_idx"],
+        dataset.csvtrain["pair_id"],
         dataset.csvtrain["LTPProtein"],
     ):
         position = dataset.id2pos[int(pair_id)]
@@ -238,7 +238,7 @@ def test_protein_class_weights_are_normalized_and_position_aligned(
 ):
     dataset = make_dataset(
         {
-            "_tanimoto_orig_idx": [30, 10, 20, 40],
+            "pair_id": [30, 10, 20, 40],
             "LTPProtein": ["RARE", "COMMON", "COMMON", "COMMON"],
             "Interaction": [1, 0, 1, 0],
         },
@@ -256,20 +256,20 @@ def test_protein_class_weights_are_normalized_and_position_aligned(
 def test_batched_pair_metadata_preserves_sample_position_and_protein_ids():
     first = ProteinGraphData(
         x=torch.ones((2, 1)),
-        sample_index=torch.tensor([10]),
+        pair_id=torch.tensor([10]),
         tanimoto_pos=torch.tensor([2]),
         protein_id=torch.tensor([7]),
     )
     second = ProteinGraphData(
         x=torch.ones((3, 1)),
-        sample_index=torch.tensor([20]),
+        pair_id=torch.tensor([20]),
         tanimoto_pos=torch.tensor([0]),
         protein_id=torch.tensor([4]),
     )
 
     batch = next(iter(DataLoader([first, second], batch_size=2)))
 
-    assert batch.sample_index.tolist() == [10, 20]
+    assert batch.pair_id.tolist() == [10, 20]
     assert batch.tanimoto_pos.tolist() == [2, 0]
     assert batch.protein_id.tolist() == [7, 4]
 
@@ -286,7 +286,7 @@ def test_batch_positions_resolve_back_to_the_same_pair_ids():
 def test_grab_labels_and_coefficients_use_original_pair_ids(tmp_path):
     dataset = make_dataset(
         {
-            "_tanimoto_orig_idx": [30, 10, 20],
+            "pair_id": [30, 10, 20],
             "LTPProtein": ["P3", "P1", "P2"],
             "Interaction": [1, 0, 1],
         },
@@ -320,7 +320,7 @@ def test_grab_labels_and_coefficients_use_original_pair_ids(tmp_path):
 def test_local_grab_generation_feeds_loss_without_training(tmp_path, seed):
     dataset = make_dataset(
         {
-            "_tanimoto_orig_idx": [10, 20, 30, 40],
+            "pair_id": [10, 20, 30, 40],
             "LTPProtein": ["P1", "P2", "P3", "P4"],
             "Interaction": [0, 1, 1, 0],
         },
@@ -365,7 +365,7 @@ def test_local_grab_generation_feeds_loss_without_training(tmp_path, seed):
 def test_missing_pair_id_is_rejected_before_weight_lookup():
     dataset = make_dataset(
         {
-            "_tanimoto_orig_idx": [10],
+            "pair_id": [10],
             "LTPProtein": ["P1"],
             "Interaction": [1],
         },

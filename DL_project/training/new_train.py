@@ -3,6 +3,8 @@ import os
 import sys
 import time
 import copy
+import ctypes
+import gc
 import json
 import re
 from datetime import datetime
@@ -39,6 +41,7 @@ from architecture.loss import (
     reset_pu_loss_diagnostics,
 )
 from dataloader.sampler import ClassBalancedBatchSampler
+from dataloader.dataset_source import interaction_csv_path
 from dataloader.New_dataloader import PLIDataset
 from reproducibility import seed_everything, seed_worker, seeded_generator
 from run_metrics import (
@@ -60,12 +63,7 @@ print()
 
 path=os.path.join(PROJECT_ROOT, "data") + os.sep
 
-dataset_file = (
-    "Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed.csv"
-    if conf.lipid_isomers
-    else "Processed_Negative_Interaction_Corrected_Domains.csv"
-)
-csv = read_csv(os.path.join(path, dataset_file))
+csv = read_csv(interaction_csv_path(path))
 
 train_dataset, valid_dataset, test_dataset = PLIDataset(root_dir=path, csv = csv, seed=conf.seed,excluded_subgroups=conf.excluded_subgroups, config=conf, excluded_groups=conf.excluded_groups)
 del csv
@@ -73,6 +71,9 @@ del csv
 # validation/test proteins.
 model = InteractionClassification(conf)
 if conf.rnabang_frozen_node_adapter:
+    model.set_pocket_descriptor_normalization(
+        train_dataset.pocket_descriptor_stats()
+    )
     model.set_rnabang_normalization(
         train_dataset.rnabang_normalization_stats()
     )
@@ -96,8 +97,42 @@ if conf.protein_class_sqrt_weight:
 common_weights = (
     torch.stack(common_weights_parts).mean(dim=0)
     if common_weights_parts
-    else torch.ones(len(train_dataset.id2pos), dtype=torch.float32, device=device)
+    else None
 )
+
+
+def batch_sample_weights(prot, sample_count):
+    """Per-row loss weights for this batch, or None when the run weights nothing.
+
+    None rather than a vector of ones. Every loss below already has a None branch that
+    takes the plain mean, and that is the *same number*: multiplying by 1.0 is exact in
+    IEEE 754, so `(x * ones).sum() / ones.sum().clamp_min(1e-8)` and `x.mean()` agree bit
+    for bit -- checked over 8000 random batches at sizes 8, 16, 64 and 1300, zero
+    disagreements. What it removes is a weight vector as long as the train split, a
+    gather per batch, an elementwise multiply and a second reduction, none of which could
+    ever change an unweighted run's result.
+
+    Only reachable from the training loop. Validation and test never pass sample weights,
+    which matters because id2pos covers train rows alone: a validation row's tanimoto_pos
+    is -1, and -1 indexes the last weight instead of raising.
+    """
+    if common_weights is None:
+        return None
+    pos = prot.tanimoto_pos.view(-1).to(device, non_blocking=True)[:sample_count]
+    if pos.shape[0] != sample_count:
+        raise ValueError(
+            f"tanimoto positions count {pos.shape[0]} "
+            f"does not match batch size {sample_count}"
+        )
+    if (pos < 0).any() or (pos >= common_weights.shape[0]).any():
+        invalid_positions = pos[
+            (pos < 0) | (pos >= common_weights.shape[0])
+        ].detach().cpu().tolist()
+        raise ValueError(
+            "tanimoto positions are outside the train weight table: "
+            f"{invalid_positions}"
+        )
+    return common_weights[pos]
 train_labels = torch.as_tensor(train_dataset.csvtrain["Interaction"].values, dtype=torch.long)
 class_counts = torch.bincount(train_labels, minlength=2).float()
 if conf.pu_loss:
@@ -182,6 +217,32 @@ print(
     f"{train_dataset.cache_memory_bytes() / 2**20:.0f} MiB"
 )
 print(f"source artifacts released : {sorted(released_artifacts)}")
+
+
+def _return_freed_heap_to_kernel():
+    """Hand the heap freed by release_source_artifacts() back to the OS.
+
+    Releasing those artifacts drops the Python references, but glibc keeps the pages
+    in the process heap instead of returning them, so RSS stays far above what the
+    run actually holds: measured here, 738 MiB of private heap against 89 MiB of
+    live caches, the difference being mostly the 280 MB SMILES embedding pickle
+    that was read, consumed and released during __init__. Four concurrent jobs
+    carry that four times over on a 13 GiB machine, which is the difference between
+    fitting in RAM and paging to disk.
+
+    Pure bookkeeping: nothing is read, written, moved or recomputed, so every number
+    the run produces is bit-identical with or without this. Non-glibc systems (musl,
+    macOS) have no malloc_trim and simply skip it.
+    """
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        return False
+    return True
+
+
+_return_freed_heap_to_kernel()
 train_batches_to_run = min(len(train_loader), (1740 + conf.batch - 1) // conf.batch)
 valid_batches_to_run = len(valid_loader)
 test_batches_to_run = len(test_loader)
@@ -365,10 +426,23 @@ def update_aggregate(
     """Accumulate confusion counts and sample-weighted loss for one batch."""
     if loss_count is None:
         loss_count = sample_count
-    stats["TP"] += int(((pred_class == labels) & (pred_class == 1)).sum().item())
-    stats["FP"] += int(((pred_class != labels) & (pred_class == 1)).sum().item())
-    stats["TN"] += int(((pred_class == labels) & (pred_class == 0)).sum().item())
-    stats["FN"] += int(((pred_class != labels) & (pred_class == 0)).sum().item())
+    # Two comparisons and three reductions instead of eight and four. Predictions come
+    # from argmax over two classes, so "predicted positive" and "correct" each split the
+    # batch in two and the four cells are fixed by three of them:
+    #   predicted positives = TP + FP,  correct = TP + TN,  batch = TP + FP + TN + FN.
+    # Pure integer counting, so this is the same arithmetic identity either way -- there
+    # is no rounding here to preserve, only work to skip.
+    correct = pred_class == labels
+    predicted_positive = pred_class == 1
+    true_positive = int((correct & predicted_positive).sum())
+    false_positive = int(predicted_positive.sum()) - true_positive
+    true_negative = int(correct.sum()) - true_positive
+    stats["TP"] += true_positive
+    stats["FP"] += false_positive
+    stats["TN"] += true_negative
+    stats["FN"] += (
+        pred_class.numel() - true_positive - false_positive - true_negative
+    )
     stats["loss"] += (
         loss.item() if isinstance(loss, torch.Tensor) else loss
     ) * loss_count
@@ -422,6 +496,10 @@ def log_adversary_metrics(writer, epoch_index, stats):
     if conf.dann_family:
         writer.add_scalar(
             "epoch/dann lambda", model.final_layer.dann_lambda_now, epoch_index + 1
+        )
+    if conf.lipid_path_weight != 1.0:
+        writer.add_scalar(
+            "epoch/lipid path weight", model.lipid_path_weight_now, epoch_index + 1
         )
 
 
@@ -686,23 +764,9 @@ def epoch(idx,counttrain,countval):
                 )
 
                 if conf.grab_loss:
-                    batch_pair_ids = prot.sample_index.view(-1)[:sample_count]
+                    batch_pair_ids = prot.pair_id.view(-1)[:sample_count]
                     grab_label_coefficients = train_dataset.get_grab_batch_inputs(batch_pair_ids, device)
-                    pos = prot.tanimoto_pos.view(-1).to(device, non_blocking=True)[:sample_count]
-                    if pos.shape[0] != sample_count:
-                        raise ValueError(
-                            f"GRAB tanimoto positions count {pos.shape[0]} "
-                            f"does not match batch size {sample_count}"
-                        )
-                    if (pos < 0).any() or (pos >= common_weights.shape[0]).any():
-                        invalid_positions = pos[
-                            (pos < 0) | (pos >= common_weights.shape[0])
-                        ].detach().cpu().tolist()
-                        raise ValueError(
-                            "GRAB tanimoto positions are outside the train weight table: "
-                            f"{invalid_positions}"
-                        )
-                    sample_weights = common_weights[pos]
+                    sample_weights = batch_sample_weights(prot, sample_count)
                     los = GRAB_loss(
                         loss_logits,
                         interaction_labels.long(),
@@ -711,8 +775,7 @@ def epoch(idx,counttrain,countval):
                         sample_weights=sample_weights,
                         focal_gamma=conf.focal_gamma if conf.focal_loss else None)
                 elif conf.pu_loss:
-                    pos = prot.tanimoto_pos.view(-1).to(device, non_blocking=True)[:sample_count]
-                    sample_weights = common_weights[pos]
+                    sample_weights = batch_sample_weights(prot, sample_count)
                     los = Non_Negative_Positive_Unlabeled_loss(
                         loss_logits,
                         interaction_labels.long(),
@@ -724,8 +787,7 @@ def epoch(idx,counttrain,countval):
                         sample_weights=sample_weights,
                     )
                 elif conf.loss_type == "cross_entropy":
-                    pos = prot.tanimoto_pos.view(-1).to(device, non_blocking=True)[:sample_count]
-                    sample_weights = common_weights[pos]
+                    sample_weights = batch_sample_weights(prot, sample_count)
                     if conf.focal_loss:
                         los_unred = focal_loss(
                             loss_logits,
@@ -736,7 +798,15 @@ def epoch(idx,counttrain,countval):
                         )
                     else:
                         los_unred = F.cross_entropy(loss_logits, interaction_labels.long(), weight=class_weights, reduction="none")
-                    los = (los_unred * sample_weights).sum() / sample_weights.sum().clamp_min(1e-8)
+                    # The None branch is the same number, not an approximation of it:
+                    # see batch_sample_weights. It matches what focal_loss, GRAB_loss and
+                    # the PU loss already do when handed no weights.
+                    los = (
+                        los_unred.mean()
+                        if sample_weights is None
+                        else (los_unred * sample_weights).sum()
+                        / sample_weights.sum().clamp_min(1e-8)
+                    )
                 else:
                     los=conf.loss(outl,interaction_labels.long())
             # Batch-level logging is temporarily disabled; keep it for re-enabling.
@@ -1188,6 +1258,9 @@ for eepoch in range(EPOCHS):
         model.final_layer.dann_lambda_now = conf.ramped_dann_lambda(
             fit_progress if conf.dann_lambda_ramp_by_fit else epoch_progress
         )
+    # Epoch index rather than epoch_progress: this is a warm-up measured in epochs, so
+    # its length must not change when EPOCHS does.
+    model.lipid_path_weight_now = conf.ramped_lipid_path_weight(epoch_number)
     model.train(True)
     countrain, countval, train_metrics, valid_metrics = epoch(epoch_number,countrain,countval)
     if uses_fit_ramp:

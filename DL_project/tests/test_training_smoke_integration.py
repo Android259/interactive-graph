@@ -81,7 +81,7 @@ def synthetic_forward_args(config):
         or getattr(config, "rnabang_frozen_node_adapter", False)
     ):
         edge_feature_dim = (
-            43 if config.rnabang_edge_sorted
+            43 if config.rnabang_edge_topk_by_area
             else 13 if config.rnabang_edge_pna
             else 18 if config.rnabang_edge_quantiles
             else 2
@@ -356,7 +356,7 @@ def test_rnabang_frozen_node_adapter_has_no_graph_or_ipa_layer():
     "mode",
     [
         "rnabang_edge_current",
-        "rnabang_edge_sorted",
+        "rnabang_edge_topk_by_area",
         "rnabang_edge_deepsets",
         "rnabang_edge_pna",
         "rnabang_edge_quantiles",

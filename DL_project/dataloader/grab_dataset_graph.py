@@ -27,7 +27,7 @@ class GrabDatasetGraphMixin:
 
     def build_current_pair_graph(self, edge_csv_path=None):
         neighbors_per_target = 20
-        split_pair_ids = set(self.csv["_tanimoto_orig_idx"].astype(int).tolist())
+        split_pair_ids = set(self.csv["pair_id"].astype(int).tolist())
         edges = self.load_pair_edges(edge_csv_path)
 
         source = edges["source_pair_id"].astype(int)
@@ -87,7 +87,7 @@ class GrabDatasetGraphMixin:
 
         train_labels_by_pair_id = dict(
             zip(
-                self.csv["_tanimoto_orig_idx"].astype(int),
+                self.csv["pair_id"].astype(int),
                 self.csv["Interaction"].astype(int),
             )
         )

@@ -12,6 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from build_metrics_table import CONFIG_FIELDS, PROJECT_ROOT, ModelConfig, serialize_config
+from dataloader.dataset_source import INTERACTION_CSV
 
 
 REPORT_TIMESTAMP = re.compile(r"test_metrics_(\d{8}_\d{6})_")
@@ -470,9 +471,7 @@ def main() -> None:
     parser.add_argument(
         "--dataset",
         type=Path,
-        default=PROJECT_ROOT
-        / "data"
-        / "Processed_Negative_Interaction_Corrected_Domains.csv",
+        default=PROJECT_ROOT / "data" / INTERACTION_CSV,
     )
     parser.add_argument("--metric", default="balanced_accuracy")
     parser.add_argument(

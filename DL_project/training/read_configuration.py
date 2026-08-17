@@ -6,6 +6,28 @@ POOL_TYPES = ("add", "max", "mean", "add_max", "gem")
 LOSS_TYPES = ("mse", "cross_entropy", "bce")
 LIPID_FRAGMENTS_TREATMENTS = ("concat", "random_choice", "fragments_mask")
 PROTEIN_POOLINGS = ("ordinary", "attention_pos_bias", "pooling_by_pockets")
+# Narrows which attention site attention_by_pockets restricts. Not passing it means
+# both, which is what --attention_by_pockets alone already says, so "both" is the
+# default value and not an accepted one. "cross" is the interesting middle: the GAT
+# and the protein self-attention still see the whole chain, so structural context is
+# intact, but the lipid can only look at the binding site -- that separates "what the
+# protein encodes" from "what the partner may read".
+POCKET_ATTENTION_SITES = ("self", "cross")
+
+# Frozen per-residue protein embeddings that REPLACE the ESM3 vector. Each entry is
+# (config flag, file suffix, width attribute); files live in
+# data/embedding_<suffix>/<protein>_<suffix>.pkl, one row per coarse_graph_nodes.csv
+# row, exactly like data/embedding_ESM3_v2 and data/embedding_RNABANG.
+#
+# All three are structure-conditioned: a residue's vector is a function of its local
+# geometry rather than of where its sequence sits in a family. That is the property
+# ESM3 lacks and the reason to try them -- the cold-family split withholds precisely
+# the evolutionary/family statistics ESM3 is best at.
+FROZEN_PROTEIN_EMBEDDINGS = (
+    ("proteinmpnn_replace_esm3", "PROTEINMPNN", "proteinmpnn_embedding_dim"),
+    ("esmif1_replace_esm3", "ESMIF1", "esmif1_embedding_dim"),
+    ("saprot_replace_esm3", "SAPROT", "saprot_embedding_dim"),
+)
 ACT_FNS = ("leakyrelu", "gelu", "prelu")
 
 
@@ -124,6 +146,22 @@ MLP_WIDTH_SITES = (
 )
 
 
+def read_pocket_attention_sites(value):
+    """Parse the site narrowing; "both" is the default and not passed explicitly."""
+    site = str(value).strip().lower()
+    if site == "both":
+        raise ValueError(
+            "pocket_attention_sites=both is the default of --attention_by_pockets; "
+            "pass the flag alone for both sites, or "
+            f"--pocket_attention_sites={'/'.join(POCKET_ATTENTION_SITES)} to narrow it"
+        )
+    if site not in POCKET_ATTENTION_SITES:
+        raise ValueError(
+            f"pocket_attention_sites must be one of {', '.join(POCKET_ATTENTION_SITES)}"
+        )
+    return site
+
+
 def read_mlp_widths(value):
     """Parse per-block MLP hidden widths, e.g. "protein_mlp=101,final=175".
 
@@ -213,6 +251,20 @@ class ModelConfig:
     dann_class_conditional: bool = True
     dann_lambda_ramp: bool = False
     dann_lambda_ramp_by_fit: bool = False
+    # Scale the gradient reaching the lipid branch, leaving the forward pass exactly
+    # as it was. 1.0 is the current behaviour; below 1.0 the lipid encoder learns
+    # proportionally slower while the protein branch keeps its full step, which is the
+    # warm-up remedy for the protein path never being used: matched runs put lipid_only
+    # at 0.621 test BA against 0.603 for the full model, i.e. the protein branch
+    # currently costs more than it adds, and one explanation is that the lipid path
+    # reaches a good solution first and the protein path stops receiving useful
+    # gradient. Unlike the adversary this does not push the lipid representation to be
+    # unpredictive -- it only slows it down, so nothing that transfers is destroyed.
+    lipid_path_weight: float = 1.0
+    # Epochs over which lipid_path_weight ramps linearly back to 1.0 (0 = constant).
+    # Epoch 0 uses lipid_path_weight, epoch >= this uses 1.0, so the handicap is a
+    # warm-up rather than a permanent change to the optimisation problem.
+    lipid_path_weight_ramp_epochs: int = 0
     # Match negatives to positives inside every (family, lipid class) cell, which removes
     # the per-lipid-class prior the coarser samplers leave behind (measured: per-class
     # positive rate 0.25-0.68 -> 0.50-0.51). It does NOT also balance per protein --
@@ -306,9 +358,20 @@ class ModelConfig:
     lipid_fragments_treatment: str = "concat"
     protein_pooling: str = "attention_pos_bias"
     
-    lipid_concat: bool = True
-    lipid_random_choice: bool = False
+    lipid_concat: bool = False
+    lipid_random_choice: bool = True
     lipid_fragments_mask: bool = False
+    # The ";"-separated SMILES of a row are candidate structures for one measured lipid
+    # species (sn-positional / double-bond isomers the spectrum cannot separate), and
+    # the embedding path used to keep only the first of them regardless of
+    # lipid_fragments_treatment -- which made all three treatments the same run. This
+    # flag is that behaviour, kept on by default so earlier runs stay reproducible;
+    # turn it off (no_lipid_first_fragment_only) to let the chosen treatment actually
+    # see the whole candidate set. It composes with every treatment: with it on,
+    # concat and fragments_mask degenerate to the single first candidate and
+    # random_choice always draws that same one. It governs the embedding path only;
+    # the lipid_graph_isomers path has always used every candidate.
+    lipid_first_fragment_only: bool = True
     lipid_isomers: bool = False
     lipid_graph_isomers: bool = False
 
@@ -316,6 +379,102 @@ class ModelConfig:
     prot_attention_pos_bias: bool = True
     prot_pooling_by_pockets: bool = False
     prot_pos_bias_per_head: bool = False
+    # Hard pocket restriction: non-pocket protein residues are removed as attention
+    # *keys* in protein self-attention and in lipid-query cross-attention, so the
+    # lipid only ever sees the binding site. They stay queries and are still updated.
+    # This is the restriction counterpart of prot_attention_pos_bias, which only adds
+    # a learnable preference and keeps every residue reachable; the two are mutually
+    # exclusive because a constant bias on the surviving keys is a no-op under softmax
+    # and would leave prot_attention_pos_bias's parameter without gradient.
+    # Measured against the bound ligand in 18 raw structures, pocketness.pdb recovers
+    # 77% of the residues within 5 A of the real ligand (median 80%, min 40% on BPI,
+    # which has two lipid sites and one crystallised ligand), at precision 0.63.
+    # So this drops roughly a fifth of the true contact residues along with ~82% of
+    # the protein.
+    # Under fast_attention the restriction is applied by compaction rather than by
+    # writing -inf into non-pocket keys: the key layout is built over pocket nodes
+    # only, so the padded key axis shrinks from the largest protein (458 residues) to
+    # the largest pocket (64), a factor 7.2 on the padded rectangle. Queries stay every
+    # residue -- each one is still updated, only what it may read changes -- so the
+    # logit count falls by the key ratio alone: median pocket is 33 of 203 residues,
+    # giving ~5.3x at the protein self-attention and ~6x at the lipid-protein
+    # cross-attention, not the square of that. Both spellings are the same attention to
+    # float rounding (measured 1.5e-08, the same order as fast_attention's own ~6e-08
+    # against the default path), so there is nothing to choose between them and no
+    # flag: the cheaper one is simply used whenever the dense layout it needs exists.
+    attention_by_pockets: bool = False
+    # Which of the two sites the restriction applies to, see POCKET_ATTENTION_SITES.
+    pocket_attention_sites: str = "both"
+    # Derived in validate() from the two above; read by the attention modules.
+    pocket_attention_self: bool = False
+    pocket_attention_cross: bool = False
+    # Feed only pocket residues from the dataloader on: node features, PLM rows,
+    # buriedness and confidence are subset, and the graph keeps only edges whose both
+    # endpoints survive. Unlike attention_by_pockets the GAT no longer sees the rest of
+    # the protein at all, so structural context outside the site is gone rather than
+    # merely unattendable.
+    protein_pockets_only: bool = False
+    # Replace the ESM3 vector with a frozen structure-conditioned one. Mutually
+    # exclusive with each other and with every RNA-BAnG mode; see
+    # FROZEN_PROTEIN_EMBEDDINGS and proposals.md.
+    #
+    # ProteinMPNN: ~1.7M parameters, message passing over each residue's k nearest
+    # neighbours with N/CA/C/O/Cb distances. Encoder output, before any sequence
+    # decoding -- pure local geometry, the cheapest of the three by two orders of
+    # magnitude.
+    proteinmpnn_replace_esm3: bool = False
+    proteinmpnn_embedding_dim: int = 128
+    # ESM-IF1: ~142M, inverse folding over backbone coordinates. Its vector answers
+    # "which residue belongs in this geometry", which is a description of the site.
+    esmif1_replace_esm3: bool = False
+    esmif1_embedding_dim: int = 512
+    # SaProt: Foldseek 3Di structure tokens interleaved with residues. A hybrid --
+    # part of its signal is still sequence-family, so it partly reproduces what makes
+    # ESM3 fail here.
+    saprot_replace_esm3: bool = False
+    saprot_embedding_dim: int = 1280
+    # Append three more Voronota per-residue columns to the protein node vector, which
+    # otherwise carries only residue_type, residue_sas_area and residue_volume:
+    #   residue_mean_ev28, residue_mean_ev56  -- exposure/burial at two probe radii,
+    #     i.e. how enclosed the residue is at two length scales; a lipid cavity is
+    #     defined by exactly this and the GAT currently has to infer it from contacts
+    #   hydrophobicity                        -- Kyte-Doolittle index of residue_type
+    # All three are already in data/graphs/<protein>/coarse_graph_nodes.csv, computed
+    # offline; nothing new is generated. This is the fold-independent half of the
+    # protein description, which is what a cold-family split needs: unlike the PLM
+    # embedding these say what the site is like rather than which protein it belongs
+    # to. The columns are appended, so node[:, 0..2] keep their meaning for every path
+    # that indexes them positionally (see Protein_encoder's frozen node adapter).
+    protein_extra_node_features: bool = False
+    # One fixed-length descriptor of the binding cavity per protein, concatenated to
+    # the fused pair vector just before the classifier MLP. Built offline from the
+    # Voronota columns already in coarse_graph_nodes.csv, aggregated over the pocket
+    # residues -- no fpocket, no new data. See POCKET_DESCRIPTOR_NAMES in
+    # dataloader/protein_graph_builder.py for the exact list.
+    #
+    # Measured before implementing, on the 32 proteins whose positives carry a parsable
+    # chain length (Spearman against the mean acyl carbon count of what each protein
+    # binds): pocket SASA +0.687 (p=2e-4), pocket volume +0.548, pocket residue count
+    # +0.559. But protein size alone gives +0.512, and pocket size tracks protein size
+    # at +0.707, so most of that is confounded. Controlling for protein residue count,
+    # only **pocket SASA survives** (+0.569, p=7e-4); volume (+0.332, p=0.06) and
+    # residue count (+0.323, p=0.07) do not. Burial (ev14/ev28/ev56), depth,
+    # hydrophobicity and apolar share showed nothing against chain length or head-group
+    # diversity (|r| < 0.35, all p > 0.05).
+    #
+    # The size-like entries are kept anyway, but note what they are on a cold-family
+    # split: protein size is close to fold identity, which is exactly the shortcut the
+    # split is meant to withhold. If this flag helps, check it is not helping through
+    # them -- the shares (pocket_sasa_share, pocket_volume_share) are the scale-free
+    # versions and neither correlated with chain length on its own.
+    pocket_descriptors: bool = False
+    # Width of the descriptor, derived in validate(); 0 when the flag is off.
+    pocket_descriptor_count: int = 0
+    # Width of the protein node vector, derived in validate(). Single source of truth
+    # for the loader that builds it and the encoder that sizes its input layer, so the
+    # two cannot drift; also recorded in metrics_summary, where a run's node width is
+    # otherwise invisible.
+    protein_node_feature_count: int = 3
     bidirectional_edges: bool = False
     tanimoto_weight: bool = False
     class_weights: bool = True
@@ -363,25 +522,46 @@ class ModelConfig:
     use_esm3_v2_embeddings: bool = False
     # RNA-BAnG protein representations are generated offline by
     # preprocessing/embed_protein_rnabang.py and have one 128-dimensional row per
-    # graph residue. The three modes are mutually exclusive:
-    #   replace_esm3: feed RNA-BAnG through the existing protein GNN;
-    #   full_encoder: treat RNA-BAnG as the complete first protein encoder;
-    #   with_esm3: concatenate ESM3 and RNA-BAnG before the existing protein GNN.
-    #   residual_with_esm3: replace GATv2 only in this mode with an edge-aware
-    #   residual path over ESM3/node(SASA+volume)/buriedness, then add the frozen
-    #   RNA-BAnG geometric-transformer output through a zero-initialized gate.
+    # graph residue. The five ways of consuming them below are mutually exclusive.
+    # Feed RNA-BAnG rows instead of ESM3 into the existing protein GNN.
     rnabang_replace_esm3: bool = False
+    # Treat RNA-BAnG as the complete first protein encoder (projection, optional
+    # self-attention, post-SA MLP), so no graph convolution runs on it at all.
     rnabang_full_protein_encoder: bool = False
+    # Concatenate the ESM3 and RNA-BAnG rows before the existing protein GNN.
     rnabang_with_esm3: bool = False
+    # Replace GATv2 with an edge-aware residual path over ESM3/node(SASA+volume)/
+    # buriedness and add the frozen RNA-BAnG geometric-transformer output through a
+    # zero-initialized gate.
     rnabang_residual_with_esm3: bool = False
+    # Drop every graph and attention layer and encode each residue independently with
+    # an MLP adapter over frozen RNA-BAnG + residue type + SASA/volume/buriedness +
+    # the edge-to-node summary picked by the rnabang_edge_* flags below.
     rnabang_frozen_node_adapter: bool = False
+    # In the frozen-adapter path, encode residue type with a learned 20x8 embedding
+    # instead of passing the raw integer residue index as one feature.
     rnabang_residue_type_embedding: bool = False
+    # Edge-to-node summaries for the frozen adapter, mutually exclusive; this default
+    # keeps the two aggregate columns log1p(sum of incident contact areas) and
+    # boundary/area exposure ratio.
     rnabang_edge_current: bool = False
-    rnabang_edge_sorted: bool = False
+    # Keep the top-21 incident edges ranked by contact area as (area, boundary) pairs
+    # plus normalized degree (43 features), zeroing the ranks past the true degree.
+    rnabang_edge_topk_by_area: bool = False
+    # Encode the padded incident-edge set with a learned permutation-invariant DeepSets
+    # encoder instead of using precomputed statistics.
     rnabang_edge_deepsets: bool = False
+    # Use PNA-style statistics of the incident edges: sum/mean/std/min/max of area and
+    # boundary plus degree, exposed fraction and boundary/area ratio (13 features).
     rnabang_edge_pna: bool = False
+    # Use the 0/10/25/50/75/90/100 quantiles of incident-edge area and boundary plus
+    # their log totals, degree and boundary/area ratio (18 features).
     rnabang_edge_quantiles: bool = False
+    # Encode the padded incident-edge set with a learned set transformer (one
+    # self-attention block plus PMA-style pooling).
     rnabang_edge_set_transformer: bool = False
+    # Width of one RNA-BAnG residue row, i.e. the input dimension every path above
+    # expects from the precomputed embeddings.
     rnabang_embedding_dim: int = 128
     act_fn: str = "leakyrelu"
     HEADS: int = 8
@@ -434,6 +614,63 @@ class ModelConfig:
         self.ordinary_prot_pooling = self.protein_pooling == "ordinary"
         self.prot_attention_pos_bias = self.protein_pooling == "attention_pos_bias"
         self.prot_pooling_by_pockets = self.protein_pooling == "pooling_by_pockets"
+        self.pocket_attention_sites = str(self.pocket_attention_sites).lower()
+        if self.pocket_attention_sites not in POCKET_ATTENTION_SITES + ("both",):
+            raise ValueError(
+                "pocket_attention_sites must be one of "
+                f"{', '.join(POCKET_ATTENTION_SITES)}; leave it unset for both, "
+                "which is what --attention_by_pockets alone means"
+            )
+        self.pocket_descriptor_count = 14 if self.pocket_descriptors else 0
+        self.protein_node_feature_count = 3 + (
+            3 if self.protein_extra_node_features else 0
+        )
+        if self.pocket_attention_sites != "both" and not self.attention_by_pockets:
+            raise ValueError(
+                "pocket_attention_sites narrows attention_by_pockets and does "
+                "nothing on its own; enable --attention_by_pockets"
+            )
+        self.pocket_attention_self = self.attention_by_pockets and (
+            self.pocket_attention_sites in ("both", "self")
+        )
+        # pocket_attention_cross is derived at the end of validate(), after the
+        # lipid_only/protein_only branch has had its say on cross_attention.
+        if (
+            self.prot_attention_pos_bias
+            and self.pocket_attention_self
+            and self.pocket_attention_sites == "both"
+        ):
+            # Only "both" is a conflict. With the restriction on one site the other
+            # site's pocket bias is still a live, trainable preference, which is the
+            # point of pocket_attention_sites in the first place.
+            raise ValueError(
+                "attention_by_pockets removes non-pocket keys outright, which makes "
+                "the prot_attention_pos_bias parameter a constant shift over the "
+                "surviving keys -- a no-op under softmax that would never receive "
+                "gradient. Either restrict one site only "
+                "(--pocket_attention_sites=cross keeps the bias in self-attention, "
+                "=self keeps it in cross-attention), or pick another pooling "
+                "(--protein_pooling=ordinary / pooling_by_pockets)"
+            )
+        if self.protein_pockets_only and self.attention_by_pockets:
+            raise ValueError(
+                "protein_pockets_only already drops every non-pocket residue before "
+                "the encoder, so attention_by_pockets has nothing left to mask"
+            )
+        if self.protein_pockets_only and self.prot_pooling_by_pockets:
+            raise ValueError(
+                "protein_pockets_only already restricts the nodes; "
+                "protein_pooling=pooling_by_pockets would filter an all-pocket set"
+            )
+        if self.lipid_path_weight < 0.0:
+            raise ValueError("lipid_path_weight must be non-negative")
+        if self.lipid_path_weight_ramp_epochs < 0:
+            raise ValueError("lipid_path_weight_ramp_epochs must be non-negative")
+        if self.lipid_path_weight_ramp_epochs and self.lipid_path_weight == 1.0:
+            raise ValueError(
+                "lipid_path_weight_ramp_epochs ramps lipid_path_weight up to 1.0, so "
+                "it does nothing at lipid_path_weight=1.0; set a starting weight below 1"
+            )
         if self.hiddim <= 0:
             raise ValueError("hiddim must be greater than zero")
         if self.checkpoint_window <= 0:
@@ -459,6 +696,43 @@ class ModelConfig:
             self.rnabang_residual_with_esm3,
             self.rnabang_frozen_node_adapter,
         )
+        frozen_modes = [
+            flag for flag, _, _ in FROZEN_PROTEIN_EMBEDDINGS
+            if getattr(self, flag, False)
+        ]
+        if len(frozen_modes) > 1:
+            raise ValueError(
+                "these frozen protein embeddings each replace ESM3 and are mutually "
+                f"exclusive: {', '.join(frozen_modes)}"
+            )
+        # Compatible with the RNA-BAnG modes that CONCATENATE with the ESM3 vector:
+        # there the replacement simply takes ESM3's place in the concatenation, so
+        # rnabang_with_esm3 + proteinmpnn_replace_esm3 means cat(ProteinMPNN, RNA-BAnG)
+        # -- two structure-conditioned descriptions side by side, which is a sensible
+        # thing to ask for. Incompatible with the modes that ARE the whole vector
+        # (replace_esm3, full_protein_encoder, frozen_node_adapter): two sources cannot
+        # both be the sole input, and the frozen adapter additionally asserts the
+        # RNA-BAnG width on the tensor it receives.
+        exclusive_rnabang = [
+            name for name in (
+                "rnabang_replace_esm3",
+                "rnabang_full_protein_encoder",
+                "rnabang_frozen_node_adapter",
+            )
+            if getattr(self, name, False)
+        ]
+        if frozen_modes and exclusive_rnabang:
+            raise ValueError(
+                f"{frozen_modes[0]} and {exclusive_rnabang[0]} both want to be the "
+                "whole protein vector; combine the replacement with "
+                "rnabang_with_esm3 or rnabang_residual_with_esm3 instead, which "
+                "concatenate"
+            )
+        if frozen_modes and not self.plmon:
+            raise ValueError(f"{frozen_modes[0]} requires plmon")
+        for flag, _, dim_attr in FROZEN_PROTEIN_EMBEDDINGS:
+            if int(getattr(self, dim_attr)) <= 0:
+                raise ValueError(f"{dim_attr} must be greater than zero")
         if sum(rnabang_modes) > 1:
             raise ValueError(
                 "rnabang_replace_esm3, rnabang_full_protein_encoder and "
@@ -518,7 +792,7 @@ class ModelConfig:
             )
         edge_node_modes = (
             self.rnabang_edge_current,
-            self.rnabang_edge_sorted,
+            self.rnabang_edge_topk_by_area,
             self.rnabang_edge_deepsets,
             self.rnabang_edge_pna,
             self.rnabang_edge_quantiles,
@@ -689,6 +963,28 @@ class ModelConfig:
                     "lipid_only/protein_only cannot be used with double_attention"
                 )
             self.cross_attention = False
+        # After cross_attention is final: a restriction on cross-attention keys means
+        # nothing if there is no cross-attention, and silently keeping the flag on
+        # would make the run report claim a restriction the model never applied.
+        self.pocket_attention_cross = self.attention_by_pockets and (
+            self.pocket_attention_sites in ("both", "cross")
+        ) and self.cross_attention
+        if (
+            self.attention_by_pockets
+            and self.pocket_attention_sites == "cross"
+            and not self.cross_attention
+        ):
+            raise ValueError(
+                "pocket_attention_sites=cross restricts the cross-attention keys, "
+                "but cross_attention is off"
+            )
+        if self.attention_by_pockets and not (
+            self.pocket_attention_self or self.pocket_attention_cross
+        ):
+            raise ValueError(
+                "attention_by_pockets is on but restricts no site; check "
+                "pocket_attention_sites and cross_attention"
+            )
 
     def effective_pu_rho(self, positive_count, unlabeled_count):
         """Return manual or train-count-derived PU rho."""
@@ -711,6 +1007,34 @@ class ModelConfig:
                 f"got {rho:.6f}"
             )
         return rho
+
+    def frozen_protein_embedding(self):
+        """Active ESM3 replacement as ``(file suffix, width)``, or None.
+
+        Single source of truth for the loader, which reads the file, and the encoder,
+        which sizes its PLM input layer: the two cannot disagree about the width.
+        """
+        for flag, suffix, dim_attr in FROZEN_PROTEIN_EMBEDDINGS:
+            if getattr(self, flag, False):
+                return suffix, int(getattr(self, dim_attr))
+        return None
+
+    def ramped_lipid_path_weight(self, epoch_index):
+        """Gradient scale for the lipid branch at the start of one epoch.
+
+        Constant ``lipid_path_weight`` unless a ramp length is set, in which case it
+        interpolates linearly from ``lipid_path_weight`` at epoch 0 to 1.0 at
+        ``lipid_path_weight_ramp_epochs``. Linear rather than Ganin's sigmoid because
+        this is a head start for the protein branch, not an adversary that has to stay
+        weak while representations are noise: the useful part is the early epochs, and
+        a sigmoid spends them all near the starting value.
+        """
+        if not self.lipid_path_weight_ramp_epochs:
+            return self.lipid_path_weight
+        progress = min(
+            1.0, max(0.0, epoch_index / float(self.lipid_path_weight_ramp_epochs))
+        )
+        return self.lipid_path_weight + progress * (1.0 - self.lipid_path_weight)
 
     def ramped_adv_lambda(self, progress):
         """Return the gradient-reversal strength for one point in training.
@@ -896,8 +1220,8 @@ SIMPLE_BOOL_FLAGS = {
     "--rnabang_residue_type_embedding": "rnabang_residue_type_embedding",
     "rnabang_edge_current": "rnabang_edge_current",
     "--rnabang_edge_current": "rnabang_edge_current",
-    "rnabang_edge_sorted": "rnabang_edge_sorted",
-    "--rnabang_edge_sorted": "rnabang_edge_sorted",
+    "rnabang_edge_topk_by_area": "rnabang_edge_topk_by_area",
+    "--rnabang_edge_topk_by_area": "rnabang_edge_topk_by_area",
     "rnabang_edge_deepsets": "rnabang_edge_deepsets",
     "--rnabang_edge_deepsets": "rnabang_edge_deepsets",
     "rnabang_edge_pna": "rnabang_edge_pna",
@@ -964,6 +1288,8 @@ SIMPLE_BOOL_FLAGS = {
     "--lipid_gat_graph_norm": "lipid_gat_graph_norm",
     "lipid_output_graph_norm": "lipid_output_graph_norm",
     "--lipid_output_graph_norm": "lipid_output_graph_norm",
+    "lipid_first_fragment_only": "lipid_first_fragment_only",
+    "--lipid_first_fragment_only": "lipid_first_fragment_only",
     "lipid_isomers": "lipid_isomers",
     "--lipid_isomers": "lipid_isomers",
     "lipid_graph_isomers": "lipid_graph_isomers",
@@ -972,6 +1298,20 @@ SIMPLE_BOOL_FLAGS = {
     "--bidirectional_edges": "bidirectional_edges",
     "prot_pos_bias_per_head": "prot_pos_bias_per_head",
     "--prot_pos_bias_per_head": "prot_pos_bias_per_head",
+    "attention_by_pockets": "attention_by_pockets",
+    "--attention_by_pockets": "attention_by_pockets",
+    "protein_pockets_only": "protein_pockets_only",
+    "--protein_pockets_only": "protein_pockets_only",
+    "proteinmpnn_replace_esm3": "proteinmpnn_replace_esm3",
+    "--proteinmpnn_replace_esm3": "proteinmpnn_replace_esm3",
+    "esmif1_replace_esm3": "esmif1_replace_esm3",
+    "--esmif1_replace_esm3": "esmif1_replace_esm3",
+    "saprot_replace_esm3": "saprot_replace_esm3",
+    "--saprot_replace_esm3": "saprot_replace_esm3",
+    "protein_extra_node_features": "protein_extra_node_features",
+    "--protein_extra_node_features": "protein_extra_node_features",
+    "pocket_descriptors": "pocket_descriptors",
+    "--pocket_descriptors": "pocket_descriptors",
     "protein_group_weight": "protein_group_weight",
     "--protein_group_weight": "protein_group_weight",
     "protein_class_weight": "protein_class_weight",
@@ -1036,6 +1376,12 @@ FLAG_HANDLERS = {
     "--no_class_weights": set_config_flag("class_weights", False),
     "no_cross_attention": set_config_flag("cross_attention", False),
     "--no_cross_attention": set_config_flag("cross_attention", False),
+    "no_lipid_first_fragment_only": set_config_flag(
+        "lipid_first_fragment_only", False
+    ),
+    "--no_lipid_first_fragment_only": set_config_flag(
+        "lipid_first_fragment_only", False
+    ),
     "no_adv_lipid": set_config_flag("adv_lipid", False),
     "--no_adv_lipid": set_config_flag("adv_lipid", False),
     "no_adv_protein": set_config_flag("adv_protein", False),
@@ -1069,10 +1415,19 @@ VALUE_HANDLERS = {
     "--batch=": set_config_field("batch", int),
     "--num_workers=": set_config_field("num_workers", int),
     "--lipid_fragments_treatment=": set_config_field("lipid_fragments_treatment"),
+    "--lipid_first_fragment_only=": set_config_field(
+        "lipid_first_fragment_only", read_bool
+    ),
     "--protein_pooling=": set_config_field("protein_pooling"),
+    "--pocket_attention_sites=": set_config_field(
+        "pocket_attention_sites", read_pocket_attention_sites
+    ),
     "--tanimoto_weight=": set_config_field("tanimoto_weight", read_bool),
     "--plm_compression_dim=": set_config_field("plm_compression_dim", int),
     "--rnabang_embedding_dim=": set_config_field("rnabang_embedding_dim", int),
+    "--proteinmpnn_embedding_dim=": set_config_field("proteinmpnn_embedding_dim", int),
+    "--esmif1_embedding_dim=": set_config_field("esmif1_embedding_dim", int),
+    "--saprot_embedding_dim=": set_config_field("saprot_embedding_dim", int),
     "--geometric_ipa_chunk_size=": set_config_field(
         "geometric_ipa_chunk_size", int
     ),
@@ -1094,6 +1449,10 @@ VALUE_HANDLERS = {
     "--logit_adjustment_tau=": set_config_field("logit_adjustment_tau", float),
     "--adv_weight=": set_config_field("adv_weight", float),
     "--adv_lambda=": set_config_field("adv_lambda", float),
+    "--lipid_path_weight=": set_config_field("lipid_path_weight", float),
+    "--lipid_path_weight_ramp_epochs=": set_config_field(
+        "lipid_path_weight_ramp_epochs", int
+    ),
     "--dann_weight=": set_config_field("dann_weight", float),
     "--dann_lambda=": set_config_field("dann_lambda", float),
     "--dann_class_conditional=": set_config_field("dann_class_conditional", read_bool),

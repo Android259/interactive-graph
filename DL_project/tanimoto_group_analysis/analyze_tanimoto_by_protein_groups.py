@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Tanimoto similarity of positive-interaction lipids WITHIN each protein group, sampled.
+# Reports how chemically alike the lipids a group binds are, group by group.
 import argparse
 import os
 

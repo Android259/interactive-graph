@@ -75,6 +75,7 @@ import torch_geometric  # noqa: E402
 from read_configuration import read_configuration  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 from architecture.interaction_classification import InteractionClassification  # noqa: E402
+from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.New_dataloader import PLIDataset  # noqa: E402
 
 
@@ -225,12 +226,7 @@ def estimate_rho_from_scores(scores, labels, train_positive_count, train_unlabel
 def load_full_csv(conf):
     """Load the interaction dataset used by this config."""
     data_dir = os.path.join(PROJECT_ROOT, "data") + os.sep
-    dataset_file = (
-        "Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed.csv"
-        if conf.lipid_isomers
-        else "Processed_Negative_Interaction_Corrected_Domains.csv"
-    )
-    return read_csv(os.path.join(data_dir, dataset_file))
+    return read_csv(interaction_csv_path(data_dir))
 
 
 def config_group_key(conf):

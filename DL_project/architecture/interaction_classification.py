@@ -2,7 +2,7 @@ import torch
 
 try:
     from .cross_attention import CrossAttention
-    from .final_layer import Final_Layer
+    from .final_layer import Final_Layer, grad_scale
     from .lipid_encoder import Lipid_encoder
     from .protein_encoder import Protein_encoder
     from .mlp_utils import ConcreteDropout
@@ -10,7 +10,7 @@ try:
     from training.read_configuration import ModelConfig
 except ImportError:
     from cross_attention import CrossAttention
-    from final_layer import Final_Layer
+    from final_layer import Final_Layer, grad_scale
     from lipid_encoder import Lipid_encoder
     from protein_encoder import Protein_encoder
     from mlp_utils import ConcreteDropout
@@ -39,9 +39,17 @@ class InteractionClassification(torch.nn.Module):
                 self.config.hiddim, self.config.hiddim, self.config
             )
         self.final_layer = Final_Layer(self.config)
+        # Per-epoch training state lives on the model, never on conf: the run report
+        # dumps vars(conf), so writing it there would record a mid-training value as if
+        # it were a hyperparameter of the whole run. The training loop rewrites this
+        # once per epoch from conf.ramped_lipid_path_weight.
+        self.lipid_path_weight_now = self.config.lipid_path_weight
 
     def set_rnabang_normalization(self, stats):
         self.protein1.set_rnabang_normalization(stats)
+
+    def set_pocket_descriptor_normalization(self, stats):
+        self.protein1.set_pocket_descriptor_normalization(stats)
 
     def discovered_dropout(self):
         """Learned dropout p per Concrete Dropout site, keyed by module path.
@@ -76,6 +84,54 @@ class InteractionClassification(torch.nn.Module):
             )
 
         return prot[pocket_mask], prot_batch[pocket_mask]
+
+    def _pocket_attention_operands(self, prot_batch, pocket_mask, num_graphs):
+        """Layout and node index for the compacted pocket-restricted attention.
+
+        Returns ``(None, None)`` unless a site is restricted; this is only reached on
+        the fast_attention path, which is the one that has a padded key axis to shrink.
+        The default path spells the same restriction as -inf key biases. Building the
+        layout once here matters for the same reason the full layouts are built once:
+        the protein self-attention and the lipid-query cross-attention would otherwise
+        each rebuild the same bincount/cumsum/scatter mapping -- and they share it even
+        when only one of them is restricted, so the shared build is never wasted.
+        """
+        if not self._restricts_any_site():
+            return None, None
+        if pocket_mask is None:
+            raise ValueError("attention_by_pockets requires pocket_mask")
+        pocket_index = torch.nonzero(pocket_mask.bool(), as_tuple=False).flatten()
+        return (
+            make_grouped_attention_layout(prot_batch[pocket_index], num_graphs),
+            pocket_index,
+        )
+
+    def _restricts_any_site(self):
+        """Whether pocket restriction is active at the self- or the cross-attention."""
+        return bool(
+            getattr(self.config, "pocket_attention_self", False)
+            or getattr(self.config, "pocket_attention_cross", False)
+        )
+
+    def _check_pocket_coverage(self, prot_batch, pocket_mask):
+        """Every sample needs a pocket residue once non-pocket keys are forbidden.
+
+        A protein with no pocket node leaves its queries with every key masked to -inf,
+        and softmax over an all -inf row is NaN -- which would surface as a silent NaN
+        loss many layers later rather than here.
+        """
+        if pocket_mask is None:
+            raise ValueError("attention_by_pockets requires pocket_mask")
+        counts = torch.bincount(
+            prot_batch[pocket_mask.bool()],
+            minlength=int(prot_batch.max().item()) + 1,
+        )
+        missing = torch.nonzero(counts == 0, as_tuple=False).flatten()
+        if missing.numel() > 0:
+            raise ValueError(
+                "attention_by_pockets leaves these samples with no attendable "
+                f"protein residue: {missing.detach().cpu().tolist()}"
+            )
 
     def _pool_pocket_mask(self, prot_batch, pocket_mask):
         """Pocket bool aligned to the protein nodes that reach pooling.
@@ -134,13 +190,17 @@ class InteractionClassification(torch.nn.Module):
         prot_frame_translation=None,
         prot_geometric_node_attr=None,
         prot_edge_node_pairs=None,
-        prot_edge_node_degree=None):
+        prot_edge_node_degree=None,
+        pocket_descriptor=None):
         """Encode a batched protein-lipid input and return binary logits."""
 
 
         if config.lipid_fragments_mask:
             assert lipid_batch is not None
             multiple_lipid_mask = lipid_batch.unsqueeze(0) == lipid_batch.unsqueeze(1)
+
+        if self._restricts_any_site():
+            self._check_pocket_coverage(prot_batch, pocket_mask)
 
         if config.fast_attention:
             num_graphs = int(max(int(prot_batch.max()), int(lip_batch.max()))) + 1
@@ -156,13 +216,30 @@ class InteractionClassification(torch.nn.Module):
             )
             lip_cross_att_mask = None
             prot_cross_att_mask = None
+            pocket_layout, pocket_index = self._pocket_attention_operands(
+                prot_batch, pocket_mask, num_graphs
+            )
         else:
             prot_layout = None
             lip_layout = None
+            pocket_layout, pocket_index = None, None
             prot_self_att_mask = prot_batch.unsqueeze(0) != prot_batch.unsqueeze(1)
             lip_self_att_mask = lip_batch.unsqueeze(0) != lip_batch.unsqueeze(1)
             lip_cross_att_mask = prot_batch.unsqueeze(0) != lip_batch.unsqueeze(1)
             prot_cross_att_mask = lip_batch.unsqueeze(0) != prot_batch.unsqueeze(1)
+
+        # Each site compacts only if that site is the restricted one. Off the fast
+        # path both are None and each module falls back to its -inf mask.
+        self_pocket_layout, self_pocket_index = (
+            (pocket_layout, pocket_index)
+            if getattr(config, "pocket_attention_self", False)
+            else (None, None)
+        )
+        cross_pocket_layout, cross_pocket_index = (
+            (pocket_layout, pocket_index)
+            if getattr(config, "pocket_attention_cross", False)
+            else (None, None)
+        )
 
         prot1 = self.protein1(
             config,
@@ -175,6 +252,9 @@ class InteractionClassification(torch.nn.Module):
             prot_self_att_mask,
             pocket_mask,
             fast_layout=prot_layout,
+            pocket_layout=self_pocket_layout,
+            pocket_index=self_pocket_index,
+            pocket_descriptor=pocket_descriptor,
             frame_rotation=prot_frame_rotation,
             frame_translation=prot_frame_translation,
             geometric_node_attr=prot_geometric_node_attr,
@@ -200,6 +280,11 @@ class InteractionClassification(torch.nn.Module):
                 lip, lip_batch, lip_self_att_mask, fast_layout=lip_layout
             )
 
+        # Hand the lipid branch a smaller gradient step than the protein branch. Placed
+        # on lip1 so every downstream consumer -- the adversary, cross-attention and
+        # pooling -- keeps its full gradient and only the lipid encoder is slowed.
+        lip1 = grad_scale(lip1, self.lipid_path_weight_now)
+
         # Adversarial anti-shortcut: run the per-partner adversaries on the
         # PRE-cross-attention representations, the only point where each partner is
         # still genuinely single-partner. Cross-attention below injects the
@@ -219,30 +304,38 @@ class InteractionClassification(torch.nn.Module):
 
         if not config.double_attention:
             if config.cross_attention:
-                cross_pocket_mask = pocket_mask if config.prot_attention_pos_bias else None
-                if config.prot_attention_pos_bias:
-                    assert cross_pocket_mask is not None
+                cross_pocket_mask = (
+                    pocket_mask
+                    if config.prot_attention_pos_bias
+                    or getattr(config, "pocket_attention_cross", False)
+                    else None
+                )
                 lip1, prot1 = self.cross_attention1(
                     lip1, prot1, lip_cross_att_mask, prot_cross_att_mask, cross_pocket_mask,
                     lip_batch=lip_batch, prot_batch=prot_batch,
-                    lip_layout=lip_layout, prot_layout=prot_layout)
+                    lip_layout=lip_layout, prot_layout=prot_layout,
+                    pocket_layout=cross_pocket_layout, pocket_index=cross_pocket_index)
 
             prot1, pooled_prot_batch = self._select_pocket_nodes(
                 prot1, prot_batch, pocket_mask
             )
             out = self.final_layer(
                 lip1, prot1, lip_batch, pooled_prot_batch, config.pool,
-                self._pocket_pool_signal(prot_batch, pocket_mask, node_confidence)
+                self._pocket_pool_signal(prot_batch, pocket_mask, node_confidence),
             )
 
         if config.double_attention:
-            cross_pocket_mask = pocket_mask if config.prot_attention_pos_bias else None
-            if config.prot_attention_pos_bias:
-                assert cross_pocket_mask is not None
+            cross_pocket_mask = (
+                pocket_mask
+                if config.prot_attention_pos_bias
+                or getattr(config, "pocket_attention_cross", False)
+                else None
+            )
             lip1, prot1 = self.cross_attention1(
                 lip1, prot1, lip_cross_att_mask, prot_cross_att_mask, cross_pocket_mask,
                 lip_batch=lip_batch, prot_batch=prot_batch,
-                lip_layout=lip_layout, prot_layout=prot_layout)
+                lip_layout=lip_layout, prot_layout=prot_layout,
+                pocket_layout=cross_pocket_layout, pocket_index=cross_pocket_index)
 
             prot2 = self.protein2(
                 config,
@@ -256,6 +349,8 @@ class InteractionClassification(torch.nn.Module):
                 pocket_mask,
                 start=False,
                 fast_layout=prot_layout,
+                pocket_layout=self_pocket_layout,
+                pocket_index=self_pocket_index,
                 frame_rotation=prot_frame_rotation,
                 frame_translation=prot_frame_translation,
                 geometric_node_attr=prot_geometric_node_attr,
@@ -284,6 +379,7 @@ class InteractionClassification(torch.nn.Module):
                 lip2, prot2, lip_cross_att_mask, prot_cross_att_mask, cross_pocket_mask,
                 lip_batch=lip_batch, prot_batch=prot_batch,
                 lip_layout=lip_layout, prot_layout=prot_layout,
+                pocket_layout=cross_pocket_layout, pocket_index=cross_pocket_index,
             )
 
             prot2, pooled_prot_batch = self._select_pocket_nodes(
@@ -291,7 +387,7 @@ class InteractionClassification(torch.nn.Module):
             )
             out = self.final_layer(
                 lip2, prot2, lip_batch, pooled_prot_batch, config.pool,
-                self._pocket_pool_signal(prot_batch, pocket_mask, node_confidence)
+                self._pocket_pool_signal(prot_batch, pocket_mask, node_confidence),
             )
 
         return out

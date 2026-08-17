@@ -32,21 +32,21 @@ def iter_raw_smiles(row):
                 yield candidate
 
 
-def canonical_isomeric_smiles(smiles):
+def canonical_isomeric_smiles(smiles, isomeric=True):
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
-    return Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True)
+    return Chem.MolToSmiles(mol, canonical=True, isomericSmiles=isomeric)
 
 
-def collect_isomeric_smiles(table):
+def collect_isomeric_smiles(table, isomeric=True):
     smiles = []
     seen = set()
     invalid = []
 
     for row_index, row in table.iterrows():
         for raw_smiles in iter_raw_smiles(row):
-            canonical = canonical_isomeric_smiles(raw_smiles)
+            canonical = canonical_isomeric_smiles(raw_smiles, isomeric)
             if canonical is None:
                 invalid.append((row_index, raw_smiles))
                 continue
@@ -57,6 +57,12 @@ def collect_isomeric_smiles(table):
     return smiles, invalid
 
 
+def read_embedded_keys(path):
+    """The SMILES an existing embedding table already covers."""
+    with open(path, "rb") as handle:
+        return set(pkl.load(handle))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Collect canonical isomeric lipid SMILES for MolFormer embedding."
@@ -64,6 +70,23 @@ def main():
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--csv-output", type=Path, default=DEFAULT_CSV_OUTPUT)
+    parser.add_argument(
+        "--non-isomeric",
+        action="store_true",
+        help=(
+            "Canonicalize without stereochemistry, for the table a run without "
+            "--lipid_isomers reads (data/lipid_SMILES_embedding.pkl)."
+        ),
+    )
+    parser.add_argument(
+        "--skip-embedded",
+        type=Path,
+        default=None,
+        help=(
+            "Existing embedding pickle; its keys are dropped from the output, so "
+            "only the SMILES still missing are handed to the encoder."
+        ),
+    )
     args = parser.parse_args()
 
     table = pd.read_csv(args.input)
@@ -71,7 +94,13 @@ def main():
     if missing:
         raise ValueError(f"Missing required columns: {', '.join(missing)}")
 
-    smiles, invalid = collect_isomeric_smiles(table)
+    smiles, invalid = collect_isomeric_smiles(table, isomeric=not args.non_isomeric)
+    collected = len(smiles)
+    already_embedded = 0
+    if args.skip_embedded is not None:
+        embedded = read_embedded_keys(args.skip_embedded)
+        smiles = [item for item in smiles if item not in embedded]
+        already_embedded = collected - len(smiles)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "wb") as handle:
@@ -81,8 +110,12 @@ def main():
         args.csv_output.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame({"smile": smiles}).to_csv(args.csv_output, index=False)
 
+    kind = "non-isomeric" if args.non_isomeric else "isomeric"
     print(f"input rows: {len(table)}")
-    print(f"unique canonical isomeric SMILES: {len(smiles)}")
+    print(f"unique canonical {kind} SMILES: {collected}")
+    if args.skip_embedded is not None:
+        print(f"already in {args.skip_embedded}: {already_embedded}")
+        print(f"still to embed: {len(smiles)}")
     print(f"pickle output: {args.output}")
     if args.csv_output:
         print(f"csv output: {args.csv_output}")

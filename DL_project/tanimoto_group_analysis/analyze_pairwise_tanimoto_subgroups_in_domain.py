@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Pairwise Tanimoto similarity of positive-interaction lipids between SUBGROUPS of one
+# protein domain. Same matrix and long-form outputs as the between-groups version.
 import argparse
 import os
 

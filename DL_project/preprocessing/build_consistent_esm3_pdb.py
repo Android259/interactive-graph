@@ -22,9 +22,15 @@ project -- see proposals_plm.md for the full writeup):
          residues (18 duplicated by altLoc); pocketness.pdb has exactly 456 CA
          records, i.e. one conformer per residue already.
        - selenomethionine (MSE, a HETATM in raw PDB, chemically an ordinary Met in
-         the backbone): raw GM2A/PITPNA contain MSE; pocketness.pdb for both already
-         shows 0 MSE records and residue counts matching their graph node counts
-         exactly, i.e. Voronota already collapsed MSE to a plain residue.
+         the backbone): raw GM2A/PITPNA contain MSE. CORRECTED -- this note used to
+         claim Voronota had collapsed MSE into a plain residue because pocketness.pdb
+         showed 0 MSE records and its residue count matched the graph. Voronota had in
+         fact DELETED those residues (its "[-protein]" atom filter excludes MSE), and
+         the matching count was an artifact of the symmetric end-trim the loader then
+         applied. Fixed at the source: preprocessing/convert_mse_to_met.py rewrites MSE
+         as MET, the graphs of these two proteins were regenerated from
+         data/structures/mse_fixed/, and their node counts now equal their FASTA
+         lengths (GM2A 162, PITPNA 269).
      So only the confidence column needed fixing here, not residue identity/count.
   4. Missing/unresolved residues (real gaps in electron density, e.g. CERT_6j81 has
      gaps at PDB residues 492-496 and 534-541) are NOT fixed by this script -- they
@@ -76,10 +82,11 @@ from pathlib import Path
 DATA_ROOT = Path(__file__).resolve().parent.parent / "data"
 OUT_DIR = DATA_ROOT / "esm3_input"
 
-# make_graph_protein (dataloader/New_dataloader.py) drops the last line of RET4's
-# pocketness.pdb before using it -- mirrored here so the written PDB and its
-# confidence CSV describe exactly the residue set the rest of the pipeline sees.
-RET4_DROP_LAST_LINE = "RET4"
+# RBP4's pocketness.pdb ends with a single orphan atom: residue 175 has only its
+# backbone N resolved, so Voronota emitted no node for it while still writing that one
+# atom. The loader drops that last line before use; mirrored here so the written PDB and
+# its confidence CSV describe exactly the residue set the rest of the pipeline sees.
+DROP_LAST_LINE_STEM = "RBP4"
 
 
 def find_raw_pdb(stem: str) -> str | None:
@@ -99,7 +106,12 @@ def ca_bfactor_map(raw_path: str) -> dict[tuple[str, str], float]:
     out = {}
     with open(raw_path, errors="ignore") as handle:
         for line in handle:
-            if not line.startswith("ATOM"):
+            # MSE (selenomethionine) is a HETATM in the raw file but an ordinary
+            # methionine in the graph (preprocessing/convert_mse_to_met.py), and its
+            # CA carries a real B-factor -- take it, or those residues would be the
+            # only ones left without a confidence value.
+            is_mse = line.startswith("HETATM") and line[17:20] == "MSE"
+            if not (line.startswith("ATOM") or is_mse):
                 continue
             if line[12:16].strip() != "CA":
                 continue
@@ -121,7 +133,7 @@ def process_stem(stem: str, pocketness_path: str, raw_path: str, is_predicted: b
 
     with open(pocketness_path, errors="ignore") as handle:
         lines = handle.readlines()
-    if stem == RET4_DROP_LAST_LINE:
+    if stem == DROP_LAST_LINE_STEM:
         lines = lines[:-1]
 
     out_lines = []

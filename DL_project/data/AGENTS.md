@@ -26,8 +26,12 @@ lipid_graphs/*
 `protein_graph_tensors.manifest.json` from the protein graph CSV/PDB artifacts.
 The loader rejects a stale cache when a source size or mtime differs.
 
-`protein_registry.csv` is the canonical mapping from interaction-table protein IDs
-to artifact stems, families, UniProt IDs, and historical ESM3 v1 trim metadata.
+Per-protein metadata lives in the interaction table itself: `LTPProtein` is the name
+every artifact is filed under (`graphs/<name>/`, `embedding_*/<name>_*`,
+`esm3_input/<name>.pdb`) and `ProteinDomain` is the family the model one-hots. There is
+no separate registry file, no artifact-stem mapping and no per-protein trim metadata --
+if a new protein does not fit this layout, rename its artifacts rather than adding a
+mapping.
 
 Preserve row order in the processed interaction CSV: pair IDs and Tanimoto indices depend on original row positions.
 

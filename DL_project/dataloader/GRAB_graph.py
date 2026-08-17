@@ -170,7 +170,9 @@ def save_grab_edges_csv(graph, output_path):
 
 
 if __name__ == "__main__":
-    input_csv = "data/Processed_Negative_Interaction_Without_Duplicates.csv"
+    from dataloader.dataset_source import INTERACTION_CSV
+
+    input_csv = f"data/{INTERACTION_CSV}"
     output_edges_csv = Path("data/grab_pair_graph_edges.csv")
     top_k_edges_per_pair = 20
 

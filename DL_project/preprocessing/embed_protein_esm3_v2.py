@@ -14,7 +14,7 @@ architecture. See proposals_plm.md for the full analysis.
 This script instead builds the ESMProtein from data/esm3_input/<stem>.pdb, the
 consistent PDB produced by preprocessing/build_consistent_esm3_pdb.py, which carries:
   - sequence + coordinates, both derived from the SAME structure (no separate-FASTA
-    alignment risk -- see plm_alignment risk that motivated dataloader/plm_alignment.py)
+    alignment risk -- see plm_alignment risk that motivated preprocessing/plm_alignment.py)
   - a real per-residue B-factor/pLDDT in the B-factor column (pocketness.pdb's own
     B-factor column is a binary pocket flag, not usable as confidence -- see the
     header of build_consistent_esm3_pdb.py for how this was verified)

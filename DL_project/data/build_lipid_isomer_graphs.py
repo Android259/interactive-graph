@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import hashlib
+import sys
 
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from dataloader.dataset_source import INTERACTION_CSV
+
 
 DATA_DIR = Path(__file__).resolve().parent
-INPUT_CSV = DATA_DIR / "Processed_Negative_Interaction_Without_Duplicates.csv"
+# The interaction table every run reads, so the graphs cover exactly the SMILES the
+# loader will ask for. It used to name a file of its own, which has since been replaced
+# and left 18 of the current table's candidates without a graph.
+INPUT_CSV = DATA_DIR / INTERACTION_CSV
 OUTPUT_DIR = DATA_DIR / "lipid_graphs"
 INDEX_CSV = OUTPUT_DIR / "lipid_graph_index.csv"
 

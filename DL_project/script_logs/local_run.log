@@ -1,24 +1,22 @@
-Running 45 jobs (9 groups x 5 seeds) from bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2.
-LOCAL_JOBS=5 OMP_THREADS_PER_JOB=3 NUM_WORKERS_PER_JOB=1
-  cores: 18 usable of 24 (6 reserved for the desktop)
-  memory: 22 GiB usable of 31 (9 reserved), 4 GiB/job -> caps at 5 concurrent job(s)
-=== [1/45] GROUP: CRAL-TRIO | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 0 ===
-=== [2/45] GROUP: CRAL-TRIO | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 1 ===
-=== [3/45] GROUP: CRAL-TRIO | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 2 ===
-=== [4/45] GROUP: CRAL-TRIO | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 3 ===
-=== [5/45] GROUP: CRAL-TRIO | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 4 ===
-=== [6/45] GROUP: START | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 0 ===
-=== [7/45] GROUP: START | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 1 ===
-=== [8/45] GROUP: START | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 2 ===
-=== [9/45] GROUP: START | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 3 ===
-=== [10/45] GROUP: START | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 4 ===
-=== [11/45] GROUP: lipocalin | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 0 ===
-=== [12/45] GROUP: lipocalin | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 1 ===
-=== [13/45] GROUP: lipocalin | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 2 ===
-=== [14/45] GROUP: lipocalin | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 3 ===
-=== [15/45] GROUP: lipocalin | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 4 ===
-=== [16/45] GROUP: GLTP | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 0 ===
-=== [17/45] GROUP: GLTP | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 1 ===
-=== [18/45] GROUP: GLTP | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 2 ===
-=== [19/45] GROUP: GLTP | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 3 ===
-=== [20/45] GROUP: GLTP | VARIANT: bbp_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64_GRL_dp_rmpft_lambda2 | SEED: 4 ===
+conda is not available in this environment.
+Could not activate the Kalinin_project_LP conda env; using current python3: /usr/bin/python3
+Running 12 jobs (6 groups x 2 seeds) from bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8.
+LOCAL_JOBS=3 OMP_THREADS_PER_JOB=3 NUM_WORKERS_PER_JOB=1
+  cores: 9 usable of 12 (3 reserved for the desktop)
+  memory: 7 GiB usable of 9 free now (13 total, 2 reserved), 2 GiB/job -> caps at 3 concurrent job(s)
+  pinning: 2 cache domain(s), one per job round-robin: 0-5 6-11
+lipid embedding store: lipid_SMILES_embedding_deterministic.pkl already current
+=== [1/12] GROUP: CRAL-TRIO | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 0 ===
+=== [2/12] GROUP: CRAL-TRIO | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 1 ===
+=== [3/12] GROUP: START | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 0 ===
+=== [4/12] GROUP: START | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 1 ===
+=== [5/12] GROUP: lipocalin | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 0 ===
+=== [6/12] GROUP: lipocalin | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 1 ===
+=== [7/12] GROUP: IP_trans | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 0 ===
+=== [8/12] GROUP: IP_trans | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 1 ===
+=== [9/12] GROUP: LBP_BPI_CETP | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 0 ===
+=== [10/12] GROUP: LBP_BPI_CETP | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 1 ===
+=== [11/12] GROUP: scp2 | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 0 ===
+=== [12/12] GROUP: scp2 | VARIANT: bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 | SEED: 1 ===
+Ran 12 jobs bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8 across 6 groups and 2 seeds.
+9 job(s) exited non-zero; check the logs under script_logs/bbp_fa_esmif1_nps3mlp_dpt01_gm_plm64_hid64_batch8_seeds01.

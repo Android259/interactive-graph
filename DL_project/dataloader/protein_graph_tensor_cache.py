@@ -25,7 +25,7 @@ def _source_record(path, root_dir):
 def _pocket_tensor(path):
     lines = path.read_text().splitlines()
     if os.path.normpath(path).endswith(
-        os.path.normpath("graphs/RET4/pocketness.pdb")
+        os.path.normpath("graphs/RBP4/pocketness.pdb")
     ):
         lines = lines[:-1]
     residue_has_pocket_atom = {}
@@ -145,6 +145,17 @@ def load_protein_graph_tensor_cache(root_dir):
                 or stat.st_mtime_ns != source["mtime_ns"]
             ):
                 return {}
-        return torch.load(cache_path, map_location="cpu", weights_only=True)
+        # mmap so concurrent training jobs share one copy of these tensors through the
+        # page cache instead of each materializing its own. Nothing here is written in
+        # place -- _cached_protein_parts only copies the dict and takes views/columns --
+        # so the mapping stays shared for the life of the run. Archives written before
+        # torch's zipfile format, or a filesystem that cannot map them, raise here and
+        # fall back to the ordinary read, which loads the identical tensors.
+        try:
+            return torch.load(
+                cache_path, map_location="cpu", weights_only=True, mmap=True
+            )
+        except (RuntimeError, ValueError):
+            return torch.load(cache_path, map_location="cpu", weights_only=True)
     except (OSError, KeyError, ValueError, json.JSONDecodeError):
         return {}

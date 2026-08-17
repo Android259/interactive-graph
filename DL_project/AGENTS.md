@@ -17,9 +17,10 @@ dataloader/               active PLIDataset (New_dataloader.py) + GRAB graph; le
 data/                     input artifacts (CSVs, ESM3/PLM embeddings, graphs) + lipid graph generator
 preprocessing/            offline data prep (embeddings, negatives, PDB/FASTA, graphs)
 analysis/                 canonical metrics-table build / analysis / plots
-scripts/                  cluster job submission, env activation, run lifecycle
+scripts/                  launch, watch, stop runs -- see scripts/AGENTS.md for its layout
 tests/                    CPU pytest suite
 tanimoto_group_analysis/  Tanimoto similarity scripts + their output CSVs
+files/                    documents: proposals, reports, the slide deck
 ```
 
 Each code subdirectory has its own `AGENTS.md` with detailed contracts. Read the
@@ -39,10 +40,10 @@ closest one before editing files in that tree.
 
 - `DL_project/` — stale nested copy of the whole project. Never edit or trust it.
 - `external/molformer/` — vendored MoLFormer submodule.
-- Root-level `analyze_*.py`, `plot_*.py`, `append_metric_to_table.py`,
-  `add_new_metrics_to_table.py`, `summarize_standard_metrics.py` are **older siblings**
-  of the canonical scripts in `analysis/`. Use `analysis/`.
-- Root `analyze_*tanimoto*.py` duplicate `tanimoto_group_analysis/`.
+- Root-level `append_metric_to_table.py` and `add_new_metrics_to_table.py` are
+  **older siblings** of the canonical scripts in `analysis/`. Use `analysis/`.
+  (`add_new_metrics_to_table.py` at the root is still the one
+  `scripts/wait_and_sync.sh` runs, so it cannot simply be dropped.)
 - `new_train.py` (root) is only a `runpy` shim to `training/new_train.py`.
 
 ## Active Pipeline

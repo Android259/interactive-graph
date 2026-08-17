@@ -21,3 +21,23 @@ metrics_summary.csv.bak_*
 # and reproducible from source -- not worth tracking.
 profiler_runs/
 
+# ESM3 checkpoint cache (5.2 GB): downloaded by
+# preprocessing/embed_protein_esm3_v2.py from EvolutionaryScale/esm3-sm-open-v1,
+# reproducible at any time, see preprocessing/EXTERNAL_TOOLS.md.
+data/esm3_checkpoint/
+
+# flock targets: analysis/build_metrics_table.py creates <table>.lock on the fly to
+# serialise concurrent writers of metrics_summary.csv. Always empty, recreated on
+# demand, meaningless outside the moment it is held.
+*.lock
+
+# Generated stores above GitHub's 100 MB per-file limit: pushing them is rejected
+# outright, so they stay local. All are rebuildable from source -- the Tanimoto
+# matrix from preprocessing/build_tanimoto_matrix.py (a compact form is tracked as
+# data/Tanimoto_compact_*, built by preprocessing/build_tanimoto_compact.py), the
+# embedding stores from
+# data/build_lipid_embedding_store.py.
+data/Total_tanimoto_matrix_uint8.npy
+data/lipid_SMILES_embedding_deterministic.pkl
+data/lipid_SMILES_embedding_deterministic.tensors.pt
+data/isomeric_lipids/lipid_SMILES_isomeric_embedding.pkl

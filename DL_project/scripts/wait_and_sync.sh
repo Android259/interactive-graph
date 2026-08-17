@@ -1,353 +1,369 @@
 #!/usr/bin/env bash
-# Watch several clusters from ONE loop: each poll visits every cluster in turn,
-# pulls its logs / TensorBoard events / results, then rebuilds the metrics table
-# once from the merged local tree.
+# Watch several clusters from ONE foreground loop: print statistics immediately,
+# then every POLL_SECONDS (default 60) pull each cluster's logs / TensorBoard
+# events / results and rebuild the metrics table once from the merged local tree.
 #
-#   bash scripts/wait_and_sync.sh                 # bigfoot, then kraken, repeat
-#   CLUSTERS=kraken bash scripts/wait_and_sync.sh # one cluster only
+#   bash scripts/wait_and_sync.sh                  # bigfoot, then kraken, repeat
+#   CLUSTERS=kraken bash scripts/wait_and_sync.sh  # one cluster only
+#   bash scripts/wait_and_sync.sh --once           # a single round, then exit
 #
-# Building the table locally (rather than on each cluster, as the per-cluster
-# loop used to) is what makes multi-cluster watching correct: run/, test_metrics/
-# and script_logs/ from every cluster rsync into the same local tree, so one
-# local rescan sees the union. The old remote-then-download approach had each
-# cluster regenerate the table from only its own results and copy it over the
-# local file, so two clusters would overwrite each other's rows in turn.
+# This is a VIEWER. Start it when you want to look, Ctrl-C when you are done;
+# stopping it stops nothing, because nothing it does is load-bearing for the
+# jobs.
+#
+# What keeps jobs flowing is a crontab entry on each frontend, which this
+# installs on its first round: scripts/cluster/cluster_drain_cron.sh submits from
+# the queue as waiting slots free up, so jobs keep going out no matter which
+# computer queued them, which is watching, or whether either is switched on. If
+# the crontab cannot be installed it says so loudly and drains from this loop
+# instead, as a fallback rather than as the design.
+#
+# It is purely observational on the cluster side: it never deletes a remote queue
+# or session marker, because the computer that happens to be watching must not be
+# able to destroy state belonging to a batch queued from the other one.
+#
+# Building the metrics table locally (rather than on each cluster) is what makes
+# multi-cluster watching correct: run/, test_metrics/ and script_logs/ from every
+# cluster rsync into the same local tree, so one local rescan sees the union.
 set -euo pipefail
 export LC_ALL=C
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_PATH="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
-ENTRY_SCRIPT="${WAIT_ENTRY_SCRIPT:-${SCRIPT_PATH}}"
 LOCAL_PROJECT="${LOCAL_PROJECT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 
-# Clusters to visit, in order. cluster_profile() (cluster_common.sh) re-derives
-# every cluster-dependent global on each switch.
-_ENV_WAIT_TMUX_SESSION="${WAIT_TMUX_SESSION:-}"
-unset WAIT_TMUX_SESSION
 CLUSTERS="${CLUSTERS:-bigfoot kraken}"
 read -r -a CLUSTER_LIST <<< "${CLUSTERS}"
 (( ${#CLUSTER_LIST[@]} > 0 )) || { printf 'CLUSTERS is empty.\n' >&2; exit 2; }
 
-# shellcheck source=scripts/cluster_common.sh
+# cluster_common.sh derives every cluster-dependent global from CLUSTER_NAME;
+# cluster_profile() re-derives them on each switch inside the poll loop.
+# shellcheck source=scripts/lib/cluster_common.sh
 CLUSTER_NAME="${CLUSTER_LIST[0]}"
-source "${SCRIPT_DIR}/cluster_common.sh"
+source "${SCRIPT_DIR}/lib/cluster_common.sh"
 
 # print_running_progress() and the log/TensorBoard readers behind it, shared
-# verbatim with scripts/wait_and_sync2.sh so the two watchers cannot drift.
-# shellcheck source=scripts/wait_progress_table.sh
-source "${SCRIPT_DIR}/wait_progress_table.sh"
+# with scripts/wait_and_sync_local.sh so the cluster and local views cannot drift.
+# shellcheck source=scripts/lib/progress_table.sh
+source "${SCRIPT_DIR}/lib/progress_table.sh"
 
-# One tmux session per SET of clusters, so a combined watcher and a
-# single-cluster watcher never adopt each other's session or pid file.
-WAIT_TMUX_SESSION="${_ENV_WAIT_TMUX_SESSION:-$(cluster_wait_session "${CLUSTERS}")}"
-
-EVENT_LOOKBACK_MINUTES="${EVENT_LOOKBACK_MINUTES:-480}"
-
-# Routine progress chatter is hidden: a healthy poll should report only what
-# changed. Anything abnormal (failed reconnect, failed drain, a resumed stale
-# queue, rsync/OAR errors) is printed unconditionally. WAIT_VERBOSE=1 restores
-# the full narration.
+# Routine chatter is hidden: a healthy round reports only what changed. Anything
+# abnormal (failed reconnect, failed drain, missing drainer, rsync/OAR errors)
+# prints unconditionally. WAIT_VERBOSE=1 restores the full narration.
 WAIT_VERBOSE="${WAIT_VERBOSE:-0}"
+
+# Cluster-side drainer.
+REMOTE_DRAIN="${REMOTE_DRAIN:-1}"
+DRAIN_CRON_SPEC="${DRAIN_CRON_SPEC:-*/5 * * * *}"
+DRAIN_SCRIPT="${DRAIN_SCRIPT:-scripts/cluster/cluster_drain_cron.sh}"
+# Renames a finished queue to done_<timestamp> so the next batch starts clean
+# (a queue deduplicates against its own submitted.commands, so re-running an
+# identical config into a used queue would be skipped). Off by default: it is
+# the one thing here that changes remote state, and a stale queue is harmless.
+ARCHIVE_IDLE_QUEUES="${ARCHIVE_IDLE_QUEUES:-0}"
+
+RUN_ONCE=0
+while (( $# > 0 )); do
+    case "$1" in
+        --once)             RUN_ONCE=1 ;;
+        --verbose)          WAIT_VERBOSE=1 ;;
+        --no-remote-drain)  REMOTE_DRAIN=0 ;;
+        --uninstall-drain)  REMOTE_DRAIN=uninstall ;;
+        --archive-idle-queues) ARCHIVE_IDLE_QUEUES=1 ;;
+        --interval=*)       POLL_SECONDS="${1#*=}" ;;
+        -h|--help)
+            # The header comment, however long it happens to be: stop at the
+            # first line that is not a comment rather than at a line number,
+            # which silently starts printing code as soon as the header changes.
+            awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' \
+                "${BASH_SOURCE[0]}"
+            exit 0
+            ;;
+        *)
+            printf 'Unknown option: %s (see --help)\n' "$1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
 note() { [[ "${WAIT_VERBOSE}" == "1" ]] && printf '%s\n' "$*" || true; }
 
-# Per-cluster state, indexed by cluster name.
-declare -A CLUSTER_PREVIOUS_JOB_IDS=()
-declare -A CLUSTER_SESSION_MARKER=()
-declare -A CLUSTER_QUEUE_DIR=()
-declare -A CLUSTER_IDLE=()
+# Per-cluster state for the current round. Nothing survives a restart on
+# purpose: every value here is re-read from the cluster each round, so this
+# script has no state of its own to get out of sync.
+declare -A CLUSTER_DRAINER_OK=()
 
-# Establishes (or reuses) the shared SSH ControlMaster connection to $remote.
-# allow_password=1 permits an interactive password prompt (only safe when a
-# real terminal is attached, i.e. before we detach into tmux); allow_password=0
-# forces key-only BatchMode auth so a headless caller can never hang on a
-# prompt nobody can answer.
-ensure_ssh_master() {
-    local allow_password="${1:-0}"
-    local batch_opt=(-o BatchMode=yes)
-    [[ "${allow_password}" == "1" ]] && batch_opt=()
+# Every source this round visits, local jobs first: they cost one pgrep and a
+# file read rather than an SSH round trip, so they are never gated behind
+# CLUSTERS, and going first puts the jobs running ON this machine at the top of
+# the output instead of behind two clusters' worth of network waiting.
+SOURCES=("local" "${CLUSTER_LIST[@]}")
 
-    # `-O check` must never block: without BatchMode/ConnectTimeout, a stale or
-    # half-dead master socket makes it fall through to a fresh jump-host (gricad)
-    # connect that hangs forever with no tty, freezing the whole poll loop. Wrap
-    # in `timeout` so a dead master can never stall the cycle -- a non-zero here
-    # just means "no usable master", and the block below (re)opens one.
-    if timeout 15 ssh -S "${SSH_CONTROL_PATH}" -o BatchMode=yes \
-        -o ConnectTimeout=10 -O check "${remote}" >/dev/null 2>&1; then
-        note "Reusing shared SSH connection to ${remote}."
-        return 0
-    fi
+# SOURCE_IDLE is declared by lib/progress_table.sh and keyed by source name, so
+# "local" is an entry like any cluster instead of a variable of its own.
+for _source in "${SOURCES[@]}"; do
+    SOURCE_IDLE["${_source}"]=0
+done
+for _cluster in "${CLUSTER_LIST[@]}"; do
+    CLUSTER_DRAINER_OK["${_cluster}"]=0
+done
 
-    note "Opening shared SSH connection to ${remote}."
-    # The jump-host hop (gricad) occasionally resets the very first attempt
-    # ("Connection closed by UNKNOWN port 65535") even though the network is
-    # otherwise fine; a short retry avoids losing a full POLL_SECONDS cycle
-    # to one flaky attempt.
-    local attempt
-    for attempt in 1 2 3; do
-        if ssh -M -S "${SSH_CONTROL_PATH}" \
-            "${batch_opt[@]}" \
-            -o ConnectTimeout=20 \
-            -o ControlPersist=30m \
-            -o ServerAliveInterval=30 \
-            -o ServerAliveCountMax=10 \
-            -fN "${remote}"
-        then
-            return 0
-        fi
-        printf 'Connection attempt %d/3 to %s failed; retrying.\n' "${attempt}" "${remote}" >&2
-        sleep 3
+cleanup() {
+    rm -rf "$(wait_progress_event_cache_path)"
+}
+trap cleanup EXIT
+
+# --- local tools ----------------------------------------------------------
+# This project runs from two computers whose local layouts differ: different
+# conda install prefix, different env names, and a base interpreter that may or
+# may not carry tensorboard/pandas. cluster_common.sh pins one machine's answers
+# (LOCAL_CONDA_SH=/opt/anaconda3/..., LOCAL_CONDA_ENV=rsync-env), which on the
+# other machine means the conda fallback quietly does nothing and every step
+# falls back to whatever `python3` happens to be. So look in the usual places
+# and probe for an interpreter that can actually import what each step needs.
+#
+# Nothing below is cluster state -- it is purely about this computer, so the two
+# machines never have to agree on any of it.
+conda_prefixes() {
+    local candidate conda_exe="${CONDA_EXE:-}"
+    for candidate in \
+        "${LOCAL_CONDA_SH%/etc/profile.d/conda.sh}" \
+        "${CONDA_PREFIX:-}" \
+        "${conda_exe%/bin/conda}" \
+        "${HOME}/miniconda3" "${HOME}/anaconda3" "${HOME}/miniforge3" \
+        /opt/anaconda3 /opt/miniconda3 /opt/miniforge3
+    do
+        [[ -n "${candidate}" && -d "${candidate}" ]] && printf '%s\n' "${candidate}"
     done
+    return 0
+}
+
+ensure_rsync() {
+    command -v rsync >/dev/null 2>&1 && return 0
+    local prefix env_name
+    while IFS= read -r prefix; do
+        [[ -f "${prefix}/etc/profile.d/conda.sh" ]] || continue
+        for env_name in "${LOCAL_CONDA_ENV}" "${CONDA_ENV}"; do
+            # shellcheck disable=SC1090
+            source "${prefix}/etc/profile.d/conda.sh" >/dev/null 2>&1 || continue
+            conda activate "${env_name}" >/dev/null 2>&1 || continue
+            command -v rsync >/dev/null 2>&1 && return 0
+            conda deactivate >/dev/null 2>&1 || true
+        done
+    done < <(conda_prefixes)
     return 1
 }
 
-if [[ "${WAIT_TMUX}" != "0" && -z "${TMUX:-}" ]] && command -v tmux >/dev/null 2>&1; then
-    tmux_session="${WAIT_TMUX_SESSION}"
-    if [[ -z "${WAIT_TMUX_LOG}" ]]; then
-        mkdir -p "${LOCAL_PROJECT}/script_logs"
-        WAIT_TMUX_LOG="${LOCAL_PROJECT}/script_logs/${tmux_session}.log"
-    fi
-
-    if tmux has-session -t "${tmux_session}" 2>/dev/null; then
-        daemon_pid_file="${LOCAL_PROJECT}/script_logs/${tmux_session}.pid"
-        # A tmux daemon runs the copy of the script it read at launch, so edits
-        # never reach an already-running daemon and re-running just reattaches
-        # to the stale one. If any file the daemon's behaviour depends on was
-        # updated after it started, kill it and fall through to relaunch with
-        # the current code. All four matter: this generic implementation, the
-        # per-cluster wrapper that selects CLUSTER_NAME, the cluster profile, and
-        # the shared progress table.
-        daemon_stale=0
-        if [[ -f "${daemon_pid_file}" ]]; then
-            for source_file in \
-                "${SCRIPT_PATH}" "${ENTRY_SCRIPT}" \
-                "${SCRIPT_DIR}/cluster_common.sh" \
-                "${SCRIPT_DIR}/wait_progress_table.sh"
-            do
-                if [[ -f "${source_file}" && "${source_file}" -nt "${daemon_pid_file}" ]]; then
-                    daemon_stale=1
-                fi
-            done
-        fi
-        if (( daemon_stale )); then
-            printf 'wait_and_sync was updated since the running daemon started; restarting it with the latest code.\n'
-            tmux kill-session -t "${tmux_session}" 2>/dev/null || true
-        else
-            printf 'Wait/sync is already running in tmux session: %s (not starting another).\n' "${tmux_session}"
-            if [[ -f "${daemon_pid_file}" ]] && kill -USR1 "$(cat "${daemon_pid_file}")" 2>/dev/null; then
-                printf 'Requested an immediate refresh (no need to wait out the poll interval).\n'
-            fi
-            printf 'Streaming stats in this terminal from: %s\n' "${WAIT_TMUX_LOG}"
-            printf 'Stop watching with Ctrl-c; tmux wait keeps running. Attach with: tmux attach -t %s\n' "${tmux_session}"
-            pane_pid="$(tmux display-message -p -t "${tmux_session}" '#{pane_pid}')"
-            tail --pid="${pane_pid}" -n +1 -f "${WAIT_TMUX_LOG}"
-            exit 0
-        fi
-    fi
-
-    # Open every cluster's ControlMaster while a terminal is still attached, so
-    # a password prompt (if the key is rejected) has someone to answer it. The
-    # detached daemon can then run key-only.
-    for _cluster in "${CLUSTER_LIST[@]}"; do
-        cluster_profile "${_cluster}"
-        printf 'Establishing SSH connection to %s (will prompt for a password here if the key is rejected)...\n' "${remote}"
-        {
-            flock 9
-            if ! ensure_ssh_master 1; then
-                printf 'Could not establish an SSH connection to %s. Not starting a background session.\n' "${remote}" >&2
-                exit 1
-            fi
-        } 9>"${SSH_CONTROL_PATH}.lock"
-    done
-
-    : > "${WAIT_TMUX_LOG}"
-    # The daemon is launched through the per-cluster WRAPPER, not through this
-    # generic file, so it re-derives CLUSTER_NAME (and with it the queue root,
-    # socket and artifact names) instead of silently falling back to defaults.
-    # Relaunch through the entry script with the same CLUSTER SET. SSH_CONTROL_PATH
-    # and SESSION_MARKER/WAIT_QUEUE_DIR are deliberately NOT forwarded: they are
-    # per-cluster and re-derived by cluster_profile() on every visit.
-    printf -v wait_command \
-        'cd %q && CLUSTERS=%q WAIT_ENTRY_SCRIPT=%q WAIT_TMUX=0 WAIT_HEADLESS=1 WAIT_TMUX_SESSION=%q SSH_AUTH_SOCK=%q REMOTE_USER=%q REMOTE_PROJECT=%q LOCAL_PROJECT=%q CONDA_SH=%q CONDA_ENV=%q LOCAL_CONDA_SH=%q LOCAL_CONDA_ENV=%q MAX_WAITING_JOBS=%q QUEUE_HELPER=%q POLL_SECONDS=%q stdbuf -oL -eL bash %q 2>&1 | tee -a %q' \
-        "${LOCAL_PROJECT}" \
-        "${CLUSTERS}" \
-        "${ENTRY_SCRIPT}" \
-        "${tmux_session}" \
-        "${SSH_AUTH_SOCK:-}" \
-        "${REMOTE_USER}" \
-        "${REMOTE_PROJECT}" \
-        "${LOCAL_PROJECT}" \
-        "${CONDA_SH}" \
-        "${CONDA_ENV}" \
-        "${LOCAL_CONDA_SH}" \
-        "${LOCAL_CONDA_ENV}" \
-        "${MAX_WAITING_JOBS}" \
-        "${QUEUE_HELPER}" \
-        "${POLL_SECONDS}" \
-        "${ENTRY_SCRIPT}" \
-        "${WAIT_TMUX_LOG}"
-
-    tmux new-session -d -s "${tmux_session}" "${wait_command}"
-    printf 'Wait/sync started in tmux session: %s\n' "${tmux_session}"
-    printf 'Streaming stats in this terminal from: %s\n' "${WAIT_TMUX_LOG}"
-    printf 'Stop watching with Ctrl-c; tmux wait keeps running. Attach with: tmux attach -t %s\n' "${tmux_session}"
-    pane_pid="$(tmux display-message -p -t "${tmux_session}" '#{pane_pid}')"
-    tail --pid="${pane_pid}" -n +1 -f "${WAIT_TMUX_LOG}"
-    exit 0
-fi
-
-# Record our PID so a later invocation that finds us already running (the
-# reattach branch above) can send SIGUSR1 to force an immediate poll instead
-# of the caller having to wait out the rest of POLL_SECONDS.
-mkdir -p "${LOCAL_PROJECT}/script_logs"
-printf '%s\n' "$$" > "${LOCAL_PROJECT}/script_logs/${WAIT_TMUX_SESSION}.pid"
-
-# no-op handler: its only purpose is to make a blocking `wait` below return
-# early when kicked, so the poll loop moves on without waiting out the rest
-# of an in-progress sleep.
-kick_requested=0
-trap 'kick_requested=1' USR1
-
-interruptible_sleep() {
-    local seconds="$1"
-    if (( kick_requested )); then
-        kick_requested=0
-        return
-    fi
-    sleep "${seconds}" &
-    local sleep_pid=$!
-    wait "${sleep_pid}" 2>/dev/null
-    kick_requested=0
-    kill "${sleep_pid}" 2>/dev/null || true
-}
-
-if ! command -v rsync >/dev/null 2>&1; then
-    if [[ -f "${LOCAL_CONDA_SH}" ]]; then
-        # shellcheck disable=SC1090
-        source "${LOCAL_CONDA_SH}"
-        conda activate "${LOCAL_CONDA_ENV}"
-    fi
-fi
-
-if ! command -v rsync >/dev/null 2>&1; then
-    printf 'rsync is not available. Tried local conda env: %s\n' \
-        "${LOCAL_CONDA_ENV}" >&2
+if ! ensure_rsync; then
+    printf 'rsync is not available, and no conda env provided it.\n' >&2
+    printf 'Looked for envs %s / %s under: %s\n' \
+        "${LOCAL_CONDA_ENV}" "${CONDA_ENV}" "$(conda_prefixes | tr '\n' ' ')" >&2
+    printf 'Set LOCAL_CONDA_SH and LOCAL_CONDA_ENV for this computer, or install rsync.\n' >&2
     exit 127
 fi
 
-allow_password=0
-if [[ "${WAIT_HEADLESS}" != "1" && -t 1 ]]; then
-    allow_password=1
-fi
-{
-    flock 9
-    if ! ensure_ssh_master "${allow_password}"; then
-        printf 'Could not establish an SSH connection to %s.\n' "${remote}" >&2
-        exit 1
+# First interpreter that can import the named module, or failure. Cached, since
+# each probe costs an interpreter start-up and the answer cannot change mid-run.
+declare -A PYTHON_FOR=()
+python_for() {
+    local module="$1"
+    if [[ -z "${PYTHON_FOR[${module}]-}" ]]; then
+        local candidate prefix env_name found=""
+        local -a candidates=()
+        command -v python3 >/dev/null 2>&1 && candidates+=("$(command -v python3)")
+        command -v python >/dev/null 2>&1 && candidates+=("$(command -v python)")
+        while IFS= read -r prefix; do
+            for env_name in "${CONDA_ENV}" "${LOCAL_CONDA_ENV}"; do
+                candidates+=("${prefix}/envs/${env_name}/bin/python")
+            done
+            candidates+=("${prefix}/bin/python3")
+        done < <(conda_prefixes)
+        candidates+=("${HOME}/.conda/envs/${CONDA_ENV}/bin/python")
+        for candidate in "${candidates[@]}"; do
+            [[ -x "${candidate}" ]] || continue
+            # From LOCAL_PROJECT: the metrics module is imported by package path.
+            if ( cd "${LOCAL_PROJECT}" && "${candidate}" -c "import ${module}" ) \
+                >/dev/null 2>&1
+            then
+                found="${candidate}"
+                break
+            fi
+        done
+        PYTHON_FOR["${module}"]="${found:-none}"
     fi
-} 9>"${SSH_CONTROL_PATH}.lock"
-
-close_ssh_master() {
-    rm -rf "${EVENT_CACHE}"
-}
-trap close_ssh_master EXIT
-
-ssh_args=(-S "${SSH_CONTROL_PATH}" -o BatchMode=yes -o ConnectTimeout=20)
-rsync_ssh="ssh -S ${SSH_CONTROL_PATH} -o BatchMode=yes -o ConnectTimeout=20"
-
-discover_cluster_queue() {
-    local active_queue pending_queues queues
-
-    [[ -z "${WAIT_QUEUE_DIR}" ]] || return 0
-    active_queue="${CLUSTER_QUEUE_ROOT}/active"
-    if ssh "${ssh_args[@]}" "${remote}" \
-        "[[ -f '${active_queue}/initialized' ]]"
-    then
-        WAIT_QUEUE_DIR="${active_queue}"
-        note "Using active ${CLUSTER_NAME} queue: ${WAIT_QUEUE_DIR}"
-        return
-    fi
-    pending_queues="$(
-        ssh "${ssh_args[@]}" "${remote}" \
-            "for queue in '${CLUSTER_QUEUE_ROOT}'/*; do [[ -f \"\${queue}/initialized\" && -s \"\${queue}/pending.commands\" ]] && printf '%s %s\n' \"\$(stat -c %Y \"\${queue}/initialized\")\" \"\${queue}\"; done 2>/dev/null | sort -n | cut -d' ' -f2-" ||
-            true
-    )"
-    if [[ -n "${pending_queues}" ]]; then
-        WAIT_QUEUE_DIR="$(printf '%s\n' "${pending_queues}" | sed '/^$/d' | head -n 1)"
-        printf 'Resuming oldest %s queue with pending jobs: %s\n' "${CLUSTER_NAME}" "${WAIT_QUEUE_DIR}"
-        return
-    fi
-
-    queues="$(
-        ssh "${ssh_args[@]}" "${remote}" \
-            "find '${CLUSTER_QUEUE_ROOT}' -mindepth 2 -maxdepth 2 -name initialized -printf '%T@ %h\n' 2>/dev/null | sort -n | cut -d' ' -f2-" ||
-            true
-    )"
-    if [[ -n "${queues}" ]]; then
-        WAIT_QUEUE_DIR="$(printf '%s\n' "${queues}" | sed '/^$/d' | head -n 1)"
-        printf 'Resuming oldest %s queue: %s\n' "${CLUSTER_NAME}" "${WAIT_QUEUE_DIR}"
-    fi
+    [[ "${PYTHON_FOR[${module}]}" == "none" ]] && return 1
+    printf '%s\n' "${PYTHON_FOR[${module}]}"
 }
 
-# Symmetric to discover_cluster_queue, for the session marker. Without it a
-# daemon that has already finalised one batch (marker deleted, variable cleared)
-# never tracks the NEXT batch: a later run_cluster.sh creates a fresh marker and
-# this loop would keep polling with an empty one, so it would never clean up
-# after that batch. Re-attempted every poll while no marker is tracked, and a
-# no-op once one is.
-discover_cluster_session() {
+# --- ssh ------------------------------------------------------------------
+# One shared connection per cluster, from scripts/lib/ssh_master_lib.sh. This script
+# always has a terminal, so a password prompt has someone to answer it.
+# shellcheck source=scripts/lib/ssh_master_lib.sh
+source "${SCRIPT_DIR}/lib/ssh_master_lib.sh"
+
+# Set by cluster_profile() for the cluster currently being visited.
+ssh_args=()
+rsync_ssh=""
+set_transport() { ssh_set_transport; }
+
+# --- cluster-side drainer -------------------------------------------------
+drain_marker() { printf '# dl_project_drain:%s' "$1"; }
+
+# Rewrites our own crontab line and leaves every other entry alone. Prints how
+# many of our lines the crontab holds afterwards, which is how the caller tells
+# success from a cluster that refuses crontabs.
+install_remote_drainer() {
+    local cluster="$1"
+    local marker cron_line installed
+
+    marker="$(drain_marker "${cluster}")"
+    printf -v cron_line \
+        '%s flock -n %q %s %q/%s >/dev/null 2>&1 %s' \
+        "${DRAIN_CRON_SPEC}" \
+        "${CLUSTER_QUEUE_ROOT}/.cron.lock" \
+        "env CLUSTER_NAME=$(printf '%q' "${cluster}") REMOTE_USER=$(printf '%q' "${REMOTE_USER}") MAX_WAITING_JOBS=$(printf '%q' "${MAX_WAITING_JOBS}") bash" \
+        "${REMOTE_PROJECT}" "${DRAIN_SCRIPT}" \
+        "${marker}"
+
+    installed="$(
+        printf '%s\n' "${cron_line}" |
+            ssh "${ssh_args[@]}" "${remote}" \
+                "mkdir -p '${CLUSTER_QUEUE_ROOT}' && bash -c '
+                    marker=\"\$1\"
+                    { crontab -l 2>/dev/null | grep -vF \"\${marker}\" || true; cat; } |
+                        crontab -
+                    crontab -l 2>/dev/null | grep -cF \"\${marker}\" || true
+                ' _ $(printf '%q' "${marker}")"
+    )" || return 1
+
+    [[ "${installed}" == "1" ]] || return 1
+    printf '%s: cluster-side drainer installed (crontab %s).\n' \
+        "${cluster}" "${DRAIN_CRON_SPEC}"
+    return 0
+}
+
+uninstall_remote_drainer() {
+    local cluster="$1"
     local marker
-
-    [[ -z "${SESSION_MARKER}" ]] || return 0
-    marker="$(
-        ssh "${ssh_args[@]}" "${remote}" \
-            "ls -1dt '${CLUSTER_SESSION_PREFIX}'* 2>/dev/null | head -n 1" ||
-            true
-    )"
-    marker="$(printf '%s\n' "${marker}" | sed '/^$/d' | head -n 1)"
-    if [[ -n "${marker}" ]]; then
-        SESSION_MARKER="${marker}"
-        note "Tracking ${CLUSTER_NAME} session: ${SESSION_MARKER}"
-    fi
-}
-
-cluster_queue_pending_count() {
-    if [[ -z "${WAIT_QUEUE_DIR}" ]]; then
-        printf '0\n'
-        return
-    fi
-
+    marker="$(drain_marker "${cluster}")"
     ssh "${ssh_args[@]}" "${remote}" \
-        "cd '${REMOTE_PROJECT}' && CLUSTER_NAME=${CLUSTER_NAME} bash '${QUEUE_HELPER}' count '${WAIT_QUEUE_DIR}'"
+        "bash -c '
+            marker=\"\$1\"
+            if crontab -l 2>/dev/null | grep -qF \"\${marker}\"; then
+                crontab -l 2>/dev/null | grep -vF \"\${marker}\" | crontab -
+            fi
+        ' _ $(printf '%q' "${marker}")" || return 1
+    printf '%s: cluster-side drainer removed from the crontab.\n' "${cluster}"
 }
 
-drain_cluster_queue() {
-    [[ -n "${WAIT_QUEUE_DIR}" ]] || return 0
+# Once per start, before anything reads the cluster's queue state.
+#
+# Pushes the two files the cluster-side drainer consists of, because they must
+# be current on the frontend whether or not the crontab needs installing -- a
+# project sync would also put them there, but this script may be the first thing
+# ever run against a cluster, and editing the drainer locally must not leave the
+# cron running last week's copy.
+#
+# Seeds the waiting-job cap, which belongs to the cluster rather than to
+# whichever computer happens to be watching: the drainer reads it there, so two
+# machines cannot drain the same queue with two different limits. Written only
+# when absent -- changing the cap is a deliberate edit of that file, not a side
+# effect of starting a watcher whose MAX_WAITING_JOBS happens to differ.
+prepare_cluster_side() {
+    rsync -a --quiet -e "${rsync_ssh}" \
+        "${LOCAL_PROJECT}/${DRAIN_SCRIPT}" \
+        "${LOCAL_PROJECT}/scripts/cluster/cluster_queue_remote.sh" \
+        "${remote}:${REMOTE_PROJECT}/scripts/cluster/" || return 1
+    ssh "${ssh_args[@]}" "${remote}" \
+        "mkdir -p '${CLUSTER_QUEUE_ROOT}' &&
+         { [ -s '${CLUSTER_QUEUE_ROOT}/max_waiting' ] ||
+           printf '%s\n' $(printf '%q' "${MAX_WAITING_JOBS}") > '${CLUSTER_QUEUE_ROOT}/max_waiting'; }" ||
+        return 1
+}
 
+# Fallback path, and the immediate first pass so a fresh queue does not sit idle
+# until the next cron tick. Drains every queue that has pending commands.
+drain_from_here() {
+    local cluster="$1"
     if ! ssh "${ssh_args[@]}" "${remote}" \
-        "cd '${REMOTE_PROJECT}' && CLUSTER_NAME=${CLUSTER_NAME} bash '${QUEUE_HELPER}' drain '${WAIT_QUEUE_DIR}' '${REMOTE_USER}' '${MAX_WAITING_JOBS}'"
+        "cd '${REMOTE_PROJECT}' && CLUSTER_NAME=$(printf '%q' "${cluster}") \
+         REMOTE_USER=$(printf '%q' "${REMOTE_USER}") \
+         MAX_WAITING_JOBS=$(printf '%q' "${MAX_WAITING_JOBS}") \
+         bash '${DRAIN_SCRIPT}'"
     then
-        printf '%s queue: drain failed; will retry on the next poll.\n' "${CLUSTER_NAME}" >&2
+        printf '%s: drain failed; will retry next round.\n' "${cluster}" >&2
     fi
 }
 
+# One round trip for everything queue-related: how much is pending, across how
+# many queues, and whether the cluster-side drainer is still in the crontab.
+# Checking the crontab here rather than only at startup means a drainer removed
+# behind our back is noticed within one poll instead of silently never running.
+cluster_queue_status() {
+    local cluster="$1"
+    local marker
+    marker="$(drain_marker "${cluster}")"
+    ssh "${ssh_args[@]}" "${remote}" "bash -c '
+        pending=0
+        queues=0
+        for queue in \"\$1\"/*; do
+            [ -f \"\${queue}/initialized\" ] || continue
+            queues=\$((queues + 1))
+            if [ -s \"\${queue}/pending.commands\" ]; then
+                pending=\$((pending + \$(wc -l < \"\${queue}/pending.commands\")))
+            fi
+        done
+        cron=\$(crontab -l 2>/dev/null | grep -cF \"\$2\" || true)
+        printf \"%s %s %s\n\" \"\${pending}\" \"\${queues}\" \"\${cron:-0}\"
+    ' _ $(printf '%q' "${CLUSTER_QUEUE_ROOT}") $(printf '%q' "${marker}")" ||
+        printf '0 0 0\n'
+}
+
+# The OAR output paths of the commands still sitting in the queue -- queued here
+# but never submitted, so oarstat cannot see them. Each path encodes the variant,
+# the excluded group and the seed, which is what lets the progress table show one
+# "(queued)" row per job instead of a bare count. Asked for only when something
+# is actually pending, so an idle cluster costs no extra round trip.
+cluster_pending_targets() {
+    (( ${1:-0} > 0 )) || return 0
+    { ssh "${ssh_args[@]}" "${remote}" \
+        "cat '${CLUSTER_QUEUE_ROOT}'/*/pending.commands 2>/dev/null" || true; } |
+        sed -n 's/.*[[:space:]]-O[[:space:]]\{1,\}\([^[:space:]]*\).*/\1/p'
+}
+
+# Rename, never delete: a finished queue is evidence, and the computer that
+# happens to be watching must not be able to destroy a batch queued from the
+# other one. Guarded by the same lock the drainer takes, and re-checked under it.
+archive_idle_queues() {
+    local cluster="$1"
+    ssh "${ssh_args[@]}" "${remote}" "bash -c '
+        root=\"\$1\"
+        [ -d \"\${root}\" ] || exit 0
+        for queue in \"\${root}\"/*; do
+            [ -f \"\${queue}/initialized\" ] || continue
+            case \"\${queue##*/}\" in done_*) continue ;; esac
+            [ -s \"\${queue}/submitted.commands\" ] || continue
+            [ -s \"\${queue}/pending.commands\" ] && continue
+            flock -n \"\${queue}/drain.lock\" \
+                mv \"\${queue}\" \"\${root}/done_\$(date +%Y%m%d_%H%M%S)_\${queue##*/}\" &&
+                printf \"archived %s\n\" \"\${queue}\"
+        done
+    ' _ $(printf '%q' "${CLUSTER_QUEUE_ROOT}")" || true
+}
+
+# --- syncing --------------------------------------------------------------
 sync_results() {
-    # Each directory is tolerated independently: on a cluster that has not
-    # produced results yet none of them exist remotely (they are outputs, so the
-    # project sync excludes them). Without the per-directory `|| true` the first
-    # missing one would abort the loop and silently skip the rest.
+    # Ask once which directories exist rather than letting rsync fail per missing
+    # one: a cluster that has not produced results yet has none of them (they are
+    # outputs, excluded from the project sync), and rsync would print a
+    # change_dir error for each, every round.
     #
-    # models/ holds the --save_model checkpoints (models/<label>/<set>/seedN.pt)
-    # needed locally for rho estimation.
-    #
-    # testmode_outputs/ is where a --testmode run redirects ALL of its artifacts
-    # (see training/new_train.py: artifact_root). It is synced so smoke-test
-    # results come back, and it is deliberately a sibling of test_metrics/ --
-    # update_metrics_table scans only the project-root test_metrics/, so nothing
-    # produced by a testmode run can ever reach metrics_summary.csv.
-    # Ask once which of them exist rather than letting rsync fail per missing
-    # directory: a cluster that has not produced results yet has none of them,
-    # and rsync would print a change_dir/broken-pipe error for each, every poll.
-    local existing
+    # models/ holds the --save_model checkpoints needed locally for rho
+    # estimation. testmode_outputs/ is where a --testmode run redirects all its
+    # artifacts; it is deliberately a sibling of test_metrics/, which is the only
+    # tree update_metrics_table scans, so a smoke run can never reach
+    # metrics_summary.csv.
+    local existing directory
     existing="$(
         ssh "${ssh_args[@]}" "${remote}" \
             "cd '${REMOTE_PROJECT}' 2>/dev/null && for d in run test_metrics models testmode_outputs; do [ -d \"\$d\" ] && printf '%s\n' \"\$d\"; done" \
@@ -355,7 +371,6 @@ sync_results() {
     )"
     [[ -n "${existing}" ]] || return 0
 
-    local directory
     while IFS= read -r directory; do
         [[ -n "${directory}" ]] || continue
         mkdir -p "${LOCAL_PROJECT}/${directory}"
@@ -370,52 +385,31 @@ sync_script_logs() {
     rsync -a --quiet -e "${rsync_ssh}" \
         "${remote}:${REMOTE_PROJECT}/script_logs/" \
         "${LOCAL_PROJECT}/script_logs/"
-    # An empty .err is itself a result -- it is the evidence a job finished
-    # without writing anything to stderr, which is exactly what a --testmode
-    # smoke run is checked against. Pruning them used to hide that, so keep
-    # them by default; set PRUNE_EMPTY_ERR=1 to restore the old cleanup.
+    # An empty .err is itself a result: it is the evidence a job finished without
+    # writing to stderr, which is what a --testmode smoke run is checked against.
     if [[ "${PRUNE_EMPTY_ERR:-0}" == "1" ]]; then
         find "${LOCAL_PROJECT}/script_logs" -type f -name '*.err' -empty -delete
     fi
 }
 
-sync_recent_tensorboard_events() {
-    local event_files
-
-    mkdir -p "${EVENT_CACHE}"
-    # `run/` does not exist on a cluster that has not produced results yet (it
-    # is an output directory, excluded from the project sync), so guard the
-    # find instead of letting it print "No such file or directory" every poll.
-    event_files="$(
-        ssh "${ssh_args[@]}" "${remote}" \
-            "cd '${REMOTE_PROJECT}' && [ -d run ] && find run -type f -name 'events.out.tfevents.*' -mmin -${EVENT_LOOKBACK_MINUTES} -printf '%P\n' || true"
-    )"
-    [[ -n "${event_files}" ]] || return
-    printf '%s\n' "${event_files}" |
-        rsync -a --quiet --files-from=- -e "${rsync_ssh}" \
-            "${remote}:${REMOTE_PROJECT}/run/" \
-            "${EVENT_CACHE}/"
-}
-
 update_metrics_table() {
-    # Full, deduped rescan of the LOCAL tree, which already holds every
-    # cluster's synced results. Gating on files newer than a session marker
-    # silently skips jobs that finished before the marker existed, so this
-    # always rescans everything; add_new_metrics_to_table.py dedupes by source
-    # key, making repeated runs cheap and self-healing.
-    local python_bin="python3"
-    if [[ -f "${LOCAL_CONDA_SH}" ]]; then
-        # shellcheck disable=SC1090
-        source "${LOCAL_CONDA_SH}" >/dev/null 2>&1 || true
-        conda activate "${CONDA_ENV}" >/dev/null 2>&1 || true
-        command -v python >/dev/null 2>&1 && python_bin="python"
+    # Full, deduped rescan of the LOCAL tree, which already holds every cluster's
+    # synced results. Gating on a session marker silently skipped jobs that
+    # finished before the marker existed, so this always rescans everything;
+    # add_new_metrics_to_table.py dedupes by source key, which makes repeated
+    # runs cheap and self-healing.
+    # The interpreter is probed, not pinned to CONDA_ENV: that name is the
+    # CLUSTER's env, and this computer need not have one by that name. Running
+    # the rebuild under whatever `python3` is on PATH is not safe either --
+    # right after activating an env that only supplies rsync, it need not have
+    # pandas at all.
+    local python_bin
+    if ! python_bin="$(python_for analysis.build_metrics_table)"; then
+        printf 'No local python can import analysis.build_metrics_table; metrics table not updated.\n' >&2
+        return 0
     fi
-
-    # Roots are passed explicitly rather than relying on the defaults, so it is
-    # visible here that testmode_outputs/ is never scanned: a --testmode run
-    # must not leave rows in metrics_summary.csv.
-    # Report only when rows were actually added; "Added 0 ..." is the no-op
-    # case and would print on every poll. Errors still come through on stderr.
+    # Roots are passed explicitly so it is visible here that testmode_outputs/ is
+    # never scanned. "Added 0 ..." is the no-op case and would print every round.
     ( cd "${LOCAL_PROJECT}" && "${python_bin}" add_new_metrics_to_table.py \
         --metrics-root "${LOCAL_PROJECT}/test_metrics" \
         --run-root "${LOCAL_PROJECT}/run" \
@@ -424,102 +418,10 @@ update_metrics_table() {
 }
 
 print_next_waiting_start() {
-    local estimate
-
+    local estimate job_id start_epoch now_epoch remaining
     estimate="$(
-        {
-            ssh "${ssh_args[@]}" "${remote}" \
-                "oarstat -J -f -u '${REMOTE_USER}' 2>/dev/null" ||
-                true
-        } |
-            python3 -c '
-import datetime
-import json
-import sys
-import time
-
-
-def parse_time(value):
-    try:
-        timestamp = float(value)
-    except (TypeError, ValueError):
-        timestamp = None
-    if timestamp is not None:
-        return timestamp if timestamp > 0 else None
-    if not isinstance(value, str):
-        return None
-    try:
-        return datetime.datetime.fromisoformat(
-            value.replace("Z", "+00:00")
-        ).timestamp()
-    except ValueError:
-        return None
-
-
-def job_records(value, inherited_id=None):
-    if isinstance(value, dict):
-        job_id = inherited_id
-        for key in ("job_id", "jobId", "id", "Job_Id"):
-            if key in value:
-                job_id = value[key]
-                break
-        state = next(
-            (
-                value[key]
-                for key in ("state", "job_state", "jobState")
-                if key in value
-            ),
-            None,
-        )
-        if state is not None:
-            yield job_id, value
-        for key, item in value.items():
-            child_id = key if str(key).isdigit() else job_id
-            yield from job_records(item, child_id)
-    elif isinstance(value, list):
-        for item in value:
-            yield from job_records(item, inherited_id)
-
-
-try:
-    payload = json.load(sys.stdin)
-except (json.JSONDecodeError, ValueError):
-    raise SystemExit
-
-now = time.time()
-candidates = []
-for job_id, job in job_records(payload):
-    state = str(
-        next(
-            (
-                job[key]
-                for key in ("state", "job_state", "jobState")
-                if key in job
-            ),
-            "",
-        )
-    ).lower()
-    if state not in {"w", "waiting", "tolaunch", "to_launch"}:
-        continue
-    start = next(
-        (
-            parse_time(job[key])
-            for key in (
-                "scheduledStart",
-                "scheduled_start",
-                "scheduled_start_time",
-            )
-            if key in job and parse_time(job[key]) is not None
-        ),
-        None,
-    )
-    if start is not None and start >= now - 60:
-        candidates.append((start, str(job_id or "?")))
-
-if candidates:
-    start, job_id = min(candidates)
-    print(job_id, round(start))
-'
+        { ssh "${ssh_args[@]}" "${remote}" "oarstat -J -f -u '${REMOTE_USER}' 2>/dev/null" || true; } |
+            python3 "${SCRIPT_DIR}/lib/oarstat_json.py" next-waiting
     )"
 
     if [[ ! "${estimate}" =~ ^[^[:space:]]+[[:space:]][0-9]+$ ]]; then
@@ -528,243 +430,195 @@ if candidates:
         return
     fi
 
-    local job_id start_epoch now_epoch remaining
     read -r job_id start_epoch <<< "${estimate}"
     now_epoch="$(date +%s)"
     remaining=$((start_epoch - now_epoch))
     (( remaining < 0 )) && remaining=0
-
     printf 'Next waiting job: %s, scheduled start %s (in %dd %02dh %02dm %02ds).\n' \
         "${job_id}" \
         "$(date -d "@${start_epoch}" '+%Y-%m-%d %H:%M:%S %Z')" \
-        "$((remaining / 86400))" \
-        "$(((remaining % 86400) / 3600))" \
-        "$(((remaining % 3600) / 60))" \
-        "$((remaining % 60))"
+        "$((remaining / 86400))" "$(((remaining % 86400) / 3600))" \
+        "$(((remaining % 3600) / 60))" "$((remaining % 60))"
 }
 
-
-# --- one cluster, one poll -------------------------------------------------
-# Sets CLUSTER_IDLE[cluster]=1 when the cluster has neither active OAR jobs nor
-# pending queued commands. Result syncing happens here; the metrics table is
-# rebuilt once per round by the caller, from the merged local tree.
+# --- one cluster, one round ----------------------------------------------
 poll_cluster() {
     local cluster="$1"
-    local job_table current_job_ids completed_job_ids previous_job_ids
-    local active_jobs running_jobs waiting_jobs other_jobs pending_jobs
+    local job_table pending_jobs queue_count cron_installed
+    local active_jobs running_jobs waiting_jobs other_jobs
 
     cluster_profile "${cluster}" || return 1
-    ssh_args=(-S "${SSH_CONTROL_PATH}" -o BatchMode=yes -o ConnectTimeout=20)
-    rsync_ssh="ssh -S ${SSH_CONTROL_PATH} -o BatchMode=yes -o ConnectTimeout=20"
-
-    # Restore this cluster's own state (the globals the helpers read).
-    SESSION_MARKER="${CLUSTER_SESSION_MARKER[${cluster}]-}"
-    WAIT_QUEUE_DIR="${CLUSTER_QUEUE_DIR[${cluster}]-}"
-    previous_job_ids="${CLUSTER_PREVIOUS_JOB_IDS[${cluster}]-}"
-    CLUSTER_IDLE["${cluster}"]=0
+    set_transport
+    SOURCE_IDLE["${cluster}"]=0
     ROUND_SYNCED=0
 
     printf '\n----- %s (%s) -----\n' "${cluster}" "${remote}"
 
-    # The ControlMaster can silently die between polls (idle overnight, network
-    # blip, cluster-side reset); reconnect key-only before touching it.
-    if ! ensure_ssh_master 0; then
-        printf 'Could not reconnect to %s; will retry next poll.\n' "${remote}" >&2
+    # The ControlMaster can die between rounds (idle overnight, network blip).
+    if ! ensure_ssh_master; then
+        printf 'Could not reconnect to %s; will retry next round.\n' "${remote}" >&2
         return 0
     fi
 
-    # Re-attempt discovery every poll while no queue is tracked: this daemon can
-    # outlive the run_cluster.sh invocation that started it, so a queue created
-    # later must still be picked up. It is a no-op once WAIT_QUEUE_DIR is set.
-    discover_cluster_queue
-    discover_cluster_session
-    drain_cluster_queue
+    if (( FIRST_ROUND )) && ! prepare_cluster_side; then
+        printf 'Could not stage the cluster-side drainer on %s.\n' "${cluster}" >&2
+    fi
+
+    read -r pending_jobs queue_count cron_installed <<< "$(cluster_queue_status "${cluster}")"
+    pending_jobs="${pending_jobs:-0}"
+    queue_count="${queue_count:-0}"
+    cron_installed="${cron_installed:-0}"
+
+    if [[ "${REMOTE_DRAIN}" == "1" ]]; then
+        if (( cron_installed == 0 )); then
+            # Either never installed, or removed behind our back. Re-install, and
+            # fall back to draining from here if the cluster refuses crontabs --
+            # jobs must keep flowing either way.
+            if install_remote_drainer "${cluster}"; then
+                CLUSTER_DRAINER_OK["${cluster}"]=1
+            else
+                CLUSTER_DRAINER_OK["${cluster}"]=0
+                printf '%s: could not install the cluster-side drainer; draining from this loop instead.\n' \
+                    "${cluster}" >&2
+                printf '%s: jobs will stop being submitted if this computer is switched off.\n' \
+                    "${cluster}" >&2
+            fi
+        else
+            CLUSTER_DRAINER_OK["${cluster}"]=1
+        fi
+    fi
+
+    # Drain from here when there is no cluster-side drainer, and once at startup
+    # even when there is, so a queue created moments ago does not sit idle until
+    # the next cron tick.
+    if (( pending_jobs > 0 )); then
+        if (( CLUSTER_DRAINER_OK["${cluster}"] == 0 )) || (( FIRST_ROUND )); then
+            drain_from_here "${cluster}"
+        fi
+    fi
 
     if ! job_table="$(ssh "${ssh_args[@]}" "${remote}" "oarstat -u ${REMOTE_USER}")"; then
-        printf 'OAR status check failed for %s; will retry next poll.\n' "${cluster}" >&2
+        printf 'OAR status check failed for %s; will retry next round.\n' "${cluster}" >&2
         return 0
     fi
 
-    current_job_ids="$(printf '%s\n' "${job_table}" | awk '$1 ~ /^[0-9]+$/ {print $1}' | sort -n)"
     read -r active_jobs running_jobs waiting_jobs other_jobs <<< "$(
         printf '%s\n' "${job_table}" |
             awk '
                 $1 ~ /^[0-9]+$/ {
                     total++
-                    if ($0 ~ /(^|[[:space:]])(R|Running)([[:space:]]|$)/) {
-                        running++
-                    } else if ($0 ~ /(^|[[:space:]])(W|Waiting)([[:space:]]|$)/) {
-                        waiting++
-                    } else {
-                        other++
-                    }
+                    if ($0 ~ /(^|[[:space:]])(R|Running)([[:space:]]|$)/) running++
+                    else if ($0 ~ /(^|[[:space:]])(W|Waiting)([[:space:]]|$)/) waiting++
+                    else other++
                 }
                 END { print total + 0, running + 0, waiting + 0, other + 0 }
             '
     )"
-    pending_jobs="$(cluster_queue_pending_count)"
 
-    # Stash this cluster's own counts, so the caller can print one row per
-    # cluster at the end of the round (kept separate, not summed together).
     wait_progress_add_cluster_stats "${cluster}" \
         "${running_jobs}" "${waiting_jobs}" "${other_jobs}" \
-        "${active_jobs}" "${pending_jobs}"
+        "${active_jobs}" "${pending_jobs}" \
+        "$( (( CLUSTER_DRAINER_OK["${cluster}"] )) && printf cluster-cron || printf local )"
 
     if (( active_jobs > 0 )); then
         note "Current OAR jobs for ${REMOTE_USER}:"
-        if [[ "${WAIT_VERBOSE}" == "1" ]]; then
+        [[ "${WAIT_VERBOSE}" == "1" ]] &&
             printf '%s\n' "${job_table}" | awk '$1 ~ /^[0-9]+$/ {print "  " $0}'
-        fi
     else
         printf 'OAR jobs: total=0 for %s.\n' "${REMOTE_USER}"
     fi
 
     note "Synchronizing script logs."
     sync_script_logs || true
-    sync_recent_tensorboard_events || true
-    print_running_progress "${job_table}" || true
 
-    completed_job_ids=
-    if [[ -n "${previous_job_ids}" ]]; then
-        completed_job_ids="$(
-            comm -23 <(printf '%s\n' "${previous_job_ids}") \
-                     <(printf '%s\n' "${current_job_ids}")
-        )"
-    fi
-    [[ -n "${completed_job_ids}" ]] && printf 'Completed OAR job IDs:\n%s\n' "${completed_job_ids}"
-
-    # Sync unconditionally whenever there was something to watch, rather than
-    # gating on the completed-jobs diff: that diff only compares against the
-    # previous poll, so one transient ssh failure would drop a batch of results
-    # permanently. rsync is incremental, so redoing it is cheap and self-heals.
-    if (( active_jobs > 0 )) || [[ -n "${completed_job_ids}" ]]; then
+    # Results BEFORE the table, not after. run/ is what the TRAIN BA column is
+    # read from, so pulling it first means the table shows this round's numbers
+    # rather than last round's, and one transfer covers both.
+    #
+    # Synced whenever there is, or recently was, something to watch -- and always
+    # on the first round, so starting the watcher pulls whatever came in while
+    # nobody was looking. Deliberately not gated on a completed-jobs diff against
+    # the previous round: such a diff only compares consecutive polls, so one
+    # transient ssh failure would drop a batch of results permanently. rsync is
+    # incremental, so repeating it is cheap and self-heals.
+    if (( active_jobs > 0 || pending_jobs > 0 || queue_count > 0 || FIRST_ROUND )); then
         note "Synchronizing results."
         sync_results || true
         ROUND_SYNCED=1
     fi
 
-    if (( active_jobs == 0 && pending_jobs == 0 )); then
-        CLUSTER_IDLE["${cluster}"]=1
-        if [[ -n "${SESSION_MARKER}" || -n "${WAIT_QUEUE_DIR}" ]]; then
-            printf 'All %s jobs completed. Synchronizing final results.\n' "${cluster}"
-            sync_results || true
-            ROUND_SYNCED=1
-            # Only tear down the session this poll actually finished. A
-            # run_cluster.sh submitting a NEW batch right now has already written
-            # its own marker into the queue directory, and OAR may not list its
-            # jobs yet -- deleting blindly would wipe a live session and leave
-            # that batch untracked. The queue's own session_marker file is the
-            # arbiter; a mismatch means the queue has moved on, so leave it and
-            # adopt it on the next poll.
-            local queue_marker=""
-            if [[ -n "${WAIT_QUEUE_DIR}" ]]; then
-                queue_marker="$(
-                    ssh "${ssh_args[@]}" "${remote}" \
-                        "cat '${WAIT_QUEUE_DIR}/session_marker' 2>/dev/null" || true
-                )"
-            fi
-            if [[ -n "${queue_marker}" && -n "${SESSION_MARKER}" \
-                  && "${queue_marker}" != "${SESSION_MARKER}" ]]; then
-                printf '%s queue now belongs to session %s; keeping it.\n' \
-                    "${CLUSTER_NAME}" "${queue_marker}"
-                SESSION_MARKER=""
-                WAIT_QUEUE_DIR=""
-            else
-                if [[ -n "${SESSION_MARKER}" ]]; then
-                    ssh "${ssh_args[@]}" "${remote}" "rm -f '${SESSION_MARKER}'" || true
-                    SESSION_MARKER=""
-                fi
-                if [[ -n "${WAIT_QUEUE_DIR}" ]]; then
-                    ssh "${ssh_args[@]}" "${remote}" "rm -rf '${WAIT_QUEUE_DIR}'" || true
-                    WAIT_QUEUE_DIR=""
-                fi
-            fi
-        fi
-        current_job_ids=
-    else
-        (( waiting_jobs > 0 )) && print_next_waiting_start
-    fi
+    print_running_progress "${job_table}" \
+        "$(cluster_pending_targets "${pending_jobs}" || true)" || true
 
-    CLUSTER_PREVIOUS_JOB_IDS["${cluster}"]="${current_job_ids}"
-    CLUSTER_SESSION_MARKER["${cluster}"]="${SESSION_MARKER}"
-    CLUSTER_QUEUE_DIR["${cluster}"]="${WAIT_QUEUE_DIR}"
+    if (( active_jobs > 0 || pending_jobs > 0 )); then
+        (( waiting_jobs > 0 )) && print_next_waiting_start
+    else
+        SOURCE_IDLE["${cluster}"]=1
+        if (( queue_count > 0 )); then
+            printf 'All %s jobs completed; nothing pending.\n' "${cluster}"
+            (( ARCHIVE_IDLE_QUEUES )) && archive_idle_queues "${cluster}"
+        fi
+    fi
     return 0
 }
 
-# Seed per-cluster state from the environment: run_cluster.sh hands off right
-# after queuing, naming the cluster it just submitted to.
-for _cluster in "${CLUSTER_LIST[@]}"; do
-    CLUSTER_PREVIOUS_JOB_IDS["${_cluster}"]=""
-    CLUSTER_SESSION_MARKER["${_cluster}"]=""
-    CLUSTER_QUEUE_DIR["${_cluster}"]=""
-    CLUSTER_IDLE["${_cluster}"]=0
-done
-if [[ -n "${HANDOFF_CLUSTER:-}" ]]; then
-    CLUSTER_SESSION_MARKER["${HANDOFF_CLUSTER}"]="${SESSION_MARKER:-}"
-    CLUSTER_QUEUE_DIR["${HANDOFF_CLUSTER}"]="${WAIT_QUEUE_DIR:-}"
+# --- main -----------------------------------------------------------------
+if [[ "${REMOTE_DRAIN}" == "uninstall" ]]; then
+    for _cluster in "${CLUSTER_LIST[@]}"; do
+        cluster_profile "${_cluster}" || continue
+        set_transport
+        ensure_ssh_master || continue
+        uninstall_remote_drainer "${_cluster}" || true
+    done
+    exit 0
 fi
 
-note "Watching clusters: ${CLUSTERS} (poll every ${POLL_SECONDS}s)"
+note "Watching clusters: ${CLUSTERS} (refresh now, then every ${POLL_SECONDS}s)"
 
+FIRST_ROUND=1
 while true; do
     round_synced=0
     wait_progress_reset_cluster_stats
 
-    # Local jobs first: scripts/run_local.sh grids on this machine, alongside
-    # bigfoot and kraken as a third source. Polled every round regardless of
-    # what CLUSTERS names -- unlike the two below it costs one pgrep and a
-    # file read, no SSH round trip, so there is no reason to gate it behind an
-    # opt-in. Going first (both here and in the summary table below, since
-    # wait_progress_add_cluster_stats just appends in call order) means the
-    # jobs actually running ON this machine lead the output instead of being
-    # buried after two SSH round trips' worth of cluster status. poll_local
-    # (wait_progress_table.sh) reads script_logs/local_run.queue and
-    # pid-tagged *_l<pid>.out files, both written by run_local.sh, never by
-    # anything on a cluster, so this can never race or double-count against
-    # poll_cluster's own results below -- three disjoint id namespaces over
-    # one shared tree.
-    ROUND_SYNCED=0
-    poll_local || true
-    (( ROUND_SYNCED )) && round_synced=1
-
-    for _cluster in "${CLUSTER_LIST[@]}"; do
+    # One loop over every source, in SOURCES order (local first). Both polls
+    # keep the same contract -- they set ROUND_SYNCED and their own SOURCE_IDLE
+    # entry -- so the frame around them is written once. poll_local
+    # (lib/progress_table.sh) reads only script_logs/local_run.queue and the
+    # pid-tagged *_l<pid>.out files, which nothing on a cluster ever writes, so
+    # it can never race or double-count against poll_cluster.
+    for _source in "${SOURCES[@]}"; do
         ROUND_SYNCED=0
-        poll_cluster "${_cluster}" || true
+        if [[ "${_source}" == "local" ]]; then
+            poll_local || true
+        else
+            poll_cluster "${_source}" || true
+        fi
         (( ROUND_SYNCED )) && round_synced=1
     done
 
-    # OAR job statistics, one row per cluster plus the local row, printed at
-    # the end of the round -- always (even when everything is idle), after
-    # every source has been visited, and kept separate per source.
+    # One row per cluster plus the local row, always, after every source has
+    # been visited, kept separate rather than summed.
     wait_progress_print_cluster_stats
 
     # One rebuild per round, from the merged local tree, so both clusters' (and
     # any local run's own) results land in the same table instead of
-    # overwriting each other. The "Added N new metric rows" line it prints
-    # comes right after the summary above, closing the round's output.
+    # overwriting each other.
     if (( round_synced )); then
-        note "Updating metrics table and feature contributions (merged, local)."
+        note "Updating metrics table (merged, local)."
         update_metrics_table || true
     fi
 
-    all_idle=1
-    for _cluster in "${CLUSTER_LIST[@]}"; do
-        (( CLUSTER_IDLE["${_cluster}"] )) || all_idle=0
-    done
-    (( LOCAL_IDLE )) || all_idle=0
+    FIRST_ROUND=0
+    (( RUN_ONCE )) && break
 
+    all_idle=1
+    for _source in "${SOURCES[@]}"; do
+        (( SOURCE_IDLE["${_source}"] )) || all_idle=0
+    done
     if (( all_idle )); then
-        if [[ "${WAIT_HEADLESS}" == "1" ]]; then
-            # The persistent daemon stays alive so a queue created by a later
-            # run_cluster.sh call is picked up without restarting anything.
-            note "All clusters and the local grid idle; daemon staying alive. Checking again in ${POLL_SECONDS}s."
-            interruptible_sleep "${POLL_SECONDS}"
-            continue
-        fi
-        printf '\nAll clusters and the local grid idle. Results synchronized to %s\n' "${LOCAL_PROJECT}"
-        break
+        note "All clusters and the local grid idle; still watching (a new batch is picked up automatically)."
     fi
 
-    note "Checking again in ${POLL_SECONDS} seconds."
-    interruptible_sleep "${POLL_SECONDS}"
+    note "Refreshing in ${POLL_SECONDS} seconds."
+    sleep "${POLL_SECONDS}"
 done

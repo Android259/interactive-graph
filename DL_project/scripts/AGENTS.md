@@ -5,22 +5,51 @@ Cluster job submission, environment activation, and run lifecycle. These launch
 Do not execute submitters, runners, or kill/sync scripts unless explicitly
 requested — dry-run by stubbing `oarsub`/`ssh` when verifying logic.
 
+## Layout
+
+Only entry points sit at the top of `scripts/`. Everything else is grouped by
+what it is, so "what do I run" and "what does it use" are different questions
+with different answers.
+
+```text
+scripts/
+  run_bigfoot.sh  run_kraken.sh  run_local.sh   launch a grid
+  wait_and_sync.sh  wait_and_sync_local.sh      watch one
+  kill.sh                                       cancel jobs, pull their logs back
+  settings.sh                                   everything you might want to change
+  arg_files/    the configs (one .md per experiment)
+  submit/       one-off submitters from past experiments; history, not API
+  lib/          sourced, never executed: cluster_common.sh, args_file_lib.sh,
+                grid_lib.sh, ssh_master_lib.sh, pack_lib.sh, progress_table.sh
+  launch/       run_cluster.sh, submit_grid.sh (BOTH series -- the config's
+                --cold_split flag selects which), and the two job runners
+                run_one_experiment.sh / run_experiment_pack.sh
+  cluster/      runs ON a frontend or compute node: queue helper, drain cron,
+                preflight, env install
+  tools/        one-off commands: sync_project, test_run, parameters, ...
+```
+
+`scripts/settings.sh` is the one file to edit for the group list, the
+default seeds, the per-experiment walltime, the waiting-job cap, the watcher's
+poll interval and the TensorBoard lookback window. Every value keeps
+`${VAR:-default}` form, so an environment variable still wins for a one-off.
+
 ## Cluster Abstraction
 
 One implementation serves both clusters; `run_bigfoot.sh` / `run_kraken.sh` and
 `wait_and_sync_*.sh` are thin wrappers that export `CLUSTER_NAME` and re-exec
 the generic file.
 
-- `cluster_common.sh` — sourced profile: every cluster-dependent value keyed off
+- `lib/cluster_common.sh` — sourced profile: every cluster-dependent value keyed off
   `CLUSTER_NAME`. Bigfoot = A100/V100, Kraken = H100/H200 (both `sm_90`).
-- `run_cluster.sh`, `wait_and_sync_cluster.sh`, `cluster_queue_remote.sh`,
-  `cluster_wait_watchdog.sh` — the shared implementations.
-- `cluster_preflight_remote.sh` — read-only frontend checks (conda env present,
+- `launch/run_cluster.sh`, `wait_and_sync.sh`, `cluster/cluster_queue_remote.sh`
+  — the shared implementations.
+- `cluster/cluster_preflight_remote.sh` — read-only frontend checks (conda env present,
   torch built for the cluster's SM target, OAR tooling, project candidates).
   Runs after the rsync and before any remote state is created.
 
 Artifacts are namespaced so both clusters can run at once: queue
-`.<cluster>_job_queues/`, marker `.<cluster>_session_*`, tmux `<cluster>_wait`,
+`.<cluster>_job_queues/`, marker `.<cluster>_session_*`,
 socket `/tmp/<cluster>-…sock`, and `JOB_ID_TAG` (empty on Bigfoot, `k` on
 Kraken) which keeps OAR `.out` filenames distinct — the two clusters hand out
 overlapping job IDs.
@@ -35,24 +64,23 @@ per-cluster loop regenerated the table on each cluster from only that cluster's
 results and copied it over the local file, so two clusters overwrote each
 other's rows in turn.
 
-`run_cluster.sh` hands off to it with `HANDOFF_CLUSTER=<name>` (which cluster
-the new session marker and queue belong to); `WATCH_CLUSTERS=<name>` narrows it.
-`wait_and_sync_bigfoot.sh` / `wait_and_sync_kraken.sh` are single-cluster
-wrappers. The tmux session, log and pid derive from the cluster *set* via
-`cluster_wait_session()` (`wait_bigfoot_kraken`, `wait_kraken`, …), so a
-combined watcher and a single-cluster one never adopt each other's session —
-and `cluster_wait_watchdog.sh` uses the same formula, so it guards the daemon
-it actually means to.
+It is a **viewer**: it creates no tmux session and no background process, and
+stopping it stops nothing. Jobs keep being submitted by the crontab entry it
+installs on each frontend (`cluster/cluster_drain_cron.sh`), so neither the
+terminal nor the computer has to stay up for a queue to drain.
+`launch/run_cluster.sh` hands off to it after queuing; `WATCH_CLUSTERS=<name>`
+narrows it to one cluster, and `tools/wait_and_sync_bigfoot.sh` /
+`tools/wait_and_sync_kraken.sh` are wrappers that do the same.
 
 A round prints two tables: per-cluster job progress (`LABEL`, `EXCL GROUP`,
 `SEED`, `CUR`, `CKPT`, `BEST VBA`, `TRAIN BA`, metrics to two decimals, sorted by
 label/group/seed) and, once at the end, the OAR summary (`CLUSTER`, `RUNNING`,
 `WAITING`, `TOTAL`, plus `OTHER`/`PENDING` only when some cluster reports a
 non-zero one, plus `DRAINER` only for the watcher that has one). Both live in
-`wait_progress_table.sh` and share one renderer, sourced by **both**
-`wait_and_sync.sh` and `wait_and_sync2.sh`: they differ in how jobs keep flowing
-(tmux daemon + local drain vs. foreground viewer + cluster cron) but observe the
-same thing, so change the display there once rather than in each watcher.
+`lib/progress_table.sh`, which `wait_and_sync.sh` and `wait_and_sync_local.sh`
+both source: one implementation builds the table for bigfoot, kraken and local
+runs alike, differing only in how a job gets its id and where the not-yet-started
+ones are listed.
 `LABEL`/`EXCL GROUP`/`SEED` are read back out of the OAR `.out` path the
 submitters build, and `TRAIN BA` comes from TensorBoard — `new_train.py` never
 prints train balanced accuracy to the log.
@@ -62,8 +90,8 @@ clusters, so do not run the same arg file on both at the same time.
 
 ### Third source: local jobs (`run_local.sh`)
 
-Both watchers also poll `scripts/run_local.sh` grids on this machine every
-round, via `poll_local` (`wait_progress_table.sh`) — no SSH, no rsync, just a
+The watcher also polls `scripts/run_local.sh` grids on this machine every
+round, via `poll_local` (`lib/progress_table.sh`) — no SSH, no rsync, just a
 `pgrep` and a file read, so it is never gated behind `CLUSTERS`. It shows up
 as an extra `LABEL … ` progress table (`----- local -----`) and an extra
 `local` row in the summary table.
@@ -84,7 +112,7 @@ new files:
   `*_l<pid>.out` file — the same `*_<tag><id>.out` convention bigfoot (tag
   `""`) and kraken (tag `"k"`) already use, so all three sources can never
   collide on a filename (three disjoint id namespaces, three tags). The
-  friendly, stable-named `.log` `test_run.sh`/`submit_all_groups_all_seeds.sh`
+  friendly, stable-named `.log` `tools/test_run.sh`/`launch/submit_grid.sh`
   already write is the real file; `.out` is a symlink to it, created right
   after backgrounding once the pid is known.
 - `script_logs/local_run.queue` (`variant<TAB>group<TAB>seed` per line) is
@@ -94,7 +122,7 @@ new files:
   rows). `poll_local` reads it for the `WAITING` count and the `(queued)` rows.
 
 Both are read-only from the watchers' side; only `run_local.sh` ever writes
-them. A manually started `new_train.py` (`test_run.sh`, an ad hoc smoke run)
+them. A manually started `new_train.py` (`tools/test_run.sh`, an ad hoc smoke run)
 never gets tagged, so it never appears in the local table or count — only
 grids actually launched through `run_local.sh` do.
 
@@ -115,17 +143,28 @@ grids actually launched through `run_local.sh` do.
   extend the base stem (`bbp_nps3mlp_dpt01_wd0001_gm_plm64_hid64` + `_GRL`, `_GRLfit`,
   `_GRLdeepfit`, `_GRLnolip`, `_GRLnoprot`, `_bilinear`, `_lipidonly`, `_protonly`).
 - Verify a new variant parses and builds before queueing it:
-  `bash scripts/parameters.sh <variant>`.
+  `bash scripts/tools/parameters.sh <variant>`.
 
-## Canonical Multi-Job Submitters
+## Canonical Multi-Job Submitter
 
-- `submit_all_groups_all_seeds.sh <arg_file>` — 9 excluded groups × 5 seeds = 45
+`scripts/launch/submit_grid.sh <arg_file>` submits one variant's whole grid.
+Which series it runs is read off the config, not chosen by the caller: a
+`--cold_split` flag selects separate held-out validation and test groups (the
+TEST -> VAL table lives in that file's header), anything else excludes one group
+and uses it for both. The job itself is a real file in both cases -- `run_one_experiment.sh` for one
+experiment, `run_experiment_pack.sh` for a pack -- reading the same
+`pack_record` layout. Neither is a printf'd string spliced into the oarsub line
+any more.
+
+### The two series in detail
+
+- ordinary series — 9 excluded groups × 5 seeds = 45
   jobs; each job excludes **one** group (that group is both val and test via a
   50/50 seeded split). If the arg file contains `--cold_split`, this script
   `exec`s the cold-split submitter below instead, so `--cold_split` is the single
   switch that selects the cold series (works via `run_bigfoot.sh` too, which
   always routes arg files here).
-- `submit_cold_val_test_all_seeds.sh <arg_file>` — 45 jobs with **separate cold
+- cold-split series (`--cold_split` in the config) — 45 jobs with **separate cold
   validation and test groups** (`--excluded_groups=TEST,VAL --test_group=TEST`).
   Test rotates over all 9 groups; VAL is a fixed, size/balance-aware choice per
   test group. The TEST→VAL table and its rationale are in the script header.
@@ -143,9 +182,9 @@ the cluster. `PACK_SIZE` experiments instead share one job. The canonical
 12. Calling a submitter directly still defaults to `PACK_SIZE=1`, the historical
 one-experiment-per-job path.
 
-- `pack_lib.sh` — sourced by both submitters: walltime arithmetic, the cluster
+- `lib/pack_lib.sh` — sourced by both submitters: walltime arithmetic, the cluster
   walltime check, and the pack-record format (documented in its header).
-- `run_experiment_pack.sh` — the job command on the compute node. The submitters
+- `launch/run_experiment_pack.sh` — the job command on the compute node. The submitters
   splice one base64 blob into the `oarsub` line; the logic lives in this file
   rather than in a printf'd one-liner so it can be read and tested.
 
@@ -180,7 +219,7 @@ is 75-300 min (median ~140), i.e. the 5 h per-experiment budget is already tight
 at the tail.
 
 `MAX_WALLTIME` is the documented scheduler cap, per cluster in
-`cluster_common.sh`: **Bigfoot 48 h**; **Kraken unset**, because GRICAD
+`lib/cluster_common.sh`: **Bigfoot 48 h**; **Kraken unset**, because GRICAD
 documents no maximum for its production jobs (only devel = 30 min, and a 2 h
 default when none is given) and inventing one would silently shrink packs. A
 pack that exceeds the cap is refused while the queue is being built — much
@@ -201,7 +240,7 @@ Two properties the pack path must keep:
 
 Monitoring survives packing because the runner writes one
 `..._${JOB_ID_TAG}${OAR_JOB_ID}.out` per experiment, in the same directory the
-unpacked path uses — `wait_progress_table.sh` matches every one of them and
+unpacked path uses — `lib/progress_table.sh` matches every one of them and
 emits a row each (keyed `<job_id>#<n>`, since several rows now share a job id).
 The packed job's own OAR output is named `*.pack.out` under `_packs/` precisely
 so it does **not** match that pattern and become a phantom row.
@@ -224,7 +263,7 @@ Two things that look like details and are not:
 - `cluster_queue_remote.sh capture|drain|count QUEUE_DIR` — manage the job queue
   under `.<cluster>_job_queues/`. `capture` records what `oarsub` *would* be
   called with (by exporting an `oarsub` shell function), which is also the
-  dry-run hook for verifying a submitter. `bigfoot_queue_remote.sh` is a shim
+  dry-run hook for verifying a submitter. (the pre-Kraken shim for it is gone)
   kept only for wait daemons started before the port.
 - `run_excluded_group_tests.sh` / `run_excluded_subgroup_tests.sh` — per-group /
   per-subgroup runs; tunable via `EP`, `BATCH`, `NUM_WORKERS` env vars.
@@ -233,7 +272,7 @@ Two things that look like details and are not:
 
 ## Cluster Environment
 
-`cluster_env.yml` + `install_cluster_env.sh` reproduce Bigfoot's
+`cluster/cluster_env.yml` + `cluster/install_cluster_env.sh` reproduce Bigfoot's
 `Kalinin_project_LP` on a cluster that has none (Kraken had no conda at all).
 The installer drops Miniforge into `$HOME/miniconda3` — the same path Bigfoot
 uses, so the default `CONDA_SH` resolves without an override — and is
@@ -259,16 +298,14 @@ good CUDA build, so gating on it would reject every environment.
 
 ## Lifecycle & Helpers
 
-- `enter_project_env.sh` / `activate_training_env.sh` — `source` to activate the
+- `tools/enter_project_env.sh` / `lib/activate_training_env.sh` — `source` to activate the
   `Kalinin_project_LP` conda env.
 - `generate_config_graphics.sh LABEL` — builds `graphics/<label>/…` by calling the
   `analysis/` plot scripts.
-- `kill_and_save_all.sh`, `kill_by_name.sh`, `kill_job.sh` — stop running jobs.
-- `wait_and_sync_bigfoot.sh`, `wait_and_sync_kraken.sh` — block until jobs
-  finish and pull results back (tmux daemon, live per-epoch progress).
-- `bigfoot_wait_watchdog.sh`, `kraken_wait_watchdog.sh` — cron-friendly
-  liveness checks for those daemons.
-- `cancel_complete_missing_groups.sh`, `git_commit_and_push.sh` — completion and
+- `kill.sh JOB_ID | --name PREFIX… | --all` — cancel jobs and pull their logs back.
+- `tools/wait_and_sync_bigfoot.sh`, `tools/wait_and_sync_kraken.sh` — block until jobs
+  finish and pull results back (a foreground viewer, live per-epoch progress).
+- `cancel_complete_missing_groups.sh`, `tools/git_commit_and_push.sh` — completion and
   commit helpers.
 - `_list_label_dimension.py`, `visualize_torchviz_architecture.py` — local helpers.
 
@@ -292,7 +329,7 @@ good CUDA build, so gating on it would reject every environment.
   not by submitting real jobs. For a packing change, the regression to run is
   "`PACK_SIZE=1` still emits the same 45 `oarsub` commands as before" — diff the
   mocked output against the previous revision of the submitter.
-- `run_experiment_pack.sh` is testable off-cluster by putting stub `nvidia-smi`
+- `launch/run_experiment_pack.sh` is testable off-cluster by putting stub `nvidia-smi`
   and `python` on `PATH`: the stub GPU decides the slot count, and a stub trainer
   that fails for one seed exercises the failure isolation and the `.pack_done`
   resume path.

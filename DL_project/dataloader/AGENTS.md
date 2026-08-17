@@ -27,8 +27,9 @@ train_dataset, valid_dataset, test_dataset = PLIDataset(root_dir, csv, seed,
 - `lipid_isomer_graph_builder.py` owns the atom/bond graph path selected by
   `lipid_graph_isomers=True`.
 - `protein_graph_builder.py` loads protein artifacts and assembles PyG tensors.
-- `protein_registry.py` reads `data/protein_registry.csv`, the single source for
-  protein IDs, artifact stems, families, UniProt IDs, and historical ESM3 v1 trims.
+- There is no protein registry: the interaction table is the only source of
+  per-protein metadata. `ProteinGraphBuilder.protein_family` reads `ProteinDomain`
+  straight from it, and artifacts are looked up under the `LTPProtein` name itself.
 - Key classes: `PLIDataset` (PyG dataset), `ProteinGraphData`, `LipidGraphData`.
 
 ## Negative Sampling
@@ -62,12 +63,34 @@ is decided in `PLIDataset.__init__`, most specific first:
 
 ## Tanimoto Files
 
-Two `.npy` files under `data/`, with very different cost and reach:
+Only `--tanimoto_weight` reads any of these. Everything else builds `id2pos` by ranking
+the train row ids, which reproduces the file's own mapping rather than an equivalent one
+(the row-id vector covers the interaction table completely: 11018 rows, 11018 distinct
+ids, none missing), so nothing is opened:
 
 | file | size | needed by |
 |---|---|---|
-| `Total_multiple_lipid_batch.npy` | 214 KB | **every run** — `id2pos` is built from it, and `tanimoto_pos` indexes it for *any* sample weighting (protein group, protein class, …) |
-| `Total_tanimoto_matrix_uint8.npy` | 2.8 GB | `get_tanimoto_weights()` only, i.e. `--tanimoto_weight` |
+| `Tanimoto_compact_*` (matrix, structure index, row ids, manifest) | 1.4 MiB | `--tanimoto_weight`, **preferred** — one row per distinct structure |
+| `Tanimoto_compact_isomeric_*` | 1.7 MiB | `--tanimoto_weight --lipid_isomers` |
+| `Total_multiple_lipid_batch.npy` | 214 KB | fallback only, when no compact set is current |
+| `Total_tanimoto_matrix_uint8.npy` | 2.8 GB | fallback only |
+
+- The compact form is indexed per *distinct structure* (1226 non-isomeric, 1319
+  isomeric) rather than per candidate instance (53762 / 58968). Since every byte is
+  `round(BulkTanimotoSimilarity(fp_a, fp_b) * 255)` over Morgan fingerprints, and a
+  fingerprint is a pure function of the canonical SMILES, two instances of one structure
+  have byte-identical rows — so `full[i,j] == compact[idx[i], idx[j]]` exactly.
+  `CompactTanimoto.submatrix` materializes the same `K x K` block the full matrix was
+  sliced for, and the weight arithmetic is untouched. Verified against the full matrix
+  and against a densely rebuilt block; `preprocessing/build_tanimoto_compact.py
+  --verify-candidates N` re-checks it.
+- Weights computed *directly* from the compact form would sum the same numbers in a
+  different order and shift the last digits. Do not "simplify" it that way.
+- The two modes are **not** interchangeable: `lipid_isomers` changes how many candidates
+  a row contributes, so the row-id vectors have different lengths. An isomeric run now
+  gets the isomeric artifacts; before they existed it silently got the non-isomeric
+  similarities, so `--lipid_isomers --tanimoto_weight` results are not comparable across
+  that change.
 
 - `train_tanimoto_matrix` is `None` unless `config.tanimoto_weight` is set;
   `get_tanimoto_weights()` raises a named `RuntimeError` rather than an `AttributeError`
@@ -110,6 +133,7 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
 |---|---|---|
 | `_protein_graph_cache` | `LTPProtein` | 2 CSV reads + pocketness PDB + ESM3 pickle + family one-hot (35 proteins back 1331 rows) |
 | `_lipid_encoding_cache` | `(SmileGlobal, SmileFragment)` | RDKit canonicalization + embedding lookup (409 distinct lipids) |
+| `_lipid_candidate_key_cache` | `(SmileGlobal, SmileFragment)` | the canonicalization only, under `lipid_random_choice` (see below) |
 | `_lipid_graph_cache` | canonical SMILES | isomer-graph node/edge CSV parse |
 | `_complete_edge_index_cache` | node count | the complete-graph `edge_index` builder |
 
@@ -117,10 +141,18 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
   nothing may mutate them in place; `inter` is the only per-row field and is rebuilt in
   `assemble_protein_graph` for every sample.
 - Each train/valid/test clone materializes direct NumPy column views plus scalar
-  `interaction`, `sample_index`, `tanimoto_pos`, and `protein_id` tensors.
+  `interaction`, `pair_id`, `tanimoto_pos`, and `protein_id` tensors.
   `get()` must use these indexed fields rather than constructing a pandas Series.
-- `lipid_random_choice` stays outside cache warming because pre-touching rows would
-  shift its Python RNG stream.
+- `lipid_random_choice` must **never** cache the drawn encoding. `persistent_workers`
+  keeps each worker alive for the whole run, so a cached draw is frozen for the whole
+  run and the mode degenerates into "one arbitrary fixed candidate per row". The draw
+  therefore happens per access in `_drawn_lipid_encoding`, over the canonical keys held
+  in `_lipid_candidate_key_cache` — which is also why `smiles_encoding` is not released
+  in this mode. The isomer-graph path already had this shape: it draws first, then hits
+  a cache keyed by the chosen SMILES.
+- Warming is safe in that mode (it fills keys, draws nothing) and goes through
+  `warm_lipid_encoding`. Only `lipid_graph_isomers` **plus** `lipid_random_choice` stays
+  out of warming, because there the draw happens inside `make_graph_lipid` itself.
 - `warm_caches()` fills them before the DataLoader forks its workers, so the workers
   inherit one warm copy instead of each filling its own. 131 MiB, 0.4 s, reported in the
   run log as `cache warmed : ...`.
@@ -152,8 +184,10 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
   contribute to GRAB coefficients.
 - `prot_batch` / `lip_batch` identify samples; `lipid_batch` identifies lipid
   fragments (only an extra attention restriction under `lipid_fragments_mask`).
-- Per-protein file lookups in `get()` use the `RBP1→RET1` (etc.) rename map; keep
-  it in sync with the `graphs/` and `embedding_ESM3/` directory names.
+- Per-protein file lookups in `get()` use the interaction table's own protein name
+  directly: `graphs/<name>/`, `embedding_*/<name>_*`, `esm3_input/<name>.pdb`. There
+  is no rename map any more -- if a new protein needs one, rename its artifacts
+  instead of reintroducing the mapping.
 - Do not coerce an unknown identifier to a valid index to hide a cross-file
   mismatch; report it (see `data/AGENTS.md` cross-file contract).
 
@@ -164,6 +198,27 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
   `training/new_train.py`.
 - Both lipid paths must survive: `lipid_isomers` / `lipid_graph_isomers` select the
   chemical-graph path; otherwise the legacy embedding path is used.
+
+## SMILES Fragments (`lipid_graph_builder.py`)
+
+A `;`-separated SMILES field is a bag of candidate structures for one measured lipid
+species (sn-positional / double-bond isomers), written as `"A; B; C; "`. Parsing strips
+each part, drops empty/`0` parts and deduplicates by canonical SMILES; a candidate that
+parses but is absent from the embedding table raises rather than being skipped.
+
+| config | embedding path (`lipid_encoding`) |
+|---|---|
+| `lipid_first_fragment_only` (default **on**) | only the first usable candidate — what this path did before the flag existed, so previous runs stay reproducible; all three treatments collapse to the same input |
+| `lipid_concat` | every candidate along the token axis of `(1, tokens, 768)` |
+| `lipid_random_choice` | one candidate per `get()`, drawn from the Python RNG |
+| `lipid_fragments_mask` | as concat, plus a per-token fragment id in `lipid_batch` |
+
+- `lipid_first_fragment_only` governs the embedding path only; the
+  `lipid_graph_isomers` path has always used every candidate.
+- Fragment ids are numbered per sample and are **not** offset at collation time
+  (the non-isomer path builds a plain `Data`). That is safe only because
+  `SelfAttention` combines them as `attn_mask | ~mult_mask`, and `attn_mask`
+  already blocks every cross-sample pair.
 
 ## Verify (no full data, no GPU)
 

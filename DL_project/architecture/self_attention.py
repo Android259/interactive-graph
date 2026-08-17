@@ -108,7 +108,16 @@ class ProteinSelfAttention(torch.nn.Module):
         self.dim = dim
         self.config = config
         self.self_attention = torch.nn.MultiheadAttention(dim, self.config.HEADS)
-        if self.config.prot_attention_pos_bias or self.config.prot_pooling_by_pockets:
+        self.attention_by_pockets = bool(
+            getattr(self.config, "pocket_attention_self", False)
+        )
+        # Under attention_by_pockets the surviving keys are all pocket keys, so a bias
+        # on them is a constant shift that softmax cancels. Building it anyway would add
+        # a parameter that never receives gradient, which inflates number_of_parameters
+        # and breaks test_active_configuration_has_no_parameters_without_gradients.
+        if not self.attention_by_pockets and (
+            self.config.prot_attention_pos_bias or self.config.prot_pooling_by_pockets
+        ):
             bias_shape = (
                 (self.config.HEADS,)
                 if getattr(self.config, "prot_pos_bias_per_head", False)
@@ -159,6 +168,9 @@ class ProteinSelfAttention(torch.nn.Module):
             return attention_bias
 
         pocket_key_mask = pocket_mask.unsqueeze(0).expand_as(attn_mask)
+        if self.attention_by_pockets:
+            # Forbid every non-pocket key outright instead of preferring pocket ones.
+            return attention_bias.masked_fill(~pocket_key_mask, float("-inf"))
         pocket_term = (same_batch & pocket_key_mask).to(x.dtype)
         if getattr(self.config, "prot_pos_bias_per_head", False):
             per_head_bias = self.pocket_attention_bias.view(-1, 1, 1)
@@ -172,7 +184,9 @@ class ProteinSelfAttention(torch.nn.Module):
 
         make_attention_bias writes `pocket_term * pocket_attention_bias` into every
         (query, key) cell, but the value depends only on the key, so the fast path
-        carries just that vector and broadcasts it over queries.
+        carries just that vector and broadcasts it over queries. attention_by_pockets
+        never reaches here: on the fast path it is spelled by compacting the key layout
+        instead, so there is no bias to carry.
         """
         if pocket_mask is None:
             return None
@@ -182,7 +196,8 @@ class ProteinSelfAttention(torch.nn.Module):
         return pocket_term * self.pocket_attention_bias
 
     def forward(
-        self, x, attn_mask, pocket_mask, mult_mask=None, batch=None, fast_layout=None
+        self, x, attn_mask, pocket_mask, mult_mask=None, batch=None, fast_layout=None,
+        pocket_layout=None, pocket_index=None
     ):
 
         # Pre-norm variant:
@@ -198,11 +213,22 @@ class ProteinSelfAttention(torch.nn.Module):
 
         x = self.ln1(x)
         if can_use_grouped_attention(self.config, batch):
-            outl = grouped_attention(
-                self.self_attention, x, batch, x, batch, int(batch.max()) + 1,
-                key_bias=self.make_key_bias(pocket_mask, x),
-                q_layout=fast_layout, kv_layout=fast_layout,
-            )
+            if pocket_index is not None:
+                # Compacted restriction: the key axis is padded to the largest pocket
+                # instead of the largest protein. Queries stay every residue, so each
+                # one is still updated -- only what it may look at changes, exactly as
+                # in the -inf variant, whose key_bias is then unnecessary.
+                outl = grouped_attention(
+                    self.self_attention, x, batch, x[pocket_index],
+                    batch[pocket_index], int(batch.max()) + 1,
+                    q_layout=fast_layout, kv_layout=pocket_layout,
+                )
+            else:
+                outl = grouped_attention(
+                    self.self_attention, x, batch, x, batch, int(batch.max()) + 1,
+                    key_bias=self.make_key_bias(pocket_mask, x),
+                    q_layout=fast_layout, kv_layout=fast_layout,
+                )
             gated = getattr(self.config, "attention_residual_gates", False)
             x = x + (self.attn_gate * outl if gated else outl)
             x = self.ln2(x)
