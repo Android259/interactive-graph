@@ -12,7 +12,7 @@ would shift metrics in the sixth decimal and make new runs incomparable with old
 which is exactly the failure this guards against.
 
 Usage:
-    python3 scripts/verify_lipid_embedding_store.py [TABLE_PICKLE_NAME]
+    python3 scripts/tools/verify_lipid_embedding_store.py [TABLE_PICKLE_NAME]
 
 Exits non-zero on any mismatch, so it can gate a rebuild.
 """
@@ -22,7 +22,8 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# parents[2]: this file sits in scripts/tools/, so the project root is two levels up.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 

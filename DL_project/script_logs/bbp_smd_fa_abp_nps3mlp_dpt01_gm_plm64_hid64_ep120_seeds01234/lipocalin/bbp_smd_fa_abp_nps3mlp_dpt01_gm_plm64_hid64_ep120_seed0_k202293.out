@@ -1,0 +1,19 @@
+=== GROUP: lipocalin | VARIANT: bbp_smd_fa_abp_nps3mlp_dpt01_gm_plm64_hid64_ep120 | SEED: 0 | GPU: NVIDIA H200 | SLOT: 3 ===
+/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:549: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:549: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/kalinina/miniconda3/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+Traceback (most recent call last):
+  File "/home/kalinina/DL_project/./training/new_train.py", line 68, in <module>
+    conf = read_configuration()
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 1605, in read_configuration
+    return read_named_configuration(argv)
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 1596, in read_named_configuration
+    config.validate()
+  File "/home/kalinina/DL_project/training/read_configuration.py", line 736, in validate
+    raise ValueError(
+ValueError: attention_by_pockets removes non-pocket keys outright, which makes the prot_attention_pos_bias parameter a constant shift over the surviving keys -- a no-op under softmax that would never receive gradient. Either restrict one site only (--pocket_attention_sites=cross keeps the bias in self-attention, =self keeps it in cross-attention), or pick another pooling (--protein_pooling=ordinary / pooling_by_pockets)

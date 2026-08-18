@@ -339,9 +339,12 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
     # Never fatal: a cluster where this cannot run still trains correctly, the jobs
     # just read the pickle as they always did. The build is a no-op when the store is
     # already current, so re-submitting the same grid costs nothing.
+    # The environment has to be activated exactly as the jobs do it below: the
+    # login shell's bare python3 has no torch, so without this the build always
+    # failed and every job silently fell back to the pickle.
     printf 'Building shared embedding store on %s (skipped if current).\n' "${remote}"
     if ! ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
-        "cd '${REMOTE_PROJECT}' && python3 data/build_lipid_embedding_store.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")" \
+        "cd '${REMOTE_PROJECT}' && source $(printf '%q' "${CONDA_SH}") && conda activate $(printf '%q' "${CONDA_ENV}") && python3 data/build_lipid_embedding_store.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")" \
         2>&1 | sed 's/^/  /'; then
         printf 'WARNING: could not build the embedding store; jobs will read the pickle instead.\n' >&2
     fi

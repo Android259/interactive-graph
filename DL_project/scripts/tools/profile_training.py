@@ -19,11 +19,11 @@ embeddings), which a handful of profiled batches never need. PLIDataset.get() ca
 lazily per row, so only what the sampled batches actually touch gets loaded.
 
 Usage:
-    python scripts/profile_training.py [profiler options] [-- model config flags]
+    python scripts/tools/profile_training.py [profiler options] [-- model config flags]
 
 Examples:
-    python scripts/profile_training.py --active_steps=10
-    python scripts/profile_training.py --phase=eval --active_steps=5 -- --batch=32 --hiddim=128
+    python scripts/tools/profile_training.py --active_steps=10
+    python scripts/tools/profile_training.py --phase=eval --active_steps=5 -- --batch=32 --hiddim=128
 """
 
 from __future__ import annotations
@@ -37,7 +37,8 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+# parents[2]: this file sits in scripts/tools/, so the project root is two levels up.
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 TRAINING_DIR = str(ROOT / "training")

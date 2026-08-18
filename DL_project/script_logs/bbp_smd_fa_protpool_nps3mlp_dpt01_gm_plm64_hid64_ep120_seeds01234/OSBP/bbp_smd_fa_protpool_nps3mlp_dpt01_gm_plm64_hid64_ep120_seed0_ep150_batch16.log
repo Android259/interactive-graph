@@ -1,0 +1,213 @@
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:549: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:549: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+
+train : (1496, 12)
+valid : (8, 12)
+test : (8, 12)
+number of parameters : 1014405
+class weights : [1.0, 1.0]
+balanced batches : 94 per epoch covering all 1496 train rows, target 8 positive + 8 unlabeled
+cache warmed : 35 proteins, 410 lipid encodings, 0 lipid graphs, 131 MiB
+source artifacts released : ['csvt', 'protein_tensor_cache', 'smiles_encoding']
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.5000 (delta 0.0000) | no lipid 0.5000 (delta 0.0000) | grad protein 0.1771 lipid 0.1646 | head |W| protein 6.1741 lipid 6.1819 | between-protein variance 0.3942
+dynamics: saved weights of epoch 1 to /home/kalinina/DL_project/models/bbp_smd_fa_protpool_nps3mlp_dpt01_gm_plm64_hid64_ep120/groups_OSBP/dynamics/seed0_epoch1.pt
+EPOCH 2:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.5000 (delta 0.0000) | no lipid 0.5000 (delta 0.0000) | grad protein 0.1803 lipid 0.6271 | head |W| protein 5.9398 lipid 5.9655 | between-protein variance 0.3508
+EPOCH 3:
+VALIDATION
+valid epoch balanced_accuracy: 0.750000
+dynamics: BA full 0.7500 | no protein 0.7500 (delta 0.0000) | no lipid 0.6250 (delta 0.1250) | grad protein 0.4000 lipid 0.8309 | head |W| protein 5.7887 lipid 5.8223 | between-protein variance 0.5786
+EPOCH 4:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.5000 (delta -0.1250) | no lipid 0.2500 (delta 0.1250) | grad protein 1.2357 lipid 1.4840 | head |W| protein 5.7209 lipid 5.7591 | between-protein variance 0.7432
+EPOCH 5:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.3750 (delta 0.0000) | no lipid 0.6250 (delta -0.2500) | grad protein 2.3641 lipid 2.3818 | head |W| protein 5.6804 lipid 5.7231 | between-protein variance 0.5079
+EPOCH 6:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.3750 (delta 0.0000) | no lipid 0.2500 (delta 0.1250) | grad protein 2.4607 lipid 2.1324 | head |W| protein 5.6468 lipid 5.6931 | between-protein variance 0.7862
+EPOCH 7:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.3750 (delta 0.1250) | no lipid 0.5000 (delta 0.0000) | grad protein 2.4353 lipid 2.6516 | head |W| protein 5.6198 lipid 5.6659 | between-protein variance 0.7916
+EPOCH 8:
+VALIDATION
+valid epoch balanced_accuracy: 0.625000
+dynamics: BA full 0.6250 | no protein 0.6250 (delta 0.0000) | no lipid 0.5000 (delta 0.1250) | grad protein 2.2482 lipid 2.4559 | head |W| protein 5.5948 lipid 5.6409 | between-protein variance 0.5538
+EPOCH 9:
+VALIDATION
+valid epoch balanced_accuracy: 0.750000
+dynamics: BA full 0.7500 | no protein 0.6250 (delta 0.1250) | no lipid 0.5000 (delta 0.2500) | grad protein 2.4779 lipid 2.6344 | head |W| protein 5.5710 lipid 5.6190 | between-protein variance 0.5037
+EPOCH 10:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.5000 (delta 0.0000) | no lipid 0.7500 (delta -0.2500) | grad protein 2.8403 lipid 2.9618 | head |W| protein 5.5454 lipid 5.5985 | between-protein variance 0.5748
+dynamics: saved weights of epoch 10 to /home/kalinina/DL_project/models/bbp_smd_fa_protpool_nps3mlp_dpt01_gm_plm64_hid64_ep120/groups_OSBP/dynamics/seed0_epoch10.pt
+EPOCH 11:
+VALIDATION
+valid epoch balanced_accuracy: 0.750000
+dynamics: BA full 0.7500 | no protein 0.6250 (delta 0.1250) | no lipid 0.7500 (delta 0.0000) | grad protein 2.6005 lipid 3.0013 | head |W| protein 5.5232 lipid 5.5806 | between-protein variance 0.5273
+EPOCH 12:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.5000 (delta 0.0000) | no lipid 0.6250 (delta -0.1250) | grad protein 2.5666 lipid 2.9580 | head |W| protein 5.5039 lipid 5.5598 | between-protein variance 0.6066
+EPOCH 13:
+VALIDATION
+valid epoch balanced_accuracy: 0.750000
+dynamics: BA full 0.7500 | no protein 0.3750 (delta 0.3750) | no lipid 0.7500 (delta 0.0000) | grad protein 2.5102 lipid 3.0142 | head |W| protein 5.4827 lipid 5.5462 | between-protein variance 0.5140
+EPOCH 14:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.5000 (delta -0.1250) | no lipid 0.5000 (delta -0.1250) | grad protein 2.1259 lipid 3.1623 | head |W| protein 5.4646 lipid 5.5303 | between-protein variance 0.5168
+EPOCH 15:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.5000 (delta -0.1250) | no lipid 0.5000 (delta -0.1250) | grad protein 2.4775 lipid 3.2539 | head |W| protein 5.4507 lipid 5.5137 | between-protein variance 0.5052
+EPOCH 16:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.5000 (delta -0.1250) | no lipid 0.5000 (delta -0.1250) | grad protein 2.5847 lipid 3.0480 | head |W| protein 5.4323 lipid 5.4974 | between-protein variance 0.4878
+EPOCH 17:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.6250 (delta -0.1250) | no lipid 0.6250 (delta -0.1250) | grad protein 2.5738 lipid 3.5063 | head |W| protein 5.4149 lipid 5.4827 | between-protein variance 0.5409
+EPOCH 18:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.5000 (delta -0.1250) | no lipid 0.3750 (delta 0.0000) | grad protein 2.8700 lipid 3.3296 | head |W| protein 5.3990 lipid 5.4695 | between-protein variance 0.3699
+EPOCH 19:
+VALIDATION
+valid epoch balanced_accuracy: 0.625000
+dynamics: BA full 0.6250 | no protein 0.6250 (delta 0.0000) | no lipid 0.8750 (delta -0.2500) | grad protein 2.7328 lipid 3.4283 | head |W| protein 5.3864 lipid 5.4549 | between-protein variance 0.4123
+EPOCH 20:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.6250 (delta -0.1250) | no lipid 0.5000 (delta 0.0000) | grad protein 2.4332 lipid 3.3162 | head |W| protein 5.3680 lipid 5.4445 | between-protein variance 0.4651
+EPOCH 21:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.5000 (delta -0.1250) | grad protein 2.7620 lipid 3.2929 | head |W| protein 5.3549 lipid 5.4351 | between-protein variance 0.3348
+EPOCH 22:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.6250 (delta -0.1250) | no lipid 0.5000 (delta 0.0000) | grad protein 2.5246 lipid 3.4282 | head |W| protein 5.3420 lipid 5.4259 | between-protein variance 0.4509
+EPOCH 23:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.5000 (delta -0.1250) | grad protein 3.0916 lipid 3.9140 | head |W| protein 5.3300 lipid 5.4143 | between-protein variance 0.4622
+EPOCH 24:
+VALIDATION
+valid epoch balanced_accuracy: 0.625000
+dynamics: BA full 0.6250 | no protein 0.6250 (delta 0.0000) | no lipid 0.5000 (delta 0.1250) | grad protein 2.6637 lipid 3.6344 | head |W| protein 5.3177 lipid 5.4058 | between-protein variance 0.4179
+EPOCH 25:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.5000 (delta -0.1250) | no lipid 0.5000 (delta -0.1250) | grad protein 2.4192 lipid 3.6574 | head |W| protein 5.3059 lipid 5.3989 | between-protein variance 0.4725
+EPOCH 26:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.6250 (delta -0.1250) | no lipid 0.5000 (delta 0.0000) | grad protein 2.5508 lipid 4.0304 | head |W| protein 5.2939 lipid 5.3905 | between-protein variance 0.5189
+EPOCH 27:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.3750 (delta 0.0000) | no lipid 0.3750 (delta 0.0000) | grad protein 2.5371 lipid 3.9775 | head |W| protein 5.2828 lipid 5.3847 | between-protein variance 0.5911
+EPOCH 28:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.5000 (delta -0.1250) | grad protein 2.7015 lipid 3.9130 | head |W| protein 5.2736 lipid 5.3756 | between-protein variance 0.4465
+EPOCH 29:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.5000 (delta -0.1250) | grad protein 2.5592 lipid 4.0526 | head |W| protein 5.2641 lipid 5.3685 | between-protein variance 0.5267
+EPOCH 30:
+VALIDATION
+valid epoch balanced_accuracy: 0.250000
+dynamics: BA full 0.2500 | no protein 0.6250 (delta -0.3750) | no lipid 0.5000 (delta -0.2500) | grad protein 2.5583 lipid 3.8155 | head |W| protein 5.2548 lipid 5.3604 | between-protein variance 0.4818
+EPOCH 31:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.3750 (delta 0.0000) | no lipid 0.5000 (delta -0.1250) | grad protein 2.8369 lipid 4.5536 | head |W| protein 5.2439 lipid 5.3533 | between-protein variance 0.5843
+EPOCH 32:
+VALIDATION
+valid epoch balanced_accuracy: 0.250000
+dynamics: BA full 0.2500 | no protein 0.6250 (delta -0.3750) | no lipid 0.6250 (delta -0.3750) | grad protein 2.5817 lipid 3.8911 | head |W| protein 5.2338 lipid 5.3455 | between-protein variance 0.5005
+EPOCH 33:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.5000 (delta 0.0000) | no lipid 0.5000 (delta 0.0000) | grad protein 2.3820 lipid 4.2351 | head |W| protein 5.2239 lipid 5.3396 | between-protein variance 0.5069
+EPOCH 34:
+VALIDATION
+valid epoch balanced_accuracy: 0.250000
+dynamics: BA full 0.2500 | no protein 0.6250 (delta -0.3750) | no lipid 0.3750 (delta -0.1250) | grad protein 2.4168 lipid 3.8797 | head |W| protein 5.2150 lipid 5.3348 | between-protein variance 0.5754
+EPOCH 35:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.6250 (delta -0.2500) | grad protein 2.5807 lipid 4.1088 | head |W| protein 5.2067 lipid 5.3261 | between-protein variance 0.5319
+EPOCH 36:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.5000 (delta -0.1250) | grad protein 2.3017 lipid 4.3784 | head |W| protein 5.1963 lipid 5.3188 | between-protein variance 0.5941
+EPOCH 37:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.5000 (delta -0.1250) | grad protein 2.0961 lipid 3.9894 | head |W| protein 5.1844 lipid 5.3127 | between-protein variance 0.5359
+EPOCH 38:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.3750 (delta 0.0000) | grad protein 2.0588 lipid 4.0069 | head |W| protein 5.1763 lipid 5.3065 | between-protein variance 0.5366
+EPOCH 39:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.5000 (delta 0.0000) | no lipid 0.5000 (delta 0.0000) | grad protein 2.0078 lipid 4.0390 | head |W| protein 5.1665 lipid 5.3009 | between-protein variance 0.4656
+EPOCH 40:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.3750 (delta 0.0000) | no lipid 0.5000 (delta -0.1250) | grad protein 3.2089 lipid 4.9622 | head |W| protein 5.1533 lipid 5.2949 | between-protein variance 0.4585
+EPOCH 41:
+VALIDATION
+valid epoch balanced_accuracy: 0.250000
+dynamics: BA full 0.2500 | no protein 0.6250 (delta -0.3750) | no lipid 0.3750 (delta -0.1250) | grad protein 2.3382 lipid 4.3273 | head |W| protein 5.1446 lipid 5.2873 | between-protein variance 0.5016
+EPOCH 42:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.5000 (delta -0.1250) | grad protein 2.4600 lipid 4.6095 | head |W| protein 5.1356 lipid 5.2812 | between-protein variance 0.5319
+EPOCH 43:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.6250 (delta -0.1250) | no lipid 0.5000 (delta 0.0000) | grad protein 2.4641 lipid 4.3095 | head |W| protein 5.1272 lipid 5.2737 | between-protein variance 0.4281
+EPOCH 44:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.3750 (delta 0.0000) | no lipid 0.5000 (delta -0.1250) | grad protein 2.6887 lipid 4.3655 | head |W| protein 5.1163 lipid 5.2678 | between-protein variance 0.4638
+EPOCH 45:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.6250 (delta -0.1250) | no lipid 0.3750 (delta 0.1250) | grad protein 2.3386 lipid 4.3691 | head |W| protein 5.1077 lipid 5.2618 | between-protein variance 0.5009
+EPOCH 46:
+VALIDATION
+valid epoch balanced_accuracy: 0.375000
+dynamics: BA full 0.3750 | no protein 0.6250 (delta -0.2500) | no lipid 0.5000 (delta -0.1250) | grad protein 2.5655 lipid 4.4010 | head |W| protein 5.0998 lipid 5.2544 | between-protein variance 0.4624
+EPOCH 47:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.6250 (delta -0.1250) | no lipid 0.7500 (delta -0.2500) | grad protein 2.3563 lipid 4.6587 | head |W| protein 5.0889 lipid 5.2498 | between-protein variance 0.4413
+EPOCH 48:
+VALIDATION
+valid epoch balanced_accuracy: 0.500000
+dynamics: BA full 0.5000 | no protein 0.6250 (delta -0.1250) | no lipid 0.6250 (delta -0.1250) | grad protein 2.5439 lipid 4.6282 | head |W| protein 5.0820 lipid 5.2446 | between-protein variance 0.3721
+EPOCH 49:

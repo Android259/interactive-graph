@@ -1,10 +1,11 @@
---num_workers=0
---batch=8
 --ep=120
 --protein_disable_post_sa_mlp
 --lipid_disable_post_sa_mlp
 --third_layers_in_mlps
 --fast_attention
+
+--attention_by_pockets
+--protein_pooling=pooling_by_pockets
 
 --hiddim=64
 --plm_compression_dim=64
@@ -15,7 +16,5 @@
 
 --balanced_batches
 --balanced_proteins
-
---lipid_path_handicap
 
 --save_model_in_dynamics
