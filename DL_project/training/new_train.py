@@ -11,6 +11,19 @@ from datetime import datetime
 
 from pandas import read_csv
 import torch
+
+# Flush denormals to zero, before anything creates a thread. A block that loses its job
+# mid-run (the protein FFN under --lipid_path_handicap, say) is shrunk geometrically by
+# the coupled weight decay in Adam until its weights fall under 2^-126, where x86 stops
+# handling them in the vector units and traps into a microcode assist: measured here at
+# 2587 ms against 6 ms for one 256x256 matmul of an epoch-51 checkpoint, and 85 s -> 550 s
+# per epoch across a run. The block contributes 2.4e-07 of its residual by then, so the
+# arithmetic being skipped changes nothing -- the FFN's output came out bit-identical
+# with the flag on. Order matters: MXCSR is per-thread and pthread_create copies the
+# creating thread's floating-point environment, so intra-op workers spawned later
+# inherit this, while setting it after the pool exists leaves them on the slow path.
+torch.set_flush_denormal(True)
+
 import torch.nn.functional as F
 import torch_geometric
 from torch.optim.swa_utils import AveragedModel, SWALR
@@ -712,6 +725,13 @@ def _build_forward_args(prot, lipid):
             prot, "edge_node_pairs", None
         )
         forward_args["prot_edge_node_degree"] = prot.edge_node_degree
+    if getattr(conf, "pocket_descriptors", False):
+        # Protein_encoder raises without it, so the flag used to abort every run that
+        # set it: the dataloader attached the descriptor and nothing passed it on. The
+        # train, validation and test loops each carried their own copy of this dict,
+        # which is how one branch could be missing from all three at once -- they now
+        # call this function instead.
+        forward_args["pocket_descriptor"] = prot.pocket_descriptor
     return forward_args
 
 
@@ -750,6 +770,255 @@ def _bilevel_lambda_step():
     hyper_optimizer.step()
 
 
+# --- Branch diagnostics (--save_dynamics) ----------------------------------------
+#
+# One question: does the protein half of the model influence the decision, and if it
+# stops, at which epoch and through which mechanism. Answered by scalars written every
+# epoch rather than by weights, because the answer is a curve -- the endpoint alone
+# cannot distinguish a branch that never learned anything from one that was learning
+# and then got out-competed.
+#
+# Four measurements, each aimed at a different culprit:
+#   contribution   what the balanced accuracy loses when one pooled half is zeroed,
+#                  i.e. how much the classifier's decision rests on that partner
+#   gradient norm  whether the branch is receiving a learning signal at all
+#   head weights   whether the classifier itself is discounting the protein columns
+#   between-protein variance  whether the protein branch still tells proteins apart
+#
+# Read them together: a protein contribution of zero with healthy protein gradients and
+# a collapsed between-protein variance is a representation problem; the same zero with
+# vanishing protein gradients is an optimisation problem; the same zero appearing only
+# after the lipid handicap is released is the lipid branch taking the decision over.
+
+# Epochs whose weights --save_model_in_dynamics keeps, placed around the lipid
+# handicap's default 50-epoch ramp (ModelConfig.lipid_path_weight_ramp_epochs): the
+# first epoch, an early-training point, the two epochs either side of the release, and
+# the end of a 120-epoch run. Five files of a few MB, not one per epoch.
+DYNAMICS_CHECKPOINT_EPOCHS = (1, 10, 49, 51, 120)
+
+# The model's top-level submodules are lipid1/protein1/cross_attention1 (plus the *2
+# twins under double_attention) and final_layer, so a parameter's branch is decided by
+# its name prefix and nothing else has to be maintained here.
+DYNAMICS_BRANCH_PREFIXES = {
+    "protein": ("protein1.", "protein2."),
+    "lipid": ("lipid1.", "lipid2."),
+    "cross": ("cross_attention1.", "cross_attention2."),
+    "head": ("final_layer.",),
+}
+dynamics_branch_parameters = (
+    {
+        branch: [
+            parameter
+            for name, parameter in model.named_parameters()
+            if name.startswith(prefixes)
+        ]
+        for branch, prefixes in DYNAMICS_BRANCH_PREFIXES.items()
+    }
+    if conf.save_dynamics
+    else {}
+)
+dynamics_grad_stats = {
+    branch: {"sum": 0.0, "batches": 0} for branch in dynamics_branch_parameters
+}
+
+
+def reset_dynamics_grad_stats():
+    """Start a fresh epoch's gradient-norm average."""
+    for accumulator in dynamics_grad_stats.values():
+        accumulator["sum"] = 0.0
+        accumulator["batches"] = 0
+
+
+def accumulate_branch_grad_norms():
+    """Add this batch's per-branch gradient norm to the epoch's running mean.
+
+    Called between backward() and the optimizer step, so the gradients read are the ones
+    the step is about to apply. Under AMP the caller unscales first: otherwise every
+    number would carry the loss scaler's factor, which changes on its own schedule and
+    would show up as branch dynamics that never happened.
+    """
+    for branch, parameters in dynamics_branch_parameters.items():
+        squared = 0.0
+        for parameter in parameters:
+            if parameter.grad is not None:
+                squared += float(parameter.grad.detach().pow(2).sum())
+        accumulator = dynamics_grad_stats[branch]
+        accumulator["sum"] += squared ** 0.5
+        accumulator["batches"] += 1
+
+
+def _dynamics_valid_pass(collect_pooled=False):
+    """One validation pass under whatever ablation flags are currently set.
+
+    Built from the same update_aggregate/aggregate_values pair the real validation uses,
+    so the balanced accuracies compared across these passes are one quantity rather than
+    two definitions of it.
+    """
+    model.eval()
+    stats = {
+        "TP": 0,
+        "FP": 0,
+        "TN": 0,
+        "FN": 0,
+        "loss": 0.0,
+        "count": 0,
+        "loss_count": 0,
+    }
+    pooled_lipid = []
+    pooled_protein = []
+    protein_ids = []
+    with torch.no_grad():
+        for prot, lipid in valid_loader:
+            prot = prot.to(device, non_blocking=True)
+            lipid = lipid.to(device, non_blocking=True)
+            labels = prot.inter.to(device, non_blocking=True).long()
+            outl = model(**_build_forward_args(prot, lipid))
+            loss = _eval_task_loss(outl, labels)
+            update_aggregate(stats, outl.argmax(dim=1), labels, loss, labels.shape[0])
+            partners = model.final_layer._pooled_partners
+            if collect_pooled and partners is not None:
+                pooled_lipid.append(partners[0].cpu())
+                pooled_protein.append(partners[1].cpu())
+                protein_ids.append(prot.protein_id.view(-1).cpu())
+    metrics = aggregate_values(stats)
+    if not pooled_protein:
+        return metrics, None
+    return metrics, (
+        torch.cat(pooled_lipid),
+        torch.cat(pooled_protein),
+        torch.cat(protein_ids),
+    )
+
+
+def _dynamics_ablated_valid(field, collect_pooled=False):
+    """Validate with one pooled half zeroed, then put the flag back as it was.
+
+    The flags are the ones Final_Layer already implements for whole-run ablations, read
+    per forward, so switching them here needs nothing from the architecture. What this
+    measures is narrower than a real --lipid_only run: cross-attention stays on, so the
+    protein's influence on the lipid representation survives and only the classifier's
+    direct protein input is removed. That is the intended question -- does the head use
+    the protein channel -- and the narrower reading is the reason it is worth stating.
+    """
+    previous = getattr(conf, field)
+    setattr(conf, field, True)
+    try:
+        return _dynamics_valid_pass(collect_pooled=collect_pooled)
+    finally:
+        setattr(conf, field, previous)
+
+
+def _between_protein_variance_share(vectors, protein_ids):
+    """Share of the pooled protein vector's variance that lies between proteins.
+
+    Near zero means the branch hands the classifier nearly the same vector whichever
+    protein it was given, and no downstream layer can recover a distinction that is not
+    in its input. Total variance is summed over dimensions, so the number cannot be
+    carried by one wide dimension, and lands in [0, 1].
+    """
+    vectors = vectors.double()
+    centered = vectors - vectors.mean(dim=0)
+    total = float((centered ** 2).sum())
+    if total <= 0.0:
+        return 0.0
+    grand_mean = vectors.mean(dim=0)
+    between = 0.0
+    for protein in protein_ids.unique():
+        rows = vectors[protein_ids == protein]
+        between += float(rows.shape[0] * ((rows.mean(dim=0) - grand_mean) ** 2).sum())
+    return between / total
+
+
+def _head_input_weight_norms(lipid_width):
+    """Norms of the classifier's first-layer weights on each half of its input.
+
+    The fusion is a concatenation, [lipid | protein] (Final_Layer.forward), so those
+    columns split by partner and their norms say how much of the decision each half is
+    even allowed to reach. Bilinear fusion mixes the halves before the layer and leaves
+    no such split, hence the None.
+    """
+    if conf.bilinear_fusion:
+        return None
+    linear = next(
+        (
+            layer
+            for layer in model.final_layer.binar
+            if isinstance(layer, torch.nn.Linear)
+        ),
+        None,
+    )
+    if linear is None or linear.weight.shape[1] <= lipid_width:
+        return None
+    weight = linear.weight.detach()
+    return float(weight[:, :lipid_width].norm()), float(weight[:, lipid_width:].norm())
+
+
+def log_branch_dynamics(epoch_index, valid_metrics):
+    """Write this epoch's branch diagnostics to TensorBoard and to the run log."""
+    full_ba = valid_metrics.get("balanced_accuracy")
+    # The pooled halves are collected on the first ablated pass, not on a third full
+    # one: the stash in Final_Layer is taken before the zeroing, so an ablated pass
+    # reports exactly the vectors the unablated model computed.
+    without_protein, pooled = _dynamics_ablated_valid("lipid_only", collect_pooled=True)
+    without_lipid, _ = _dynamics_ablated_valid("protein_only")
+
+    scalars = {
+        "valid BA without protein": without_protein.get("balanced_accuracy"),
+        "valid BA without lipid": without_lipid.get("balanced_accuracy"),
+    }
+    if full_ba is not None:
+        scalars["protein contribution"] = full_ba - without_protein["balanced_accuracy"]
+        scalars["lipid contribution"] = full_ba - without_lipid["balanced_accuracy"]
+
+    for branch, accumulator in dynamics_grad_stats.items():
+        if accumulator["batches"]:
+            scalars[f"grad norm {branch}"] = accumulator["sum"] / accumulator["batches"]
+
+    between_share = None
+    if pooled is not None:
+        pooled_lipid, pooled_protein, protein_ids = pooled
+        between_share = _between_protein_variance_share(pooled_protein, protein_ids)
+        scalars["pooled protein between-protein variance"] = between_share
+        scalars["pooled protein norm"] = float(pooled_protein.norm(dim=1).mean())
+        scalars["pooled lipid norm"] = float(pooled_lipid.norm(dim=1).mean())
+        head_norms = _head_input_weight_norms(pooled_lipid.shape[1])
+        if head_norms is not None:
+            scalars["head weight norm lipid"] = head_norms[0]
+            scalars["head weight norm protein"] = head_norms[1]
+
+    for name, value in scalars.items():
+        if value is not None:
+            writer_tb.add_scalar(f"epoch/{name}", value, epoch_index + 1)
+
+    def show(value):
+        return "n/a" if value is None else f"{value:.4f}"
+
+    print(
+        "dynamics: "
+        f"BA full {show(full_ba)} "
+        f"| no protein {show(scalars.get('valid BA without protein'))} "
+        f"(delta {show(scalars.get('protein contribution'))}) "
+        f"| no lipid {show(scalars.get('valid BA without lipid'))} "
+        f"(delta {show(scalars.get('lipid contribution'))}) "
+        f"| grad protein {show(scalars.get('grad norm protein'))} "
+        f"lipid {show(scalars.get('grad norm lipid'))} "
+        f"| head |W| protein {show(scalars.get('head weight norm protein'))} "
+        f"lipid {show(scalars.get('head weight norm lipid'))} "
+        f"| between-protein variance {show(between_share)}"
+    )
+
+
+def save_dynamics_milestone(epoch_1based):
+    """Keep the weights of a milestone epoch, for probes no scalar can anticipate."""
+    if epoch_1based not in DYNAMICS_CHECKPOINT_EPOCHS:
+        return
+    directory = os.path.join(models_root, label_name, excluded_set_name, "dynamics")
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, f"seed{conf.seed}_epoch{epoch_1based}.pt")
+    torch.save(model.state_dict(), path)
+    print(f"dynamics: saved weights of epoch {epoch_1based} to {path}")
+
+
 def epoch(idx,counttrain,countval):
     """Run one training epoch followed by full validation."""
     if conf.pu_loss:
@@ -781,40 +1050,7 @@ def epoch(idx,counttrain,countval):
 
             optimizer.zero_grad()
 
-            forward_args = dict(
-                config=conf,
-                plm=prot.plm,
-                bury=prot.bury,
-                prot=prot.x,
-                prot_edgidx=prot.edge_index,
-                prot_e_attr=prot.edge_attr,
-                prot_batch=prot.batch,
-                lip=lipid.x,
-                lip_batch=lipid.batch,
-            )
-            if conf.lipid_fragments_mask:
-                forward_args["lipid_batch"] = lipid.lipid_batch
-            if getattr(conf, "lipid_graph_isomers", False):
-                forward_args["lip_edgidx"] = lipid.edge_index
-                forward_args["lip_e_attr"] = lipid.edge_attr
-            if conf.prot_attention_pos_bias or conf.prot_pooling_by_pockets:
-                forward_args["pocket_mask"] = prot.pocket
-            if getattr(conf, "use_esm3_v2_embeddings", False):
-                forward_args["node_confidence"] = getattr(prot, "node_confidence", None)
-            if getattr(conf, "geometric_transformer", False):
-                forward_args["prot_frame_rotation"] = prot.frame_rotation
-                forward_args["prot_frame_translation"] = prot.frame_translation
-            if (
-                getattr(conf, "geometric_transformer", False)
-                or getattr(conf, "rnabang_frozen_node_adapter", False)
-            ):
-                forward_args["prot_geometric_node_attr"] = prot.geometric_node_attr
-            if getattr(conf, "rnabang_frozen_node_adapter", False):
-                forward_args["prot_edge_node_pairs"] = getattr(
-                    prot, "edge_node_pairs", None
-                )
-                forward_args["prot_edge_node_degree"] = prot.edge_node_degree
-
+            forward_args = _build_forward_args(prot, lipid)
             with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_amp):
                 outl = model(**forward_args)
 
@@ -936,10 +1172,17 @@ def epoch(idx,counttrain,countval):
 
             if use_amp:
                 scaler.scale(los).backward()
+                if conf.save_dynamics:
+                    # Before the norms are read, never after: scaler.step() would have
+                    # unscaled them itself, but only inside its own call.
+                    scaler.unscale_(optimizer)
+                    accumulate_branch_grad_norms()
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 los.backward()
+                if conf.save_dynamics:
+                    accumulate_branch_grad_norms()
                 optimizer.step()
 
             if hyper_optimizer is not None:
@@ -976,40 +1219,7 @@ def epoch(idx,counttrain,countval):
             interaction_labels = prot.inter
             interaction_labels = interaction_labels.to(device, non_blocking=True)
     
-            forward_args = dict(
-                config=conf,
-                plm=prot.plm,
-                bury=prot.bury,
-                prot=prot.x,
-                prot_edgidx=prot.edge_index,
-                prot_e_attr=prot.edge_attr,
-                prot_batch=prot.batch,
-                lip=lipid.x,
-                lip_batch=lipid.batch,
-            )
-            if conf.lipid_fragments_mask:
-                forward_args["lipid_batch"] = lipid.lipid_batch
-            if getattr(conf, "lipid_graph_isomers", False):
-                forward_args["lip_edgidx"] = lipid.edge_index
-                forward_args["lip_e_attr"] = lipid.edge_attr
-            if conf.prot_attention_pos_bias or conf.prot_pooling_by_pockets:
-                forward_args["pocket_mask"] = prot.pocket
-            if getattr(conf, "use_esm3_v2_embeddings", False):
-                forward_args["node_confidence"] = getattr(prot, "node_confidence", None)
-            if getattr(conf, "geometric_transformer", False):
-                forward_args["prot_frame_rotation"] = prot.frame_rotation
-                forward_args["prot_frame_translation"] = prot.frame_translation
-            if (
-                getattr(conf, "geometric_transformer", False)
-                or getattr(conf, "rnabang_frozen_node_adapter", False)
-            ):
-                forward_args["prot_geometric_node_attr"] = prot.geometric_node_attr
-            if getattr(conf, "rnabang_frozen_node_adapter", False):
-                forward_args["prot_edge_node_pairs"] = getattr(
-                    prot, "edge_node_pairs", None
-                )
-                forward_args["prot_edge_node_degree"] = prot.edge_node_degree
-
+            forward_args = _build_forward_args(prot, lipid)
             outl = model(**forward_args)
             sample_count = validate_prediction_label_shapes(
                 outl, interaction_labels, "valid", i + 1
@@ -1066,40 +1276,7 @@ def run_test(run_summary):
             interaction_labels = prot.inter
             interaction_labels = interaction_labels.to(device, non_blocking=True)
 
-            forward_args = dict(
-                config=conf,
-                plm=prot.plm,
-                bury=prot.bury,
-                prot=prot.x,
-                prot_edgidx=prot.edge_index,
-                prot_e_attr=prot.edge_attr,
-                prot_batch=prot.batch,
-                lip=lipid.x,
-                lip_batch=lipid.batch,
-            )
-            if conf.lipid_fragments_mask:
-                forward_args["lipid_batch"] = lipid.lipid_batch
-            if getattr(conf, "lipid_graph_isomers", False):
-                forward_args["lip_edgidx"] = lipid.edge_index
-                forward_args["lip_e_attr"] = lipid.edge_attr
-            if conf.prot_attention_pos_bias or conf.prot_pooling_by_pockets:
-                forward_args["pocket_mask"] = prot.pocket
-            if getattr(conf, "use_esm3_v2_embeddings", False):
-                forward_args["node_confidence"] = getattr(prot, "node_confidence", None)
-            if getattr(conf, "geometric_transformer", False):
-                forward_args["prot_frame_rotation"] = prot.frame_rotation
-                forward_args["prot_frame_translation"] = prot.frame_translation
-            if (
-                getattr(conf, "geometric_transformer", False)
-                or getattr(conf, "rnabang_frozen_node_adapter", False)
-            ):
-                forward_args["prot_geometric_node_attr"] = prot.geometric_node_attr
-            if getattr(conf, "rnabang_frozen_node_adapter", False):
-                forward_args["prot_edge_node_pairs"] = getattr(
-                    prot, "edge_node_pairs", None
-                )
-                forward_args["prot_edge_node_degree"] = prot.edge_node_degree
-
+            forward_args = _build_forward_args(prot, lipid)
             outl = model(**forward_args)
             sample_count = validate_prediction_label_shapes(
                 outl, interaction_labels, "test", i + 1
@@ -1327,8 +1504,20 @@ for eepoch in range(EPOCHS):
         # so its length must not change when EPOCHS does.
         lipid_path_weight_now = conf.ramped_lipid_path_weight(epoch_number)
         apply_lipid_path_handicap(lipid_path_weight_now)
+    if conf.save_dynamics:
+        reset_dynamics_grad_stats()
+    # Rotates the residue subsample when --protein_residue_subsample is set; a no-op
+    # otherwise. Before the epoch runs, so the masks belong to the epoch they are
+    # numbered with.
+    train_dataset.set_epoch(epoch_number)
     model.train(True)
     countrain, countval, train_metrics, valid_metrics = epoch(epoch_number,countrain,countval)
+    if conf.save_dynamics:
+        # After the epoch's own validation, so the ablated passes are compared against a
+        # full-model number measured on the same weights.
+        log_branch_dynamics(epoch_number, valid_metrics)
+        if conf.save_model_in_dynamics:
+            save_dynamics_milestone(epoch_number + 1)
     if uses_fit_ramp:
         fit_progress = max(
             fit_progress,

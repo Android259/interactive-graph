@@ -4,7 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+# analysis/ on the path, not just the analysis package: the modules in there import
+# their siblings by bare name (analysis/analyze_metrics_table.py imports
+# build_metrics_table), so "from analysis.analyze_metrics_table import ..." fails on
+# that inner import while the bare form below works.
+_ANALYSIS_DIR = Path(__file__).resolve().parent / "analysis"
+if str(_ANALYSIS_DIR) not in sys.path:
+    sys.path.insert(0, str(_ANALYSIS_DIR))
 
 from analysis.build_metrics_table import PROJECT_ROOT, metric_row, upsert_row
 from training.read_configuration import ModelConfig

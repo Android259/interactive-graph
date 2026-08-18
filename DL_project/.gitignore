@@ -41,3 +41,13 @@ data/Total_tanimoto_matrix_uint8.npy
 data/lipid_SMILES_embedding_deterministic.pkl
 data/lipid_SMILES_embedding_deterministic.tensors.pt
 data/isomeric_lipids/lipid_SMILES_isomeric_embedding.pkl
+
+# Pretrained MoLFormer checkpoint (1.6 GB unpacked): the source of the lipid
+# embedding tables above, unpacked from the distributed zip and read only by
+# preprocessing/embed_isomeric_smiles_molformer.py, never by training.
+data/Pretrained MoLFormer/
+
+# --testmode redirects every artifact a run writes -- run/, test_metrics/,
+# metrics_summary.csv and its analyses -- here (training/new_train.py, artifact_root),
+# so a smoke run cannot touch the real tables. Throwaway by construction.
+testmode_outputs/

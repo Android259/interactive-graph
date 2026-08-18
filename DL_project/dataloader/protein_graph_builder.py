@@ -4,6 +4,7 @@ import glob
 import os
 import pickle
 
+import numpy
 import pandas
 import torch
 from torch_geometric.data import Data
@@ -32,65 +33,199 @@ KYTE_DOOLITTLE = (
 
 
 # One descriptor of the binding cavity per protein, in this order. Aggregated over the
-# pocket residues of coarse_graph_nodes.csv; ModelConfig.pocket_descriptor_count must
-# equal len(POCKET_DESCRIPTOR_NAMES).
+# pocket residues of coarse_graph_nodes.csv plus the pocket atom coordinates of
+# pocketness.pdb; ModelConfig.pocket_descriptor_count must equal
+# len(POCKET_DESCRIPTOR_NAMES). Documented in files/pocket_shape_descriptors.md, which
+# is to be updated in the same commit as any change here.
+#
+# The previous set was 13 sums or means over pocket residues and one maximum, which
+# cannot express shape at all: a long narrow channel and a round bowl with the same
+# total surface and the same mean burial produced identical numbers, though they hold
+# different lipids. Three of its entries were also measuring nothing of their own --
+# pocket "volume" is the summed Voronoi cell volume of the LINING RESIDUES, not the
+# cavity, and since a residue's cell varies by only 21% around 198 A^3 the sum tracks
+# the residue count at rho = 0.993; ev56 and the upper half of ev28 saturate at 2.0 for
+# nearly every residue of every protein, so as features they had no variance to give.
+# Measured on 35 proteins against the mean acyl chain length their positives carry,
+# controlling for protein size: volume +0.168 and residue count +0.161 (indistinguishable
+# from each other, as duplicates should be), against pocket_volume_per_sasa -0.475 and
+# pocket_gyration +0.443 from the shape entries below. No run had ever set
+# --pocket_descriptors, so replacing the set costs no comparability.
 POCKET_DESCRIPTOR_NAMES = (
-    "log_pocket_residues",     # size, but also a protein-size proxy -- see the flag docs
-    "pocket_residue_share",    # scale-free size
-    "log_pocket_volume",
-    "pocket_volume_share",
-    "log_pocket_sasa",         # the one entry with signal independent of protein size
+    # Scale-free size. The raw sizes are deliberately gone: on a cold-family split
+    # protein size stands in for fold, which is the shortcut the split withholds.
+    "pocket_residue_share",
     "pocket_sasa_share",
-    "apolar_sasa_share",       # chemistry of the cavity wall
-    "mean_hydropathy",
-    "mean_ev14",               # enclosure at three probe radii
-    "mean_ev28",
-    "mean_ev56",
-    "mean_buriedness",
-    "mean_voromqa_depth",
-    "max_voromqa_depth",
+    # Shape. Lining volume over open surface is the closest thing to "how narrow is
+    # it" these columns can express; the rest come from the cavity's own axes.
+    "pocket_volume_per_sasa",
+    "pocket_extent",           # how far the cavity runs, A -- an acyl chain's limit
+    "pocket_elongation",       # tube vs bowl
+    "pocket_flatness",         # slit vs tube
+    # Enclosure and depth as medians rather than means, and the shallow decile of
+    # depth, which measured stronger than either mean it replaces.
+    "ev14_q50",
+    "buriedness_q50",
+    "depth_q10",
+    # Chemistry, split where the two questions differ: head-group recognition happens
+    # at the mouth, chain packing in the depth, and one average of both answers
+    # neither. Aromatics are counted separately because Kyte-Doolittle cannot express
+    # them -- it scores Phe with the aliphatics and Trp near zero.
+    "apolar_sasa_share",
+    "aromatic_share",
+    "hydropathy_core",
+    "hydropathy_rim",
 )
 
+# Voronota's residue_type code is alphabetical by one-letter code (verified against
+# ID_resName), the same order KYTE_DOOLITTLE is indexed in; Phe, Trp, Tyr sit here.
+AROMATIC_RESIDUE_TYPES = (13, 17, 18)
+# Side chains only: a backbone atom is in every residue and says nothing about which
+# ones line a cavity. Same set the pocket mask itself is built from.
+POCKET_BACKBONE_ATOMS = ("C", "CA", "CB", "O", "N")
 
-def pocket_descriptor(vertices, pocket, config=None):
+
+def pocket_atom_coordinates(pocketness_path):
+    """Coordinates of the side-chain atoms pocketness.pdb marks as pocket.
+
+    The same lines and the same flag column the pocket mask is read from, so the cloud
+    measured here is the site the model is given, not a second opinion about it.
+    """
+    coordinates = []
+    with open(pocketness_path) as handle:
+        for line in handle:
+            if len(line) < 63 or not line.startswith(("ATOM", "HETATM")):
+                continue
+            if line[13:17].strip() in POCKET_BACKBONE_ATOMS:
+                continue
+            if int(line[62]) <= 0:
+                continue
+            coordinates.append(
+                (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+            )
+    return numpy.array(coordinates, dtype=float)
+
+
+def pocket_shape(coordinates):
+    """Extent, elongation and flatness of the cavity's atom cloud.
+
+    The three axes are the principal components of the coordinates. What is reported
+    along each is the 5th-to-95th percentile span of the projections rather than
+    min-to-max, so one stray atom at the rim cannot set the length of the cavity, and
+    the ratios are taken between axis LENGTHS (square roots of the eigenvalues) so that
+    "twice as long" reads as 2 rather than 4.
+
+    Four atoms are the minimum for a covariance worth taking; below that the cavity is
+    described by its residue-level entries alone and the shape entries are zeros, which
+    the train-only standardisation then leaves at the mean.
+    """
+    if len(coordinates) < 4:
+        return 0.0, 0.0, 0.0
+    centered = coordinates - coordinates.mean(axis=0)
+    eigenvalues, eigenvectors = numpy.linalg.eigh(numpy.cov(centered, rowvar=False))
+    order = numpy.argsort(eigenvalues)[::-1]
+    eigenvalues = numpy.clip(eigenvalues[order], 1e-9, None)
+    eigenvectors = eigenvectors[:, order]
+    projection = centered @ eigenvectors[:, 0]
+    extent = float(
+        numpy.percentile(projection, 95) - numpy.percentile(projection, 5)
+    )
+    lengths = numpy.sqrt(eigenvalues)
+    return extent, float(lengths[0] / lengths[1]), float(lengths[1] / lengths[2])
+
+
+def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
     """Aggregate one cavity descriptor from a protein's residue table and pocket mask.
 
     Returns ``[1, len(POCKET_DESCRIPTOR_NAMES)]`` so PyG collation stacks one row per
-    sample. Sizes are log1p-compressed because they span two orders of magnitude across
-    proteins and the shares next to them are bounded; the train-only standardisation
-    installed later handles the rest.
+    sample. Shares and ratios are bounded and the two angstrom quantities span well
+    under an order of magnitude across proteins, so nothing here is log-compressed; the
+    train-only standardisation installed later handles the rest.
+
+    ``pocketness_path`` supplies the atom coordinates the shape entries need. Without
+    it those entries are zero -- a caller that has no PDB gets a usable descriptor
+    rather than an exception, but it gets one with no shape in it.
     """
     mask = pocket.bool().numpy() if hasattr(pocket, "bool") else pocket
     site = vertices[mask]
     if len(site) == 0:
         raise ValueError("pocket_descriptors requires at least one pocket residue")
-    hydropathy = torch.tensor(KYTE_DOOLITTLE)[
-        torch.tensor(site["residue_type"].to_numpy(copy=True)).long()
-    ].numpy()
+    residue_types = site["residue_type"].to_numpy(copy=True).astype(int)
+    hydropathy = numpy.asarray(KYTE_DOOLITTLE)[residue_types]
+    aromatic = numpy.isin(residue_types, AROMATIC_RESIDUE_TYPES)
     sasa = site["residue_sas_area"].values
-    total_sasa = float(vertices["residue_sas_area"].sum())
-    total_volume = float(vertices["residue_volume"].sum())
     pocket_sasa = float(sasa.sum())
     pocket_volume = float(site["residue_volume"].sum())
+    burial = site["residue_mean_buriedness"].to_numpy(dtype=float)
+    # The pocket's own median splits it into a depth and a mouth. Median, not a fixed
+    # threshold: burial is not comparable across proteins, the split within one is.
+    core = burial >= numpy.median(burial)
+    rim = ~core
+    extent, elongation, flatness = pocket_shape(
+        pocket_atom_coordinates(pocketness_path)
+        if pocketness_path is not None
+        else numpy.empty((0, 3))
+    )
     values = (
-        float(torch.log1p(torch.tensor(float(len(site))))),
         len(site) / max(len(vertices), 1),
-        float(torch.log1p(torch.tensor(pocket_volume))),
-        pocket_volume / max(total_volume, 1e-9),
-        float(torch.log1p(torch.tensor(pocket_sasa))),
-        pocket_sasa / max(total_sasa, 1e-9),
+        pocket_sasa / max(float(vertices["residue_sas_area"].sum()), 1e-9),
+        pocket_volume / max(pocket_sasa, 1e-9),
+        extent,
+        elongation,
+        flatness,
+        float(numpy.median(site["residue_mean_ev14"].to_numpy(dtype=float))),
+        float(numpy.median(burial)),
+        float(numpy.percentile(
+            site["residue_mean_voromqa_depth"].to_numpy(dtype=float), 10
+        )),
         float(sasa[hydropathy > 0].sum() / max(pocket_sasa, 1e-9)),
-        float(hydropathy.mean()),
-        float(site["residue_mean_ev14"].mean()),
-        float(site["residue_mean_ev28"].mean()),
-        float(site["residue_mean_ev56"].mean()),
-        float(site["residue_mean_buriedness"].mean()),
-        float(site["residue_mean_voromqa_depth"].mean()),
-        float(site["residue_mean_voromqa_depth"].max()),
+        float(aromatic.mean()),
+        float(hydropathy[core].mean()),
+        float(hydropathy[rim].mean()) if rim.any() else float(hydropathy.mean()),
     )
     if len(values) != len(POCKET_DESCRIPTOR_NAMES):
         raise ValueError("pocket descriptor list and name list disagree")
+    expected = getattr(config, "pocket_descriptor_count", None)
+    if expected not in (None, 0) and expected != len(values):
+        # Caught here rather than as a shape mismatch inside the classifier, where the
+        # number would arrive as an unexplained dimension.
+        raise ValueError(
+            f"pocket_descriptor_count is {expected} but the descriptor has "
+            f"{len(values)} entries; ModelConfig and POCKET_DESCRIPTOR_NAMES disagree"
+        )
     return torch.tensor(values, dtype=torch.float32).unsqueeze(0)
+
+
+def restrict_parts_to_mask(parts, keep):
+    """One protein's tensors reduced to the residues ``keep`` marks.
+
+    Node tensors are subset and the graph keeps only edges whose *both* endpoints
+    survive, renumbered into the compacted node range. Two callers want exactly this:
+    the pocket restriction, whose mask is fixed and structural, and the residue
+    subsampling augmentation, whose mask is redrawn per sample.
+
+    ``edge_node_degree`` / ``edge_node_pairs`` are precomputed descriptions of each
+    residue's contact environment in the *full* protein. They are subset, not
+    recomputed, deliberately: they encode how buried the residue is, which is a property
+    of the intact structure and is exactly what a reduced graph can no longer derive on
+    its own.
+    """
+    kept = int(keep.sum())
+    renumber = torch.full((keep.numel(),), -1, dtype=torch.long)
+    renumber[keep] = torch.arange(kept)
+    edge_index = parts["edge_index"]
+    edge_keep = keep[edge_index[0]] & keep[edge_index[1]]
+    restricted = dict(parts)
+    restricted["edge_index"] = renumber[edge_index[:, edge_keep]]
+    restricted["edge_attr"] = parts["edge_attr"][edge_keep]
+    for name in (
+        "x", "bury", "plm", "pocket", "geometric_node_attr", "edge_node_pairs",
+        "edge_node_degree", "frame_rotation", "frame_translation", "node_confidence",
+    ):
+        value = restricted.get(name)
+        if value is not None:
+            restricted[name] = value[keep]
+    return restricted
 
 
 def protein_node_columns(config):
@@ -152,45 +287,22 @@ class ProteinGraphBuilder:
     def _restrict_to_pockets(self, parts):
         """Drop every non-pocket residue from one protein's tensors.
 
-        Node tensors are subset and the graph keeps only edges whose *both* endpoints
-        survive, renumbered to the compacted node range. This is a stronger statement
-        than ``attention_by_pockets``: there the GAT still propagates over the whole
-        protein and only attention keys are restricted, here the rest of the structure
-        is not in the graph at all. Median pocket is 33 of 203 residues, so the
-        surviving graph is small and may be disconnected -- edges between two pocket
-        residues on opposite sides of the cavity do not exist in the contact graph.
-
-        ``edge_node_degree`` / ``edge_node_pairs`` are precomputed descriptions of each
-        residue's contact environment in the *full* protein. They are subset, not
-        recomputed, deliberately: they encode how buried the residue is, which is a
-        property of the intact structure and is exactly what a pocket-only graph can no
-        longer derive on its own.
+        This is a stronger statement than ``attention_by_pockets``: there the GAT still
+        propagates over the whole protein and only attention keys are restricted, here
+        the rest of the structure is not in the graph at all. Median pocket is 33 of 203
+        residues, so the surviving graph is small and may be disconnected -- edges
+        between two pocket residues on opposite sides of the cavity do not exist in the
+        contact graph.
         """
         if not getattr(self.config, "protein_pockets_only", False):
             return parts
         keep = parts["pocket"].bool()
-        kept = int(keep.sum())
-        if kept == 0:
+        if int(keep.sum()) == 0:
             raise ValueError(
                 "protein_pockets_only left a protein with no residues; its "
                 "pocketness.pdb marks no side-chain atom as pocket"
             )
-        renumber = torch.full((keep.numel(),), -1, dtype=torch.long)
-        renumber[keep] = torch.arange(kept)
-        edge_index = parts["edge_index"]
-        edge_keep = keep[edge_index[0]] & keep[edge_index[1]]
-        restricted = dict(parts)
-        restricted["edge_index"] = renumber[edge_index[:, edge_keep]]
-        restricted["edge_attr"] = parts["edge_attr"][edge_keep]
-        for name in (
-            "x", "bury", "plm", "pocket", "geometric_node_attr", "edge_node_pairs",
-            "edge_node_degree", "frame_rotation", "frame_translation",
-            "node_confidence",
-        ):
-            value = restricted.get(name)
-            if value is not None:
-                restricted[name] = value[keep]
-        return restricted
+        return restrict_parts_to_mask(parts, keep)
 
     def _cached_protein_parts(
         self, cached, plm, node_confidence, nodes_path
@@ -265,7 +377,16 @@ class ProteinGraphBuilder:
             self._pocket_descriptor_memo = memo
         cached = memo.get(nodes_path)
         if cached is None:
-            cached = pocket_descriptor(pandas.read_csv(nodes_path), pocket, self.config)
+            # pocketness.pdb sits beside the residue table, and the shape entries are
+            # read from it -- the tensor cache carries the mask but not the atoms.
+            cached = pocket_descriptor(
+                pandas.read_csv(nodes_path),
+                pocket,
+                self.config,
+                pocketness_path=os.path.join(
+                    os.path.dirname(nodes_path), "pocketness.pdb"
+                ),
+            )
             memo[nodes_path] = cached
         return cached
 
@@ -493,7 +614,9 @@ class ProteinGraphBuilder:
             # Computed on the intact residue table on purpose: the shares compare the
             # pocket against the whole protein, which protein_pockets_only would have
             # already thrown away by the time _restrict_to_pockets runs.
-            parts["pocket_descriptor"] = pocket_descriptor(vertices, poket, self.config)
+            parts["pocket_descriptor"] = pocket_descriptor(
+                vertices, poket, self.config, pocketness_path=pok
+            )
         use_precomputed_geometric_nodes = (
             getattr(self.config, "geometric_transformer", False)
             or getattr(self.config, "rnabang_frozen_node_adapter", False)

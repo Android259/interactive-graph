@@ -47,8 +47,12 @@ wait_progress_python() {
 # claim the checkpoint. The last field is the RAW score of the last completed
 # epoch -- the same number before smoothing, which is what shows whether the run
 # is still moving right now rather than how good its best checkpoint once was.
+#
+# LC_ALL=C because the scores are parsed by the caller, not read by a person: under a
+# comma-decimal locale (fr_FR here) awk's %f writes "0,634567", which then matches no
+# number pattern downstream and every score column turns into a dash.
 wait_progress_parse_log() {
-    awk '
+    LC_ALL=C awk '
         /^EPOCH [0-9]+:/ {
             current = $2
             sub(/:$/, "", current)
@@ -369,10 +373,15 @@ wait_progress_print_cluster_stats() {
 
 # Two decimals, or a dash for anything that is not a number (n/a, empty, a job
 # whose first epoch has not finished).
+#
+# LC_NUMERIC=C for the same reason the parser above sets LC_ALL=C, from the other
+# side: the values arrive with a decimal point, and under a comma-decimal locale
+# bash's printf rejects them one by one ("nombre non valable") and prints 0,00 --
+# a whole column of zeros that looks like a model that learned nothing.
 wait_progress_round2() {
     local value="${1:-}"
     if [[ "${value}" =~ ^-?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][-+]?[0-9]+)?$ ]]; then
-        printf '%.2f' "${value}"
+        LC_NUMERIC=C printf '%.2f' "${value}"
     else
         printf -- '-'
     fi

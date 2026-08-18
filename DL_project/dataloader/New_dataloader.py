@@ -20,7 +20,11 @@ from dataloader.lipid_isomer_graph_builder import (
     LipidGraphData,
     LipidIsomerGraphBuilder,
 )
-from dataloader.protein_graph_builder import ProteinGraphBuilder, ProteinGraphData
+from dataloader.protein_graph_builder import (
+    ProteinGraphBuilder,
+    ProteinGraphData,
+    restrict_parts_to_mask,
+)
 from dataloader.protein_graph_tensor_cache import load_protein_graph_tensor_cache
 from dataloader.tanimoto_compact import load_compact
 from dataloader.sampler import (
@@ -235,6 +239,10 @@ class PLIDataset(
         # rebuilding.
         self._sample_cache = {}
         self._sample_cache_enabled = not self.config.lipid_random_choice
+        # Residue subsampling is per split and per epoch; both are set from outside --
+        # the split in __iter__, the epoch by the training loop through set_epoch.
+        self._augment_residues = False
+        self._augmentation_epoch = 0
         lipid_graph_index_path = os.path.join(self.lipid_graph_dir, "lipid_graph_index.csv")
         if getattr(self.config, "lipid_graph_isomers", False) and os.path.exists(lipid_graph_index_path):
             lipid_graph_index = pandas.read_csv(lipid_graph_index_path)
@@ -591,8 +599,26 @@ class PLIDataset(
         # training and validation batch too -- one more tensor to slice per sample and one
         # more torch.cat per collation, for 150 epochs, read by no one. Marked per clone
         # here, before the fields are materialized, so the other two never build it.
+        # Residue subsampling trains on a different random subset of each protein every
+        # epoch, so it belongs to the training split alone: on validation it would turn
+        # the metric into a draw, and the epoch-to-epoch wobble would be indistinguishable
+        # from learning. The sample cache goes with it, for the reason spelled out where
+        # lipid_random_choice disables it -- a cached sample freezes the draw, and one
+        # frozen subset per row is not an augmentation but a smaller fixed fingerprint.
+        # The per-protein and per-lipid caches stay, so what is paid per access is tensor
+        # indexing, not a file parse.
+        train_dataset._augment_residues = bool(
+            getattr(self.config, "protein_residue_subsample", 0)
+        )
+        if train_dataset._augment_residues:
+            train_dataset._sample_cache_enabled = False
         train_dataset._needs_protein_id = False
-        valid_dataset._needs_protein_id = False
+        # Validation carries it only under save_dynamics, whose between-protein variance
+        # needs to know which rows share a protein. Off by default, so the ordinary run
+        # keeps paying nothing for it.
+        valid_dataset._needs_protein_id = bool(
+            getattr(self.config, "save_dynamics", False)
+        )
         test_dataset._needs_protein_id = True
         train_dataset._prepare_indexed_fields()
         valid_dataset._prepare_indexed_fields()
@@ -601,6 +627,36 @@ class PLIDataset(
         valid_dataset.pair_graph = None
         test_dataset.pair_graph = None
         return iter((train_dataset, valid_dataset, test_dataset))
+
+    def set_epoch(self, epoch):
+        """Rotate the residue subsample. Called once per epoch by the training loop.
+
+        The draw is seeded from (run seed, pair_id, epoch) rather than taken from the
+        global generator, so a mask depends on nothing but those three: not on how many
+        other random numbers have been drawn before it, not on batch order, not on the
+        worker count. Two runs of the same configuration therefore see the same masks
+        even if num_workers differs, which is the property every comparison in this
+        project rests on.
+        """
+        self._augmentation_epoch = int(epoch)
+
+    def _subsample_residues(self, parts, pair_id):
+        """Keep a fixed number of randomly chosen residues, redrawn every epoch."""
+        count = int(getattr(self.config, "protein_residue_subsample", 0) or 0)
+        if count <= 0 or not self._augment_residues:
+            return parts
+        total = int(parts["x"].shape[0])
+        # Fewer residues than asked for: keep them all. The protein's size stays visible
+        # in that case, which is the one thing this is meant to hide -- see the flag's
+        # note in ModelConfig on choosing a count every protein can supply.
+        if total <= count:
+            return parts
+        seed = ((int(self.config.seed) * 1_000_003 + int(pair_id)) * 1_000_003
+                + int(self._augmentation_epoch)) % (2 ** 63 - 1)
+        generator = torch.Generator().manual_seed(seed)
+        keep = torch.zeros(total, dtype=torch.bool)
+        keep[torch.randperm(total, generator=generator)[:count]] = True
+        return restrict_parts_to_mask(parts, keep)
 
     def get(self, idx):
         # Assembling a sample is a pure function of its row: the same protein graph, the
@@ -637,6 +693,7 @@ class PLIDataset(
             lipid_batch = None
 
         parts, tenfam = self.protein_graph_parts(protein)
+        parts = self._subsample_residues(parts, pair_id)
 
         protein_graph = self.assemble_protein_graph(
             parts, self._interaction_tensor[idx], tenfam

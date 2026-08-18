@@ -47,19 +47,26 @@
 #                           on top of the free memory the kernel reports, NOT an
 #                           assumption about how much the desktop is using (that
 #                           is measured, see below).
-#   MEM_PER_JOB_GIB         RAM budgeted per job for that cap. Default: 2 --
-#                           the MARGINAL cost of one more concurrent job, not
-#                           one job's own RSS in isolation (summing isolated
-#                           RSS overestimates: shared libtorch/MKL pages are
-#                           not duplicated per process). See the measurements
-#                           below. THIS IS THE BINDING CONSTRAINT ON THIS
-#                           MACHINE, not cores: a LOCAL_JOBS=22 run (basing
-#                           the job count on cores alone, before this cap
-#                           existed) exhausted the 31 GiB of RAM here and the
-#                           OOM killer took out GNOME Shell itself along with
-#                           several terminals. CPU and memory are independent
-#                           budgets; nothing about reserving cores protects
-#                           against this.
+#   MEM_PER_JOB_GIB         RAM budgeted per job. Setting it FIXES the budget at
+#                           that value and turns the measurement below off; left
+#                           unset, it is only the bootstrap for the first jobs
+#                           (default 2) and the real figure is measured from the
+#                           jobs themselves as soon as one is training. What is
+#                           budgeted is the MARGINAL cost of one more concurrent
+#                           job, not one job's own RSS in isolation (summing
+#                           isolated RSS overestimates: shared libtorch/MKL
+#                           pages are not duplicated per process). THIS IS THE
+#                           BINDING CONSTRAINT ON THIS MACHINE, not cores: a
+#                           LOCAL_JOBS=22 run (basing the job count on cores
+#                           alone, before this cap existed) exhausted the 31 GiB
+#                           of RAM here and the OOM killer took out GNOME Shell
+#                           itself along with several terminals. CPU and memory
+#                           are independent budgets; nothing about reserving
+#                           cores protects against this.
+#   MEM_MARGIN_PERCENT      Margin added to the measured figure. Default: 30 --
+#                           covers what a snapshot cannot see (a best-epoch
+#                           state_dict copy, the end-of-run test pass) and the
+#                           drift of a long run.
 #
 # A partial throughput sweep exists from earlier work on this machine (24
 # cores, a lighter 481k-parameter config, testmode, 3 epochs): throughput kept
@@ -363,7 +370,29 @@ if (( usable_cores < 1 )); then usable_cores=1; fi
 # 2.0 GiB per job, on the same heavy adversarial_grl+adv_deep config. Hence 2
 # Hence 2. A config heavier than any measured here wants an explicit
 # MEM_PER_JOB_GIB, which is what the override is for.
+#
+# All of those numbers are measurements of ONE config on ONE machine, carried as a
+# constant into every other config -- which is exactly what went wrong in both
+# directions: 2 GiB/job is roughly double what this project's lighter configs
+# actually take (measured 1.13 GiB PSS per job for a 1.0M-parameter run with
+# --num_workers=0, where the 0.72 GiB DataLoader worker of the measurement above
+# does not exist), and it would be too little for a config heavier than any tried
+# so far. So the constant is now only the bootstrap for the first jobs, and the
+# budget is re-derived from the jobs actually running -- see update_job_budget
+# below. An explicitly set MEM_PER_JOB_GIB still wins and switches the
+# measurement off, because a caller who names a number has usually measured
+# something this script cannot see.
+if [[ -n "${MEM_PER_JOB_GIB+set}" ]]; then
+    MEM_PER_JOB_FIXED=1
+else
+    MEM_PER_JOB_FIXED=0
+fi
 MEM_PER_JOB_GIB="${MEM_PER_JOB_GIB:-2}"
+# The budget in MiB, which is what everything below works in: a measured figure has
+# no reason to land on a whole gibibyte, and rounding it up to one would give back
+# most of what measuring gained.
+MEM_PER_JOB_MIB=$(( MEM_PER_JOB_GIB * 1024 ))
+MEM_MARGIN_PERCENT="${MEM_MARGIN_PERCENT:-30}"
 # Memory equivalent of RESERVED_CORES: kept separate (not derived from it)
 # because the two resources are unrelated, and the failure mode here is worse
 # than a slow desktop -- the OOM killer picks whatever it wants, which is how
@@ -380,10 +409,22 @@ MEM_PER_JOB_GIB="${MEM_PER_JOB_GIB:-2}"
 # is therefore margin on top of an already conservative number, hence 2 not 9.
 RESERVED_MEM_GIB="${RESERVED_MEM_GIB:-2}"
 total_mem_gib=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 / 1024 ))
+
+# MiB of memory a new job may be given right now: what the kernel says can be
+# allocated without swapping, less the reserve. Read fresh every time, never cached
+# -- the whole point of re-deriving the budget during the run is that both sides of
+# the division change while it runs.
+mem_headroom_mib() {
+    local available
+    available=$(( $(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) / 1024 \
+        - RESERVED_MEM_GIB * 1024 ))
+    (( available < 0 )) && available=0
+    printf '%d\n' "${available}"
+}
+
 mem_free_gib=$(( $(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) / 1024 / 1024 ))
-mem_available_gib=$(( mem_free_gib - RESERVED_MEM_GIB ))
-if (( mem_available_gib < MEM_PER_JOB_GIB )); then mem_available_gib=${MEM_PER_JOB_GIB}; fi
-mem_max_jobs=$(( mem_available_gib / MEM_PER_JOB_GIB ))
+mem_available_mib="$(mem_headroom_mib)"
+mem_max_jobs=$(( mem_available_mib / MEM_PER_JOB_MIB ))
 if (( mem_max_jobs < 1 )); then mem_max_jobs=1; fi
 
 # Default LOCAL_JOBS to the actual maximum under BOTH budgets -- one job per
@@ -396,6 +437,11 @@ if (( mem_max_jobs < 1 )); then mem_max_jobs=1; fi
 # sweet spot once one is actually measured for the config in hand) -- doing
 # that skips both caps, on the assumption an explicit override means the
 # caller has already accounted for memory themselves.
+if [[ -n "${LOCAL_JOBS+set}" ]]; then
+    LOCAL_JOBS_FIXED=1
+else
+    LOCAL_JOBS_FIXED=0
+fi
 LOCAL_JOBS="${LOCAL_JOBS:-$(( usable_cores < mem_max_jobs ? usable_cores : mem_max_jobs ))}"
 if (( LOCAL_JOBS < 1 )); then LOCAL_JOBS=1; fi
 if (( LOCAL_JOBS > total_jobs )); then LOCAL_JOBS=${total_jobs}; fi
@@ -463,9 +509,12 @@ printf 'LOCAL_JOBS=%d OMP_THREADS_PER_JOB=%d NUM_WORKERS_PER_JOB=%d\n' \
     "${LOCAL_JOBS}" "${OMP_THREADS_PER_JOB}" "${NUM_WORKERS_PER_JOB}"
 printf '  cores: %d usable of %d (%d reserved for the desktop)\n' \
     "${usable_cores}" "${nproc_count}" "${RESERVED_CORES}"
-printf '  memory: %d GiB usable of %d free now (%d total, %d reserved), %d GiB/job -> caps at %d concurrent job(s)\n' \
-    "${mem_available_gib}" "${mem_free_gib}" "${total_mem_gib}" "${RESERVED_MEM_GIB}" \
-    "${MEM_PER_JOB_GIB}" "${mem_max_jobs}"
+printf '  memory: %d MiB usable of %d GiB free now (%d total, %d reserved), %d MiB/job (%s) -> caps at %d concurrent job(s)\n' \
+    "${mem_available_mib}" "${mem_free_gib}" "${total_mem_gib}" "${RESERVED_MEM_GIB}" \
+    "${MEM_PER_JOB_MIB}" \
+    "$( (( MEM_PER_JOB_FIXED )) && printf 'fixed by MEM_PER_JOB_GIB' \
+        || printf 'bootstrap, re-measured once a job is training')" \
+    "${mem_max_jobs}"
 if (( ${#JOB_CPU_DOMAINS[@]} > 0 )); then
     printf '  pinning: %d cache domain(s), one per job round-robin: %s\n' \
         "${#JOB_CPU_DOMAINS[@]}" "${JOB_CPU_DOMAINS[*]}"
@@ -489,14 +538,152 @@ if ! python3 "${PROJECT_ROOT}/data/build_lipid_embedding_store.py" \
     printf 'WARNING: could not build the embedding store; jobs will read the pickle.\n' >&2
 fi
 
+# --- the memory budget, measured rather than assumed -----------------------------
+#
+# What one more concurrent job costs is a property of the config, not of this
+# machine: the same script runs a 481k-parameter model with no DataLoader worker and
+# a 1.28M-parameter adversarial one with two, and their real footprints differ by
+# more than a factor of two. A constant therefore has to be wrong in one direction or
+# the other, and both directions hurt -- too high wastes half the machine, too low
+# hands the OOM killer a choice it makes badly. So the constant is used only until
+# there is something to measure, and from the first training job onwards the budget
+# is what the running jobs actually occupy.
+#
+# PSS, not RSS: it divides each shared page among the processes mapping it, so the
+# libtorch and MKL text pages, and the mmapped embedding stores, are counted once in
+# total instead of once per job. Summed over the jobs it is very nearly their true
+# joint footprint, which makes the mean the cost of one more of them -- the same
+# quantity the fixed constant was always trying to name.
+
+# The whole process tree of one job, in KiB. DataLoader workers are children and
+# their memory is as real as their parent's, so a job is the tree, not the process.
+job_tree_pss_kib() {
+    local root="$1" pid value total=0
+    for pid in "${root}" $(pgrep -P "${root}" 2>/dev/null || true); do
+        value="$(awk '/^Pss:/ {print $2; exit}' "/proc/${pid}/smaps_rollup" 2>/dev/null || true)"
+        # smaps_rollup needs a 4.14 kernel and a readable process; VmRSS is always
+        # there, and overestimating is the safe way to be wrong about a budget.
+        [[ -n "${value}" ]] || value="$(awk '/^VmRSS:/ {print $2; exit}' "/proc/${pid}/status" 2>/dev/null || true)"
+        [[ -n "${value}" ]] && total=$(( total + value ))
+    done
+    printf '%d\n' "${total}"
+}
+
+# Mean MiB per running job, or nothing if none can be read.
+measure_job_memory_mib() {
+    local pid tree total=0 count=0
+    for pid in "${pids[@]}"; do
+        kill -0 "${pid}" 2>/dev/null || continue
+        tree="$(job_tree_pss_kib "${pid}")"
+        (( tree > 0 )) || continue
+        total=$(( total + tree ))
+        count=$(( count + 1 ))
+    done
+    (( count > 0 )) || return 1
+    printf '%d\n' $(( total / count / 1024 ))
+}
+
+# Re-derive how many jobs may run at once, from the measured cost and the memory free
+# at this moment. Called before every launch and after every job that finishes, so a
+# grid that starts under a loaded desktop widens as the desktop lets go, and one that
+# meets a heavier config than expected narrows instead of meeting the OOM killer.
+update_job_budget() {
+    (( LOCAL_JOBS_FIXED )) && return 0
+    local measured headroom affordable cap
+    if (( ! MEM_PER_JOB_FIXED )) && [[ -n "${first_log_file}" ]] \
+        && grep -q '^EPOCH ' "${first_log_file}" 2>/dev/null; then
+        # Measured only once a job is past dataset construction and into its first
+        # epoch: before that the model, the optimizer state and the sample caches are
+        # not allocated yet, and a snapshot taken then would budget for a job that
+        # does not exist. Re-measured every time rather than once, because a run's
+        # footprint drifts and because the mean falls as later jobs share more pages.
+        if measured="$(measure_job_memory_mib)"; then
+            measured=$(( measured * (100 + MEM_MARGIN_PERCENT) / 100 ))
+            # Never zero: it is a divisor below, and a job that measures as free is a
+            # broken measurement rather than a job that costs nothing.
+            (( measured < 1 )) && measured=1
+            # Said out loud only when it moves by more than 5%. Re-measured before
+            # every launch, the figure drifts by a megabyte at a time, and a line per
+            # launch would bury the launches themselves.
+            if (( measured * 20 < MEM_PER_JOB_MIB * 19 || measured * 20 > MEM_PER_JOB_MIB * 21 )); then
+                printf '  memory: measured %d MiB/job over %d running job(s), margin included\n' \
+                    "${measured}" "${#pids[@]}"
+            fi
+            MEM_PER_JOB_MIB=${measured}
+        fi
+    fi
+    (( MEM_PER_JOB_MIB > 0 )) || MEM_PER_JOB_MIB=1
+    headroom="$(mem_headroom_mib)"
+    affordable=$(( headroom / MEM_PER_JOB_MIB ))
+    cap=$(( ${#pids[@]} + affordable ))
+    # OMP_THREADS_PER_JOB was fixed before the first job started and must stay fixed:
+    # the thread count decides how at::parallel_for splits every reduction, so
+    # changing it mid-grid would make the second half of a run's numbers incomparable
+    # with the first. Widening therefore stops where the cores run out at the thread
+    # count already handed out, not where memory does.
+    local core_cap=$(( usable_cores / OMP_THREADS_PER_JOB ))
+    (( core_cap < 1 )) && core_cap=1
+    (( cap > core_cap )) && cap=${core_cap}
+    (( cap > total_jobs )) && cap=${total_jobs}
+    (( cap < 1 )) && cap=1
+    LOCAL_JOBS=${cap}
+}
+
+# Wait for at least one running job to exit, then reap every job that has, exactly
+# once each.
+#
+# Poll rather than `wait -n`: wait -n reaps ONE job anonymously and discards its exit
+# status, and a later `wait "${pid}"` on that same pid cannot recover it (bash has
+# already forgotten it, so a second wait on it is either an error or a meaningless
+# status). That used to lose the exit status of every job it silently reaped this way
+# -- for slow jobs a rare event, but jobs that all die in under a second (e.g. a whole
+# grid launched without the conda env active) can finish several at a time between one
+# stagger tick and the next, and this is exactly how a run once reported "1 job(s)
+# exited non-zero" when in fact all 18 had. Reaping only pids confirmed dead by
+# kill -0, and each exactly once via `wait "${pid}"` right here, cannot lose one.
+reap_finished_jobs() {
+    local pid
+    local still_running=() finished=()
+    while :; do
+        still_running=()
+        finished=()
+        for pid in "${pids[@]}"; do
+            if kill -0 "${pid}" 2>/dev/null; then
+                still_running+=("${pid}")
+            else
+                finished+=("${pid}")
+            fi
+        done
+        (( ${#finished[@]} > 0 )) && break
+        sleep 0.2
+    done
+    for pid in "${finished[@]}"; do
+        wait "${pid}" || failed=$((failed + 1))
+    done
+    pids=("${still_running[@]}")
+}
+
 pids=()
 failed=0
+# The log of the first job launched, which is what tells the budget when there is
+# something worth measuring.
+first_log_file=""
 for (( job_index=0; job_index<total_jobs; job_index++ )); do
     group="${job_groups[job_index]}"
     seed="${job_seeds[job_index]}"
     output_dir="${output_dir_root}/${group}"
     mkdir -p "${output_dir}"
     log_file="${output_dir}/${variant}_seed${seed}_ep150_batch16.log"
+
+    # BEFORE the launch, not after it: the cap has to be met by not starting a job,
+    # which is the one moment where refusing still costs nothing. Re-derived inside
+    # the wait too, so a job finishing or the desktop freeing memory is noticed while
+    # this is blocked here rather than one launch later.
+    update_job_budget
+    while (( ${#pids[@]} >= LOCAL_JOBS )); do
+        reap_finished_jobs
+        update_job_budget
+    done
 
     printf '=== [%d/%d] GROUP: %s | VARIANT: %s | SEED: %s ===\n' \
         "$(( job_index + 1 ))" "${total_jobs}" "${group}" "${variant}" "${seed}"
@@ -554,6 +741,8 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     out_file="${output_dir}/${variant}_seed${seed}_${LOCAL_JOB_TAG}${pids[-1]}.out"
     ln -sf "$(basename "${log_file}")" "${out_file}"
 
+    [[ -n "${first_log_file}" ]] || first_log_file="${log_file}"
+
     # This job is no longer queued -- pop its line (jobs launch in the same
     # order local_queue_file was written in, so it is always the first line).
     tail -n +2 "${local_queue_file}" > "${local_queue_file}.tmp"
@@ -570,36 +759,6 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
         sleep 1
     fi
 
-    if (( ${#pids[@]} >= LOCAL_JOBS )); then
-        # Poll rather than `wait -n`: wait -n reaps ONE job anonymously and
-        # discards its exit status, and a later `wait "${pid}"` on that same
-        # pid cannot recover it (bash has already forgotten it, so a second
-        # wait on it is either an error or a meaningless status). That used to
-        # lose the exit status of every job it silently reaped this way -- for
-        # slow jobs a rare event, but jobs that all die in under a second
-        # (e.g. a whole grid launched without the conda env active) can finish
-        # several at a time between one stagger tick and the next, and this is
-        # exactly how a run once reported "1 job(s) exited non-zero" when in
-        # fact all 18 had. Reaping only pids confirmed dead by kill -0, and
-        # each exactly once via `wait "${pid}"` right here, cannot lose one.
-        while :; do
-            still_running=()
-            finished=()
-            for pid in "${pids[@]}"; do
-                if kill -0 "${pid}" 2>/dev/null; then
-                    still_running+=("${pid}")
-                else
-                    finished+=("${pid}")
-                fi
-            done
-            (( ${#finished[@]} > 0 )) && break
-            sleep 0.2
-        done
-        for pid in "${finished[@]}"; do
-            wait "${pid}" || failed=$((failed + 1))
-        done
-        pids=("${still_running[@]}")
-    fi
 done
 
 for pid in "${pids[@]}"; do

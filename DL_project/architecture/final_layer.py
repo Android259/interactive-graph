@@ -254,6 +254,10 @@ class Final_Layer(torch.nn.Module):
             # the constant keeps the module usable on its own.
             self.adv_lambda_now = self.config.adv_lambda
 
+        # Filled by forward() under save_dynamics so the training loop can measure the
+        # two pooled halves that reach the classifier without re-deriving the pooling.
+        self._pooled_partners = None
+
         self._dann_features = None
         if self.config.dann_family:
             # One head per class when class-conditional, so the reversal aligns
@@ -327,6 +331,17 @@ class Final_Layer(torch.nn.Module):
     def forward(self, lip, prot, lip_batch, prot_batch, pool, prot_pocket=None):
         """Pool both modalities by sample and return binary logits."""
         lip_outs, prot_outs = self._pool_partners(lip, prot, lip_batch, prot_batch, pool, prot_pocket)
+
+        # Stashed BEFORE the ablations below, which is what lets one diagnostic pass do
+        # both jobs: zeroing a half changes only what the classifier reads, never the
+        # pooling that produced it, so the halves measured during an ablated pass are
+        # the ones the unablated model computes. Evaluation only, and detached, so no
+        # graph is held alive between batches.
+        self._pooled_partners = (
+            (lip_outs.detach(), prot_outs.detach())
+            if getattr(self.config, "save_dynamics", False) and not self.training
+            else None
+        )
 
         if getattr(self.config, "lipid_only", False):
             # Diagnostic shortcut ablation: hide the protein half from the

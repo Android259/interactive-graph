@@ -6,11 +6,19 @@
 #   bash scripts/kill.sh --local            every local grid job on this machine
 #   bash scripts/kill.sh <label>            that label everywhere: both clusters and here
 #   bash scripts/kill.sh --kraken <label>   that label on kraken only
+#   bash scripts/kill.sh --local --clean_logs   stop them and delete their logs
 #
 # Name a place and you stop everything there. Name a label and you stop that
 # experiment wherever it happens to be running. Name both and you stop the
 # narrower thing. Naming neither is refused -- "stop everything, everywhere"
 # should have to be spelled out, and `--bigfoot --kraken --local` spells it.
+#
+# --clean_logs deletes the log files of the jobs this invocation stopped -- the
+# job-tagged .out, the .log it points at, any .err beside it -- and then the
+# directories those leave empty. Only jobs that were actually stopped here are
+# touched; a killed job's logs are a stump of an epoch or two, and a rerun of the
+# same label writes new files rather than reusing them. Off by default: a killed
+# job's log is often exactly what one wants to read afterwards.
 #
 # The label is the config's name, which is also the run's --label and the stem of
 # its arg_files/*.md. Which label a job belongs to is read off the directory it
@@ -43,11 +51,13 @@ usage() {
 
 TARGETS=()
 LABEL=""
+CLEAN_LOGS=0
 while (( $# > 0 )); do
     case "$1" in
         --bigfoot) TARGETS+=("bigfoot"); shift ;;
         --kraken)  TARGETS+=("kraken"); shift ;;
         --local)   TARGETS+=("local"); shift ;;
+        --clean_logs) CLEAN_LOGS=1; shift ;;
         -h|--help) usage; exit 0 ;;
         -*)        printf 'Unknown option: %s\n' "$1" >&2; usage; exit 2 ;;
         *)
@@ -97,6 +107,28 @@ job_variant() {
     printf '%s\n' "${name}"
 }
 
+# Delete one stopped job's logs here: the job-tagged .out, whatever stable .log it
+# symlinks to (the .out is the link and the .log the real file -- see the launchers),
+# and an .err of the same stem if the cluster wrote one. The group and label
+# directories go too once they are empty, so cleaning a whole label does not leave a
+# tree of empty folders where a run used to be.
+remove_job_logs() {
+    local out_file="$1" target directory
+    [[ -n "${out_file}" ]] || return 0
+    if [[ -L "${out_file}" ]]; then
+        target="$(dirname "${out_file}")/$(readlink "${out_file}")"
+        [[ -e "${target}" ]] && rm -f -- "${target}" && printf '  removed %s\n' "${target#"${LOCAL_PROJECT}"/}"
+    fi
+    [[ -e "${out_file}" || -L "${out_file}" ]] || return 0
+    rm -f -- "${out_file}" "${out_file%.out}.err"
+    printf '  removed %s\n' "${out_file#"${LOCAL_PROJECT}"/}"
+    directory="$(dirname "${out_file}")"
+    # rmdir, never rm -r: a directory that still holds another job's logs must survive,
+    # and a non-empty rmdir failing is the check that guarantees it.
+    rmdir -- "${directory}" 2>/dev/null || return 0
+    rmdir -- "$(dirname "${directory}")" 2>/dev/null || true
+}
+
 # --- one cluster ---------------------------------------------------------------
 kill_cluster() {
     local cluster="$1"
@@ -120,12 +152,14 @@ kill_cluster() {
 
     targets=""
     local stdout_file variant
+    local killed_out_files=()
     while IFS=$'\t' read -r job_id name stdout_file; do
         [[ -n "${job_id}" ]] || continue
         variant="$(job_variant "${name}" "${stdout_file}")"
         if matches_label "${variant}"; then
             targets+="${job_id}"$'\n'
             printf '  %s  %s\n' "${job_id}" "${name:-<unnamed>}"
+            [[ -n "${stdout_file}" ]] && killed_out_files+=("${stdout_file}")
         fi
     done <<< "${jobs}"
     targets="${targets%$'\n'}"
@@ -150,17 +184,44 @@ kill_cluster() {
         sleep "${POLL_SECONDS}"
     done
 
+    # Remote first, then the sync, then the copies here: deleting only this side would
+    # be undone by the very next rsync, which mirrors the cluster's script_logs into it.
+    if (( CLEAN_LOGS )) && (( ${#killed_out_files[@]} > 0 )); then
+        printf 'Removing the stopped jobs'"'"' logs on %s.\n' "${cluster}"
+        local remote_script="" remote_out
+        for remote_out in "${killed_out_files[@]}"; do
+            remote_script+="out=$(printf '%q' "${remote_out}"); "
+            remote_script+='if [ -L "$out" ]; then rm -f -- "$(dirname "$out")/$(readlink "$out")"; fi; '
+            remote_script+='rm -f -- "$out" "${out%.out}.err"; '
+            remote_script+='rmdir -- "$(dirname "$out")" 2>/dev/null || true; '
+        done
+        ssh "${ssh_args[@]}" "${remote}" "${remote_script}" || true
+    fi
+
     printf 'Synchronizing script logs.\n'
     mkdir -p "${LOCAL_PROJECT}/script_logs"
     rsync -a --quiet -e "${rsync_ssh}" \
         "${remote}:${REMOTE_PROJECT}/script_logs/" \
         "${LOCAL_PROJECT}/script_logs/" || true
+    if (( CLEAN_LOGS )) && (( ${#killed_out_files[@]} > 0 )); then
+        # The same paths under this project root: rsync above copies without --delete,
+        # so a file pulled here by an earlier sync outlives its removal on the cluster.
+        local local_out
+        for remote_out in "${killed_out_files[@]}"; do
+            local_out="${LOCAL_PROJECT}/${remote_out#"${REMOTE_PROJECT}"/}"
+            [[ "${local_out}" != "${LOCAL_PROJECT}/${remote_out}" ]] || continue
+            remove_job_logs "${local_out}"
+        done
+        printf 'Stopped; their logs were deleted here and on %s.\n' "${cluster}"
+        return 0
+    fi
     printf 'Stopped; logs are in %s/script_logs\n' "${LOCAL_PROJECT}"
 }
 
 # --- this machine ---------------------------------------------------------------
 kill_local() {
     local out_files pid out variant driver_pids stopped=0
+    local killed_out_files=()
 
     printf '\n----- local -----\n'
 
@@ -182,6 +243,7 @@ kill_local() {
         if matches_label "${variant}"; then
             printf '  %s  %s\n' "${pid}" "${variant}"
             kill "${pid}" 2>/dev/null || true
+            killed_out_files+=("${out}")
             stopped=$((stopped + 1))
         fi
     done
@@ -209,8 +271,20 @@ kill_local() {
         printf 'Nothing to stop%s.\n' "${LABEL:+ for label ${LABEL}}"
         return 0
     fi
-    printf 'Stopped %d local process(es). Logs are already in %s/script_logs\n' \
-        "${stopped}" "${LOCAL_PROJECT}"
+    if (( CLEAN_LOGS )) && (( ${#killed_out_files[@]} > 0 )); then
+        # After the kills, not between them: a training process holds its log open, and
+        # unlinking it while the rest are still being signalled would only make the last
+        # writes disappear into a file with no name.
+        for out in "${killed_out_files[@]}"; do
+            remove_job_logs "${out}"
+        done
+    fi
+    if (( CLEAN_LOGS )); then
+        printf 'Stopped %d local process(es); their logs were deleted.\n' "${stopped}"
+    else
+        printf 'Stopped %d local process(es). Logs are already in %s/script_logs\n' \
+            "${stopped}" "${LOCAL_PROJECT}"
+    fi
     if [[ -s "${LOCAL_PROJECT}/script_logs/local_run_pending_batches" ]]; then
         printf 'Note: %d whole run(s) are still queued behind this one in %s.\n' \
             "$(wc -l < "${LOCAL_PROJECT}/script_logs/local_run_pending_batches")" \

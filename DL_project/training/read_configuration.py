@@ -2,6 +2,12 @@ import sys
 from dataclasses import dataclass, field
 
 
+# Width of the cavity descriptor --pocket_descriptors appends to the fused pair vector.
+# The list itself is POCKET_DESCRIPTOR_NAMES in dataloader/protein_graph_builder.py,
+# which checks the descriptor it builds against this number and names the mismatch;
+# change the list and this changes with it (files/pocket_shape_descriptors.md too).
+POCKET_DESCRIPTOR_COUNT = 13
+
 POOL_TYPES = ("add", "max", "mean", "add_max", "gem")
 LOSS_TYPES = ("mse", "cross_entropy", "bce")
 LIPID_FRAGMENTS_TREATMENTS = ("concat", "random_choice", "fragments_mask")
@@ -459,6 +465,24 @@ class ModelConfig:
     # the protein at all, so structural context outside the site is gone rather than
     # merely unattendable.
     protein_pockets_only: bool = False
+    # Keep this many randomly chosen residues per TRAINING sample, redrawn every epoch;
+    # 0 is off. Aimed at the one thing regularisation cannot touch: a protein is
+    # memorable because its residue set is fixed, so the encoder can learn the set
+    # rather than what the site is like. A subsample redrawn each epoch leaves the
+    # site's statistics intact and makes the exact set unlearnable.
+    #
+    # Not what dropout does. Dropout zeroes DIMENSIONS of the hidden vector,
+    # independently at every residue, and the pooled protein vector averages over ~200
+    # of them -- so the noise cancels and the pooled vector is nearly unchanged, which
+    # is precisely why it cannot hide a fingerprint. Dropping residues changes the set
+    # being averaged, so the pooled vector genuinely moves.
+    #
+    # A FIXED count, not a fraction: the residue count is itself a fingerprint (pocket
+    # size tracks protein size at rho = 0.72), and only a fixed count erases it. Pocket
+    # sizes run 22 to 64 with a median of 33, so 20 is drawable from every protein
+    # without replacement. A protein with fewer residues than this keeps all of them --
+    # and, for that protein, keeps its size visible.
+    protein_residue_subsample: int = 0
     # Replace the ESM3 vector with a frozen structure-conditioned one. Mutually
     # exclusive with each other and with every RNA-BAnG mode; see
     # FROZEN_PROTEIN_EMBEDDINGS and proposals.md.
@@ -618,11 +642,26 @@ class ModelConfig:
     swa_lr: float | None = None
     save_checkpoint: bool = False
     save_model: bool = False
+    # Branch diagnostics, for the question "is the protein half of the model used at
+    # all, and from which epoch is it not". save_dynamics adds per-epoch scalars only
+    # -- two extra validation passes with the pooled halves ablated in turn, the
+    # per-branch gradient norms, the classifier's per-half input weight norms and the
+    # between-protein spread of the pooled protein vector. Kilobytes over a whole run,
+    # against the hundreds of megabytes that saving every epoch's weights would cost.
+    # save_model_in_dynamics adds weights at a few milestone epochs on top, for the
+    # probes that cannot be reduced to a scalar decided in advance; it turns
+    # save_dynamics on by itself, since milestone weights without the curves they are
+    # meant to explain would be weights nobody knows where to look in.
+    save_dynamics: bool = False
+    save_model_in_dynamics: bool = False
 
     def validate(self):
         """Validate dependent model dimensions and implied options."""
         if self.HEADS <= 0:
             raise ValueError("HEADS must be greater than zero")
+        # Milestone weights are read alongside the per-epoch curves, never on their own.
+        if self.save_model_in_dynamics:
+            self.save_dynamics = True
         self.loss_type = str(self.loss_type).lower()
         if self.loss_type not in LOSS_TYPES:
             raise ValueError(f"loss_type must be one of {', '.join(LOSS_TYPES)}")
@@ -666,7 +705,13 @@ class ModelConfig:
                 f"{', '.join(POCKET_ATTENTION_SITES)}; leave it unset for both, "
                 "which is what --attention_by_pockets alone means"
             )
-        self.pocket_descriptor_count = 14 if self.pocket_descriptors else 0
+        # Kept as a literal rather than imported: dataloader.protein_graph_builder is
+        # the source of truth for the list, but importing it here would pull torch and
+        # torch_geometric into every consumer of ModelConfig, including the analysis
+        # scripts that only want to read a run's settings. pocket_descriptor() checks
+        # this number against the descriptor it actually built and names the mismatch,
+        # so the two cannot drift silently.
+        self.pocket_descriptor_count = POCKET_DESCRIPTOR_COUNT if self.pocket_descriptors else 0
         self.protein_node_feature_count = 3 + (
             3 if self.protein_extra_node_features else 0
         )
@@ -1404,6 +1449,10 @@ SIMPLE_BOOL_FLAGS = {
     "--save_checkpoint": "save_checkpoint",
     "save_model": "save_model",
     "--save_model": "save_model",
+    "save_dynamics": "save_dynamics",
+    "--save_dynamics": "save_dynamics",
+    "save_model_in_dynamics": "save_model_in_dynamics",
+    "--save_model_in_dynamics": "save_model_in_dynamics",
     "balance_excluded_group_negatives": "balance_excluded_group_negatives",
     "--balance_excluded_group_negatives": "balance_excluded_group_negatives",
     "balance_negatives_by_family": "balance_negatives_by_family",
@@ -1482,6 +1531,7 @@ VALUE_HANDLERS = {
     ),
     "--tanimoto_weight=": set_config_field("tanimoto_weight", read_bool),
     "--plm_compression_dim=": set_config_field("plm_compression_dim", int),
+    "--protein_residue_subsample=": set_config_field("protein_residue_subsample", int),
     "--rnabang_embedding_dim=": set_config_field("rnabang_embedding_dim", int),
     "--proteinmpnn_embedding_dim=": set_config_field("proteinmpnn_embedding_dim", int),
     "--esmif1_embedding_dim=": set_config_field("esmif1_embedding_dim", int),
