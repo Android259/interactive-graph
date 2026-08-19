@@ -65,6 +65,11 @@ SYNC_EXCLUDES=(
     --exclude='/metrics_analysis*'
     --exclude='/feature_contributions*'
 
+    # Data directory: embeddings and datasets (3.8 GB locally). Already present on
+    # clusters from initial setup; training reads it from there. Excluding here
+    # makes the per-run sync 10x faster over the slow gricad proxy.
+    --exclude='/data/'
+
     # Bulk that training never imports.
     --exclude='/external/'
 
@@ -99,6 +104,7 @@ SYNC_PROTECT=(
     --filter='P /metrics_summary*'
     --filter='P /metrics_analysis*'
     --filter='P /feature_contributions*'
+    --filter='P /data/'
     --filter='P /external/'
     --filter='P /data/Pretrained MoLFormer/'
     --filter='P /data/esm3_checkpoint/'

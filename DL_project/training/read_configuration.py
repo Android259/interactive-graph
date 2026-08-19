@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 POCKET_DESCRIPTOR_COUNT = 13
 
 POOL_TYPES = ("add", "max", "mean", "add_max", "gem")
-LOSS_TYPES = ("mse", "cross_entropy", "bce")
+LOSS_TYPES = ("mse", "cross_entropy", "bce", "pairwise_rank")
 LIPID_FRAGMENTS_TREATMENTS = ("concat", "random_choice", "fragments_mask")
 PROTEIN_POOLINGS = ("ordinary", "attention_pos_bias", "pooling_by_pockets")
 # Narrows which attention site attention_by_pockets restricts. Not passing it means
@@ -645,6 +645,18 @@ class ModelConfig:
     # can prefer the binding site during training (requires attention_pooling).
     attention_pooling: bool = False
     attention_pooling_pocket_bias: bool = False
+    # Sliced-Wasserstein pooling (architecture/final_layer.py:SlicedWassersteinPool):
+    # reads the SHAPE of a graph's node distribution instead of its average, by matching
+    # its quantiles to swe_reference_points learned reference points along learned
+    # directions. Aimed at the measurement in files/signal_state.md 4.3 -- the 35
+    # proteins sit at ESM3 cosine 0.974 of each other under mean pooling while their
+    # binding profiles are at 0.000, so the average is exactly the statistic that does
+    # not separate them. swe_freeze_reference keeps the reference points at their random
+    # init (the source paper's "SWE_Simple"), leaving only the directions and the output
+    # map to be learned, which is the variant to reach for on a protein axis of 21-33.
+    swe_pooling: bool = False
+    swe_reference_points: int = 32
+    swe_freeze_reference: bool = False
     # Use the v2 ESM3 embeddings (preprocessing/embed_protein_esm3_v2.py, read from
     # data/embedding_ESM3_v2/) built from a real structure+coordinates+SASA+confidence
     # input (data/esm3_input/<stem>.pdb, preprocessing/build_consistent_esm3_pdb.py)
@@ -1173,6 +1185,15 @@ class ModelConfig:
             raise ValueError(
                 "attention_pooling_pocket_bias requires attention_pooling"
             )
+        if self.swe_pooling and self.attention_pooling:
+            # Both replace the pool_type reduction outright, and Final_Layer has to pick
+            # one. Failing here rather than letting a precedence rule decide keeps the
+            # label of a run an honest description of what ran.
+            raise ValueError("swe_pooling cannot be combined with attention_pooling")
+        if self.swe_pooling and self.swe_reference_points < 2:
+            raise ValueError("swe_reference_points must be at least 2")
+        if self.swe_freeze_reference and not self.swe_pooling:
+            raise ValueError("swe_freeze_reference requires swe_pooling")
         if self.lipid_only or self.protein_only:
             # Strict single-partner ablation: cross-attention would leak the
             # hidden partner's context into the surviving branch, so the pooled
@@ -1428,6 +1449,10 @@ SIMPLE_BOOL_FLAGS = {
     "--attention_pooling": "attention_pooling",
     "attention_pooling_pocket_bias": "attention_pooling_pocket_bias",
     "--attention_pooling_pocket_bias": "attention_pooling_pocket_bias",
+    "swe_pooling": "swe_pooling",
+    "--swe_pooling": "swe_pooling",
+    "swe_freeze_reference": "swe_freeze_reference",
+    "--swe_freeze_reference": "swe_freeze_reference",
     "use_esm3_v2_embeddings": "use_esm3_v2_embeddings",
     "--use_esm3_v2_embeddings": "use_esm3_v2_embeddings",
     "rnabang_replace_esm3": "rnabang_replace_esm3",
@@ -1695,6 +1720,7 @@ VALUE_HANDLERS = {
     "--dann_lambda=": set_config_field("dann_lambda", float),
     "--dann_class_conditional=": set_config_field("dann_class_conditional", read_bool),
     "--pool_type=": set_config_field("pool_type"),
+    "--swe_reference_points=": set_config_field("swe_reference_points", int),
     "--HEADS=": set_config_field("HEADS", int),
     "--lr_warmup_epochs=": set_config_field("lr_warmup_epochs", int),
     "--lr_min_factor=": set_config_field("lr_min_factor", float),

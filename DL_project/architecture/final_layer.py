@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch_geometric
 from torch_geometric.utils import softmax as scatter_softmax
+from torch_geometric.utils import to_dense_batch
 
 try:
     from .mlp_utils import (
@@ -138,6 +139,100 @@ class AttentionPool(torch.nn.Module):
         return torch_geometric.nn.global_add_pool(x * alpha.unsqueeze(-1), batch)
 
 
+class SlicedWassersteinPool(torch.nn.Module):
+    """Pool a graph's nodes by the SHAPE of their distribution, not by their average.
+
+    Why this exists here. Mean pooling answers one question -- "what is the average
+    node" -- and on this dataset every protein answers it almost identically: the
+    median ESM3 cosine between the 35 proteins is 0.974 while the median similarity of
+    their binding profiles is 0.000 (files/signal_state.md 4.3). Averaging 300-700
+    residue vectors is a lossy summary, and what it keeps is exactly the part that does
+    not distinguish these proteins.
+
+    What this does instead. A graph's nodes are treated as a sample from a distribution
+    over R^dim. That distribution is compared against M learned reference points by
+    1-D optimal transport along L learned directions:
+
+        1. project every node and every reference point onto direction l;
+        2. sort both sides -- in one dimension the optimal-transport plan between two
+           point sets IS the sort, so the k-th smallest node projection is matched to
+           the k-th smallest reference projection (the Monge coupling);
+        3. record the displacement, i.e. how far this graph's matched quantile sits
+           from that reference point.
+
+    Node counts differ between graphs, so the sorted projections are resampled to M
+    quantiles first; that is what makes a 300-residue protein and a 700-residue one
+    comparable without averaging either. The result is M x L numbers describing the
+    whole distribution -- its spread, its skew, where its tails sit relative to the
+    references -- where mean pooling produced one number per dimension.
+
+    Naderializadeh et al., "Pooling by Sliced-Wasserstein Embedding" (NeurIPS 2021);
+    applied to residue-level protein language model embeddings for drug-target tasks in
+    Bioinformatics Advances 5(1) vbaf060 (2025), where it beats average pooling across
+    model sizes, lets a smaller PLM match an average-pooled larger one, and gains more
+    the longer the chain.
+
+    A final linear map brings M*L back to `dim`, so this is a drop-in for mean / GeM /
+    attention pooling and nothing downstream changes width. With `freeze_reference` the
+    reference points keep their random init and only the directions and that map are
+    learned -- the paper's cheap "SWE_Simple" variant, which matters here because the
+    protein axis has 21-33 independent examples and every learned parameter is spent
+    against that.
+    """
+
+    def __init__(self, dim, reference_points=32, slices=None, freeze_reference=False):
+        super().__init__()
+        self.slices = int(slices or dim)
+        self.reference_points = int(reference_points)
+        # Normalised to unit length in forward, so the directions' scale is not a free
+        # parameter competing with the projection that follows them.
+        self.slicer = torch.nn.Parameter(torch.randn(dim, self.slices) / (dim ** 0.5))
+        self.reference = torch.nn.Parameter(
+            torch.randn(self.reference_points, dim), requires_grad=not freeze_reference
+        )
+        self.project = torch.nn.Linear(self.reference_points * self.slices, dim)
+
+    def forward(self, x, batch):
+        theta = F.normalize(self.slicer, dim=0)
+        dense, mask = to_dense_batch(x, batch)
+        projected = dense @ theta
+        # Padding rows must not win a sort position. Pushed above every real value they
+        # land past the end of each graph's own count, and the quantile lookup below --
+        # which indexes strictly inside that count -- never reaches them.
+        projected = projected.masked_fill(
+            ~mask.unsqueeze(-1), torch.finfo(projected.dtype).max
+        )
+        ordered, _ = projected.sort(dim=1)
+
+        counts = mask.sum(dim=1).clamp(min=1)
+        steps = torch.arange(self.reference_points, device=x.device, dtype=ordered.dtype)
+        # Midpoints of M equal bins of the empirical quantile function, linearly
+        # interpolated between order statistics: the standard resampling of a sample of
+        # n points onto M, and what makes graphs of different size comparable.
+        position = ((steps + 0.5) / self.reference_points).unsqueeze(0) * counts.unsqueeze(1)
+        last = (counts - 1).unsqueeze(1)
+        lower = torch.minimum(position.floor().long().clamp(min=0), last)
+        upper = torch.minimum(lower + 1, last)
+        weight = (position - lower.to(position.dtype)).clamp(0.0, 1.0).unsqueeze(-1)
+        index_shape = (-1, -1, self.slices)
+        at_lower = ordered.gather(1, lower.unsqueeze(-1).expand(*index_shape))
+        at_upper = ordered.gather(1, upper.unsqueeze(-1).expand(*index_shape))
+        resampled = at_lower + weight * (at_upper - at_lower)
+
+        reference = self.reference @ theta
+        order = reference.argsort(dim=0)
+        # Scatter the sorted quantiles back onto the reference points they were matched
+        # to. Leaving them in sorted order would work too, but then a reference point
+        # that training moves past its neighbour would change which output slot -- and
+        # so which weight of `project` -- it feeds, and the map would be chasing a
+        # permutation that keeps moving.
+        coupled = torch.zeros_like(resampled)
+        coupled.scatter_(
+            1, order.unsqueeze(0).expand(resampled.shape[0], -1, -1), resampled
+        )
+        return self.project((coupled - reference.unsqueeze(0)).flatten(1))
+
+
 class ResidualAdversary(torch.nn.Module):
     """Adversary matched, layer for layer, to the CrossAttention block it must police.
 
@@ -180,9 +275,10 @@ class Final_Layer(torch.nn.Module):
         self.prot_dim = prot_dim
         self.config = config
         enlarged, last = mlp_hidden_dims(self.config, "final", final_m * middim)
-        # Attention pooling emits one vector per graph (multiplier 1), overriding the
-        # pool_type width (add_max would otherwise double it).
-        if self.config.attention_pooling:
+        # Attention and sliced-Wasserstein pooling each emit one vector per graph
+        # (multiplier 1), overriding the pool_type width (add_max would otherwise
+        # double it).
+        if self.config.attention_pooling or self.config.swe_pooling:
             pool_output_multiplier = 1
         else:
             pool_output_multiplier = 2 if self.config.pool_type == "add_max" else 1
@@ -207,6 +303,21 @@ class Final_Layer(torch.nn.Module):
             self.lip_attn_pool = AttentionPool(pooled_lip_dim)
             self.prot_attn_pool = AttentionPool(
                 pooled_prot_dim, pocket_bias=self.config.attention_pooling_pocket_bias
+            )
+        elif self.config.swe_pooling:
+            # Sized per partner: the lipid graph has tens of nodes and the protein
+            # hundreds, but the reference count is what the pooling reads them onto and
+            # a lipid with fewer nodes than reference points just resamples its own
+            # quantile function more finely, which is well defined.
+            self.lip_swe_pool = SlicedWassersteinPool(
+                pooled_lip_dim,
+                reference_points=self.config.swe_reference_points,
+                freeze_reference=self.config.swe_freeze_reference,
+            )
+            self.prot_swe_pool = SlicedWassersteinPool(
+                pooled_prot_dim,
+                reference_points=self.config.swe_reference_points,
+                freeze_reference=self.config.swe_freeze_reference,
             )
         elif self.config.pool_type == "gem":
             self.lip_gem_pool = GeMPool()
@@ -296,6 +407,11 @@ class Final_Layer(torch.nn.Module):
             return (
                 self.lip_attn_pool(lip, lip_batch),
                 self.prot_attn_pool(prot, prot_batch, prot_pocket),
+            )
+        if self.config.swe_pooling:
+            return (
+                self.lip_swe_pool(lip, lip_batch),
+                self.prot_swe_pool(prot, prot_batch),
             )
         if self.config.pool_type == "gem":
             return self.lip_gem_pool(lip, lip_batch), self.prot_gem_pool(prot, prot_batch)

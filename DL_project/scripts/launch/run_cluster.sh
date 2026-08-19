@@ -271,7 +271,8 @@ ssh -S "${SSH_CONTROL_PATH}" "${remote}" "mkdir -p '${REMOTE_PROJECT}'"
 # metrics tables and BOTH clusters' OAR queues from being deleted -- the queues
 # live only on the remote side, so a sync from the other cluster's runner must
 # not wipe a live pending queue.
-rsync -az --delete --delete-excluded --quiet -e "ssh -S ${SSH_CONTROL_PATH}" \
+rsync -a --delete --delete-excluded --quiet --timeout=300 \
+    -e "ssh -S ${SSH_CONTROL_PATH} -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes" \
     "${SYNC_PROTECT[@]}" \
     "${SYNC_EXCLUDES[@]}" \
     "${PROJECT_ROOT}/" \

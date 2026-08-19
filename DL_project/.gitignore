@@ -15,7 +15,14 @@ __pycache__/
 # Timestamped safety copies of the metrics table.
 metrics_summary.csv.bak_*
 
-# run/, models/ and test_metrics/ are deliberately tracked -- do not add them.
+# Training results: produced on clusters and synced back locally, not tracked.
+# Including them in git blocks rsync to remote clusters (git sees them as modified
+# and rsync tries to transfer them even though cluster_sync_excludes.sh lists them).
+run/
+models/
+test_metrics/
+graphics/
+script_logs/
 
 # torch.profiler traces from scripts/profile_training.py: large, timestamped,
 # and reproducible from source -- not worth tracking.

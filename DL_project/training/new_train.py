@@ -51,6 +51,7 @@ from architecture.loss import (
     focal_loss,
     get_pu_loss_diagnostics,
     logit_adjustment_bias,
+    pairwise_ranking_loss,
     reset_pu_loss_diagnostics,
 )
 from dataloader.sampler import ClassBalancedBatchSampler
@@ -772,6 +773,8 @@ def _eval_task_loss(outl, labels):
             tau=conf.pu_tau,
             cap=conf.pu_loss_cap,
         )
+    if conf.loss_type == "pairwise_rank":
+        return pairwise_ranking_loss(outl, labels.long())
     return conf.loss(outl, labels.long())
 
 
@@ -1111,6 +1114,13 @@ def epoch(idx,counttrain,countval):
                         cap=conf.pu_loss_cap,
                         sample_weights=sample_weights,
                     )
+                elif conf.loss_type == "pairwise_rank":
+                    sample_weights = batch_sample_weights(prot, sample_count)
+                    los = pairwise_ranking_loss(
+                        loss_logits,
+                        interaction_labels.long(),
+                        sample_weights=sample_weights,
+                    )
                 elif conf.loss_type == "cross_entropy":
                     sample_weights = batch_sample_weights(prot, sample_count)
                     if conf.focal_loss:
@@ -1261,6 +1271,8 @@ def epoch(idx,counttrain,countval):
                     tau=conf.pu_tau,
                     cap=conf.pu_loss_cap,
                 )
+            elif conf.loss_type == "pairwise_rank":
+                los = pairwise_ranking_loss(outl, interaction_labels.long())
             else:
                 los = conf.loss(outl, interaction_labels.long())
             # log_tb(writer_tb, countval, los,"valid",outl,interaction_labels.to(torch.float))
@@ -1329,6 +1341,13 @@ def run_test(run_summary):
                     reduction="none",
                 )
                 los = sample_losses.mean()
+            elif conf.loss_type == "pairwise_rank":
+                los = pairwise_ranking_loss(outl, interaction_labels.long())
+                sample_losses = torch.full(
+                    (sample_count,),
+                    los.item() if isinstance(los, torch.Tensor) else los,
+                    device=outl.device,
+                )
             else:
                 los = conf.loss(outl, interaction_labels.long())
                 sample_losses = torch.full(

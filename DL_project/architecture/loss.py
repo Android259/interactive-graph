@@ -228,6 +228,80 @@ def Non_Negative_Positive_Unlabeled_loss(
     return positive_risk + negative_risk
 
 
+def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None):
+    """RankNet-style pairwise logistic loss: a smooth surrogate for AUC, not for BA.
+
+    Cross-entropy asks each row on its own: "is this side of 0.5?" On this dataset that
+    question has a wrong answer baked in before training starts -- the chemistry-only
+    null model in files/marginals_and_cold_split.md 8.1 scores balanced accuracy 0.512
+    with a threshold fit on train while it ranks the same rows at AUC 0.565, so most of
+    what a fixed-threshold loss is graded on here is where the threshold sits, not what
+    the model knows. This asks a different question that has no threshold in it: "does
+    the positive row of this pair score higher than the negative row?" AUC is exactly
+    the fraction of such pairs answered correctly, so this loss is a direct smooth
+    surrogate for the metric this project now reports.
+
+    Every positive row in the batch is paired with every negative row in the batch
+    (not per protein -- protein_id is not carried on training batches, see
+    New_dataloader.__iter__ -- so this optimises the pooled-block AUC that
+    analysis/chemistry_null_model.py and analysis/checkpoint_scores.py already
+    measure, not a per-protein ranking). For each pair the loss is
+    -log(sigmoid(score_positive - score_negative)) with score = logit(class 1) -
+    logit(class 0), the same margin the PU loss uses. Class imbalance drops out on its
+    own: every pair already has exactly one positive and one negative, so
+    --class_weights, --focal_loss and --logit_adjustment have nothing left to correct
+    and are not read by this path.
+
+    Under --balanced_batches (the setting this is meant to run under) every batch holds
+    both classes by construction. Without it, an all-one-class batch carries no pair to
+    rank; rather than raise, this returns a zero with no gradient for that batch, the
+    same degradation Non_Negative_Positive_Unlabeled_loss falls back to when a batch has
+    no labeled positives.
+    """
+    if outl.dim() != 2 or outl.shape[1] != 2:
+        raise ValueError(f"pairwise ranking logits must have shape (batch, 2), got {tuple(outl.shape)}")
+
+    labels = interaction_labels.to(outl.device).long()
+    if labels.dim() != 1 or labels.shape[0] != outl.shape[0]:
+        raise ValueError(
+            "pairwise ranking labels must have shape (batch,), "
+            f"got {tuple(labels.shape)} for logits {tuple(outl.shape)}"
+        )
+    if not torch.isin(labels, torch.tensor([0, 1], device=labels.device)).all():
+        raise ValueError("pairwise ranking labels must contain only classes 0 and 1")
+
+    score = outl[:, 1] - outl[:, 0]
+    positive_mask = labels == 1
+    negative_mask = labels == 0
+    positive_scores = score[positive_mask]
+    negative_scores = score[negative_mask]
+    if positive_scores.numel() == 0 or negative_scores.numel() == 0:
+        return score.new_zeros(())
+
+    # (positives, negatives) matrix of margins; batch=16 at negatives_per_positive=2
+    # makes this at most ~5x11, so the full pair set costs nothing to materialise.
+    margin = positive_scores.unsqueeze(1) - negative_scores.unsqueeze(0)
+    per_pair_loss = F.softplus(-margin)
+
+    if sample_weights is None:
+        return per_pair_loss.mean()
+
+    sample_weights = sample_weights.to(outl.device).float()
+    if sample_weights.shape != (outl.shape[0],):
+        raise ValueError(
+            "pairwise ranking sample_weights must have shape "
+            f"({outl.shape[0]},), got {tuple(sample_weights.shape)}"
+        )
+    if not torch.isfinite(sample_weights).all():
+        raise ValueError("pairwise ranking sample_weights contain non-finite values")
+    if (sample_weights < 0).any():
+        raise ValueError("pairwise ranking sample_weights contain negative values")
+    positive_weights = sample_weights[positive_mask]
+    negative_weights = sample_weights[negative_mask]
+    pair_weights = positive_weights.unsqueeze(1) * negative_weights.unsqueeze(0)
+    return (per_pair_loss * pair_weights).sum() / pair_weights.sum().clamp_min(1e-8)
+
+
 def GRAB_loss(
     outl,
     interaction_labels,
