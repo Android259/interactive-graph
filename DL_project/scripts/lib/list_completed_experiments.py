@@ -45,9 +45,18 @@ def main() -> int:
                 excluded = json.loads(fields["excluded_groups"])
             except (KeyError, json.JSONDecodeError):
                 continue
-            if not isinstance(excluded, list) or len(excluded) != 1:
+            if not isinstance(excluded, list):
                 continue
-            group = str(excluded[0])
+            if excluded:
+                if len(excluded) != 1:
+                    continue
+                group = str(excluded[0])
+            else:
+                # --lipid_coldsplit holds a set of lipid classes out and no protein
+                # group at all, so excluded_groups is empty and the set name is what
+                # the grid iterates over. Without this the report is skipped, the run
+                # never counts as completed, and --complete relaunches it forever.
+                group = str(fields.get("lipid_coldsplit", ""))
         if group:
             completed.add((group, seed))
 

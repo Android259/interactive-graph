@@ -14,6 +14,5 @@
 --pool_type="gem"
 
 --balanced_batches
---balanced_proteins
 
 --save_model_in_dynamics

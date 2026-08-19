@@ -28,7 +28,10 @@ from dataloader.protein_graph_builder import (
 from dataloader.protein_graph_tensor_cache import load_protein_graph_tensor_cache
 from dataloader.tanimoto_compact import load_compact
 from dataloader.sampler import (
+    COLDSPLIT_MINIMUM_TEST_POSITIVES,
+    LIPID_COLDSPLIT_SETS,
     lipid_class_series,
+    lipid_classes_for_holdout,
     rebalance_excluded_group_negatives,
     sample_family_balanced_negatives,
     sample_lipid_class_balanced_negatives,
@@ -66,6 +69,7 @@ class PLIDataset(
         self.protein_id_to_name = {idx: name for name, idx in self.protein_name_to_id.items()}
 
         self._configure_sampling(config)
+        self._derive_lipid_class_holdout(csv)
         self.csvtrue, self.csvfalse = self._sample_interactions(csv, seed)
         self.csvtrue["pair_id"] = self.csvtrue.index
         self.csvfalse["pair_id"] = self.csvfalse.index
@@ -251,6 +255,7 @@ class PLIDataset(
         print(f"train : {self.csvtrain.shape}")
         print(f"valid : {self.csvalidate.shape}")
         print(f"test : {self.csvtest.shape}")
+        self._report_lipid_prior_baseline()
         self.csv = self.csvtrain
         self.pair_graph = None
         
@@ -304,22 +309,168 @@ class PLIDataset(
         self.balanced_lipid_classes = getattr(
             config, "balanced_lipid_classes", False
         )
+        # Negatives drawn per positive inside each balancing group. 1 is the exact 1:1
+        # the samplers were written for; see dataloader/sampler.py.
+        self.negatives_per_positive = int(
+            getattr(config, "negatives_per_positive", 2) or 2
+        )
+        # Head-group classes held out of training alongside excluded_groups: the second
+        # axis of the cold split. Compared case-insensitively, as the groups are.
+        # The second axis of the cold split; the classes themselves are derived in
+        # _derive_lipid_class_holdout, which needs the full table.
+        self.double_coldsplit = bool(getattr(config, "double_coldsplit", False))
+        self.mixed_coldsplit = bool(getattr(config, "mixed_coldsplit", False))
+        self.coldsplit_share = float(getattr(config, "coldsplit_share", 0.7) or 0.7)
+        # The lipid axis on its own: a named chemical family leaves training, every
+        # protein stays. Unlike the two above it needs no held-out family to derive its
+        # classes from -- the sets are fixed.
+        self.lipid_coldsplit = str(getattr(config, "lipid_coldsplit", "") or "")
+        self.excluded_lipid_classes = set()
         self.test_group = str(getattr(config, "test_group", "") or "").lower()
+
+    @staticmethod
+    def _label_only_baseline(csvtrain, held, key_train, key_held):
+        """Balanced accuracy of "this key was usually positive in train", and coverage.
+
+        No protein, no structure, no model: the train positive rate of the key,
+        thresholded at 0.5, with the train majority standing in for keys train never
+        saw. Keys with no training rows therefore score at chance by construction.
+        """
+        rate = csvtrain.groupby(key_train)["Interaction"].mean()
+        fallback = int(csvtrain["Interaction"].mean() > 0.5)
+        looked_up = key_held.map(rate)
+        seen = looked_up.notna()
+        prediction = (looked_up > 0.5).astype(int).where(seen, fallback)
+
+        truth = held["Interaction"] == 1
+        if not truth.any() or truth.all():
+            return float("nan"), float(seen.mean())
+        sensitivity = float((prediction[truth] == 1).mean())
+        specificity = float((prediction[~truth] == 0).mean())
+        return (sensitivity + specificity) / 2, float(seen.mean())
+
+    def _report_lipid_prior_baseline(self):
+        """Print what a per-lipid label prior alone scores on this run's valid and test.
+
+        The number every metric of this run has to be read against. The split is cold in
+        the protein only unless a lipid-class holdout is on, and the lipids of a held-out
+        family have all been seen in train paired with other proteins, so "this lipid is
+        usually positive" transfers across the cut and reaches 0.55-0.57 balanced
+        accuracy with no model involved -- on some families 0.77. Comparing a run to 0.5
+        instead of to this makes a lookup table look like a working model.
+
+        Printed here, from the same frames the run trains on, so the figure lives in the
+        run's own log rather than having to be reconstructed afterwards by
+        preprocessing/lipid_marginal_baseline.py -- which computes the same thing and is
+        the place to look for the cross-family picture.
+
+        Under --double_coldsplit both columns come out at 0.500 and coverage at 0: every
+        evaluated lipid belongs to a held-out class, every lookup falls back. That is the
+        check that the split is what it claims to be, and it costs one groupby.
+        """
+        classes = lipid_class_series(self.csvtrain)
+        for name, held in (("valid", self.csvalidate), ("test", self.csvtest)):
+            if held.empty:
+                continue
+            by_lipid, seen = self._label_only_baseline(
+                self.csvtrain,
+                held,
+                self.csvtrain["FullIdentityOfLipid"],
+                held["FullIdentityOfLipid"],
+            )
+            by_class, _ = self._label_only_baseline(
+                self.csvtrain, held, classes, lipid_class_series(held)
+            )
+            print(
+                f"lipid prior baseline {name} : balanced accuracy "
+                f"{by_lipid:.3f} by lipid, {by_class:.3f} by class "
+                f"| {seen:.0%} of rows have their lipid in train"
+            )
+
+    def _derive_lipid_class_holdout(self, csv):
+        """Work out which head-group classes leave training, from the held-out family.
+
+        Derived rather than configured: the right set differs per family -- START's
+        positives are phosphatidylcholines, GLTP's are sphingolipids -- so a set fixed
+        in advance would be arbitrary for whichever family this run holds out. The rule
+        lives in dataloader.sampler.lipid_classes_for_holdout and is read off the FULL
+        table, not the sampled pool, so the class set does not drift with the seed or
+        with negatives_per_positive.
+
+        Several excluded groups take the union of their sets, which is the conservative
+        reading: every one of them must find its own classes absent from training.
+
+        Printed because the list is a property of the split that nothing else records,
+        and a run's log is where that has to be recoverable from.
+        """
+        if self.lipid_coldsplit:
+            classes = LIPID_COLDSPLIT_SETS.get(self.lipid_coldsplit)
+            if classes is None:
+                # Only reachable if the name table in read_configuration and the class
+                # table here drift apart; say so rather than failing on a KeyError.
+                raise ValueError(
+                    f"lipid_coldsplit set {self.lipid_coldsplit!r} is accepted by the "
+                    "configuration but absent from LIPID_COLDSPLIT_SETS"
+                )
+            self.excluded_lipid_classes = {name.lower() for name in classes}
+            positives = int(
+                csv.loc[lipid_class_series(csv).isin(classes), "Interaction"].sum()
+            )
+            print(
+                f"lipid cold split '{self.lipid_coldsplit}' : {len(classes)} classes "
+                f"held out of training for every protein, {positives} positives"
+            )
+            print(f"  {', '.join(classes)}")
+            return
+
+        if not (self.double_coldsplit or self.mixed_coldsplit):
+            return
+
+        chosen = {}
+        for group in sorted(self.excluded_groups):
+            classes, covered, cost = lipid_classes_for_holdout(
+                csv, group, self.coldsplit_share
+            )
+            chosen.update({name.lower(): name for name in classes})
+            note = (
+                ""
+                if covered >= COLDSPLIT_MINIMUM_TEST_POSITIVES
+                else f"  [only {covered} positives, too few for a test block]"
+            )
+            print(
+                f"lipid class holdout for {group} : {len(classes)} classes, "
+                f"{covered} positives held out, costing train {cost} positives{note}"
+            )
+            print(f"  {', '.join(classes)}")
+        self.excluded_lipid_classes = set(chosen)
 
     def _sample_interactions(self, csv, seed):
         # Lipid-class balancing is a trade against protein balancing, not a
         # refinement. Per-protein matching already implies per-family matching.
+        # Which side of the coming lipid-class cut each row falls on. Passed to the
+        # per-protein and per-family samplers so they match negatives to positives
+        # WITHIN each side: otherwise a protein's negatives can all be drawn from
+        # classes that then leave training, and it reaches the train block with
+        # positives and nothing to contrast them against. The per-(group, class)
+        # sampler needs no such hint -- a class is held out whole, so its cells already
+        # sit on one side of the cut.
+        strata = None
+        if self.excluded_lipid_classes:
+            strata = (
+                lipid_class_series(csv).str.lower().isin(self.excluded_lipid_classes)
+            )
+
         if self.balanced_lipid_classes:
             csvtrue, csvfalse = split_and_sample_lipid_class_balanced_interactions(
-                csv, seed
+                csv, seed, ratio=self.negatives_per_positive
             )
         elif self.balanced_proteins:
             csvtrue, csvfalse = split_and_sample_protein_balanced_interactions(
-                csv, seed
+                csv, seed, self.negatives_per_positive, strata
             )
         elif self.balance_negatives_by_family:
             csvtrue, csvfalse = split_and_sample_family_balanced_interactions(
-                csv, seed
+                csv, seed, self.negatives_per_positive, strata
             )
         else:
             csvtrue, csvfalse = split_and_sample_interactions(csv, seed)
@@ -334,7 +485,11 @@ class PLIDataset(
             csvtrain = self.csvt[
                 ~self.csvt["ProteinDomain"].str.lower().isin(self.excluded_groups)
             ]
-        elif self.excluded_subgroups:
+        elif self.excluded_subgroups or self.lipid_coldsplit:
+            # lipid_coldsplit keeps every protein: the whole table is train until the
+            # class filter below removes the held-out chemistry. The random 85% draw of
+            # the last branch would mix an ordinary split into it and make the held-out
+            # classes only part of what is evaluated.
             csvtrain = self.csvt
         else:
             csvtrain = self.csvt.sample(frac=0.85, random_state=seed)
@@ -344,7 +499,31 @@ class PLIDataset(
                 ~csvtrain["LTPProtein"].isin(self.excluded_subgroups)
             ]
 
+        # The second axis. Held-out classes leave train for EVERY protein, not only the
+        # held-out family, which is the whole point: a row of the held-out family in a
+        # held-out class then has neither its protein nor its lipid class anywhere in
+        # train, so the per-lipid label prior that carries a one-axis split (0.55-0.57
+        # balanced accuracy on its own) has nothing to be estimated from. Everything the
+        # filter removes joins excluded_data below and is split into valid and test by
+        # the same code as before -- only train's definition narrows here.
+        if self.excluded_lipid_classes:
+            train_classes = lipid_class_series(csvtrain).str.lower()
+            csvtrain = csvtrain[~train_classes.isin(self.excluded_lipid_classes)]
+
         excluded_data = self.csvt.drop(csvtrain.index)
+
+        # --double_coldsplit: the held-out family's rows in classes that stayed in train
+        # are dropped rather than evaluated. Their lipids ARE in train -- paired with
+        # other proteins -- so keeping them lets a per-lipid label prior score on them,
+        # which is the leak the class holdout exists to close; measured, they hold the
+        # prior at 0.498 instead of the 0.500 the rest of the pool gives. They cannot go
+        # to train either, since their protein is held out. Dropping costs 3-17% of the
+        # working set and nothing from train, which never contained them.
+        if self.double_coldsplit and self.excluded_lipid_classes:
+            excluded_classes = lipid_class_series(excluded_data).str.lower()
+            excluded_data = excluded_data[
+                excluded_classes.isin(self.excluded_lipid_classes)
+            ]
         if self.test_group:
             domain_lower = excluded_data["ProteinDomain"].str.lower()
             csvtest = excluded_data[domain_lower == self.test_group].sample(frac=1)
@@ -396,6 +575,53 @@ class PLIDataset(
             protein_group_weights[position] = weight_by_group[protein_name]
 
         return protein_group_weights
+
+    def get_protein_balance_weights(self):
+        """Per-row weights that restore each protein's pos:neg ratio inside train.
+
+        The negative sampler matches counts per protein over the WHOLE table, before
+        the split. Holding out protein families keeps that match intact -- whole
+        proteins leave, the survivors' cells are untouched -- but holding out lipid
+        classes cuts across proteins, and it cuts unevenly: a protein whose positives
+        sat in a held-out class loses almost all of them and almost none of its
+        negatives. STARD2 comes out of a two-axis split at 4 positive against 91
+        unlabeled.
+
+        Re-running the 1:1 match inside the train block would restore the ratio by
+        discarding, and it would discard hardest from exactly those proteins -- STARD2
+        would fall from 95 rows to 8. This restores it by weighting instead: a positive
+        weighs 1, a negative weighs its protein's positives over its negatives, so the
+        two sides of every protein carry equal total weight and no row is thrown away.
+
+        Proteins left with no positives at all contribute zero weight on both sides,
+        which is correct: train holds no labelled example of them any more.
+
+        Returned normalized by the mean, matching the other weight tables here, and
+        indexed by ``id2pos`` like them so ``batch_sample_weights`` can gather it.
+        """
+        protein_names = self.csvtrain["LTPProtein"].str.lower()
+        labels = self.csvtrain["Interaction"].astype(int)
+        counts = (
+            pandas.DataFrame({"protein": protein_names, "label": labels})
+            .value_counts()
+            .to_dict()
+        )
+        weights = torch.zeros(len(self.id2pos), dtype=torch.float32)
+
+        for pair_id, protein_name, label in zip(
+            self.csvtrain["pair_id"].astype(int),
+            protein_names,
+            labels,
+        ):
+            if int(label) == 1:
+                weight = 1.0
+            else:
+                positives = counts.get((protein_name, 1), 0)
+                negatives = counts.get((protein_name, 0), 0)
+                weight = positives / negatives if negatives else 0.0
+            weights[self.id2pos[int(pair_id)]] = weight
+
+        return weights / weights.mean().clamp_min(1e-8)
 
     def get_protein_class_weights(self, square_root=False):
         """Return normalized inverse-frequency weights by protein and class."""

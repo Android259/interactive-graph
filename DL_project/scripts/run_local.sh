@@ -302,6 +302,27 @@ if [[ -n "${SKIP_GROUPS_ARG:-}" ]]; then
     excl_groups=("${kept_groups[@]}")
 fi
 
+# --lipid_coldsplit in the args file is the OTHER axis: whole chemical families of
+# lipids leave training while every protein stays. There is no held-out protein group
+# then, so the grid iterates the lipid sets instead -- one run per set, four in all.
+# The bare flag is stripped from the template because the trainer only accepts the
+# named form, which is appended per run below.
+lipid_coldsplit_sets=()
+if args_file_has_flag "${ARGS_FILE}" --lipid_coldsplit; then
+    if [[ -n "${GROUPS_ARG:-}${SKIP_GROUPS_ARG:-}" ]]; then
+        printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
+'--groups/--no_groups do not apply.\n' >&2
+        exit 2
+    fi
+    # Keep in step with LIPID_COLDSPLIT_SETS (dataloader/sampler.py) and
+    # LIPID_COLDSPLIT_NAMES (training/read_configuration.py); a name absent from either
+    # is rejected at parse time, so a drift here fails loudly on the first run.
+    lipid_coldsplit_sets=(sphingolipids phosphorus_free choline anionic)
+    excl_groups=("${lipid_coldsplit_sets[@]}")
+    args_template="$(printf '%s' "${args_template}" \
+        | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
+fi
+
 if [[ -n "${SEEDS_ARG:-}" ]]; then
     read -r -a seeds <<< "${SEEDS_ARG//,/ }"
     for _seed in "${seeds[@]}"; do
@@ -685,8 +706,18 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
         update_job_budget
     done
 
-    printf '=== [%d/%d] GROUP: %s | VARIANT: %s | SEED: %s ===\n' \
-        "$(( job_index + 1 ))" "${total_jobs}" "${group}" "${variant}" "${seed}"
+    # Which axis this run holds out. With --lipid_coldsplit the "group" is the name of
+    # a lipid-class set, not a protein family, and it goes to a different flag.
+    if (( ${#lipid_coldsplit_sets[@]} > 0 )); then
+        split_flag=(--lipid_coldsplit="${group}")
+    else
+        split_flag=(--excluded_groups="${group}")
+    fi
+
+    printf '=== [%d/%d] %s: %s | VARIANT: %s | SEED: %s ===\n' \
+        "$(( job_index + 1 ))" "${total_jobs}" \
+        "$( (( ${#lipid_coldsplit_sets[@]} > 0 )) && printf 'LIPID SET' || printf 'GROUP')" \
+        "${group}" "${variant}" "${seed}"
 
     # read_configuration.py applies flags in argv order and the last one wins,
     # so appending --num_workers here would silently override an args file
@@ -725,7 +756,7 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
         ${args_template} \
         --label="${variant}" \
         --seed="${seed}" \
-        --excluded_groups="${group}" \
+        "${split_flag[@]}" \
         "${num_workers_flag[@]}" \
         > "${log_file}" 2>&1 &
     pids+=($!)

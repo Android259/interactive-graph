@@ -19,7 +19,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 TABLE="${TABLE:-${PROJECT_ROOT}/metrics_summary.csv}"
 export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
@@ -36,7 +36,7 @@ SUBGROUP_METRICS=(balanced_accuracy F1 sensitivity specificity precision)
 cd "${PROJECT_ROOT}"
 
 list_dim() {
-    python3 "${SCRIPT_DIR}/_list_label_dimension.py" "${TABLE}" "${LABEL}" "$@"
+    python3 "${SCRIPT_DIR}/tools/_list_label_dimension.py" "${TABLE}" "${LABEL}" "$@"
 }
 
 expected_list="$(list_dim seed run_status=complete)"

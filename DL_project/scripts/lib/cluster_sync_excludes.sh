@@ -67,6 +67,21 @@ SYNC_EXCLUDES=(
 
     # Bulk that training never imports.
     --exclude='/external/'
+
+    # Pretrained weights, not project data. Both are read only by the scripts that
+    # BUILD the embedding stores (preprocessing/embed_isomeric_smiles_molformer.py,
+    # frozen_embedding.py, the ESM3 embedding builders); training reads the built
+    # artefacts -- data/embedding_ESM3*/ and lipid_SMILES_embedding_deterministic.* --
+    # and never opens these.
+    #
+    # Excluded for a second and stronger reason than size: the authoritative MoLFormer
+    # checkpoint is the one already on the cluster. A local copy fetched to rebuild an
+    # embedding store is not necessarily the same weights, and an unexcluded mirror
+    # would push it over the real one. Both entries are in SYNC_PROTECT below so
+    # --delete-excluded cannot remove the cluster's copies either.
+    --exclude='/data/Pretrained MoLFormer/'
+    --exclude='/data/esm3_checkpoint/'
+
 )
 
 # Paths that must survive on the receiving side even though they are not
@@ -85,6 +100,8 @@ SYNC_PROTECT=(
     --filter='P /metrics_analysis*'
     --filter='P /feature_contributions*'
     --filter='P /external/'
+    --filter='P /data/Pretrained MoLFormer/'
+    --filter='P /data/esm3_checkpoint/'
     --filter='P /.bigfoot_job_queue/'
     --filter='P /.bigfoot_job_queues/'
     --filter='P /.kraken_job_queues/'

@@ -182,6 +182,24 @@ fi
 variant="$(basename "${args_file}" .md)"
 args_template="$(args_file_flags "${args_file}")"
 
+# --lipid_coldsplit in the args file switches the grid to the other axis: whole chemical
+# families of lipids leave training while every protein stays, so there is no held-out
+# protein group and the grid iterates the four lipid sets instead. The bare flag is
+# stripped from the template because the trainer only accepts the named form, which
+# experiment_record appends per run. Keep the names in step with LIPID_COLDSPLIT_SETS
+# (dataloader/sampler.py); one absent from there is rejected at parse time.
+LIPID_COLDSPLIT_SETS_LIST=(sphingolipids phosphorus_free choline anionic)
+lipid_coldsplit=0
+if args_file_has_flag "${args_file}" --lipid_coldsplit; then
+    lipid_coldsplit=1
+    if (( COLD_SPLIT )); then
+        printf -- '--lipid_coldsplit and --cold_split hold out different axes; pick one.\n' >&2
+        exit 2
+    fi
+    args_template="$(printf '%s' "${args_template}" \
+        | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
+fi
+
 if (( COLD_SPLIT )); then
     output_root="script_logs/${variant}_coldval_seeds01234"
     groups=("${COLD_TEST_GROUPS[@]}")
@@ -190,6 +208,10 @@ else
     groups=("${PROTEIN_GROUPS[@]}")
 fi
 seeds=("${DEFAULT_SEEDS[@]}")
+if (( lipid_coldsplit )); then
+    output_root="script_logs/${variant}_lipidsets"
+    groups=("${LIPID_COLDSPLIT_SETS_LIST[@]}")
+fi
 [[ -z "${GROUPS_OVERRIDE}" ]] || read -r -a groups <<< "${GROUPS_OVERRIDE}"
 [[ -z "${SEEDS_OVERRIDE}" ]] || read -r -a seeds <<< "${SEEDS_OVERRIDE}"
 
@@ -233,6 +255,14 @@ experiment_record() {
         stem="${variant}_val-${val_group}_seed${seed}"
         extra=" --test_group=${group}"
         header="TEST: ${group} | VAL: ${val_group} | VARIANT: ${variant} | SEED: ${seed}"
+    elif (( lipid_coldsplit )); then
+        # The "group" is the name of a lipid-class set, and it goes to its own flag;
+        # excluded stays empty so no protein leaves training.
+        excluded=""
+        extra=" --lipid_coldsplit=${group}"
+        output_dir="${output_root}/${group}"
+        stem="${variant}_seed${seed}"
+        header="LIPID SET: ${group} | VARIANT: ${variant} | SEED: ${seed}"
     else
         excluded="${group}"
         output_dir="${output_root}/${group}"
@@ -245,7 +275,7 @@ experiment_record() {
         "${header}" \
         "${output_dir}/${stem}_ep150_batch16.log" \
         "${output_dir}/${stem}_" \
-        "--label=${variant} ${args_template} --seed=${seed} --excluded_groups=${excluded}${extra}"
+        "--label=${variant} ${args_template} --seed=${seed}$( [[ -n "${excluded}" ]] && printf ' --excluded_groups=%s' "${excluded}" )${extra}"
 }
 
 # --- oarsub -------------------------------------------------------------------

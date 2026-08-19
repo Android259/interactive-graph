@@ -35,7 +35,12 @@ WALLTIME="${WALLTIME:-5:00:00}"
 # The same budget for a --fast_attention configuration, which removes the
 # quadratic cross-sample attention work. One number for every way of launching,
 # so a config cannot get a different walltime depending on how it was started.
-FAST_ATTENTION_WALLTIME="${FAST_ATTENTION_WALLTIME:-0:25:00}"
+# Measured on Kraken 2026-08-19: 120 epochs of the fast-attention model take about
+# 22 minutes per run with four runs sharing one H100. 25 minutes left a 12% margin,
+# which was enough only while the card ran four at a time; at eight the runs contend
+# for it and each one slows down. 35 covers that without the pack having to ask for
+# more total walltime, because the extra concurrency removes a whole sequential wave.
+FAST_ATTENTION_WALLTIME="${FAST_ATTENTION_WALLTIME:-0:35:00}"
 
 # How many jobs may sit WAITING in OAR at once. The cluster's own copy of this
 # (<queue>/max_waiting) wins when it exists, so two computers draining the same

@@ -100,6 +100,25 @@ EXCLUDED_GROUP_ALIASES.update({
     name.lower(): name for name in EXCLUDED_SUBGROUPS_BY_NAME
 })
 
+# Names of the lipid-class sets --lipid_coldsplit accepts. The classes themselves live
+# in LIPID_COLDSPLIT_SETS (dataloader/sampler.py, which also records how each set was
+# chosen and how isolated it is); only the names are repeated here, so that a typo fails
+# at parse time instead of after a job reaches a GPU. PLIDataset checks the two agree.
+LIPID_COLDSPLIT_NAMES = ("sphingolipids", "phosphorus_free", "choline", "anionic")
+
+
+def read_lipid_coldsplit(value):
+    """Resolve the name of a lipid-class set held out of training."""
+    name = str(value).strip().lower()
+    if not name:
+        return ""
+    if name not in LIPID_COLDSPLIT_NAMES:
+        raise ValueError(
+            f"Unknown lipid_coldsplit set: {value}; "
+            f"expected one of {', '.join(LIPID_COLDSPLIT_NAMES)}"
+        )
+    return name
+
 
 def read_bool(value):
     """Parse a permissive command-line boolean value."""
@@ -390,11 +409,52 @@ class ModelConfig:
     checkpoint_window: int = 5
     seed: int = 0
     excluded_groups: list = field(default_factory=list)
+    # Head-group classes held out of training alongside excluded_groups. With both set
+    # the split is cold on both axes: a row of the held-out family in a held-out class
+    # has neither its protein nor its lipid class anywhere in train, so no per-lipid
+    # label prior carries over to it. Empty means the old one-axis behaviour.
+    # The second axis of the cold split. Both flags hold whole head-group classes out of
+    # training on top of excluded_groups; which classes is DERIVED from the held-out
+    # family by dataloader.sampler.lipid_classes_for_holdout, not typed in, because the
+    # right set differs per family and the rule that finds it is what makes the split
+    # honest. The derived list is printed at load time so a run's log records it.
+    #
+    # They differ in what happens to the held-out family's rows in the classes that
+    # STAYED in train. mixed_coldsplit leaves them in the evaluation pool, so valid and
+    # test mix three regimes and 6-39% of their lipids are ones training has seen; the
+    # per-lipid label prior measures 0.498 there, diluted but present. double_coldsplit
+    # drops those rows entirely -- they cannot go to train either, their protein is held
+    # out -- so no evaluated lipid has been seen and the prior measures exactly 0.500.
+    # That costs 3-17% of the working set and nothing from train, which never held them.
+    double_coldsplit: bool = False
+    mixed_coldsplit: bool = False
+    # The other axis on its own: a whole chemical family of lipids leaves training while
+    # every protein stays. Answers "a lipid of a chemistry never seen arrives -- which of
+    # the known proteins bind it", which is the question that matters when the screening
+    # panel grows rather than the protein list. Takes the name of one set; the launcher
+    # expands a bare --lipid_coldsplit into one run per set.
+    lipid_coldsplit: str = ""
+    # How much of the held-out family's positives the derived class set has to cover.
+    coldsplit_share: float = 0.7
     excluded_subgroups: list = field(default_factory=list)
     balance_excluded_group_negatives: bool = False
     balance_negatives_by_family: bool = False
     balanced_proteins: bool = False
     balanced_batches: bool = False
+    # Negatives drawn per positive inside each balancing group. 1 is the exact 1:1 the
+    # samplers produced before this existed, and it costs the 9506 rows of the table
+    # that the match discards. Raising it keeps the grouping -- so the between-protein
+    # prior the grouping removes stays removed -- and only coarsens the class ratio: 2
+    # gives about 32-38% positives in train, 3 about 24-30%, against the table's own
+    # 6.9%. The class ratio the loss then sees is --class_weights' business, and the
+    # per-protein skew a two-axis split leaves behind is --protein_balance_weight's.
+    #
+    # DEFAULT 2, not 1: the exact match throws away 86% of the table for a precision the
+    # loss can supply instead, and the rows it throws away are the record of which
+    # lipids each protein does not bind. Runs that want the old pool pass
+    # --negatives_per_positive=1 explicitly; results from before this default are 1:1
+    # and are not directly comparable.
+    negatives_per_positive: int = 2
     test_group: str = ""
     cold_split: bool = False
     # Diagnostic shortcut ablation: zero one pooled partner before the final
@@ -550,6 +610,12 @@ class ModelConfig:
     protein_group_weight: bool = False
     protein_class_weight: bool = False
     protein_class_sqrt_weight: bool = False
+    # Restore each protein's pos:neg ratio inside train by weighting rather than by
+    # discarding. What a two-axis split needs: holding lipid classes out cuts across
+    # proteins and leaves some of them badly skewed (STARD2 at 4 positive against 91
+    # unlabeled), and re-matching by subsampling would cut hardest from exactly those.
+    # See PLIDataset.get_protein_balance_weights.
+    protein_balance_weight: bool = False
     grab_loss: bool = False
     pu_loss: bool = False
     disable_early_stopping: bool = True
@@ -676,6 +742,50 @@ class ModelConfig:
             raise ValueError(
                 f"protein_pooling must be one of {', '.join(PROTEIN_POOLINGS)}"
             )
+        if self.lipid_coldsplit and (self.double_coldsplit or self.mixed_coldsplit):
+            raise ValueError(
+                "lipid_coldsplit holds a fixed chemical family out with every protein "
+                "left in training; double_coldsplit and mixed_coldsplit derive their "
+                "classes from a held-out protein family instead. They answer different "
+                "questions and cannot be combined"
+            )
+
+        if self.lipid_coldsplit and self.excluded_groups:
+            raise ValueError(
+                "lipid_coldsplit is the lipid axis on its own -- every protein stays in "
+                "training. Combining it with excluded_groups makes a two-axis split, "
+                "which is what --double_coldsplit is for"
+            )
+
+        if self.double_coldsplit and self.mixed_coldsplit:
+            raise ValueError(
+                "double_coldsplit and mixed_coldsplit are the two answers to the same "
+                "question -- what to do with the held-out family's rows in the classes "
+                "that stayed in train -- so exactly one of them applies"
+            )
+
+        if not 0.0 < self.coldsplit_share <= 1.0:
+            raise ValueError(
+                "coldsplit_share is the share of the held-out family's positives the "
+                f"derived class set must cover and belongs in (0, 1]; got "
+                f"{self.coldsplit_share}"
+            )
+
+        if self.negatives_per_positive < 1:
+            raise ValueError(
+                "negatives_per_positive is how many negatives each positive draws "
+                "inside its balancing group and must be at least 1; "
+                f"got {self.negatives_per_positive}"
+            )
+
+        if (self.double_coldsplit or self.mixed_coldsplit) and not self.excluded_groups:
+            raise ValueError(
+                "a lipid-class holdout without excluded_groups leaves every protein in "
+                "train, which is a one-axis split on the other axis rather than the "
+                "two-axis one it looks like, and there is no held-out family to derive "
+                "the classes from. Pass --excluded_groups as well."
+            )
+
         if self.test_group:
             if not self.excluded_groups:
                 raise ValueError("test_group requires excluded_groups to be set")
@@ -965,6 +1075,17 @@ class ModelConfig:
                 "protein_disable_pre_sa_mlp requires gine_conv when "
                 "protein_self_attention is enabled"
             )
+        if self.protein_balance_weight and (
+            self.protein_class_weight or self.protein_class_sqrt_weight
+        ):
+            # common_weights_parts averages its parts, so two per-protein schemes
+            # combine into a third that balances neither.
+            raise ValueError(
+                "protein_balance_weight cannot be combined with protein_class_weight "
+                "or protein_class_sqrt_weight: the parts are averaged, and the mean of "
+                "two per-protein balancing tables balances neither"
+            )
+
         if self.protein_class_weight and self.protein_class_sqrt_weight:
             raise ValueError(
                 "protein_class_weight and protein_class_sqrt_weight "
@@ -1417,6 +1538,12 @@ SIMPLE_BOOL_FLAGS = {
     "--pocket_descriptors": "pocket_descriptors",
     "protein_group_weight": "protein_group_weight",
     "--protein_group_weight": "protein_group_weight",
+    "double_coldsplit": "double_coldsplit",
+    "--double_coldsplit": "double_coldsplit",
+    "mixed_coldsplit": "mixed_coldsplit",
+    "--mixed_coldsplit": "mixed_coldsplit",
+    "protein_balance_weight": "protein_balance_weight",
+    "--protein_balance_weight": "protein_balance_weight",
     "protein_class_weight": "protein_class_weight",
     "--protein_class_weight": "protein_class_weight",
     "protein_class_sqrt_weight": "protein_class_sqrt_weight",
@@ -1518,6 +1645,9 @@ VALUE_HANDLERS = {
         "excluded_subgroups", read_excluded_subgroups
     ),
     "--excluded_groups=": set_config_field("excluded_groups", read_excluded_groups),
+    "--negatives_per_positive=": set_config_field("negatives_per_positive", int),
+    "--coldsplit_share=": set_config_field("coldsplit_share", float),
+    "--lipid_coldsplit=": set_config_field("lipid_coldsplit", read_lipid_coldsplit),
     "--test_group=": set_config_field("test_group", read_test_group),
     "--batch=": set_config_field("batch", int),
     "--num_workers=": set_config_field("num_workers", int),

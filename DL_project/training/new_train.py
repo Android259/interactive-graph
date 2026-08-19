@@ -99,6 +99,10 @@ if conf.tanimoto_weight:
 if conf.protein_group_weight:
     protein_group_weights = train_dataset.get_protein_weights().to(device)
     common_weights_parts.append(protein_group_weights)
+if conf.protein_balance_weight:
+    common_weights_parts.append(
+        train_dataset.get_protein_balance_weights().to(device)
+    )
 if conf.protein_class_weight:
     protein_class_weights = train_dataset.get_protein_class_weights().to(device)
     common_weights_parts.append(protein_class_weights)
@@ -195,10 +199,21 @@ if conf.balanced_batches:
         conf.batch,
         generator=seeded_generator(conf.seed),
     )
+    # What the batches actually hold, not what --batch asked for. The sampler covers
+    # every row once per epoch and takes its batch count from the LARGER class, so equal
+    # pools give batch//2 of each and unequal pools give batch//2 of the larger class and
+    # proportionally less of the smaller: at negatives_per_positive=2 a --batch=8 run
+    # yields about 2 positive + 4 unlabeled, not 4 + 4. Printing the requested split
+    # instead of the real one made the log say 4 + 4 regardless.
+    _sampler = train_loader_kwargs["batch_sampler"]
+    _positives = int(_sampler.positive_indices.numel())
+    _unlabeled = int(_sampler.unlabeled_indices.numel())
     print(
-        f"balanced batches : {len(train_loader_kwargs['batch_sampler'])} per epoch "
+        f"balanced batches : {len(_sampler)} per epoch "
         f"covering all {train_labels.numel()} train rows, "
-        f"target {conf.batch // 2} positive + {conf.batch // 2} unlabeled"
+        f"{_positives / len(_sampler):.1f} positive + "
+        f"{_unlabeled / len(_sampler):.1f} unlabeled per batch "
+        f"({(_positives + _unlabeled) / len(_sampler):.1f} rows, --batch={conf.batch})"
     )
 
 train_loader = torch_geometric.loader.DataLoader(
@@ -425,6 +440,16 @@ conf.label = label_name
 excluded_set_parts = []
 if conf.excluded_groups:
     excluded_set_parts.append("groups_" + "-".join(conf.excluded_groups))
+if conf.lipid_coldsplit:
+    # Under --lipid_coldsplit no protein group is excluded, so without this every set
+    # would land in the same "random" directory: four different experiments sharing one
+    # test_metrics folder, and a progress table that cannot tell their event files apart
+    # and reports n/a for all of them. The "groups_" prefix is deliberate even though a
+    # lipid set is not a protein group -- it is the prefix every consumer of this path
+    # already keys on (the progress table's dirs_by_set, list_completed_experiments,
+    # build_metrics_table, the plotting scripts), and what the directory really names is
+    # the exclusion set, whichever axis it lies on.
+    excluded_set_parts.append("groups_" + conf.lipid_coldsplit)
 if conf.excluded_subgroups:
     excluded_set_parts.append("subgroups_" + "-".join(conf.excluded_subgroups))
 excluded_set_name = "_".join(excluded_set_parts) if excluded_set_parts else "random"

@@ -123,10 +123,18 @@ SEEDS_OVERRIDE="${SEEDS_OVERRIDE:-}"
 case "${CLUSTER_NAME:-bigfoot}" in
     bigfoot)
         _default_pack_size=9
-        _default_pack_walltime_parallel=1
+        # Two, not one: Bigfoot's GPU_PROPERTY matches A100 (four slots) and V100 (two),
+        # so two is what the weakest card delivers. Measured on the V100 node the mcs
+        # pack landed on -- 32768 MiB, 10 cores -> cap 2, memory 2, CPU 2. Leaving it at
+        # 1 while the per-experiment budget rose would have inflated a nine-run pack's
+        # request from 3:45 to 5:15 for no reason.
+        _default_pack_walltime_parallel=2
         ;;
     kraken)
         _default_pack_size=12
+        # Four: the weakest card GPU_PROPERTY matches runs four at a time. Eight was
+        # tried on 2026-08-19 and reverted -- see the h100 profile in pack_lib.sh; past
+        # four the card is saturated and total throughput drops rather than rises.
         _default_pack_walltime_parallel=4
         ;;
 esac

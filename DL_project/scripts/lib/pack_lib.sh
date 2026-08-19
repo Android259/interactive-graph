@@ -39,9 +39,21 @@ pack_hardware_profile() {
             printf 'a100\t4\t14336\t13000\t5\n'
             ;;
         *H100*)
-            printf 'h100\t4\t16384\t15000\t5\n'
+            # Four, measured. Eight was tried on 2026-08-19 and is worse: a run that
+            # takes 22 minutes for 120 epochs with four sharing the card takes about 57
+            # with eight, so throughput falls from 10.9 to 8.4 runs per hour. The card is
+            # already saturated at four, and the memory arithmetic that suggested eight
+            # was answering the wrong question -- what binds is compute and CPU (eight
+            # runs claim 40 of 48 cores before their loaders), not GPU memory. The
+            # reservation stays at the measured-enough 8192 MiB; with a cap of four it
+            # never binds, and it is closer to the truth than the old 16384 placeholder.
+            printf 'h100\t4\t8192\t8000\t5\n'
             ;;
         *H200*)
+            # Left at its original eight and 16384 MiB, which come out at seven slots on
+            # a 143771 MiB card. Lowering the reservation to match the H100 would give
+            # eight, but the H100 measurement above says eight is past the point where
+            # more concurrency helps, and nothing has been measured on an H200.
             printf 'h200\t8\t16384\t15000\t5\n'
             ;;
         *)

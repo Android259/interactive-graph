@@ -99,6 +99,10 @@ job_variant() {
         top="${top%%/*}"
         top="${top%_seeds[0-9]*}"
         top="${top%_coldval}"
+        # --lipid_coldsplit names its output root <variant>_lipidsets instead of
+        # <variant>_seeds01234, so without this a label given on the command line never
+        # matched one of those runs and kill.sh reported "nothing to stop".
+        top="${top%_lipidsets}"
         if [[ -n "${top}" && "${top}" != "${stdout_file}" ]]; then
             printf '%s\n' "${top}"
             return

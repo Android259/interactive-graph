@@ -1,0 +1,28 @@
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:549: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:549: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/kalinina/.conda/envs/Kalinin_project_LP/lib/python3.10/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+
+lipid class holdout for scp2 : 9 classes, 36 positives held out, costing train 175 positives
+  Lysophosphatidylglycerol, Lysophosphatidylcholine, docosatrienoate, Triacylglycerol, Lysophosphatidylethanolamine, Bismonoacylglycerolphosphate, eicosatetraenoate, octadecenoate, Phosphatidylglycerol
+train : (1597, 12)
+valid : (302, 12)
+test : (301, 12)
+lipid prior baseline valid : balanced accuracy 0.500 by lipid, 0.500 by class | 0% of rows have their lipid in train
+lipid prior baseline test : balanced accuracy 0.500 by lipid, 0.500 by class | 0% of rows have their lipid in train
+number of parameters : 27286
+class weights : [0.7540132403373718, 1.4842007160186768]
+balanced batches : 100 per epoch covering all 1597 train rows, 5.4 positive + 10.6 unlabeled per batch (16.0 rows, --batch=16)
+cache warmed : 35 proteins, 410 lipid encodings, 0 lipid graphs, 131 MiB
+source artifacts released : ['csvt', 'smiles_encoding']
+data extracted
+EPOCH 1:
+VALIDATION
+valid epoch balanced_accuracy: 0.501171
+dynamics: BA full 0.5012 | no protein 0.5331 (delta -0.0319) | no lipid 0.5169 (delta -0.0157) | grad protein 0.3008 lipid 0.3736 | head |W| protein 2.2509 lipid 2.1399 | between-protein variance 0.8058
+dynamics: saved weights of epoch 1 to /home/kalinina/DL_project/models/bbp_dcs_smd_fa_nps_dpt01_gm_plm8_hid8_wd001_ep120/groups_scp2/dynamics/seed0_epoch1.pt
+EPOCH 2:

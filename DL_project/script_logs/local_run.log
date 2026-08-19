@@ -18,3 +18,12 @@ lipid embedding store: lipid_SMILES_embedding_deterministic.pkl already current
   memory: measured 1181 MiB/job over 7 running job(s), margin included
 === [8/12] GROUP: IP_trans | VARIANT: bbp_smd_fa_lipid_handicap_nps3mlp_dpt01_gm_plm64_hid64_batch8_ep120 | SEED: 1 ===
 === [9/12] GROUP: LBP_BPI_CETP | VARIANT: bbp_smd_fa_lipid_handicap_nps3mlp_dpt01_gm_plm64_hid64_batch8_ep120 | SEED: 0 ===
+  memory: measured 1593 MiB/job over 8 running job(s), margin included
+=== [10/12] GROUP: LBP_BPI_CETP | VARIANT: bbp_smd_fa_lipid_handicap_nps3mlp_dpt01_gm_plm64_hid64_batch8_ep120 | SEED: 1 ===
+  memory: measured 1415 MiB/job over 9 running job(s), margin included
+  memory: measured 1565 MiB/job over 8 running job(s), margin included
+=== [11/12] GROUP: OSBP | VARIANT: bbp_smd_fa_lipid_handicap_nps3mlp_dpt01_gm_plm64_hid64_batch8_ep120 | SEED: 0 ===
+  memory: measured 1456 MiB/job over 9 running job(s), margin included
+  memory: measured 1595 MiB/job over 8 running job(s), margin included
+=== [12/12] GROUP: OSBP | VARIANT: bbp_smd_fa_lipid_handicap_nps3mlp_dpt01_gm_plm64_hid64_batch8_ep120 | SEED: 1 ===
+Ran 12 jobs bbp_smd_fa_lipid_handicap_nps3mlp_dpt01_gm_plm64_hid64_batch8_ep120 across 6 groups and 2 seeds.

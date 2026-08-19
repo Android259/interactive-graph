@@ -14,9 +14,30 @@ def split_and_sample_interactions(csv, seed, unlabeled_fraction=0.056):
     return csvtrue, csvfalse
 
 
-def _sample_group_balanced_negatives(csv, seed, group_column):
-    """Sample negatives per group to match that group's positive count."""
+def _sample_group_balanced_negatives(csv, seed, group_column, ratio=1, strata=None):
+    """Sample `ratio` negatives per positive within each group.
+
+    `ratio` is 1 for the exact 1:1 the samplers were written for. Higher values keep
+    proportionally more of the negative pool: at 1 the working set is 1512 of the
+    table's 11018 rows, and the 9506 rows dropped are the record of which lipids each
+    protein does NOT bind. The ratio is per group, so raising it does not reintroduce
+    the between-protein prior the grouping exists to remove -- every group keeps the
+    same pos:neg proportion, just a coarser one. What it does change is the class prior
+    the loss sees, which is `--class_weights`' job.
+    """
+    if ratio < 1:
+        raise ValueError(f"negatives per positive must be at least 1, got {ratio}")
     groups = csv[group_column].str.lower()
+    if strata is not None:
+        # Matching per (group, stratum) instead of per group. The cold split's second
+        # axis needs this: without it the negatives of a protein are drawn from its
+        # whole lipid panel, and if they all land in classes that later leave training,
+        # the protein arrives in the train block with positives and nothing to contrast
+        # them against -- one-sided, unfixable by weighting, and not something to paper
+        # over by discarding it. Matching inside each stratum draws the two sides of
+        # every protein from the same side of the coming cut, so each side of the cut
+        # is balanced per protein on its own.
+        groups = groups + "\x00" + strata.astype(str)
     is_positive = csv["Interaction"] == 1
     is_negative = csv["Interaction"] == 0
     parts = []
@@ -26,7 +47,7 @@ def _sample_group_balanced_negatives(csv, seed, group_column):
         if positive_count == 0:
             continue
         candidates = csv[is_negative & group_mask]
-        draw_n = min(positive_count, len(candidates))
+        draw_n = min(positive_count * ratio, len(candidates))
         if draw_n > 0:
             parts.append(candidates.sample(n=draw_n, random_state=seed))
     if parts:
@@ -34,7 +55,7 @@ def _sample_group_balanced_negatives(csv, seed, group_column):
     return csv[is_negative].iloc[0:0]
 
 
-def sample_family_balanced_negatives(csv, seed):
+def sample_family_balanced_negatives(csv, seed, ratio=1, strata=None):
     """Sample negatives per protein family to match its positive count (1:1).
 
     Instead of the global fixed-fraction subsample of `split_and_sample_interactions`,
@@ -43,17 +64,17 @@ def sample_family_balanced_negatives(csv, seed):
     positive:negative both globally and within every family. Sampling is seeded
     (`random_state=seed`) and preserves the original interaction-CSV row index.
     """
-    return _sample_group_balanced_negatives(csv, seed, "ProteinDomain")
+    return _sample_group_balanced_negatives(csv, seed, "ProteinDomain", ratio, strata)
 
 
-def split_and_sample_family_balanced_interactions(csv, seed):
+def split_and_sample_family_balanced_interactions(csv, seed, ratio=1, strata=None):
     """Keep every positive and sample per-family-matched negatives (1:1)."""
     csvtrue = csv[csv["Interaction"] == 1].copy()
-    csvfalse = sample_family_balanced_negatives(csv, seed).copy()
+    csvfalse = sample_family_balanced_negatives(csv, seed, ratio, strata).copy()
     return csvtrue, csvfalse
 
 
-def sample_protein_balanced_negatives(csv, seed):
+def sample_protein_balanced_negatives(csv, seed, ratio=1, strata=None):
     """Sample negatives per protein to match its positive count (1:1).
 
     `sample_family_balanced_negatives` matches counts per `ProteinDomain`, which
@@ -66,13 +87,13 @@ def sample_protein_balanced_negatives(csv, seed):
     Sampling is seeded (`random_state=seed`) and preserves the original
     interaction-CSV row index.
     """
-    return _sample_group_balanced_negatives(csv, seed, "LTPProtein")
+    return _sample_group_balanced_negatives(csv, seed, "LTPProtein", ratio, strata)
 
 
-def split_and_sample_protein_balanced_interactions(csv, seed):
+def split_and_sample_protein_balanced_interactions(csv, seed, ratio=1, strata=None):
     """Keep every positive and sample per-protein-matched negatives (1:1)."""
     csvtrue = csv[csv["Interaction"] == 1].copy()
-    csvfalse = sample_protein_balanced_negatives(csv, seed).copy()
+    csvfalse = sample_protein_balanced_negatives(csv, seed, ratio, strata).copy()
     return csvtrue, csvfalse
 
 
@@ -80,19 +101,159 @@ def lipid_class_series(csv):
     """Return the head-group class of every row, e.g. 'Phosphatidylcholine (34:1)' -> 'Phosphatidylcholine'.
 
     `FullIdentityOfLipid` spells the class out in full and puts the acyl composition in
-    a trailing parenthesis; stripping that leaves 36 chemical classes over the 312
+    a trailing parenthesis; stripping that leaves 34 chemical classes over the 312
     distinct lipids. The class, not the individual species, is the level a binding
     preference actually lives at (a protein that takes PC(32:1) takes PC(34:1) too).
+
+    Two entries carry a stray ': ' prefix -- ': Phosphatidylcholine (32:2)' and
+    ': Phosphatidylglycerol (32:1)', 35 rows each. Dropping only the parenthesis left
+    them as classes of their own, so phosphatidylcholine and phosphatidylglycerol each
+    came out split in two and the count read 36. That is harmless for a balancer, which
+    merely matched two extra tiny cells, and not harmless at all for a split that holds
+    whole classes out of training: the real class would land in one fold and its double
+    in another, and the class prior would cross the cut through those 70 rows. Leading
+    punctuation is therefore removed before the class is read.
     """
     return (
         csv["FullIdentityOfLipid"]
         .astype(str)
         .str.replace(r"\s*\(.*", "", regex=True)
+        .str.replace(r"^[^A-Za-z]+", "", regex=True)
         .str.strip()
     )
 
 
-def sample_lipid_class_balanced_negatives(csv, seed, group_column="ProteinDomain"):
+# Lipid-class sets for --lipid_coldsplit: whole chemical families held out of training
+# while every protein stays in it. The question they ask is the other one from the
+# protein-family split -- a lipid of a chemistry never seen arrives, which of the known
+# proteins bind it -- and it is the one that matters when the screening panel grows.
+#
+# Grouped by chemistry rather than by count, because a set is only cold if its close
+# relatives leave with it. Measured on the compact Tanimoto matrix as the mean over the
+# set's structures of the highest similarity to anything left in training:
+#
+#   sphingolipids    0.458   85 positives (11.2%)   sphingoid backbone, all of it
+#   phosphorus_free  0.553   61 positives ( 8.1%)   no phosphate: neutral glycerolipids,
+#                                                   free fatty acids, retinol
+#   choline          0.653  258 positives (34.1%)   phosphocholine head, di- and lyso-
+#   anionic          0.766  228 positives (30.2%)   anionic glycerophospholipid heads
+#
+# The first three are genuinely isolated. `anionic` is not, and cannot be: PA, PI, PS,
+# PG and their relatives differ from the phosphatidylcholines that stay behind only in
+# the head group, while a fingerprint sees mostly the two acyl chains, so 0.77 is what
+# the chemistry allows. Splitting it makes that worse, not better (PG+LPG+PGP alone
+# comes out at 0.872, BMP+cardiolipin alone at 0.946). Kept as the hardest of the four:
+# it asks whether the model reads the head group at all.
+#
+# Phosphatidyl- and lysophosphatidylethanolamine are in no set. They would isolate no
+# better than `anionic` (0.778) and there is no reason to spend a fifth run on them;
+# they stay in training throughout.
+LIPID_COLDSPLIT_SETS = {
+    "sphingolipids": (
+        "Sphingomyelin",
+        "Ceramide",
+        "Ceramide phosphate",
+        "Hexosyl ceramide",
+        "Dihexosyl ceramide",
+        "Sulfohexosyl ceramide",
+    ),
+    "phosphorus_free": (
+        "Diacylglycerol",
+        "Triacylglycerol",
+        "Retinol",
+        "docosapentaenoate",
+        "docosatetraenoate",
+        "docosatrienoate",
+        "eicosapentaenoate",
+        "eicosatetraenoate",
+        "eicosatrienoate",
+        "heptadecenoate",
+        "hexadecenoate",
+        "nonadecenoate",
+        "octadecadienoate",
+        "octadecatrienoate",
+        "octadecatrienol",
+        "octadecenoate",
+    ),
+    "choline": (
+        "Phosphatidylcholine",
+        "Lysophosphatidylcholine",
+    ),
+    "anionic": (
+        "Phosphatidate",
+        "Phosphatidylinositol",
+        "Phosphatidylserine",
+        "Phosphatidylglycerol",
+        "Lysophosphatidylglycerol",
+        "Phosphatidylglycerophosphate",
+        "Bismonoacylglycerolphosphate",
+        "Cardiolipin",
+    ),
+}
+
+
+COLDSPLIT_MINIMUM_TEST_POSITIVES = 20
+
+
+def lipid_classes_for_holdout(csv, family, share):
+    """The head-group classes to hold out of training when `family` is held out.
+
+    The second axis of the cold split needs its own class set per family, not one shared
+    set: a family's positives sit in its own classes -- START's in phosphatidylcholines,
+    GLTP's in sphingolipids -- so any set fixed in advance is arbitrary for whichever
+    family is being held out. Classes are scored by concentration,
+
+        score(class) = family positives in class / (everyone else's positives there + 1)
+
+    and taken by descending score until the family's covered positives reach `share` of
+    its total. The numerator is what the held-out block gains, the denominator what
+    training loses elsewhere, so what gets held out is what the family owns. GLTP comes
+    out at two classes costing training a single positive; the three families that need
+    phosphatidylcholine cost it 128-238.
+
+    `share` is not cosmetic. Stopping early leaves only the cheap classes, and for a
+    family whose cheap classes are thin on rows the held-out block ends up almost
+    entirely familiar lipids -- the split looks two-axis while the per-lipid label prior
+    still carries it. At 0.3 the lipocalin lookup baseline stays at 0.618; 0.7 is the
+    smallest value at which no family sits further than one standard error from 0.5.
+
+    Whether the rule worked is not decided here but by
+    preprocessing/lipid_marginal_baseline.py, which measures that prior on the split it
+    produces. Families too small for a test block at all (ML and OSBP, 10 and 8
+    positives) come back with fewer than COLDSPLIT_MINIMUM_TEST_POSITIVES covered;
+    callers that care report it, the split itself does not special-case them.
+    """
+    positives = csv[csv["Interaction"] == 1]
+    lipid_classes = lipid_class_series(positives)
+    family_rows = positives["ProteinDomain"].str.lower() == str(family).lower()
+
+    everywhere = lipid_classes.value_counts()
+    mine = lipid_classes[family_rows].value_counts()
+    if mine.empty:
+        return [], 0, 0
+
+    elsewhere = everywhere.reindex(mine.index).fillna(0) - mine
+    score = (mine / (elsewhere + 1)).sort_values(ascending=False)
+
+    target = max(
+        COLDSPLIT_MINIMUM_TEST_POSITIVES,
+        int(round(int(family_rows.sum()) * share)),
+    )
+    chosen = []
+    covered = 0
+    for lipid_class in score.index:
+        if covered >= target:
+            break
+        chosen.append(lipid_class)
+        covered += int(mine[lipid_class])
+
+    cost = int(everywhere.reindex(chosen).sum()) - covered
+    return chosen, covered, cost
+
+
+def sample_lipid_class_balanced_negatives(
+    csv, seed, group_column="ProteinDomain", ratio=1
+):
     """Sample negatives per (group, lipid class) cell to match its positive count (1:1).
 
     `sample_protein_balanced_negatives` removes the per-protein prior ("this protein is
@@ -130,7 +291,7 @@ def sample_lipid_class_balanced_negatives(csv, seed, group_column="ProteinDomain
             if positive_count == 0:
                 continue
             candidates = csv[is_negative & cell_mask]
-            draw_n = min(positive_count, len(candidates))
+            draw_n = min(positive_count * ratio, len(candidates))
             if draw_n > 0:
                 parts.append(candidates.sample(n=draw_n, random_state=seed))
     if parts:
@@ -139,11 +300,13 @@ def sample_lipid_class_balanced_negatives(csv, seed, group_column="ProteinDomain
 
 
 def split_and_sample_lipid_class_balanced_interactions(
-    csv, seed, group_column="ProteinDomain"
+    csv, seed, group_column="ProteinDomain", ratio=1
 ):
     """Keep every positive and sample per-(group, lipid class)-matched negatives (1:1)."""
     csvtrue = csv[csv["Interaction"] == 1].copy()
-    csvfalse = sample_lipid_class_balanced_negatives(csv, seed, group_column).copy()
+    csvfalse = sample_lipid_class_balanced_negatives(
+        csv, seed, group_column, ratio
+    ).copy()
     return csvtrue, csvfalse
 
 
@@ -191,18 +354,26 @@ class ClassBalancedBatchSampler(torch.utils.data.Sampler):
     ``labels`` are the training interaction labels in dataset order, so the
     yielded entries are positional dataset indices, matching ``PLIDataset.get``.
 
-    Every row is emitted exactly once per epoch. ``batch_size // 2`` is the
-    target per-class size, and the epoch holds however many batches that target
-    needs for the larger class. Each class is then split into that many chunks
-    whose sizes differ by at most one, so a pool that does not divide evenly
+    Every row is emitted exactly once per epoch. The epoch holds as many batches as
+    ``batch_size`` rows per batch requires, and each class is split into that many
+    chunks whose sizes differ by at most one, so a pool that does not divide evenly
     spreads its remainder across the epoch instead of forming one odd batch or
     leaving a tail unprocessed.
 
     Equal-sized pools (what ``balance_negatives_by_family`` produces) chunk
-    identically, so every batch is exactly balanced. Unequal pools cannot be
-    both fully covered and exactly balanced; the split then keeps the per-batch
-    ratio as close to the achievable average as the chunking allows, and every
-    batch still carries at least one row of each class.
+    identically, so every batch is exactly balanced and holds ``batch_size // 2`` of
+    each class. Unequal pools cannot be both fully covered and exactly balanced; the
+    batch then inherits the pool's ratio, which is the point -- at
+    ``negatives_per_positive=2`` the model should see two unlabeled rows per positive,
+    not one -- while the batch still holds ``batch_size`` rows and at least one of each
+    class.
+
+    The batch count comes from the TOTAL, not from the larger class needing
+    ``batch_size // 2``. Those agree exactly whenever the pools are equal, so nothing
+    changes for a 1:1 run; they part company when the pools are not, and the older
+    reading handed the larger class ``batch_size // 2`` and let the smaller one supply
+    proportionally less, so ``--batch=16`` against a 1:2 pool yielded 4 + 8 = 12 rows
+    rather than the 16 asked for. ``batch_size`` is the batch size.
     """
 
     def __init__(self, labels, batch_size, generator=None):
@@ -214,7 +385,7 @@ class ClassBalancedBatchSampler(torch.utils.data.Sampler):
 
         self.positive_indices = torch.nonzero(labels == 1, as_tuple=False).view(-1)
         self.unlabeled_indices = torch.nonzero(labels == 0, as_tuple=False).view(-1)
-        self.half = batch_size // 2
+        self.batch_size = batch_size
         self.generator = generator
 
         positives = int(self.positive_indices.numel())
@@ -224,12 +395,14 @@ class ClassBalancedBatchSampler(torch.utils.data.Sampler):
                 "balanced batches require both classes to be present, got "
                 f"{positives} positive and {unlabeled} unlabeled"
             )
-        # Enough batches for the larger pool to hand out ``half`` per batch, but
-        # never more than the smaller pool can cover: past that point chunks of
-        # the smaller pool would be empty and those batches would carry a single
-        # class, which is exactly what this sampler exists to prevent.
+        # Enough batches to hand out batch_size rows each, but never more than the
+        # smaller pool can cover: past that point chunks of the smaller pool would be
+        # empty and those batches would carry a single class, which is exactly what
+        # this sampler exists to prevent. (Hitting that cap means one class is thinner
+        # than one row per batch, and the batches come out larger than asked rather
+        # than single-class.)
         self.num_batches = min(
-            max(-(-positives // self.half), -(-unlabeled // self.half)),
+            max(1, -(-(positives + unlabeled) // batch_size)),
             positives,
             unlabeled,
         )
