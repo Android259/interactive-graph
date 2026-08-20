@@ -11,8 +11,10 @@
 --weight_decay=0.001
 --pool_type="gem"
 
+--loss_type=pairwise_rank
+
 --balanced_batches
 --balanced_proteins
 --double_coldsplit
 
---lipid_only
+--save_model_in_dynamics

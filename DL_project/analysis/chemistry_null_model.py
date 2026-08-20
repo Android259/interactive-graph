@@ -39,11 +39,13 @@ import sys
 import numpy as np
 import pandas
 
+from dataloader.chemistry_prior import null_scores, species_similarity  # noqa: E402
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
-from lipid_marginal_baseline import split  # noqa: E402
+from lipid_marginal_baseline import split as split_func  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.sampler import (  # noqa: E402
     lipid_class_series,
@@ -81,43 +83,6 @@ def working_set(csv, seed, ratio, lipid_classes):
     return both.set_index(pandas.Index(list(range(len(both)))))
 
 
-def species_similarity(csv):
-    """Species x species Tanimoto, max over each species' candidate structures.
-
-    A row of the interaction table can list several isomer candidates, and the compact
-    matrix is indexed per distinct structure; a species therefore owns a set of rows of
-    it. Taking the max is the same reduction the loader applies when it turns candidate
-    similarities into one number per pair.
-    """
-    data = os.path.join(PROJECT_ROOT, "data")
-    matrix = np.load(
-        os.path.join(data, "Tanimoto_compact_isomeric_matrix_uint8.npy")
-    ).astype(np.float32) / 255.0
-    structure_index = np.load(
-        os.path.join(data, "Tanimoto_compact_isomeric_structure_index.npy")
-    )
-    row_ids = np.load(os.path.join(data, "Tanimoto_compact_isomeric_row_ids.npy"))
-
-    structures_of_row = {}
-    for row, structure in zip(row_ids, structure_index):
-        structures_of_row.setdefault(int(row), set()).add(int(structure))
-    structures_of_species = {}
-    for position, species in enumerate(csv["FullIdentityOfLipid"]):
-        structures_of_species.setdefault(species, set()).update(
-            structures_of_row.get(position, set())
-        )
-
-    species = sorted(structures_of_species)
-    index = {name: position for position, name in enumerate(species)}
-    similarity = np.zeros((len(species), len(species)), dtype=np.float32)
-    for position, name in enumerate(species):
-        rows = matrix[sorted(structures_of_species[name]), :].max(axis=0)
-        similarity[position] = [
-            rows[sorted(structures_of_species[other])].max() for other in species
-        ]
-    return similarity, index
-
-
 def auc(truth, score):
     """Rank-based AUC; nan when the block is single-class."""
     truth = np.asarray(truth)
@@ -128,6 +93,32 @@ def auc(truth, score):
         return float("nan")
     ranks = pandas.Series(score).rank().to_numpy()
     return float((ranks[truth == 1].sum() - positives * (positives + 1) / 2) / (positives * negatives))
+
+
+def per_protein_auc(held, score, minimum_rows=6):
+    """AUC computed inside each protein separately, then averaged over proteins.
+
+    The pooled AUC of a held-out block answers a mixture of two questions: "does this
+    lipid bind anything at all", which is the chemical marginal, and "does it bind THIS
+    protein", which is the interaction term the model exists for. A protein-blind
+    predictor already scores well on the first, so the pooled number can move a lot
+    without the second moving at all.
+
+    Ranking a protein's own lipids against each other removes the first question by
+    construction: within one protein every row shares the same partner, so what is left
+    to rank by is the pair. Proteins with fewer than `minimum_rows` rows, or with only
+    one class present, carry no usable ranking and are skipped -- reported, so a mean
+    over three proteins is not mistaken for a mean over thirty.
+    """
+    values = []
+    frame = held.assign(_score=np.asarray(score, dtype=float))
+    for _, group in frame.groupby("LTPProtein"):
+        if len(group) < minimum_rows or group["Interaction"].nunique() < 2:
+            continue
+        value = auc(group["Interaction"].to_numpy(), group["_score"].to_numpy())
+        if value == value:
+            values.append(value)
+    return (float(np.mean(values)) if values else float("nan")), len(values)
 
 
 def proximity_to_train_positives(train, held, similarity, index):
@@ -153,54 +144,29 @@ def proximity_to_train_positives(train, held, similarity, index):
     return float(held_positives.map(per_species).mean())
 
 
-def null_scores(train, held_species, similarity, index, neighbours):
-    """Similarity-weighted train positive rate of the k nearest training lipids."""
-    rate = train.groupby("FullIdentityOfLipid")["Interaction"].mean()
-    train_positions = np.array([index[name] for name in rate.index])
-    rates = rate.to_numpy()
-    scores = []
-    for name in held_species:
-        similarities = similarity[index[name], train_positions]
-        nearest = np.argsort(-similarities)[:neighbours]
-        weights = np.clip(similarities[nearest], 0.0, None)
-        scores.append(float((weights * rates[nearest]).sum() / max(weights.sum(), 1e-9)))
-    return np.array(scores)
+def null_model_table(csv, similarity, index, families, seeds, neighbour_counts,
+                      share=0.7, ratio=2, split="valid", network=None, epoch=None):
+    """One row per (family, seed): null-model AUC(s) and, if `network` is given, its AUC.
 
+    `network` is the RAW (unfiltered) scores DataFrame from
+    analysis/checkpoint_scores.py; filtered here by `epoch`/`split` rather than by the
+    caller, so a caller holding scores for several epochs can call this once per epoch
+    without re-reading anything. Pass network=None for the null model alone.
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
-    parser.add_argument("--seeds", default="0,1")
-    parser.add_argument("--neighbours", default="5,15,40", help="k, comma separated")
-    parser.add_argument("--share", type=float, default=0.7, help="--coldsplit_share of the run")
-    parser.add_argument("--ratio", type=int, default=2, help="--negatives_per_positive of the run")
-    parser.add_argument("--split", default="valid", choices=("valid", "test"))
-    parser.add_argument(
-        "--scores",
-        help="CSV from analysis/checkpoint_scores.py; adds the network's AUC on the same rows",
-    )
-    parser.add_argument("--epoch", type=int, default=120, help="which checkpoint epoch to read")
-    args = parser.parse_args()
-
-    families = [f for f in args.families.split(",") if f]
-    seeds = [int(s) for s in args.seeds.split(",")]
-    neighbour_counts = [int(k) for k in args.neighbours.split(",")]
-
-    csv = pandas.read_csv(interaction_csv_path(os.path.join(PROJECT_ROOT, "data") + os.sep))
-    similarity, index = species_similarity(csv)
-
-    network = None
-    if args.scores:
-        network = pandas.read_csv(args.scores)
-        network = network[(network["epoch"] == args.epoch) & (network["split"] == args.split)]
+    Returns the `table` main() used to print -- factored out so
+    analysis/full_label_report.py can build it without a CSV round-trip through
+    --scores.
+    """
+    if network is not None:
+        network = network[(network["epoch"] == epoch) & (network["split"] == split)]
 
     rows = []
     for family in families:
-        held_classes = lipid_classes_for_holdout(csv, family, args.share)[0]
+        held_classes = lipid_classes_for_holdout(csv, family, share)[0]
         for seed in seeds:
-            csvt = working_set(csv, seed, args.ratio, held_classes)
-            train, valid, test = split(csvt, family, seed, held_classes, double=True)
-            held = valid if args.split == "valid" else test
+            csvt = working_set(csv, seed, ratio, held_classes)
+            train, valid, test = split_func(csvt, family, seed, held_classes, double=True)
+            held = valid if split == "valid" else test
 
             record = {
                 "fam": family,
@@ -224,24 +190,36 @@ def main():
                     mine[["pair_id", "prob"]], on="pair_id", how="left", validate="one_to_one"
                 )
                 record["net_AUC"] = auc(held["Interaction"].to_numpy(), held["prob"].to_numpy())
+                record["net_AUC_prot"], record["proteins"] = per_protein_auc(
+                    held, held["prob"].to_numpy()
+                )
 
             for neighbours in neighbour_counts:
                 scores = null_scores(
                     train, held["FullIdentityOfLipid"], similarity, index, neighbours
                 )
                 record[f"null_AUC_k{neighbours}"] = auc(held["Interaction"].to_numpy(), scores)
+                record[f"null_AUC_prot_k{neighbours}"], _ = per_protein_auc(held, scores)
             rows.append(record)
 
-    table = pandas.DataFrame(rows)
+    return pandas.DataFrame(rows)
+
+
+def print_null_model_report(table, split, epoch):
+    """The four-section printout main() used to produce, given a table from null_model_table."""
     pandas.set_option("display.width", 200)
-    print(f"=== {args.split} block, epoch {args.epoch} ===")
+    print(f"=== {split} block, epoch {epoch} ===")
     print(table.round(3).to_string(index=False))
     print()
     by_family = table.groupby("fam").mean(numeric_only=True).drop(columns=["seed"])
     print("=== mean over seeds ===")
     print(by_family.round(3).to_string())
     print()
-    columns = [c for c in table.columns if c.endswith("AUC") or "AUC_k" in c]
+    # "_prot" columns rank inside one protein, the others rank the whole block. They are
+    # different questions and must not be averaged together or read off one line.
+    columns = [c for c in table.columns
+               if (c.endswith("AUC") or "AUC_k" in c) and "_prot" not in c]
+    protein_columns = [c for c in table.columns if "_prot" in c]
     working = table[table["fam"].isin(WORKING)]
     other = table[~table["fam"].isin(WORKING)]
     print("=== mean AUC, never over all seven at once (files/signal_state.md 6.4) ===")
@@ -250,6 +228,47 @@ def main():
         "working three": working[columns].mean(),
         "other four": other[columns].mean(),
     }).round(3).to_string())
+
+    if protein_columns:
+        print("\n=== the same rows ranked INSIDE each protein (interaction term only) ===")
+        print(f"{int(table['proteins'].sum())} protein-blocks across {len(table)} "
+              f"family-seed splits carry a usable ranking "
+              f"(median {table['proteins'].median():.0f} proteins per split)")
+        print(pandas.DataFrame({
+            "all seven": table[protein_columns].mean(),
+            "working three": working[protein_columns].mean(),
+            "other four": other[protein_columns].mean(),
+        }).round(3).to_string())
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
+    parser.add_argument("--seeds", default="0,1")
+    parser.add_argument("--neighbours", default="5,15,40", help="k, comma separated")
+    parser.add_argument("--share", type=float, default=0.7, help="--coldsplit_share of the run")
+    parser.add_argument("--ratio", type=int, default=2, help="--negatives_per_positive of the run")
+    parser.add_argument("--split", default="valid", choices=("valid", "test"))
+    parser.add_argument(
+        "--scores",
+        help="CSV from analysis/checkpoint_scores.py; adds the network's AUC on the same rows",
+    )
+    parser.add_argument("--epoch", type=int, default=120, help="which checkpoint epoch to read")
+    args = parser.parse_args()
+
+    csv = pandas.read_csv(interaction_csv_path(os.path.join(PROJECT_ROOT, "data") + os.sep))
+    similarity, index = species_similarity(csv, os.path.join(PROJECT_ROOT, "data"))
+    network = pandas.read_csv(args.scores) if args.scores else None
+
+    table = null_model_table(
+        csv, similarity, index,
+        families=[f for f in args.families.split(",") if f],
+        seeds=[int(s) for s in args.seeds.split(",")],
+        neighbour_counts=[int(k) for k in args.neighbours.split(",")],
+        share=args.share, ratio=args.ratio, split=args.split,
+        network=network, epoch=args.epoch,
+    )
+    print_null_model_report(table, args.split, args.epoch)
 
 
 if __name__ == "__main__":

@@ -239,7 +239,9 @@ class InteractionClassification(torch.nn.Module):
         prot_geometric_node_attr=None,
         prot_edge_node_pairs=None,
         prot_edge_node_degree=None,
-        pocket_descriptor=None):
+        pocket_descriptor=None,
+        frozen_prior=None,
+        compat_input=None):
         """Encode a batched protein-lipid input and return binary logits."""
 
 
@@ -365,6 +367,8 @@ class InteractionClassification(torch.nn.Module):
             out = self.final_layer(
                 lip1, prot1, lip_batch, pooled_prot_batch, config.pool,
                 self._pocket_pool_signal(prot_batch, pocket_mask, node_confidence),
+                frozen_prior=frozen_prior,
+                compat_input=compat_input,
             )
 
         if config.double_attention:
@@ -431,6 +435,8 @@ class InteractionClassification(torch.nn.Module):
             out = self.final_layer(
                 lip2, prot2, lip_batch, pooled_prot_batch, config.pool,
                 self._pocket_pool_signal(prot_batch, pocket_mask, node_confidence),
+                frozen_prior=frozen_prior,
+                compat_input=compat_input,
             )
 
         return out

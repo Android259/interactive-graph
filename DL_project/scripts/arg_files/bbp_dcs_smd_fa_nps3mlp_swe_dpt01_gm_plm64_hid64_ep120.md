@@ -11,8 +11,12 @@
 --weight_decay=0.001
 --pool_type="gem"
 
+--swe_pooling
+--swe_freeze_reference
+--swe_reference_points=32
+
 --balanced_batches
 --balanced_proteins
 --double_coldsplit
 
---lipid_only
+--save_model_in_dynamics

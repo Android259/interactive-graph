@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    printf 'Use: source scripts/enter_project_env.sh\n' >&2
+    printf 'Use: source scripts/tools/enter_project_env.sh (or scripts/env.sh once the env exists)\n' >&2
     exit 1
 fi
 

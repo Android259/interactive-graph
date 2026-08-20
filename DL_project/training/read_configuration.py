@@ -276,6 +276,46 @@ class ModelConfig:
     dann_class_conditional: bool = True
     dann_lambda_ramp: bool = False
     dann_lambda_ramp_by_fit: bool = False
+    # Chemistry prior (files/interaction_signal_plan.md 4.1, 4.3). score = learned
+    # scalar * s_chem(lipid) + the ordinary classifier logit, s_chem frozen and computed
+    # once from train-split labels only (dataloader/chemistry_prior.py). Because s_chem
+    # is added AFTER the classifier rather than fed into it, the task loss has no need
+    # for the fused representation to carry a copy of it -- which is what makes
+    # chem_adversary (below) safe to run without fighting the task loss over genuinely
+    # shared, label-relevant variance. See interaction_signal_plan.md 4.3 for why this
+    # ordering matters and chem_adversary must not be applied without it.
+    chem_prior: bool = False
+    chem_neighbours: int = 15
+    # Regression GRL on the FUSED post-cross-attention representation (same hook as
+    # dann_family) against s_chem, not the label: it discourages the fused vector from
+    # carrying a redundant copy of the chemistry marginal, while leaving room for
+    # genuinely protein-specific reliance on chemical similarity (an interaction with s_chem, not a marginal correlation with it) to survive -- a regression head reading only
+    # the fused vector cannot cheaply reconstruct a per-protein modulation of a
+    # lipid-only target the way it can reconstruct the marginal itself.
+    chem_adversary: bool = False
+    chem_weight: float = 1.0
+    chem_lambda: float = 1.0
+    chem_lambda_ramp: bool = False
+    chem_lambda_ramp_by_fit: bool = False
+    # Pocket-vs-chain-length pair term (files/pocket_lipid_compatibility.md): unlike
+    # every entry in POCKET_DESCRIPTOR_NAMES, this depends on BOTH the protein and the
+    # candidate lipid, so it cannot collapse to a pure family label the way a
+    # protein-only summary can. Two independent consumers of the same raw value:
+    #
+    # --pocket_compat_prior : frozen and added to the logit outside the network, same
+    #     mechanism as --chem_prior -- fit_prior_calibration in dataloader/
+    #     chemistry_prior.py fits it JOINTLY with s_chem when both are on, so the two
+    #     terms do not double-count shared variance and neither steals the other's
+    #     credit for it.
+    # --compatibility_input : standardised (not calibrated) and concatenated into the
+    #     fused representation before the classifier, so the network's own weights
+    #     decide how much to trust it and can combine it nonlinearly with everything
+    #     else -- no guaranteed floor, unlike the frozen path, and unverified without
+    #     a real run. Incompatible with --bilinear_fusion (see validate()): the pair
+    #     value has nowhere well-defined to enter a bilinear form of exactly two
+    #     vectors.
+    pocket_compat_prior: bool = False
+    compatibility_input: bool = False
     # Give the lipid branch a smaller learning rate than the rest of the model, leaving
     # the forward pass exactly as it was: the lipid stream learns proportionally slower
     # while the protein branch keeps its full step, which is the warm-up remedy for the
@@ -637,6 +677,13 @@ class ModelConfig:
     plm_compression_dims: list = field(default_factory=lambda: [512, 171, 57])
     buryon: bool = True #  возможно лучше обрезать структуру протеинов, чтобы не заворачивались и не образоыаввали ложные покеты потенциально как bias  в  SA CA, анотация всех атомтв обкатка шарами двумя iарами, поверхность  solvent acessible surface, 1 poinnt 4 extreme.  Пустоты -  tangent spheres статья  nature, voronota pockets.  
     loss_type: str = "cross_entropy"
+    # Pair rows only with rows of the SAME protein when ranking. Without it the ranking
+    # loss optimises the pooled-block AUC, which on this dataset is mostly the chemical
+    # marginal a protein-blind null model already answers (files/interaction_signal_plan.md
+    # 3). With it the loss optimises what ranks a protein's own lipids against each
+    # other, which is the interaction term. Costs pair count: batches are drawn across
+    # proteins, so most of the pair matrix is discarded.
+    rank_within_protein: bool = False
     pool_type: str = "max"
     # Learned attention pooling (one learnable query per partner) instead of the fixed
     # pool_type reduction: out = sum_i softmax_i(w·x_i) x_i over each graph's nodes -- a
@@ -1185,6 +1232,22 @@ class ModelConfig:
             raise ValueError(
                 "attention_pooling_pocket_bias requires attention_pooling"
             )
+        if self.rank_within_protein and self.loss_type != "pairwise_rank":
+            raise ValueError("rank_within_protein requires loss_type=pairwise_rank")
+        if self.chem_adversary and not (self.chem_prior or self.pocket_compat_prior):
+            raise ValueError(
+                "chem_adversary requires chem_prior and/or pocket_compat_prior -- it "
+                "regresses on whichever frozen prior terms are attached, and needs at "
+                "least one"
+            )
+        if self.compatibility_input and self.bilinear_fusion:
+            raise ValueError(
+                "compatibility_input cannot be combined with bilinear_fusion -- the "
+                "pair value has nowhere well-defined to enter a bilinear form of "
+                "exactly two vectors"
+            )
+        if (self.chem_lambda_ramp or self.chem_lambda_ramp_by_fit) and not self.chem_adversary:
+            raise ValueError("chem_lambda_ramp/chem_lambda_ramp_by_fit require chem_adversary")
         if self.swe_pooling and self.attention_pooling:
             # Both replace the pool_type reduction outright, and Final_Layer has to pick
             # one. Failing here rather than letting a precedence rule decide keeps the
@@ -1332,6 +1395,19 @@ class ModelConfig:
             return self.dann_lambda * min(max(float(progress), 0.0), 1.0)
         return self.dann_lambda
 
+    def ramped_chem_lambda(self, progress):
+        """Reversal strength for the chemistry adversary. Mirrors ramped_dann_lambda.
+
+        Same reasoning applies unchanged: this reversal reaches the fused representation
+        (like dann_family, unlike the per-partner adversary), so ramping it by how far
+        training has actually fit rather than by epoch number matters here too --
+        pushing against s_chem before the model has learned anything wastes the budget
+        on a representation that has nothing to lose yet.
+        """
+        if self.chem_lambda_ramp_by_fit or self.chem_lambda_ramp:
+            return self.chem_lambda * min(max(float(progress), 0.0), 1.0)
+        return self.chem_lambda
+
     def adv_fit_progress(self, train_balanced_accuracy):
         """Map one epoch's train balanced accuracy to ramp progress in [0, 1].
 
@@ -1439,16 +1515,28 @@ SIMPLE_BOOL_FLAGS = {
     "--lipid_path_handicap": "lipid_path_handicap",
     "dann_family": "dann_family",
     "--dann_family": "dann_family",
+    "chem_prior": "chem_prior",
+    "--chem_prior": "chem_prior",
+    "chem_adversary": "chem_adversary",
+    "--chem_adversary": "chem_adversary",
+    "pocket_compat_prior": "pocket_compat_prior",
+    "--pocket_compat_prior": "pocket_compat_prior",
+    "compatibility_input": "compatibility_input",
+    "--compatibility_input": "compatibility_input",
     "dann_lambda_ramp": "dann_lambda_ramp",
     "--dann_lambda_ramp": "dann_lambda_ramp",
     "dann_lambda_ramp_by_fit": "dann_lambda_ramp_by_fit",
     "--dann_lambda_ramp_by_fit": "dann_lambda_ramp_by_fit",
+    "chem_lambda_ramp_by_fit": "chem_lambda_ramp_by_fit",
+    "--chem_lambda_ramp_by_fit": "chem_lambda_ramp_by_fit",
     "balanced_lipid_classes": "balanced_lipid_classes",
     "--balanced_lipid_classes": "balanced_lipid_classes",
     "attention_pooling": "attention_pooling",
     "--attention_pooling": "attention_pooling",
     "attention_pooling_pocket_bias": "attention_pooling_pocket_bias",
     "--attention_pooling_pocket_bias": "attention_pooling_pocket_bias",
+    "rank_within_protein": "rank_within_protein",
+    "--rank_within_protein": "rank_within_protein",
     "swe_pooling": "swe_pooling",
     "--swe_pooling": "swe_pooling",
     "swe_freeze_reference": "swe_freeze_reference",
@@ -1633,6 +1721,14 @@ FLAG_HANDLERS = {
     "--tanimoto_weight": set_config_flag("tanimoto_weight", True),
     "no_class_weights": set_config_flag("class_weights", False),
     "--no_class_weights": set_config_flag("class_weights", False),
+    # Both default True and had only the affirmative flag (SIMPLE_BOOL_FLAGS above),
+    # so there was no way to turn either off from the command line -- needed to test
+    # whether self-attention earns its capacity on --double_coldsplit, which no run
+    # ever has (138/138 double_coldsplit runs have both on; files/interaction_signal_plan.md).
+    "no_protein_self_attention": set_config_flag("protein_self_attention", False),
+    "--no_protein_self_attention": set_config_flag("protein_self_attention", False),
+    "no_lipid_self_attention": set_config_flag("lipid_self_attention", False),
+    "--no_lipid_self_attention": set_config_flag("lipid_self_attention", False),
     "no_cross_attention": set_config_flag("cross_attention", False),
     "--no_cross_attention": set_config_flag("cross_attention", False),
     "no_lipid_first_fragment_only": set_config_flag(
@@ -1718,6 +1814,9 @@ VALUE_HANDLERS = {
     ),
     "--dann_weight=": set_config_field("dann_weight", float),
     "--dann_lambda=": set_config_field("dann_lambda", float),
+    "--chem_weight=": set_config_field("chem_weight", float),
+    "--chem_lambda=": set_config_field("chem_lambda", float),
+    "--chem_neighbours=": set_config_field("chem_neighbours", int),
     "--dann_class_conditional=": set_config_field("dann_class_conditional", read_bool),
     "--pool_type=": set_config_field("pool_type"),
     "--swe_reference_points=": set_config_field("swe_reference_points", int),

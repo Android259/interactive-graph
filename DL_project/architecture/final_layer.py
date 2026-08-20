@@ -94,6 +94,27 @@ def family_dann_loss(features, family_onehot, labels, heads, class_conditional):
     return torch.stack(terms).mean()
 
 
+def chem_adversary_loss(features, frozen_prior, head):
+    """MSE of the chemistry adversary on already-reversed features.
+
+    Mirrors family_dann_loss's contract: `features` must already have passed through
+    grad_reverse. MSE rather than cross-entropy because the target is a continuous
+    score, not a class -- there is no head-per-class analogue of
+    dann_class_conditional needed here, because the target is not the label (nothing
+    about it inverts in meaning across families the way P(bind | lipid class) does for
+    family identity, files/proposals.md "Почему family-DANN...").
+
+    `frozen_prior` is whatever New_dataloader attached under --chem_prior and/or
+    --pocket_compat_prior -- the SAME combined value added to the logit in forward(),
+    not s_chem specifically. Both are added outside common_out, so decorrelating
+    common_out from either costs the task loss nothing it needed (files/
+    pocket_lipid_compatibility.md); with --chem_prior alone this is byte-identical to
+    regressing on s_chem, since the combination is then a single term.
+    """
+    prediction = head(features).squeeze(-1)
+    return F.mse_loss(prediction, frozen_prior)
+
+
 class GeMPool(torch.nn.Module):
     """Generalized-mean graph pooling with a learnable, sign-preserving exponent.
 
@@ -296,6 +317,16 @@ class Final_Layer(torch.nn.Module):
             classifier_input_dim = middim
         else:
             classifier_input_dim = pooled_lip_dim + pooled_prot_dim
+        if self.config.compatibility_input:
+            # One extra column: the standardised pocket-vs-chain-length pair term
+            # (files/pocket_lipid_compatibility.md), concatenated into common_out in
+            # forward(). Added here, before every head that reads classifier_input_dim
+            # (binar, family_adversaries, chem_head) is built, so all of them size
+            # correctly for the wider vector without a second special case each.
+            # ModelConfig.validate rejects this combined with bilinear_fusion --
+            # Bilinear takes exactly two vectors, and a third pair-level scalar has no
+            # well-defined place to enter that product.
+            classifier_input_dim += 1
 
         if self.config.attention_pooling:
             # Learned-query attention pooling replaces the fixed reduction; the protein
@@ -383,6 +414,39 @@ class Final_Layer(torch.nn.Module):
             )
             self.dann_lambda_now = self.config.dann_lambda
 
+        # Frozen prior (files/interaction_signal_plan.md 4.1, 4.3; files/
+        # pocket_lipid_compatibility.md): score = frozen_prior + the ordinary logit.
+        # frozen_prior is attached per row by New_dataloader under --chem_prior and/or
+        # --pocket_compat_prior -- whichever are on -- and it already carries its own
+        # calibration, fit JOINTLY across whichever terms are active
+        # (fit_prior_calibration) on TRAIN LABELS ONLY, before this network exists, and
+        # frozen (see that function's docstring for why it is not a torch.nn.Parameter
+        # trained jointly with the rest of the model: a scalar and a whole encoder
+        # competing by gradient descent for the same variance is underdetermined, and
+        # this project's own measurements are the evidence that this network takes
+        # whichever shortcut is available rather than the "correct" one). There is
+        # therefore nothing to initialise here; the value read at forward() time is
+        # already in logit units, and it is the SAME value whether it came from
+        # chemistry alone, compatibility alone, or a joint fit of both.
+        if self.config.chem_prior or self.config.pocket_compat_prior:
+            if self.config.chem_adversary:
+                # Regression head on the FUSED representation, same hook dann_family
+                # uses (common_out, the one place the per-partner adversary at
+                # compute_adversary cannot reach). Predicts frozen_prior, not the
+                # label: the label is what the task loss already wants common_out to
+                # predict, and an adversary against it would fight that loss over
+                # genuinely shared, label-relevant variance. frozen_prior is
+                # different -- it is added to the score OUTSIDE this representation
+                # (see forward), so the task loss has no need for common_out to carry
+                # a copy of it, and decorrelating the two costs the task nothing it
+                # was using.
+                self.chem_head = torch.nn.Sequential(
+                    torch.nn.Linear(classifier_input_dim, middim),
+                    make_activation(self.config, act_fn),
+                    torch.nn.Linear(middim, 1),
+                )
+                self.chem_lambda_now = self.config.chem_lambda
+
     def _make_family_head(self, in_dim, hidden_dim, act_fn):
         """Map the fused pair representation to logits over the 9 protein families."""
         return torch.nn.Sequential(
@@ -444,7 +508,10 @@ class Final_Layer(torch.nn.Module):
             else None,
         )
 
-    def forward(self, lip, prot, lip_batch, prot_batch, pool, prot_pocket=None):
+    def forward(
+        self, lip, prot, lip_batch, prot_batch, pool, prot_pocket=None,
+        frozen_prior=None, compat_input=None,
+    ):
         """Pool both modalities by sample and return binary logits."""
         lip_outs, prot_outs = self._pool_partners(lip, prot, lip_batch, prot_batch, pool, prot_pocket)
 
@@ -473,6 +540,21 @@ class Final_Layer(torch.nn.Module):
         else:
             common_out = torch.cat([lip_outs, prot_outs], dim=1)
 
+        if self.config.compatibility_input:
+            # Variant B (files/pocket_lipid_compatibility.md): the standardised,
+            # UNcalibrated pocket-vs-chain-length term as an actual input, not an
+            # addition to the logit -- self.binar's own first layer decides how much
+            # to trust it and can combine it nonlinearly with everything else. No
+            # guaranteed floor here, unlike frozen_prior below: this is the path
+            # without a proof it helps, only a reason to try it.
+            if compat_input is None:
+                raise ValueError(
+                    "compatibility_input is set but forward() got no compat_input -- "
+                    "New_dataloader only attaches it when --compatibility_input was "
+                    "set at data-load time too; check the two flags match."
+                )
+            common_out = torch.cat([common_out, compat_input.view(-1, 1)], dim=1)
+
         # Family DANN reads the FUSED vector -- the one place the per-partner adversary
         # cannot reach, and where cross-attention deposits the family-specific
         # pocket/lipid pairing. Only the reversed features are stashed, not the family
@@ -483,4 +565,30 @@ class Final_Layer(torch.nn.Module):
         else:
             self._dann_features = None
 
-        return self.binar(common_out)
+        if self.config.chem_adversary and self.training:
+            # Same representation dann_family reverses, different target: this one
+            # predicts frozen_prior (chemistry, compatibility, or their joint fit --
+            # whatever New_dataloader combined), not family. See __init__ for why
+            # targeting it here is safe rather than a fight with the task loss.
+            self._chem_features = grad_reverse(common_out, self.chem_lambda_now)
+        else:
+            self._chem_features = None
+
+        logits = self.binar(common_out)
+        if self.config.chem_prior or self.config.pocket_compat_prior:
+            if frozen_prior is None:
+                raise ValueError(
+                    "chem_prior/pocket_compat_prior is set but forward() got no "
+                    "frozen_prior -- New_dataloader only attaches it when the "
+                    "matching flag was set at data-load time too; check the flags "
+                    "match."
+                )
+            # Added to the class-1 logit only. Under 2-class softmax this is exactly
+            # equivalent to splitting +-delta/2 across both logits (softmax is
+            # shift-invariant to a constant added to every entry), so there is no
+            # asymmetry hiding in this being the simpler of the two to write.
+            prior_term = frozen_prior.view(-1)
+            logits = logits + torch.stack(
+                [torch.zeros_like(prior_term), prior_term], dim=1
+            )
+        return logits

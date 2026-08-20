@@ -13,6 +13,13 @@ import torch
 from torch_geometric.data import Data, Dataset
 
 from dataloader.dataset_source import interaction_csv_path
+from dataloader.chemistry_prior import (
+    fit_prior_calibration,
+    null_scores,
+    null_scores_leave_one_row_out,
+    species_similarity,
+)
+from dataloader.pocket_lipid_compatibility import raw_compatibility
 from dataloader.grab_dataset_graph import GrabDatasetGraphMixin
 from dataloader.lipid_embedding_store import load_lipid_embedding_store
 from dataloader.lipid_graph_builder import LipidGraphBuilder
@@ -256,6 +263,9 @@ class PLIDataset(
         print(f"valid : {self.csvalidate.shape}")
         print(f"test : {self.csvtest.shape}")
         self._report_lipid_prior_baseline()
+        raw_columns = self._raw_frozen_prior_columns(csv)
+        self._compute_frozen_prior(raw_columns)
+        self._compute_compatibility_input(raw_columns)
         self.csv = self.csvtrain
         self.pair_graph = None
         
@@ -386,6 +396,120 @@ class PLIDataset(
                 f"{by_lipid:.3f} by lipid, {by_class:.3f} by class "
                 f"| {seen:.0%} of rows have their lipid in train"
             )
+
+    def _raw_frozen_prior_columns(self, csv):
+        """Raw, uncalibrated values for whichever frozen-prior covariates are on.
+
+        Returns an ordered dict name -> (train_values, valid_values, test_values).
+        Shared by _compute_frozen_prior (--chem_prior, --pocket_compat_prior) and
+        _compute_compatibility_input (--compatibility_input) so a run using both
+        --pocket_compat_prior and --compatibility_input pays for the pocket-atom read
+        and the RDKit parse once, not twice.
+
+        `csv` is the ORIGINAL interaction table as passed into __init__, not
+        `self.csvt` -- both species_similarity (Tanimoto_compact_isomeric_row_ids.npy)
+        and pocket_lipid_compatibility index by that file's row positions, and
+        self.csvt has already been through negative sampling, which would shift them.
+        """
+        columns = {}
+        # chem_adversary requires chem_prior (ModelConfig.validate), so checking
+        # chem_prior alone already covers both.
+        if getattr(self.config, "chem_prior", False):
+            similarity, index = species_similarity(csv, self.ROOT_DIR)
+            neighbours = self.config.chem_neighbours
+            train = null_scores_leave_one_row_out(self.csvtrain, similarity, index, neighbours)
+            valid = (
+                null_scores(self.csvtrain, self.csvalidate["FullIdentityOfLipid"], similarity, index, neighbours)
+                if not self.csvalidate.empty else np.array([], dtype=float)
+            )
+            test = (
+                null_scores(self.csvtrain, self.csvtest["FullIdentityOfLipid"], similarity, index, neighbours)
+                if not self.csvtest.empty else np.array([], dtype=float)
+            )
+            columns["s_chem"] = (train, valid, test)
+        if getattr(self.config, "pocket_compat_prior", False) or getattr(self.config, "compatibility_input", False):
+            # raw_compatibility reads Interaction nowhere, so unlike s_chem there is no
+            # leave-one-out to do: a training row's own label cannot leak into a
+            # quantity built from pocket geometry and lipid structure alone.
+            all_values, missing = raw_compatibility(csv, self.ROOT_DIR)
+            if missing.any():
+                train_missing = missing[self.csvtrain.index]
+                train_usable = all_values[self.csvtrain.index][~train_missing]
+                # 0.0 only if EVERY train row is unparseable, which would mean the
+                # term carries no information for this run at all; the print makes
+                # that degenerate case visible rather than a silent constant.
+                fill = float(train_usable.mean()) if len(train_usable) else 0.0
+                print(
+                    f"pocket-lipid compatibility : {int(missing.sum())} of {len(all_values)} rows "
+                    f"had no parseable chain length, filled with the train mean ({fill:.2f})"
+                )
+                all_values = np.where(missing, fill, all_values)
+            columns["compat"] = (
+                all_values[self.csvtrain.index],
+                all_values[self.csvalidate.index] if not self.csvalidate.empty else np.array([], dtype=float),
+                all_values[self.csvtest.index] if not self.csvtest.empty else np.array([], dtype=float),
+            )
+        return columns
+
+    def _compute_frozen_prior(self, raw_columns):
+        """Attach the frozen, calibrated additive term(s) -- variant A.
+
+        Whichever of s_chem (--chem_prior) and compatibility (--pocket_compat_prior)
+        are active are fit JOINTLY (fit_prior_calibration, dataloader/chemistry_prior.py)
+        on TRAIN LABELS ONLY and frozen -- see that function's docstring for why this is
+        not a torch.nn.Parameter, and why joint rather than independent fits when both
+        terms are present. The combined value is stored as `_frozen_prior`, the single
+        number Final_Layer adds to the logit; the model never sees s_chem and
+        compatibility as separate quantities on this path, only their calibrated sum.
+        """
+        wanted = [name for name in ("s_chem", "compat") if (
+            (name == "s_chem" and getattr(self.config, "chem_prior", False))
+            or (name == "compat" and getattr(self.config, "pocket_compat_prior", False))
+        )]
+        if not wanted:
+            return
+        design_train = np.column_stack([raw_columns[name][0] for name in wanted])
+        means, spreads, intercept, weights = fit_prior_calibration(
+            design_train, self.csvtrain["Interaction"].to_numpy()
+        )
+        print(
+            "frozen prior calibration : intercept {:.3f}, weights {} (covariates: {}, "
+            "fit on {} train rows)".format(
+                intercept, {n: round(float(w), 3) for n, w in zip(wanted, weights)},
+                wanted, len(design_train),
+            )
+        )
+
+        def combine(split_index):
+            design = np.column_stack([raw_columns[name][split_index] for name in wanted])
+            return intercept + ((design - means) / spreads) @ weights
+
+        self.csvtrain = self.csvtrain.assign(_frozen_prior=combine(0))
+        for split_index, name in ((1, "csvalidate"), (2, "csvtest")):
+            frame = getattr(self, name)
+            value = combine(split_index) if not frame.empty else np.array([], dtype=float)
+            setattr(self, name, frame.assign(_frozen_prior=value))
+
+    def _compute_compatibility_input(self, raw_columns):
+        """Attach the standardised (not calibrated) compatibility term -- variant B.
+
+        No fitted weight: this is meant to be read by the network itself
+        (Final_Layer concatenates it into the fused representation under
+        --compatibility_input), so a fitted coefficient here would just be redone,
+        redundantly, by the classifier's own first layer. Standardised on TRAIN values
+        only, same discipline as everywhere else a train-only statistic feeds a split
+        it was not computed from.
+        """
+        if not getattr(self.config, "compatibility_input", False):
+            return
+        train_raw, valid_raw, test_raw = raw_columns["compat"]
+        mean, spread = train_raw.mean(), train_raw.std()
+        spread = spread if spread > 1e-12 else 1.0
+        self.csvtrain = self.csvtrain.assign(_compat_input=(train_raw - mean) / spread)
+        for raw, name in ((valid_raw, "csvalidate"), (test_raw, "csvtest")):
+            frame = getattr(self, name)
+            value = (raw - mean) / spread if not frame.empty else np.array([], dtype=float)
+            setattr(self, name, frame.assign(_compat_input=value))
 
     def _derive_lipid_class_holdout(self, csv):
         """Work out which head-group classes leave training, from the held-out family.
@@ -812,6 +936,19 @@ class PLIDataset(
             if getattr(self, "_needs_protein_id", True)
             else None
         )
+        # Only a column when --chem_prior and/or --pocket_compat_prior added it
+        # (_compute_frozen_prior); everything else costs nothing when both are off.
+        self._frozen_prior_tensor = (
+            torch.tensor(self.csv["_frozen_prior"].to_numpy(dtype="float32")).view(-1, 1)
+            if "_frozen_prior" in self.csv.columns
+            else None
+        )
+        # Only a column under --compatibility_input (_compute_compatibility_input).
+        self._compat_input_tensor = (
+            torch.tensor(self.csv["_compat_input"].to_numpy(dtype="float32")).view(-1, 1)
+            if "_compat_input" in self.csv.columns
+            else None
+        )
 
     def __iter__(self):
         train_dataset = copy.copy(self)
@@ -838,12 +975,21 @@ class PLIDataset(
         )
         if train_dataset._augment_residues:
             train_dataset._sample_cache_enabled = False
-        train_dataset._needs_protein_id = False
+        # --rank_within_protein is the one training-time consumer: the ranking loss can
+        # only form same-protein pairs if it knows which rows share a protein. Everything
+        # else keeps paying nothing, which is why this is a flag and not a default.
+        train_dataset._needs_protein_id = bool(
+            getattr(self.config, "rank_within_protein", False)
+        )
         # Validation carries it only under save_dynamics, whose between-protein variance
         # needs to know which rows share a protein. Off by default, so the ordinary run
         # keeps paying nothing for it.
         valid_dataset._needs_protein_id = bool(
             getattr(self.config, "save_dynamics", False)
+            # Under --rank_within_protein the validation loss has to be the SAME
+            # quantity the training loss minimises, or the two curves are not
+            # comparable and "valid loss stopped falling" stops meaning anything.
+            or getattr(self.config, "rank_within_protein", False)
         )
         test_dataset._needs_protein_id = True
         train_dataset._prepare_indexed_fields()
@@ -957,6 +1103,10 @@ class PLIDataset(
         protein_graph.tanimoto_pos = self._tanimoto_pos_tensor[idx]
         if self._protein_id_tensor is not None:
             protein_graph.protein_id = self._protein_id_tensor[idx]
+        if self._frozen_prior_tensor is not None:
+            protein_graph.frozen_prior = self._frozen_prior_tensor[idx]
+        if self._compat_input_tensor is not None:
+            protein_graph.compat_input = self._compat_input_tensor[idx]
         if getattr(self.config, "lipid_graph_isomers", False):
             lipid_graph = self.make_graph_lipid(
                 smile_global, smile_fragment

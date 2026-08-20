@@ -109,22 +109,17 @@ def score_split(model, conf, dataset, device):
     return torch.cat(probs).numpy(), torch.cat(labels).numpy()
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--label", required=True, help="sweep label, also the arg-file name")
-    parser.add_argument("--epochs", default=DEFAULT_EPOCHS)
-    parser.add_argument("--seeds", default="0,1")
-    parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
-    parser.add_argument("--batch", type=int, default=16, help="only affects the split's sampler")
-    parser.add_argument("--out", required=True)
-    args = parser.parse_args()
+def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, verbose=True):
+    """Per-row (family, seed, epoch, split, pair_id) scores for one sweep label.
 
-    epochs = [int(e) for e in args.epochs.split(",")]
-    seeds = [int(s) for s in args.seeds.split(",")]
-    families = [f for f in args.families.split(",") if f]
-    device = torch.device("cpu")
+    The loop `main()` used to run inline, factored out so analysis/full_label_report.py
+    (and anything else that wants scores without a CSV round-trip) can call it directly.
+    Returns the concatenated DataFrame `main()` used to write to --out; raises if nothing
+    could be scored, same as before.
+    """
+    device = device or torch.device("cpu")
     data_dir = os.path.join(PROJECT_ROOT, "data") + os.sep
-    base = arg_lines(args.label)
+    base = arg_lines(label)
 
     frames = []
     for family in families:
@@ -132,7 +127,7 @@ def main():
             argv = ["checkpoint_scores"] + base + [
                 f"--excluded_groups={family}",
                 f"--seed={seed}",
-                f"--batch={args.batch}",
+                f"--batch={batch}",
                 "--num_workers=0",
             ]
             conf = read_configuration(argv)
@@ -154,11 +149,12 @@ def main():
 
             for epoch in epochs:
                 checkpoint = os.path.join(
-                    PROJECT_ROOT, "models", args.label, f"groups_{family}",
+                    PROJECT_ROOT, "models", label, f"groups_{family}",
                     "dynamics", f"seed{seed}_epoch{epoch}.pt",
                 )
                 if not os.path.exists(checkpoint):
-                    print(f"missing : {checkpoint}", flush=True)
+                    if verbose:
+                        print(f"missing : {checkpoint}", flush=True)
                     continue
                 model.load_state_dict(
                     torch.load(checkpoint, map_location="cpu", weights_only=True)
@@ -166,12 +162,12 @@ def main():
                 for split_name, dataset in (("valid", valid_dataset), ("test", test_dataset)):
                     probs, labels = score_split(model, conf, dataset, device)
                     frame = dataset.csv
-                    # Both are the contract this script rests on: the rebuilt split is
+                    # Both are the contract this function rests on: the rebuilt split is
                     # the trained-on split, and the scores are aligned to its rows.
                     assert len(frame) == len(probs), (len(frame), len(probs))
                     assert (frame["Interaction"].to_numpy() == labels).all()
                     frames.append(pd.DataFrame({
-                        "label": args.label,
+                        "label": label,
                         "parameters": parameters,
                         "fam": family,
                         "seed": seed,
@@ -183,12 +179,33 @@ def main():
                         "label_value": labels,
                         "prob": probs,
                     }))
-                print(f"{family} seed{seed} epoch{epoch} : scored ({parameters} parameters)", flush=True)
+                if verbose:
+                    print(f"{family} seed{seed} epoch{epoch} : scored ({parameters} parameters)", flush=True)
             del valid_dataset, test_dataset, model
 
     if not frames:
         raise SystemExit("no checkpoints scored")
-    pd.concat(frames).to_csv(args.out, index=False)
+    return pd.concat(frames)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--label", required=True, help="sweep label, also the arg-file name")
+    parser.add_argument("--epochs", default=DEFAULT_EPOCHS)
+    parser.add_argument("--seeds", default="0,1")
+    parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
+    parser.add_argument("--batch", type=int, default=16, help="only affects the split's sampler")
+    parser.add_argument("--out", required=True)
+    args = parser.parse_args()
+
+    table = score_checkpoints(
+        args.label,
+        epochs=[int(e) for e in args.epochs.split(",")],
+        seeds=[int(s) for s in args.seeds.split(",")],
+        families=[f for f in args.families.split(",") if f],
+        batch=args.batch,
+    )
+    table.to_csv(args.out, index=False)
     print(f"wrote : {args.out}")
 
 

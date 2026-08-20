@@ -1,7 +1,6 @@
 --ep=120
 --protein_disable_post_sa_mlp
 --lipid_disable_post_sa_mlp
---third_layers_in_mlps
 --fast_attention
 
 --hiddim=64
@@ -15,4 +14,8 @@
 --balanced_proteins
 --double_coldsplit
 
---lipid_only
+--chem_prior
+--chem_adversary
+--chem_lambda_ramp_by_fit
+
+--save_model_in_dynamics

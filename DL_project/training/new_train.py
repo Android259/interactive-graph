@@ -36,7 +36,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from read_configuration import read_configuration
 from append_metric_to_table import append_metric
-from architecture.final_layer import family_dann_loss
+from architecture.final_layer import chem_adversary_loss, family_dann_loss
 from architecture.interaction_classification import InteractionClassification
 from architecture.mlp_utils import (
     collect_sparsity_penalty,
@@ -575,12 +575,15 @@ def log_adversary_metrics(writer, epoch_index, stats):
     a 2-class problem, so ln 2 = 0.693 means the partner alone says nothing about the
     label and there is no shortcut left to suppress; well below that means there is.
     The family head is 9-class, where the corresponding no-information value is
-    ln 9 = 2.197. Logging the lambdas alongside them makes a ramped run readable after
-    the fact -- otherwise the schedule is invisible and the loss curve uninterpretable.
+    ln 9 = 2.197. The chem head is a regression, so there is no analogous
+    no-information constant -- read it relative to Var(s_chem) on this run's batches
+    instead. Logging the lambdas alongside them makes a ramped run readable after the
+    fact -- otherwise the schedule is invisible and the loss curve uninterpretable.
     """
     for key, batches_key, name in (
         ("adv", "adv_batches", "adversary loss"),
         ("dann", "dann_batches", "family dann loss"),
+        ("chem", "chem_batches", "chem adversary loss"),
     ):
         batches = stats.get(batches_key, 0)
         if batches:
@@ -594,6 +597,10 @@ def log_adversary_metrics(writer, epoch_index, stats):
     if conf.dann_family:
         writer.add_scalar(
             "epoch/dann lambda", model.final_layer.dann_lambda_now, epoch_index + 1
+        )
+    if conf.chem_adversary:
+        writer.add_scalar(
+            "epoch/chem lambda", model.final_layer.chem_lambda_now, epoch_index + 1
         )
     if conf.lipid_path_handicap:
         # The lr the handicap actually produced, not just the multiplier: the multiplier
@@ -758,6 +765,10 @@ def _build_forward_args(prot, lipid):
         # which is how one branch could be missing from all three at once -- they now
         # call this function instead.
         forward_args["pocket_descriptor"] = prot.pocket_descriptor
+    if getattr(conf, "chem_prior", False) or getattr(conf, "pocket_compat_prior", False):
+        forward_args["frozen_prior"] = prot.frozen_prior
+    if getattr(conf, "compatibility_input", False):
+        forward_args["compat_input"] = prot.compat_input
     return forward_args
 
 
@@ -774,6 +785,11 @@ def _eval_task_loss(outl, labels):
             cap=conf.pu_loss_cap,
         )
     if conf.loss_type == "pairwise_rank":
+        # Pooled pairing even under --rank_within_protein: this helper is reached only
+        # from _bilevel_lambda_step, which is handed logits and labels without the
+        # protein graph they came from. Combining --bilevel with --rank_within_protein
+        # therefore tunes lambda against the pooled ranking while training minimises the
+        # per-protein one; plumb prot through if that combination is ever run for real.
         return pairwise_ranking_loss(outl, labels.long())
     return conf.loss(outl, labels.long())
 
@@ -1065,7 +1081,7 @@ def epoch(idx,counttrain,countval):
     # trace in TensorBoard at all. They are what says whether a partner is still
     # individually decodable -- the premise the whole GRL setup rests on -- so they are
     # tracked separately rather than folded into "epoch/train loss".
-    adversary_stats = {"adv": 0.0, "adv_batches": 0, "dann": 0.0, "dann_batches": 0}
+    adversary_stats = {"adv": 0.0, "adv_batches": 0, "dann": 0.0, "dann_batches": 0, "chem": 0.0, "chem_batches": 0}
     for i, graph in enumerate(train_loader):
         #dataset is reduced because of high variety of experience parameters 
         if i < train_batches_to_run:
@@ -1120,6 +1136,10 @@ def epoch(idx,counttrain,countval):
                         loss_logits,
                         interaction_labels.long(),
                         sample_weights=sample_weights,
+                        protein_ids=(
+                            prot.protein_id.view(-1)[:sample_count]
+                            if conf.rank_within_protein else None
+                        ),
                     )
                 elif conf.loss_type == "cross_entropy":
                     sample_weights = batch_sample_weights(prot, sample_count)
@@ -1205,6 +1225,19 @@ def epoch(idx,counttrain,countval):
                     adversary_stats["dann"] += float(dann_loss.detach())
                     adversary_stats["dann_batches"] += 1
 
+            # Chemistry adversary, same fused representation, s_chem instead of family.
+            if conf.chem_adversary:
+                chem_features = model.final_layer._chem_features
+                if chem_features is not None:
+                    chem_loss = chem_adversary_loss(
+                        chem_features,
+                        prot.frozen_prior.view(chem_features.shape[0]),
+                        model.final_layer.chem_head,
+                    )
+                    los = los + conf.chem_weight * chem_loss
+                    adversary_stats["chem"] += float(chem_loss.detach())
+                    adversary_stats["chem_batches"] += 1
+
             if use_amp:
                 scaler.scale(los).backward()
                 if conf.save_dynamics:
@@ -1272,7 +1305,13 @@ def epoch(idx,counttrain,countval):
                     cap=conf.pu_loss_cap,
                 )
             elif conf.loss_type == "pairwise_rank":
-                los = pairwise_ranking_loss(outl, interaction_labels.long())
+                los = pairwise_ranking_loss(
+                    outl,
+                    interaction_labels.long(),
+                    protein_ids=(
+                        prot.protein_id.view(-1) if conf.rank_within_protein else None
+                    ),
+                )
             else:
                 los = conf.loss(outl, interaction_labels.long())
             # log_tb(writer_tb, countval, los,"valid",outl,interaction_labels.to(torch.float))
@@ -1342,7 +1381,13 @@ def run_test(run_summary):
                 )
                 los = sample_losses.mean()
             elif conf.loss_type == "pairwise_rank":
-                los = pairwise_ranking_loss(outl, interaction_labels.long())
+                los = pairwise_ranking_loss(
+                    outl,
+                    interaction_labels.long(),
+                    protein_ids=(
+                        prot.protein_id.view(-1) if conf.rank_within_protein else None
+                    ),
+                )
                 sample_losses = torch.full(
                     (sample_count,),
                     los.item() if isinstance(los, torch.Tensor) else los,
@@ -1527,8 +1572,10 @@ training_started_at = time.perf_counter()
 # a schedule instead of feeding back into the fit it is derived from. One counter serves
 # both reversals -- it measures the model, not a head.
 fit_progress = 0.0
-uses_fit_ramp = (conf.adversarial_grl and conf.adv_lambda_ramp_by_fit) or (
-    conf.dann_family and conf.dann_lambda_ramp_by_fit
+uses_fit_ramp = (
+    (conf.adversarial_grl and conf.adv_lambda_ramp_by_fit)
+    or (conf.dann_family and conf.dann_lambda_ramp_by_fit)
+    or (conf.chem_adversary and conf.chem_lambda_ramp_by_fit)
 )
 for eepoch in range(EPOCHS):
     print('EPOCH {}:'.format(epoch_number + 1))
@@ -1542,6 +1589,10 @@ for eepoch in range(EPOCHS):
     if conf.dann_family:
         model.final_layer.dann_lambda_now = conf.ramped_dann_lambda(
             fit_progress if conf.dann_lambda_ramp_by_fit else epoch_progress
+        )
+    if conf.chem_adversary:
+        model.final_layer.chem_lambda_now = conf.ramped_chem_lambda(
+            fit_progress if conf.chem_lambda_ramp_by_fit else epoch_progress
         )
     if conf.lipid_path_handicap:
         # Epoch index rather than epoch_progress: this is a warm-up measured in epochs,

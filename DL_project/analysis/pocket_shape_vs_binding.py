@@ -39,7 +39,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from rdkit import Chem
 from scipy import stats
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -47,57 +46,10 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from analysis.pocket_shape_descriptors import descriptors_for  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-
-EMPTY = {"", "0", "Empty", "NonConclusive", "nan", "NaN", "None"}
-
-
-def longest_acyl_chain(smiles):
-    """Carbons in the longest unbranched aliphatic run of a molecule.
-
-    The lipid's tail is what a cavity has to accommodate lengthwise, so the measure is
-    the longest path through non-aromatic, non-ring carbons -- head groups, rings and
-    sugars drop out by construction. Returns None for anything RDKit cannot parse.
-    """
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    carbons = [
-        atom.GetIdx() for atom in mol.GetAtoms()
-        if atom.GetSymbol() == "C" and not atom.GetIsAromatic() and not atom.IsInRing()
-    ]
-    if not carbons:
-        return None
-    index = {atom: position for position, atom in enumerate(carbons)}
-    neighbours = {position: [] for position in index.values()}
-    for bond in mol.GetBonds():
-        a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-        if a in index and b in index:
-            neighbours[index[a]].append(index[b])
-            neighbours[index[b]].append(index[a])
-
-    # Longest shortest-path in each connected component: on a chain that is its length,
-    # and a double breadth-first search finds it without enumerating paths.
-    def farthest(start):
-        seen = {start: 0}
-        queue = [start]
-        while queue:
-            node = queue.pop(0)
-            for neighbour in neighbours[node]:
-                if neighbour not in seen:
-                    seen[neighbour] = seen[node] + 1
-                    queue.append(neighbour)
-        end = max(seen, key=seen.get)
-        return end, seen[end], set(seen)
-
-    longest = 0
-    unvisited = set(neighbours)
-    while unvisited:
-        start = next(iter(unvisited))
-        end, _, component = farthest(start)
-        _, distance, _ = farthest(end)
-        longest = max(longest, distance + 1)
-        unvisited -= component
-    return longest
+from dataloader.pocket_lipid_compatibility import (  # noqa: E402
+    EMPTY,
+    longest_acyl_chain,
+)
 
 
 def chain_length_per_protein():

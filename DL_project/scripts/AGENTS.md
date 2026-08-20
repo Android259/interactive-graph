@@ -16,6 +16,7 @@ scripts/
   run_bigfoot.sh  run_kraken.sh  run_local.sh   launch a grid
   wait_and_sync.sh  wait_and_sync_local.sh      watch one
   kill.sh                                       cancel jobs, pull their logs back
+  env.sh                                        the project's python, anywhere
   settings.sh                                   everything you might want to change
   arg_files/    the configs (one .md per experiment)
   submit/       one-off submitters from past experiments; history, not API
@@ -298,8 +299,21 @@ good CUDA build, so gating on it would reject every environment.
 
 ## Lifecycle & Helpers
 
-- `tools/enter_project_env.sh` / `lib/activate_training_env.sh` — `source` to activate the
-  `Kalinin_project_LP` conda env.
+- `env.sh` — the entry point for running anything outside the training path in the
+  `Kalinin_project_LP` env: `scripts/env.sh python3 analysis/<script>.py` runs one
+  command, `source scripts/env.sh` activates the env in the current shell, and no
+  arguments prints which interpreter you get and which of torch/numpy/pandas/scipy/rdkit
+  it can actually import. It exports `PYTHONPATH` and does not `cd`. Unlike `run_local.sh`
+  it refuses to fall back to the system `python3`, which on the local machine has no torch.
+  It also `LD_PRELOAD`s the env's `libstdc++.so.6`: the torch wheel is built against the
+  system copy (3.4.30 on this Debian) and rdkit against the env's (3.4.34, and it needs
+  3.4.31+), so without it `import torch; import rdkit` raises `GLIBCXX_3.4.31 not found`
+  while the reverse order works — anything touching Tanimoto or fingerprints alongside
+  torch hits this. One library is overridden, not the whole `LD_LIBRARY_PATH`.
+- `lib/activate_training_env.sh` — the conda search itself, `source`d by `env.sh`,
+  `run_local.sh` and `tools/parameters.sh`; the one place the interpreter is found.
+- `tools/enter_project_env.sh` — `source` for a FIRST-TIME setup: creates the env when it
+  is missing, then activates and `cd`s to the project root. `env.sh` assumes it exists.
 - `generate_config_graphics.sh LABEL` — builds `graphics/<label>/…` by calling the
   `analysis/` plot scripts.
 - `kill.sh JOB_ID | --name PREFIX… | --all` — cancel jobs and pull their logs back.

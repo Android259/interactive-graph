@@ -228,7 +228,7 @@ def Non_Negative_Positive_Unlabeled_loss(
     return positive_risk + negative_risk
 
 
-def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None):
+def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None, protein_ids=None):
     """RankNet-style pairwise logistic loss: a smooth surrogate for AUC, not for BA.
 
     Cross-entropy asks each row on its own: "is this side of 0.5?" On this dataset that
@@ -241,11 +241,28 @@ def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None):
     the fraction of such pairs answered correctly, so this loss is a direct smooth
     surrogate for the metric this project now reports.
 
-    Every positive row in the batch is paired with every negative row in the batch
-    (not per protein -- protein_id is not carried on training batches, see
-    New_dataloader.__iter__ -- so this optimises the pooled-block AUC that
-    analysis/chemistry_null_model.py and analysis/checkpoint_scores.py already
-    measure, not a per-protein ranking). For each pair the loss is
+    Two pairings, chosen by `protein_ids`.
+
+    Without it, every positive row in the batch pairs with every negative row, which
+    optimises the POOLED-block AUC. That number is a mixture: "does this lipid bind
+    anything at all", which the chemistry null model already answers, and "does it bind
+    THIS protein", which is the interaction term. On this dataset the first half is
+    saturated -- the null model reaches 0.569 pooled while the network reaches 0.542 --
+    so a loss aimed at the mixture spends its gradient where there is nothing left to
+    win.
+
+    With `protein_ids` (one id per row, `--rank_within_protein`), a pair is only formed
+    between rows sharing a protein. Then the marginal cannot help: inside one protein
+    every row has the same partner, so the only thing left to rank by is the pair. This
+    is the quantity files/interaction_signal_plan.md 3 argues the project should be
+    optimising, and analysis/chemistry_null_model.py reports it as `net_AUC_prot`.
+
+    The cost is pair count. Batches are drawn across proteins, so most of the pair
+    matrix is discarded and a batch may contribute very few pairs, or none. Rather than
+    raise, a batch with no same-protein pair returns zero with no gradient, exactly as
+    an all-one-class batch does -- but a run whose batches rarely share a protein is
+    training on almost nothing, and the pair count is worth logging before trusting a
+    result. For each surviving pair the loss is
     -log(sigmoid(score_positive - score_negative)) with score = logit(class 1) -
     logit(class 0), the same margin the PU loss uses. Class imbalance drops out on its
     own: every pair already has exactly one positive and one negative, so
@@ -283,8 +300,26 @@ def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None):
     margin = positive_scores.unsqueeze(1) - negative_scores.unsqueeze(0)
     per_pair_loss = F.softplus(-margin)
 
+    pair_mask = None
+    if protein_ids is not None:
+        protein_ids = protein_ids.to(outl.device).view(-1)
+        if protein_ids.shape[0] != outl.shape[0]:
+            raise ValueError(
+                "pairwise ranking protein_ids must have one id per row, "
+                f"got {tuple(protein_ids.shape)} for logits {tuple(outl.shape)}"
+            )
+        pair_mask = protein_ids[positive_mask].unsqueeze(1) == protein_ids[negative_mask].unsqueeze(0)
+        if not pair_mask.any():
+            # Every pair in this batch straddles two proteins. Nothing to rank.
+            return score.new_zeros(())
+
     if sample_weights is None:
-        return per_pair_loss.mean()
+        if pair_mask is None:
+            return per_pair_loss.mean()
+        # Mean over surviving pairs only: dividing by the full matrix would shrink the
+        # gradient by however many cross-protein pairs happened to be in the batch,
+        # making the effective learning rate depend on the batch's protein mix.
+        return (per_pair_loss * pair_mask).sum() / pair_mask.sum()
 
     sample_weights = sample_weights.to(outl.device).float()
     if sample_weights.shape != (outl.shape[0],):
@@ -299,6 +334,8 @@ def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None):
     positive_weights = sample_weights[positive_mask]
     negative_weights = sample_weights[negative_mask]
     pair_weights = positive_weights.unsqueeze(1) * negative_weights.unsqueeze(0)
+    if pair_mask is not None:
+        pair_weights = pair_weights * pair_mask
     return (per_pair_loss * pair_weights).sum() / pair_weights.sum().clamp_min(1e-8)
 
 

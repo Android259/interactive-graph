@@ -4,6 +4,9 @@
 --third_layers_in_mlps
 --fast_attention
 
+--protein_pockets_only
+--protein_residue_subsample=20
+
 --hiddim=64
 --plm_compression_dim=64
 
@@ -15,4 +18,4 @@
 --balanced_proteins
 --double_coldsplit
 
---lipid_only
+--save_model_in_dynamics
