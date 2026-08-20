@@ -314,8 +314,29 @@ class ModelConfig:
     #     a real run. Incompatible with --bilinear_fusion (see validate()): the pair
     #     value has nowhere well-defined to enter a bilinear form of exactly two
     #     vectors.
+    # --compatibility_split_input : the same two quantities, unmixed, as TWO inputs --
+    #     -chain_length and relu(chain - extent) on a coarsened extent. Why the split
+    #     exists (files/compat_input_audit.md): the difference above is additive, so its
+    #     own pair content is exactly 0.0000, and its whole ranking value inside a
+    #     protein IS the chain length -- a lipid-only rule that the doubly-cold split
+    #     leaves available, since it holds out head-group classes and chain length is
+    #     orthogonal to those. Split apart, the lipid-only half is named and can be
+    #     reported against or adversarially removed, and the pair half is measurable on
+    #     its own. The coarsening is what keeps pocket_extent from doubling as a protein
+    #     id: at full resolution it carries eta^2 0.78 against protein identity, the
+    #     same fold-label channel that got POCKET_DESCRIPTOR_NAMES rejected.
+    # --compat_extent_bins : how many quantile levels the extent is rounded to, cut on
+    #     TRAIN proteins only. 1 removes the extent entirely, which makes the clash term
+    #     constant and is the degenerate case, not a useful setting.
     pocket_compat_prior: bool = False
     compatibility_input: bool = False
+    # --compat_input_parts : which halves the split form feeds -- "chain,clash" (both),
+    #     "chain" (the marginal with the protein removed entirely) or "clash" (the pair
+    #     term with the marginal removed). Three arms, because with both columns present
+    #     a model free to lean on either one answers neither question.
+    compatibility_split_input: bool = False
+    compat_input_parts: str = "chain,clash"
+    compat_extent_bins: int = 4
     # Give the lipid branch a smaller learning rate than the rest of the model, leaving
     # the forward pass exactly as it was: the lipid stream learns proportionally slower
     # while the protein branch keeps its full step, which is the warm-up remedy for the
@@ -1240,12 +1261,31 @@ class ModelConfig:
                 "regresses on whichever frozen prior terms are attached, and needs at "
                 "least one"
             )
-        if self.compatibility_input and self.bilinear_fusion:
+        if (self.compatibility_input or self.compatibility_split_input) and self.bilinear_fusion:
             raise ValueError(
-                "compatibility_input cannot be combined with bilinear_fusion -- the "
-                "pair value has nowhere well-defined to enter a bilinear form of "
-                "exactly two vectors"
+                "compatibility_input/compatibility_split_input cannot be combined with "
+                "bilinear_fusion -- the pair values have nowhere well-defined to enter "
+                "a bilinear form of exactly two vectors"
             )
+        if self.compatibility_input and self.compatibility_split_input:
+            raise ValueError(
+                "compatibility_input and compatibility_split_input are two forms of the "
+                "same quantity -- the difference, and the two halves it is built from. "
+                "Running both feeds the model the same information twice and makes the "
+                "comparison between the forms unreadable; pick one"
+            )
+        if self.compat_extent_bins < 1:
+            raise ValueError(
+                f"compat_extent_bins must be at least 1, got {self.compat_extent_bins}"
+            )
+        if self.compatibility_split_input:
+            named = [n.strip() for n in self.compat_input_parts.split(",") if n.strip()]
+            unknown = [n for n in named if n not in ("chain", "clash")]
+            if unknown or not named:
+                raise ValueError(
+                    f"compat_input_parts must name one or both of chain,clash -- got "
+                    f"{self.compat_input_parts!r}"
+                )
         if (self.chem_lambda_ramp or self.chem_lambda_ramp_by_fit) and not self.chem_adversary:
             raise ValueError("chem_lambda_ramp/chem_lambda_ramp_by_fit require chem_adversary")
         if self.swe_pooling and self.attention_pooling:
@@ -1523,6 +1563,10 @@ SIMPLE_BOOL_FLAGS = {
     "--pocket_compat_prior": "pocket_compat_prior",
     "compatibility_input": "compatibility_input",
     "--compatibility_input": "compatibility_input",
+    "compatibility_split_input": "compatibility_split_input",
+    "--compatibility_split_input": "compatibility_split_input",
+    "compat_extent_bins": "compat_extent_bins",
+    "--compat_extent_bins": "compat_extent_bins",
     "dann_lambda_ramp": "dann_lambda_ramp",
     "--dann_lambda_ramp": "dann_lambda_ramp",
     "dann_lambda_ramp_by_fit": "dann_lambda_ramp_by_fit",
@@ -1817,6 +1861,8 @@ VALUE_HANDLERS = {
     "--chem_weight=": set_config_field("chem_weight", float),
     "--chem_lambda=": set_config_field("chem_lambda", float),
     "--chem_neighbours=": set_config_field("chem_neighbours", int),
+    "--compat_extent_bins=": set_config_field("compat_extent_bins", int),
+    "--compat_input_parts=": set_config_field("compat_input_parts"),
     "--dann_class_conditional=": set_config_field("dann_class_conditional", read_bool),
     "--pool_type=": set_config_field("pool_type"),
     "--swe_reference_points=": set_config_field("swe_reference_points", int),

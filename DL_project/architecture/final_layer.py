@@ -1,6 +1,8 @@
 import torch
 import torch.nn.functional as F
 import torch_geometric
+
+from dataloader.pocket_lipid_compatibility import compat_input_width
 from torch_geometric.utils import softmax as scatter_softmax
 from torch_geometric.utils import to_dense_batch
 
@@ -317,16 +319,17 @@ class Final_Layer(torch.nn.Module):
             classifier_input_dim = middim
         else:
             classifier_input_dim = pooled_lip_dim + pooled_prot_dim
-        if self.config.compatibility_input:
-            # One extra column: the standardised pocket-vs-chain-length pair term
-            # (files/pocket_lipid_compatibility.md), concatenated into common_out in
-            # forward(). Added here, before every head that reads classifier_input_dim
-            # (binar, family_adversaries, chem_head) is built, so all of them size
-            # correctly for the wider vector without a second special case each.
-            # ModelConfig.validate rejects this combined with bilinear_fusion --
-            # Bilinear takes exactly two vectors, and a third pair-level scalar has no
-            # well-defined place to enter that product.
-            classifier_input_dim += 1
+        # Extra columns concatenated into common_out in forward(): one standardised
+        # pocket-vs-chain-length difference under --compatibility_input, or the chain
+        # length and the clash term separately under --compatibility_split_input
+        # (files/pocket_lipid_compatibility.md, files/compat_input_audit.md). Added
+        # here, before every head that reads classifier_input_dim (binar,
+        # family_adversaries, chem_head) is built, so all of them size correctly for
+        # the wider vector without a second special case each. ModelConfig.validate
+        # rejects either combined with bilinear_fusion -- Bilinear takes exactly two
+        # vectors, and pair-level scalars have no well-defined place in that product.
+        self.compat_width = compat_input_width(self.config)
+        classifier_input_dim += self.compat_width
 
         if self.config.attention_pooling:
             # Learned-query attention pooling replaces the fixed reduction; the protein
@@ -540,20 +543,30 @@ class Final_Layer(torch.nn.Module):
         else:
             common_out = torch.cat([lip_outs, prot_outs], dim=1)
 
-        if self.config.compatibility_input:
+        if self.compat_width:
             # Variant B (files/pocket_lipid_compatibility.md): the standardised,
-            # UNcalibrated pocket-vs-chain-length term as an actual input, not an
-            # addition to the logit -- self.binar's own first layer decides how much
-            # to trust it and can combine it nonlinearly with everything else. No
-            # guaranteed floor here, unlike frozen_prior below: this is the path
-            # without a proof it helps, only a reason to try it.
+            # UNcalibrated pair quantities as actual inputs, not an addition to the
+            # logit -- self.binar's own first layer decides how much to trust them and
+            # can combine them nonlinearly with everything else. No guaranteed floor
+            # here, unlike frozen_prior below: this is the path without a proof it
+            # helps, only a reason to try it.
             if compat_input is None:
                 raise ValueError(
-                    "compatibility_input is set but forward() got no compat_input -- "
-                    "New_dataloader only attaches it when --compatibility_input was "
-                    "set at data-load time too; check the two flags match."
+                    "compatibility_input/compatibility_split_input is set but forward() "
+                    "got no compat_input -- New_dataloader only attaches it when the "
+                    "same flag was set at data-load time too; check the two match."
                 )
-            common_out = torch.cat([common_out, compat_input.view(-1, 1)], dim=1)
+            compat_input = compat_input.view(common_out.shape[0], -1)
+            if compat_input.shape[1] != self.compat_width:
+                # A width mismatch here means the loader and the model disagree about
+                # which variant is running, which would otherwise surface as a shape
+                # error inside binar with nothing pointing at the cause.
+                raise ValueError(
+                    f"compat_input has {compat_input.shape[1]} column(s) but this model "
+                    f"was built for {self.compat_width} -- the loader and the model "
+                    "were configured with different compatibility flags"
+                )
+            common_out = torch.cat([common_out, compat_input], dim=1)
 
         # Family DANN reads the FUSED vector -- the one place the per-partner adversary
         # cannot reach, and where cross-attention deposits the family-specific

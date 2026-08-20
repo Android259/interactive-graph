@@ -58,4 +58,11 @@ def build_forward_args(config, prot, lipid):
             prot, "edge_node_pairs", None
         )
         forward_args["prot_edge_node_degree"] = prot.edge_node_degree
+    if getattr(config, "chem_prior", False) or getattr(config, "pocket_compat_prior", False):
+        forward_args["frozen_prior"] = prot.frozen_prior
+    if (
+        getattr(config, "compatibility_input", False)
+        or getattr(config, "compatibility_split_input", False)
+    ):
+        forward_args["compat_input"] = prot.compat_input
     return forward_args

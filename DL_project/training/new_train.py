@@ -767,7 +767,10 @@ def _build_forward_args(prot, lipid):
         forward_args["pocket_descriptor"] = prot.pocket_descriptor
     if getattr(conf, "chem_prior", False) or getattr(conf, "pocket_compat_prior", False):
         forward_args["frozen_prior"] = prot.frozen_prior
-    if getattr(conf, "compatibility_input", False):
+    if (
+        getattr(conf, "compatibility_input", False)
+        or getattr(conf, "compatibility_split_input", False)
+    ):
         forward_args["compat_input"] = prot.compat_input
     return forward_args
 

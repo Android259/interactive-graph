@@ -135,6 +135,94 @@ def pocket_extent_by_protein(root_dir, protein_names):
     return extents
 
 
+SPLIT_INPUT_PARTS = ("chain", "clash")
+
+
+def compat_input_parts(config):
+    """Which halves --compatibility_split_input feeds, in a fixed order.
+
+    Order is `SPLIT_INPUT_PARTS`, not the order the flag lists them in: the columns are
+    positional once they reach the classifier, so a run that wrote `clash,chain` would
+    otherwise train a model whose weights mean something different from an otherwise
+    identical run -- and nothing downstream would say so.
+    """
+    if not getattr(config, "compatibility_split_input", False):
+        return ()
+    requested = {
+        name.strip()
+        for name in str(getattr(config, "compat_input_parts", "") or "").split(",")
+        if name.strip()
+    }
+    return tuple(name for name in SPLIT_INPUT_PARTS if name in requested)
+
+
+def compat_input_width(config):
+    """How many columns --compatibility_input / --compatibility_split_input attach.
+
+    Read by Final_Layer to size `classifier_input_dim` and by New_dataloader to build
+    the tensor, so the two cannot disagree about the width -- which is exactly the kind
+    of mismatch that surfaces as a shape error deep inside the classifier, several
+    hundred epochs of wall clock after the flag was set.
+    """
+    if getattr(config, "compatibility_split_input", False):
+        return len(compat_input_parts(config))
+    if getattr(config, "compatibility_input", False):
+        return 1
+    return 0
+
+
+def raw_compatibility_parts(csv, root_dir):
+    """The two halves of the compatibility term, unmixed: (chain, extent, missing).
+
+    Why the halves are worth having separately (files/compat_input_audit.md 1 and 7):
+    `raw_compatibility` returns their DIFFERENCE, and a difference of a protein-only
+    number and a lipid-only number is additive -- its two-way interaction term is
+    identically zero, measured at 0.0000 by analysis/compat_feature_forms.py. Every
+    quantity with real pair content in it (a clash term, a fit score) is a NON-additive
+    combination, and building one needs the halves rather than the difference.
+
+    Returned raw and uncoarsened: whether `extent` should be rounded to a few levels,
+    and where those levels are cut, is a train-only decision, and this function has no
+    notion of train. `_compute_compatibility_input` in dataloader/New_dataloader.py
+    makes it, next to the standardisation that is train-only for the same reason.
+
+    Neither half reads Interaction, so nothing here can leak a label.
+    """
+    lengths = chain_length_by_species(csv)
+    protein_names = sorted(csv["LTPProtein"].dropna().unique().tolist())
+    extents = pocket_extent_by_protein(root_dir, protein_names)
+
+    chain = csv["FullIdentityOfLipid"].map(lengths).to_numpy(dtype=float)
+    extent = csv["LTPProtein"].map(extents).to_numpy(dtype=float)
+    return chain, extent, numpy.isnan(chain)
+
+
+def coarsen_to_levels(values, edges):
+    """Round `values` to the midpoint of whichever band of `edges` they fall in.
+
+    The channel this closes: `pocket_extent` takes 35 distinct values over 35 proteins
+    in [13.6, 32.0], so at full resolution it is very nearly a protein id -- eta^2
+    against protein identity 0.78, squarely inside the 0.28-0.85 band that got every
+    entry of POCKET_DESCRIPTOR_NAMES rejected as a fold label
+    (preprocessing/pocket_descriptor_identity_check.py). Rounding to a handful of levels
+    keeps the physical claim -- this cavity is longer than that one -- and destroys the
+    one-to-one map that makes it a label.
+
+    `edges` comes from the caller because it must be cut on TRAIN proteins only: edges
+    fitted on all 35 would let a held-out protein help decide the band it lands in.
+    """
+    which = numpy.clip(numpy.searchsorted(edges, values, side="right") - 1, 0,
+                       len(edges) - 2)
+    centres = numpy.asarray([
+        0.5 * (edges[i] + edges[i + 1]) for i in range(len(edges) - 1)
+    ])
+    # The outer bands are half-open, so their midpoints would be infinite; the nearest
+    # finite cut is the honest stand-in and keeps the levels monotone.
+    centres[0] = edges[1]
+    centres[-1] = edges[-2]
+    return centres[which]
+
+
 def raw_compatibility(csv, root_dir):
     """pocket_extent(protein) - chain_length(lipid) for every row of `csv`.
 

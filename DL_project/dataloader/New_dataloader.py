@@ -19,7 +19,12 @@ from dataloader.chemistry_prior import (
     null_scores_leave_one_row_out,
     species_similarity,
 )
-from dataloader.pocket_lipid_compatibility import raw_compatibility
+from dataloader.pocket_lipid_compatibility import (
+    coarsen_to_levels,
+    compat_input_parts,
+    raw_compatibility,
+    raw_compatibility_parts,
+)
 from dataloader.grab_dataset_graph import GrabDatasetGraphMixin
 from dataloader.lipid_embedding_store import load_lipid_embedding_store
 from dataloader.lipid_graph_builder import LipidGraphBuilder
@@ -427,6 +432,30 @@ class PLIDataset(
                 if not self.csvtest.empty else np.array([], dtype=float)
             )
             columns["s_chem"] = (train, valid, test)
+        if getattr(self.config, "compatibility_split_input", False):
+            # The two halves unmixed, so _compute_compatibility_input can build a
+            # NON-additive pair term out of them. raw_compatibility's difference cannot
+            # carry one: its two-way interaction is identically zero
+            # (files/compat_input_audit.md 1). Reads Interaction nowhere, same as the
+            # difference does not.
+            chain, extent, missing = raw_compatibility_parts(csv, self.ROOT_DIR)
+            if missing.any():
+                train_usable = chain[self.csvtrain.index][~missing[self.csvtrain.index]]
+                fill = float(train_usable.mean()) if len(train_usable) else 0.0
+                print(
+                    f"pocket-lipid compatibility : {int(missing.sum())} of {len(chain)} rows "
+                    f"had no parseable chain length, filled with the train mean ({fill:.2f})"
+                )
+                chain = np.where(missing, fill, chain)
+            columns["compat_parts"] = tuple(
+                (chain[index], extent[index]) if len(index) else
+                (np.array([], dtype=float), np.array([], dtype=float))
+                for index in (
+                    self.csvtrain.index,
+                    self.csvalidate.index if not self.csvalidate.empty else [],
+                    self.csvtest.index if not self.csvtest.empty else [],
+                )
+            )
         if getattr(self.config, "pocket_compat_prior", False) or getattr(self.config, "compatibility_input", False):
             # raw_compatibility reads Interaction nowhere, so unlike s_chem there is no
             # leave-one-out to do: a training row's own label cannot leak into a
@@ -500,6 +529,9 @@ class PLIDataset(
         only, same discipline as everywhere else a train-only statistic feeds a split
         it was not computed from.
         """
+        if getattr(self.config, "compatibility_split_input", False):
+            self._compute_compatibility_split_input(raw_columns)
+            return
         if not getattr(self.config, "compatibility_input", False):
             return
         train_raw, valid_raw, test_raw = raw_columns["compat"]
@@ -510,6 +542,89 @@ class PLIDataset(
             frame = getattr(self, name)
             value = (raw - mean) / spread if not frame.empty else np.array([], dtype=float)
             setattr(self, name, frame.assign(_compat_input=value))
+
+    def _compute_compatibility_split_input(self, raw_columns):
+        """Two inputs instead of one difference -- the marginal and the pair term apart.
+
+        What the single difference conflates, measured in files/compat_input_audit.md:
+
+          * its whole ranking value inside a protein IS the chain length -- `chain_only`
+            and `difference` score 0.579 there, identically, in every family. That half
+            is a lipid-only rule, and a lipid-only rule is the thing the doubly-cold
+            split exists to make the model beat, not something it may quietly ride.
+          * it carries eta^2 0.78 against protein identity, through `pocket_extent` at
+            full resolution -- the same fold-label channel that got pocket descriptors
+            rejected, entering through a feature advertised as immune to it.
+          * and it is additive, so its own pair content is exactly zero.
+
+        So: `-chain_length`, standardised, as an input the run can name, report against
+        and adversarially remove; and `relu(chain - extent)` on a COARSENED extent as
+        the pair term -- non-additive (interaction share 0.23 against the difference's
+        0.00) and the only candidate form whose family eta^2, 0.21, falls below the band
+        that rejected the descriptors. Both are oriented so larger means "more likely to
+        bind", matching the direction the AUCs were measured in.
+
+        `--compat_input_parts` feeds either half alone, which is what makes the two
+        claims separately testable: `chain` alone is the marginal with the protein
+        removed entirely, `clash` alone is the pair term with the marginal removed.
+        With both columns present a model free to lean on either one answers neither
+        question, so the three arms are how the result gets attributed to a half.
+
+        Every train-only decision lives here together: the fill for an unparseable
+        chain, the quantile cuts for the coarsening, and the standardisation. A held-out
+        protein therefore cannot influence the band it lands in.
+        """
+        (train_chain, train_extent), (valid_chain, valid_extent), (test_chain, test_extent) = \
+            raw_columns["compat_parts"]
+
+        parts = compat_input_parts(self.config)
+        bins = max(int(getattr(self.config, "compat_extent_bins", 4) or 0), 1)
+        if bins > 1 and len(train_extent):
+            edges = np.quantile(train_extent, np.linspace(0, 1, bins + 1))
+            edges[0], edges[-1] = -np.inf, np.inf
+            # Ties collapse bands; keeping only distinct cuts means `bins` is an upper
+            # bound on the levels, not a promise, and the print says which happened.
+            edges = np.unique(edges)
+            levels = len(edges) - 1
+        else:
+            edges, levels = None, 1
+        print(
+            f"compatibility split input : {' + '.join(parts)} "
+            f"(pocket extent rounded to {levels} level(s))"
+        )
+
+        def raw_parts(chain, extent):
+            if not len(chain):
+                empty = np.array([], dtype=float)
+                return {name: empty for name in parts}
+            coarse = coarsen_to_levels(extent, edges) if edges is not None else extent
+            both = {"chain": -chain, "clash": -np.maximum(chain - coarse, 0.0)}
+            return {name: both[name] for name in parts}
+
+        # Standardisation constants from TRAIN, same discipline as everywhere else a
+        # train-only statistic feeds a split it was not computed from.
+        stats = {
+            name: (values.mean(), values.std() if values.std() > 1e-12 else 1.0)
+            for name, values in raw_parts(train_chain, train_extent).items()
+        }
+
+        def columns(chain, extent):
+            return {
+                f"_compat_input_{name}": (values - stats[name][0]) / stats[name][1]
+                for name, values in raw_parts(chain, extent).items()
+            }
+
+        self.csvtrain = self.csvtrain.assign(**columns(train_chain, train_extent))
+        for (chain, extent), name in (
+            ((valid_chain, valid_extent), "csvalidate"),
+            ((test_chain, test_extent), "csvtest"),
+        ):
+            frame = getattr(self, name)
+            assigned = (
+                {f"_compat_input_{part}": np.array([], dtype=float) for part in parts}
+                if frame.empty else columns(chain, extent)
+            )
+            setattr(self, name, frame.assign(**assigned))
 
     def _derive_lipid_class_holdout(self, csv):
         """Work out which head-group classes leave training, from the held-out family.
@@ -943,10 +1058,25 @@ class PLIDataset(
             if "_frozen_prior" in self.csv.columns
             else None
         )
-        # Only a column under --compatibility_input (_compute_compatibility_input).
+        # Only columns under --compatibility_input / --compatibility_split_input
+        # (_compute_compatibility_input). One column for the difference, two for the
+        # split form; the width the model sizes itself for comes from the same
+        # compat_input_width(config), so the two cannot disagree about it.
+        compat_columns = [
+            name for name in
+            ("_compat_input", "_compat_input_chain", "_compat_input_clash")
+            if name in self.csv.columns
+        ]
+        # Stored one row per sample, (N, 1, width): indexing gives (1, width), which
+        # collates to (batch, width) under the default concatenation. A flat (N, width)
+        # store would index to (width,) and collate to (batch*width,), which happens to
+        # reshape correctly today and would stop doing so the moment anything about the
+        # collation changed -- the shape is made explicit rather than relied upon.
         self._compat_input_tensor = (
-            torch.tensor(self.csv["_compat_input"].to_numpy(dtype="float32")).view(-1, 1)
-            if "_compat_input" in self.csv.columns
+            torch.tensor(
+                self.csv[compat_columns].to_numpy(dtype="float32")
+            ).view(len(self.csv), 1, len(compat_columns))
+            if compat_columns
             else None
         )
 
