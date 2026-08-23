@@ -59,7 +59,12 @@ DEFAULT_OUTPUT = Path(
     "_CandidatesCompleted.csv"
 )
 DEFAULT_REPORT = Path("preprocessing/lipid_candidate_completion_report.csv")
+DEFAULT_DUPLICATE_REPORT = Path("preprocessing/duplicate_pair_merge_report.csv")
 SMILES_COLUMNS = ("SmileGlobal", "SmileFragment")
+PAIR_COLUMNS = ("LTPProtein", "FullIdentityOfLipid")
+# Columns whose values are collected from every row of a merged pair rather than taken
+# from the kept one, so the provenance of a repeated measurement survives the merge.
+PROVENANCE_COLUMNS = ("Screen", "ChainFragments", "Lipid")
 EMPTY_VALUES = {"", "0", "Empty", "NonConclusive", "nan", "NaN", "None"}
 
 
@@ -202,6 +207,100 @@ def complete_table(table, isomeric=True):
     return completed, changes, diagnostics
 
 
+def merge_duplicate_pairs(table, isomeric=True):
+    """One row per (protein, lipid): merge repeated measurements of the same cell.
+
+    A protein-lipid cell measured more than once carries one row per measurement, and
+    those rows agree on the label -- what differs is the chain-level assignment and,
+    through it, the order of the candidate list, plus the screen the result came from.
+    Keeping them as separate rows weights those cells twice in the loss, drags twice as
+    many sampled negatives in behind them, and lets the two copies land on opposite
+    sides of the validation/test division, so the same cell is scored in both blocks.
+
+    The merge keeps the first row of the cell, unions the candidate lists of all its
+    rows into the column that row's own SMILES sit in (its own order stays at the
+    front, so the first candidate does not move), collects the provenance columns, and
+    takes the label as the maximum -- positive wins over unlabelled, which matters if
+    this is ever run on a table whose repeated rows disagree.
+
+    Row positions change, and they are the pair IDs the Tanimoto artifacts and the GRAB
+    edges are indexed by, so both have to be rebuilt against the new file. The Tanimoto
+    loader checks its manifest against the table and falls back rather than serving
+    weights for the wrong rows, but the fallback is no substitute for a rebuild.
+    """
+    missing = [column for column in PAIR_COLUMNS if column not in table.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {', '.join(missing)}")
+
+    positions = collections.defaultdict(list)
+    for position, key in enumerate(
+        zip(*(table[column] for column in PAIR_COLUMNS))
+    ):
+        positions[key].append(position)
+
+    keep = []
+    records = []
+    merged = table.copy()
+    for key, group in positions.items():
+        keep.append(group[0])
+        if len(group) == 1:
+            continue
+
+        first = table.iloc[group[0]]
+        column = active_column(first)
+        ordered = []
+        for position in group:
+            row = table.iloc[position]
+            for raw in split_candidates(row[active_column(row)]):
+                canonical_key = canonical(raw, isomeric)
+                if canonical_key is None:
+                    continue
+                if canonical_key not in {
+                    canonical(item, isomeric) for item in ordered
+                }:
+                    ordered.append(raw)
+        if ordered:
+            merged.iloc[
+                group[0], merged.columns.get_loc(column)
+            ] = "; ".join(ordered)
+
+        for provenance in PROVENANCE_COLUMNS:
+            if provenance not in table.columns:
+                continue
+            values = []
+            for position in group:
+                value = str(table.iloc[position][provenance]).strip()
+                if value in EMPTY_VALUES or value in values:
+                    continue
+                values.append(value)
+            if values:
+                merged.iloc[
+                    group[0], merged.columns.get_loc(provenance)
+                ] = "; ".join(values)
+
+        if "Interaction" in table.columns:
+            merged.iloc[group[0], merged.columns.get_loc("Interaction")] = int(
+                max(int(table.iloc[position]["Interaction"]) for position in group)
+            )
+
+        records.append(
+            {
+                "LTPProtein": key[0],
+                "FullIdentityOfLipid": key[1],
+                "rows_merged": len(group),
+                "kept_row": int(table.index[group[0]]),
+                "dropped_rows": ";".join(
+                    str(int(table.index[position])) for position in group[1:]
+                ),
+                "candidates_after": len(ordered),
+                "screens": str(merged.iloc[group[0]].get("Screen", "")),
+            }
+        )
+
+    keep.sort()
+    return merged.iloc[keep].reset_index(drop=True), records
+
+
 def report_groups(rows, components, find, mixed):
     """Print one line per lipid whose rows disagree about the candidate list."""
     sizes = collections.defaultdict(set)
@@ -250,6 +349,18 @@ def main():
         action="store_true",
         help="Report what would change without writing the completed CSV.",
     )
+    parser.add_argument(
+        "--duplicate-report", type=Path, default=DEFAULT_DUPLICATE_REPORT
+    )
+    parser.add_argument(
+        "--keep-duplicate-pairs",
+        action="store_true",
+        help=(
+            "Leave repeated measurements of one protein-lipid cell as separate rows. "
+            "They are merged by default: as separate rows they weight their cell "
+            "twice and can be split across validation and test."
+        ),
+    )
     args = parser.parse_args()
 
     if Chem is None or rdMolDescriptors is None:
@@ -274,6 +385,23 @@ def main():
     print(f"input rows: {len(table)}")
     print(f"rows completed: {len(changes)} ({100 * len(changes) / max(len(table), 1):.1f}%)")
 
+    duplicate_records = []
+    if not args.keep_duplicate_pairs:
+        completed, duplicate_records = merge_duplicate_pairs(
+            completed, isomeric=not args.non_isomeric
+        )
+        dropped = len(table) - len(completed)
+        print(
+            f"duplicate pairs merged: {len(duplicate_records)} cells, "
+            f"{dropped} rows dropped -> {len(completed)} rows"
+        )
+        if dropped:
+            print(
+                "row positions changed: rebuild the Tanimoto compact artifacts and "
+                "the GRAB pair-graph edges against the new table, since both are "
+                "indexed by row position"
+            )
+
     if args.dry_run:
         print("dry run: nothing written")
         return
@@ -295,6 +423,21 @@ def main():
             ],
         ).to_csv(args.report, index=False)
         print(f"change report: {args.report}")
+    if args.duplicate_report and duplicate_records:
+        args.duplicate_report.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(
+            duplicate_records,
+            columns=[
+                "LTPProtein",
+                "FullIdentityOfLipid",
+                "rows_merged",
+                "kept_row",
+                "dropped_rows",
+                "candidates_after",
+                "screens",
+            ],
+        ).to_csv(args.duplicate_report, index=False)
+        print(f"duplicate merge report: {args.duplicate_report}")
 
 
 if __name__ == "__main__":

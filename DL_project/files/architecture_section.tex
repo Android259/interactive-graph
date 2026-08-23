@@ -1,0 +1,209 @@
+\section{Architecture}
+
+The model has two encoders, one per partner, a block in which the two read each other, a
+pooling step that reduces each partner to a single vector, and a classifier over the
+pair. Nothing inside it is pretrained. The two pretrained models of the previous section
+enter as fixed tables of numbers, and every weight described below is trained from
+scratch on the rows a split leaves in training.
+
+The code carries a large number of alternatives at each of those stages. This section
+describes the path the results below were obtained on, fixed by
+\texttt{scripts/arg\_files/bbp\_dcs\_rnd\_smd\_fa\_nps\_dpt01\_gm\_plm8\_hid8\_wd001\_ep120.md},
+and names an alternative where it is the natural point of comparison.
+
+Three settings size everything below: the hidden width $d$ (\texttt{hiddim}), the number
+of attention heads $h$ (\texttt{HEADS}), and the feed-forward multiplier $m$, which makes
+every feed-forward $d \to m d \to d$. Both encoders, the block between them and the
+classifier all run at $d$; the only widths that are not a multiple of it are the two frozen
+embeddings on the way in. The reported runs set $d = 8$, $h = 8$ and $m = 4$, at which the
+network holds 27286 parameters (Table~\ref{tab:params}), two thirds of them in the two
+linear maps that compress the frozen embeddings down to $d$. The training splits the
+network is fitted on hold between 921 and 1731 rows.
+
+The two head counts are not the same kind of number. The three multi-head attention sites
+split $d$ across $h$ heads, so at $d = h$ a head carries one dimension; the graph layer's
+$h$ heads each emit $d$ and are concatenated, so it produces $h d$ and needs a projection
+back.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrr}
+\hline
+part & parameters & share \\
+\hline
+lipid: MolFormer projection ($768 \to 8$) & 6152 & 22.5\% \\
+lipid: self-attention, feed-forward, norms & 904 & 3.3\% \\
+protein: ESM3 projection ($1536 \to 8$) & 12296 & 45.1\% \\
+protein: GATv2 layer and norm & 2112 & 7.7\% \\
+protein: MLP ($64 \to 32 \to 8$) & 2344 & 8.6\% \\
+protein: self-attention, feed-forward, norms & 905 & 3.3\% \\
+cross-attention, both directions & 1745 & 6.4\% \\
+pooling and classifier ($16 \to 32 \to 8 \to 2$) & 828 & 3.0\% \\
+\hline
+total & 27286 & \\
+\hline
+\end{tabular}
+\caption{Where the parameters of the reported configuration sit, at hidden width 8 and
+eight attention heads. The two projections of the frozen embeddings account for 67.6\%
+of them; the block that makes the prediction an interaction rather than two independent
+readings accounts for 6.4\%.}
+\label{tab:params}
+\end{table}
+
+\subsection{Lipid track}
+
+The lipid enters as the frozen MolFormer token embeddings of the data section. A linear
+map takes each token to $d$, and the tokens of one molecule are then mixed by a single
+self-attention block -- normalise, attend, add the residual, normalise, feed-forward with
+a LeakyReLU, add, normalise. The encoder normalises its output once more on the way out.
+A second feed-forward between those two norms is available and is switched off in the
+reported runs.
+
+This track has no graph in it. The tokens of a molecule are complete to each other under
+the attention, and the only thing the attention mask does is keep the tokens of one
+sample away from the tokens of another in the same batch; the batch vector that PyTorch
+Geometric carries alongside them is bookkeeping for that mask and for the pooling, not an
+adjacency. Nothing here reads a bond, and nothing here carries stereochemistry: the
+chemistry that reaches the classifier from this side is whatever MolFormer wrote into the
+tokens of a canonicalised string, reweighted by attention.
+
+\subsection{Protein track}
+
+The graph the encoder reads is the residue-level Voronoi contact graph of the data
+section; what this section adds to it is a direction and a width. Contacts are stored
+once per pair and enter message passing in the direction they are stored in;
+\texttt{bidirectional\_edges} appends the reverse of each and is off in the reported
+runs. The 1536 ESM3 dimensions are compressed by a single linear layer before being
+concatenated to the structural attributes and burial. Its output width is a setting of its
+own (\texttt{plm\_compression\_dim}), which the reported runs set to $d$; that one layer
+is 45\% of the parameter budget. A staged compression through three intermediate widths is
+available and was not used here. Residue type reaches that layer as one ordinal number
+from 0 to 19, alphabetical by one-letter code -- not a one-hot and not an embedding -- so
+the amino-acid identity the network works with is the one ESM3 supplies.
+
+One GATv2 layer \cite{gatv2} with the edge attributes produces the $h d$-wide
+representation described above, which an MLP takes back to $d$. A second graph layer,
+summed residually with the first, is available and off by default.
+What follows is the same self-attention block as on the lipid side, with one addition. When
+one residue decides how much attention to give another, a single trained number is added
+to that score whenever the residue being read belongs to the cavity. It is the same
+number for every such pair and it starts at one, so the encoder begins by reading the
+binding site more closely than the rest of the chain, and training can raise that
+preference, lower it, or cancel it. Nothing is removed: a residue outside the cavity is
+read less, not never.
+
+Two alternatives to the graph layer were built and run: GINE convolutions \cite{gine}
+and a transformer convolution. A third, a geometric transformer operating on residue
+frames rather than on scalar edge attributes, is implemented and has not been run.
+
+\subsection{Cross-attention}
+
+The two tracks meet in one block that runs both directions at once. Lipid nodes are
+queries against protein nodes as keys and values, protein nodes are queries against lipid
+nodes, and the two directions use the same pair of tensors with the roles swapped. Each
+direction adds its result residually to its own stream, normalises, applies a
+feed-forward, adds and normalises again \cite{vaswani}. The masks
+allow attention only between nodes of the same pair, and the pocket bias of the previous
+subsection is applied again in the direction where the lipid reads the protein, so what
+the lipid takes from it is biased towards the cavity. The design follows the multimodal
+antibody--antigen model of Cohen and Schneidman-Duhovny \cite{abagcross}, which combines
+cross- and self-attention over two structures to build a representation of their complex.
+
+The block leaves both streams at node level, and the reduction to one vector per partner
+happens after it. The reported runs pool by generalised mean \cite{gem} with a learnable
+exponent initialised at one, so pooling starts as an average and can move towards a
+maximum during training.
+
+The classifier is then an MLP over the concatenation of the two pooled vectors, $2d$
+numbers, down through $m d$ and $d$ to two logits; the prediction is the larger of the two,
+which is the 0.5 threshold on the positive class. At $d = 8$ that concatenation is sixteen
+numbers, a narrow channel by construction: the concatenation lets the MLP reach a
+decision from one partner alone, which on this dataset is the shortcut the data section's
+reference predictors measure. Bilinear fusion replaces the concatenation with
+$\mathrm{lip}^{\top} W \mathrm{prot}$, a product that no single-partner representation
+survives, and is an ablation rather than the default.
+
+\paragraph{Variants of the block.} A second round -- cross-attention, both encoders
+again, cross-attention again -- is available under \texttt{double\_attention}. Three
+gradient-reversal mechanisms \cite{ganin} hang off the same place: a per-partner adversary
+that reads each pooled partner \emph{before} the cross-attention and is trained to predict
+the label from it alone, so that the encoder is pushed to make one partner uninformative;
+a family adversary that reads the fused vector \emph{after} it and is trained to name the
+protein family, class-conditionally, so that what is aligned across families is the
+representation given the label rather than the representation itself; and a chemistry
+adversary against a frozen chemical prior. All three are off in the configuration reported
+here, as is the frozen prior itself, which when enabled is fitted on training labels alone
+before the network exists and added to the positive logit.
+
+\paragraph{Attention layout.} A batch of graphs laid out as one long sequence with an
+$N \times N$ mask computes far more than it keeps: measured on a real batch of sixteen,
+the three attention sites together build 18.84M logits of which 2.09M are inside a graph.
+\texttt{fast\_attention} computes the same quantity on a padded per-graph layout where the
+blocked pairs do not exist, reusing the same projection weights. The reordering is not
+bit-exact -- the two agree to about $6 \times 10^{-8}$ -- which is why it is a flag and not
+a replacement. It is on in the reported runs.
+
+\subsection{Training details}
+
+\paragraph{Loss.} The prediction is binary and the loss is cross-entropy over the two
+logits, weighted by class. The weights are the inverse class frequencies of the training
+split, so at two sampled negatives per positive they are 0.75 and 1.5 -- the sampling
+already carries most of the balancing, and the weights carry the remainder. Three
+alternatives are implemented and reported as ablations: focal loss \cite{focal}, which
+down-weights easy rows; the non-negative positive-unlabelled risk estimator \cite{nnpu},
+which treats the zeros as unlabelled rather than negative and so matches how the labels
+were actually produced; and a RankNet-style pairwise loss \cite{ranknet}, which asks
+whether a positive row outranks a negative one instead of which side of a threshold each
+row falls on, optionally restricted to pairs within one protein.
+
+\paragraph{Optimisation.} Adam \cite{adam} at learning rate $10^{-4}$ with weight decay
+0.01, 120 epochs, no learning-rate schedule; warm-up with cosine decay and stochastic
+weight averaging are available and unused. Dropout is 0.1 in every feed-forward and in the
+classifier. Batches hold sixteen rows and are drawn by a class-balanced sampler that
+covers every training row once per epoch and takes its batch count from the larger class:
+5.3 positive and 10.6 unlabelled rows per batch, and 58 to 109 batches per epoch depending
+on the size of the block held out, so a run is between 6960 and 13080 optimiser steps.
+
+\paragraph{What is reported.} Validation runs after every epoch, and the weights kept are
+those of the epoch that maximises a five-epoch rolling mean of validation balanced
+accuracy rather than the single best epoch, which on splits this small is frequently a
+spike. Early stopping is disabled by default, so all 120 epochs run. The test split is
+read once, with those weights, and never during training. Every figure is averaged over
+five seeds, which change the drawn negatives and the halving of the block and nothing
+else.
+
+\paragraph{Cost.} Runs were made on a single Tesla V100-SXM2-32GB. At 27286 parameters an
+epoch takes a median of 6.0 seconds and a full 120-epoch run about twelve minutes, so one
+configuration over seven held-out families and five seeds is roughly seven GPU-hours. The
+protein graphs and lipid encodings are built once per run and shared with the loader
+workers copy-on-write; on the CRAL-TRIO block that cache is 35 protein graphs and 854
+lipid encodings, 123\,MiB.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lll}
+\hline
+setting & reported runs & code default \\
+\hline
+hidden width & 8 & 64 \\
+attention heads & 8 & 8 \\
+feed-forward width & $4 \times$ hidden & $4 \times$ hidden \\
+ESM3 compression & $1536 \to 8$, one layer & $1536 \to 10$ \\
+graph layers per encoder & 1 & 1 \\
+post-attention MLPs & off & off \\
+dropout & 0.1 & 0 \\
+optimiser & Adam, $10^{-4}$ & Adam, $10^{-4}$ \\
+weight decay & 0.01 & $10^{-5}$ \\
+epochs & 120 & 150 \\
+batch & 16, class-balanced & 16, shuffled \\
+pooling & generalised mean & maximum \\
+lipid candidates & one drawn per presentation & one drawn per presentation \\
+attention layout & per-graph (\texttt{fast\_attention}) & masked single sequence \\
+\hline
+\end{tabular}
+\caption{The reported configuration against the defaults in
+\texttt{training/read\_configuration.py}. Hidden width is the one setting the two differ
+on by more than a step: at width 64 the same network holds 619654 parameters against
+training splits of at most 1731 rows.}
+\label{tab:trainsettings}
+\end{table}

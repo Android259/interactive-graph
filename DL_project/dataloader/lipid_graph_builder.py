@@ -13,12 +13,30 @@ class LipidGraphBuilder:
             return smile_global["SmileGlobal"], smile_global["SmileFragment"]
         return smile_global, smile_fragment
 
-    def cached_lipid_encoding(self, smile_global, smile_fragment=None):
-        """Return the SMILES-pair encoding from the process-local cache."""
+    def cached_lipid_encoding(
+        self, smile_global, smile_fragment=None, candidate_index=None
+    ):
+        """Return the SMILES-pair encoding from the process-local cache.
+
+        ``_draw_lipid_candidate``, not the configuration flag, decides whether this row
+        is drawn: the draw is an augmentation and belongs to the training split alone
+        (New_dataloader.__iter__ marks it). Validation and test come through the cache
+        below and get the same molecule every epoch.
+
+        ``candidate_index`` asks for one named member of the candidate set instead, and
+        is what the candidate-averaged evaluation uses: the split is expanded to one row
+        per candidate, each row encodes its own, and the predictions are averaged back
+        per pair. It is cached under its own key, so the members do not overwrite one
+        another.
+        """
         smile_global, smile_fragment = self._smiles_pair(
             smile_global, smile_fragment
         )
-        if self.config.lipid_random_choice:
+        if candidate_index is not None:
+            return self._indexed_lipid_encoding(
+                smile_global, smile_fragment, int(candidate_index)
+            )
+        if self._draw_lipid_candidate:
             return self._drawn_lipid_encoding(smile_global, smile_fragment)
         key = (str(smile_global), str(smile_fragment))
         cached = self._lipid_encoding_cache.get(key)
@@ -28,18 +46,68 @@ class LipidGraphBuilder:
         return cached
 
     def warm_lipid_encoding(self, smile_global, smile_fragment=None):
-        """Fill this row's cache entry without consuming the random stream."""
+        """Fill this row's cache entries without consuming the random stream.
+
+        Warming runs on the training clone, and the caches are shared with the other two
+        (New_dataloader.__iter__ copies shallowly), so both entries are filled: the
+        candidate keys the draw picks from, and the fixed encoding validation and test
+        read. Filling the second one costs nothing extra -- it is a view into the same
+        mapped embedding table.
+        """
         smile_global, smile_fragment = self._smiles_pair(
             smile_global, smile_fragment
         )
-        if not self.config.lipid_random_choice:
-            self.cached_lipid_encoding(smile_global, smile_fragment)
-            return
         key = (str(smile_global), str(smile_fragment))
-        if key not in self._lipid_candidate_key_cache:
+        if (
+            self._draw_lipid_candidate
+            and key not in self._lipid_candidate_key_cache
+        ):
             self._lipid_candidate_key_cache[key] = self._lipid_candidate_keys(
                 smile_global, smile_fragment
             )
+        if key not in self._lipid_encoding_cache:
+            self._lipid_encoding_cache[key] = self.lipid_encoding(
+                smile_global, smile_fragment
+            )
+
+    def candidate_keys_for_row(self, smile_global, smile_fragment=None):
+        """This row's candidate keys, memoized -- how many samples it expands into."""
+        smile_global, smile_fragment = self._smiles_pair(
+            smile_global, smile_fragment
+        )
+        key = (str(smile_global), str(smile_fragment))
+        keys = self._lipid_candidate_key_cache.get(key)
+        if keys is None:
+            keys = self._lipid_candidate_keys(smile_global, smile_fragment)
+            self._lipid_candidate_key_cache[key] = keys
+        return keys
+
+    def draw_candidate_index(self, smile_global, smile_fragment):
+        """Draw which candidate of this row to encode, as an index into its list.
+
+        The index rather than the key, because everything else the sample carries about
+        the lipid -- the frozen prior, the compatibility input -- is stored per candidate
+        and has to describe the structure that was actually encoded, not the first one
+        in the list.
+        """
+        smile_global, smile_fragment = self._smiles_pair(
+            smile_global, smile_fragment
+        )
+        candidate_keys = self.candidate_keys_for_row(smile_global, smile_fragment)
+        return random.choice(range(len(candidate_keys)))
+
+    def _indexed_lipid_encoding(self, smile_global, smile_fragment, index):
+        """The index-th candidate of this row, clamped to the ones it actually has."""
+        candidate_keys = self.candidate_keys_for_row(smile_global, smile_fragment)
+        position = min(index, len(candidate_keys) - 1)
+        cache_key = (str(smile_global), str(smile_fragment), position)
+        cached = self._lipid_encoding_cache.get(cache_key)
+        if cached is None:
+            cached = torch.squeeze(
+                self._fragment_encoding(candidate_keys[position])
+            )
+            self._lipid_encoding_cache[cache_key] = cached
+        return cached
 
     def _drawn_lipid_encoding(self, smile_global, smile_fragment):
         """Draw one candidate for this row, redrawing on every access.
@@ -155,7 +223,12 @@ class LipidGraphBuilder:
         if self.config.lipid_concat:
             return torch.cat(encodings, dim=1), None
         if self.config.lipid_random_choice:
-            return random.choice(encodings), None
+            # The draw itself lives in _drawn_lipid_encoding and reaches only the split
+            # marked for it. Everything that arrives here under random_choice is a split
+            # that must stay fixed, or the warm-up filling its cache, so this returns the
+            # first candidate rather than drawing a representative that would then be
+            # frozen by the cache anyway.
+            return encodings[0], None
         if self.config.lipid_fragments_mask:
             fragment_batches = [
                 torch.full((encoding.shape[1],), fragment_id, dtype=torch.long)

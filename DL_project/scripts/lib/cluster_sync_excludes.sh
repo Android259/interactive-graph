@@ -66,8 +66,25 @@ SYNC_EXCLUDES=(
     --exclude='/feature_contributions*'
 
     # Data directory: embeddings and datasets (3.8 GB locally). Already present on
-    # clusters from initial setup; training reads it from there. Excluding here
-    # makes the per-run sync 10x faster over the slow gricad proxy.
+    # clusters from initial setup; training reads it from there. Excluding it keeps the
+    # per-run sync 10x faster over the slow gricad proxy.
+    #
+    # Three exceptions, and they are the files that change when the dataset does rather
+    # than when the model does, so a code-only sync would leave the cluster reading an
+    # older table than the code expects -- which is not a wrong number but a dead run,
+    # since the loader opens the table by name. Together about 25 MB, against the 3.8 GB
+    # the exclusion is there for:
+    #   the interaction tables themselves;
+    #   the compact Tanimoto artifacts, whose manifests name the table they were built
+    #     from and which the loader refuses when that name or timestamp does not match;
+    #   the GRAB pair-graph edges, indexed by the table's row positions.
+    # Order matters: rsync takes the first matching rule, so the includes have to stand
+    # before the exclusion they carve out of.
+    --include='/data/'
+    --include='/data/Processed_*.csv'
+    --include='/data/Tanimoto_compact*'
+    --include='/data/grab_pair_graph_edges.csv'
+    --exclude='/data/**'
     --exclude='/data/'
 
     # Bulk that training never imports.
@@ -104,7 +121,15 @@ SYNC_PROTECT=(
     --filter='P /metrics_summary*'
     --filter='P /metrics_analysis*'
     --filter='P /feature_contributions*'
+    # The directory AND everything in it. The bare rule protects only the directory
+    # entry, which was enough while data/ was excluded outright -- rsync never
+    # descends into an excluded directory, so nothing inside was a deletion
+    # candidate. Now that the interaction table and the Tanimoto artifacts are
+    # carved out of that exclusion, rsync does descend, and with --delete-excluded
+    # every other file in data/ becomes one: without this line a sync wipes the
+    # cluster's embeddings, the 3.8 GB the exclusion exists to avoid resending.
     --filter='P /data/'
+    --filter='P /data/**'
     --filter='P /external/'
     --filter='P /data/Pretrained MoLFormer/'
     --filter='P /data/esm3_checkpoint/'

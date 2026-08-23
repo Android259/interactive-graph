@@ -34,6 +34,7 @@ import argparse
 import os
 import sys
 
+import numpy as np
 import pandas as pd
 import torch
 
@@ -109,6 +110,34 @@ def score_split(model, conf, dataset, device):
     return torch.cat(probs).numpy(), torch.cat(labels).numpy()
 
 
+def _average_candidate_rows(frame, probs, labels):
+    """Collapse an expanded split's candidate rows into one scored row per pair.
+
+    Mirrors training/candidate_averaging.py: the probability of a pair is the mean over
+    its candidate structures, and the pair keeps the identity and the label its rows
+    already agree on. First-seen order is preserved, so the result is still in dataset
+    order.
+    """
+    pair_ids = frame["pair_id"].to_numpy()
+    order = []
+    sums = {}
+    counts = {}
+    positions = {}
+    for position, pair in enumerate(pair_ids):
+        pair = int(pair)
+        if pair not in sums:
+            sums[pair] = float(probs[position])
+            counts[pair] = 1
+            positions[pair] = position
+            order.append(pair)
+        else:
+            sums[pair] += float(probs[position])
+            counts[pair] += 1
+    keep = [positions[pair] for pair in order]
+    averaged = np.array([sums[pair] / counts[pair] for pair in order], dtype=float)
+    return frame.iloc[keep], averaged, labels[keep]
+
+
 def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, verbose=True):
     """Per-row (family, seed, epoch, split, pair_id) scores for one sweep label.
 
@@ -166,6 +195,17 @@ def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, ver
                     # the trained-on split, and the scores are aligned to its rows.
                     assert len(frame) == len(probs), (len(frame), len(probs))
                     assert (frame["Interaction"].to_numpy() == labels).all()
+                    if "_candidate_index" in frame.columns:
+                        # A run with --eval_average_candidates rebuilds its evaluation
+                        # splits expanded, one row per candidate structure. Writing them
+                        # out as they are would give a multi-candidate pair several score
+                        # rows under one pair id, and every reader of this table -- the
+                        # AUCs, the chemistry comparison, the increment regression --
+                        # counts a row as a pair. Averaged here, the way training scored
+                        # them.
+                        frame, probs, labels = _average_candidate_rows(
+                            frame, probs, labels
+                        )
                     frames.append(pd.DataFrame({
                         "label": label,
                         "parameters": parameters,

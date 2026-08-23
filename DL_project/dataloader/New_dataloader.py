@@ -61,6 +61,57 @@ from dataloader.sampler import (
 
 
 #sample balanced way
+def candidate_column(values):
+    """Per-candidate values as one DataFrame column, one tuple per row.
+
+    The prior and the compatibility input depend on which candidate structure a sample
+    is encoded as, so they are per row AND per candidate, and a row has as many of them
+    as it has candidates -- from one to thirty-seven. Carrying them as a tuple per row
+    keeps them attached to the row through everything that reshapes the table (the
+    split, the negative sampling, the per-candidate expansion of an evaluation split)
+    and keeps each row exactly its own length, with nothing padded and nothing to mask.
+    """
+    return [tuple(float(value) for value in row) for row in values]
+
+
+def _ragged_tensor(columns):
+    """One flat tensor plus row offsets for a column (or columns) of per-row tuples.
+
+    (None, None) when the column is absent, which is the ordinary run: neither the
+    frozen prior nor the compatibility input exists unless its flag asked for it.
+    """
+    if columns is None:
+        return None, None
+    if not isinstance(columns, list):
+        columns = [columns]
+    rows = [np.asarray(row, dtype="float32") for row in columns[0].to_numpy()]
+    lengths = [len(row) for row in rows]
+    stacked = np.stack(
+        [np.concatenate([np.asarray(row, dtype="float32") for row in column.to_numpy()])
+         for column in columns],
+        axis=-1,
+    )
+    offsets = np.zeros(len(rows) + 1, dtype=np.int64)
+    np.cumsum(lengths, out=offsets[1:])
+    return torch.from_numpy(stacked), torch.from_numpy(offsets)
+
+
+def _candidate_position(offsets, idx, candidate_index):
+    """Where this row's chosen candidate sits in the flat tensor.
+
+    Clamped to the row's own candidate count, the same clamp the encoding side applies,
+    so a row asked for a candidate it does not have reads its last one.
+    """
+    start = int(offsets[idx])
+    count = int(offsets[idx + 1]) - start
+    return start + min(candidate_index or 0, count - 1)
+
+
+def ragged_rows(values, rows):
+    """The per-row arrays at the given positions of the original table."""
+    return [values[int(row)] for row in rows]
+
+
 class PLIDataset(
     GrabDatasetGraphMixin,
     LipidGraphBuilder,
@@ -246,17 +297,20 @@ class PLIDataset(
         self._lipid_graph_cache = {}
         self._complete_edge_index_cache = {}
         # Assembled samples, keyed by pair_id -- see get(). Only sound while a row's
-        # sample is a pure function of the row: lipid_random_choice draws a fresh
-        # candidate on every access by design, and a cached sample would freeze that draw
-        # for the whole run, degenerating the mode into "one arbitrary fixed candidate per
-        # row" -- precisely what it exists to replace. It can be supported by caching the
-        # protein graph plus one Data per candidate and drawing among them, but that has
-        # to be checked against the random stream first, so for now the mode simply keeps
-        # rebuilding.
+        # sample is a pure function of the row, which it stops being on whichever split
+        # draws a lipid candidate per access: a cached sample would freeze that draw for
+        # the whole run, degenerating the mode into "one arbitrary fixed candidate per
+        # row" -- precisely what it exists to replace. Enabled here, switched off in
+        # __iter__ for the drawing split alone.
         self._sample_cache = {}
-        self._sample_cache_enabled = not self.config.lipid_random_choice
-        # Residue subsampling is per split and per epoch; both are set from outside --
-        # the split in __iter__, the epoch by the training loop through set_epoch.
+        self._sample_cache_enabled = True
+        # The lipid draw and residue subsampling are both per split and set from outside
+        # -- the split in __iter__, the epoch by the training loop through set_epoch.
+        # Neither belongs on validation or test: a metric computed on a different draw
+        # every epoch is not the same quantity twice, and the epoch-to-epoch wobble it
+        # adds is indistinguishable from learning, while checkpoint selection and early
+        # stopping read exactly that metric.
+        self._draw_lipid_candidate = False
         self._augment_residues = False
         self._augmentation_epoch = 0
         lipid_graph_index_path = os.path.join(self.lipid_graph_dir, "lipid_graph_index.csv")
@@ -402,6 +456,17 @@ class PLIDataset(
                 f"| {seen:.0%} of rows have their lipid in train"
             )
 
+    @staticmethod
+    def _original_rows(frame):
+        """A split frame's positions in the ORIGINAL interaction table.
+
+        pair_id, not the frame's index: __init__ re-indexes the sampled pool 0..N-1, so
+        index labels stop being original positions the moment negatives are sampled.
+        """
+        if frame.empty:
+            return np.array([], dtype=int)
+        return frame["pair_id"].to_numpy(dtype=int)
+
     def _raw_frozen_prior_columns(self, csv):
         """Raw, uncalibrated values for whichever frozen-prior covariates are on.
 
@@ -417,6 +482,12 @@ class PLIDataset(
         self.csvt has already been through negative sampling, which would shift them.
         """
         columns = {}
+        # Rows of `csv` are addressed by pair_id, never by a split frame's index: the
+        # sampled pool is re-indexed 0..N-1 in __init__, so a frame's index labels are
+        # positions in the POOL and using them here would read the wrong rows of the
+        # original table -- pool row 969 against original row 969, which are different
+        # (protein, lipid) pairs. pair_id is the original position and is what survives
+        # sampling, splitting and the per-candidate expansion.
         # chem_adversary requires chem_prior (ModelConfig.validate), so checking
         # chem_prior alone already covers both.
         if getattr(self.config, "chem_prior", False):
@@ -438,45 +509,60 @@ class PLIDataset(
             # carry one: its two-way interaction is identically zero
             # (files/compat_input_audit.md 1). Reads Interaction nowhere, same as the
             # difference does not.
-            chain, extent, missing = raw_compatibility_parts(csv, self.ROOT_DIR)
-            if missing.any():
-                train_usable = chain[self.csvtrain.index][~missing[self.csvtrain.index]]
+            chain, extent, missing = raw_compatibility_parts(
+                csv, self.ROOT_DIR, getattr(self.config, "lipid_isomers", False)
+            )
+            train_rows = self._original_rows(self.csvtrain)
+            missing_count = sum(int(row.sum()) for row in missing)
+            if missing_count:
+                train_values = np.concatenate(ragged_rows(chain, train_rows))
+                train_usable = train_values[~np.isnan(train_values)]
                 fill = float(train_usable.mean()) if len(train_usable) else 0.0
                 print(
-                    f"pocket-lipid compatibility : {int(missing.sum())} of {len(chain)} rows "
+                    f"pocket-lipid compatibility : {missing_count} of "
+                    f"{sum(len(row) for row in chain)} candidates "
                     f"had no parseable chain length, filled with the train mean ({fill:.2f})"
                 )
-                chain = np.where(missing, fill, chain)
+                chain = [np.where(np.isnan(row), fill, row) for row in chain]
             columns["compat_parts"] = tuple(
-                (chain[index], extent[index]) if len(index) else
-                (np.array([], dtype=float), np.array([], dtype=float))
-                for index in (
-                    self.csvtrain.index,
-                    self.csvalidate.index if not self.csvalidate.empty else [],
-                    self.csvtest.index if not self.csvtest.empty else [],
+                (ragged_rows(chain, rows), extent[rows]) if len(rows) else ([], np.array([], dtype=float))
+                for rows in (
+                    self._original_rows(self.csvtrain),
+                    self._original_rows(self.csvalidate),
+                    self._original_rows(self.csvtest),
                 )
             )
         if getattr(self.config, "pocket_compat_prior", False) or getattr(self.config, "compatibility_input", False):
             # raw_compatibility reads Interaction nowhere, so unlike s_chem there is no
             # leave-one-out to do: a training row's own label cannot leak into a
             # quantity built from pocket geometry and lipid structure alone.
-            all_values, missing = raw_compatibility(csv, self.ROOT_DIR)
-            if missing.any():
-                train_missing = missing[self.csvtrain.index]
-                train_usable = all_values[self.csvtrain.index][~train_missing]
-                # 0.0 only if EVERY train row is unparseable, which would mean the
+            all_values, missing = raw_compatibility(
+                csv, self.ROOT_DIR, getattr(self.config, "lipid_isomers", False)
+            )
+            train_rows = self._original_rows(self.csvtrain)
+            missing_count = sum(int(row.sum()) for row in missing)
+            if missing_count:
+                train_values = np.concatenate(ragged_rows(all_values, train_rows))
+                train_usable = train_values[~np.isnan(train_values)]
+                # 0.0 only if EVERY train candidate is unparseable, which would mean the
                 # term carries no information for this run at all; the print makes
                 # that degenerate case visible rather than a silent constant.
                 fill = float(train_usable.mean()) if len(train_usable) else 0.0
                 print(
-                    f"pocket-lipid compatibility : {int(missing.sum())} of {len(all_values)} rows "
+                    f"pocket-lipid compatibility : {missing_count} of "
+                    f"{sum(len(row) for row in all_values)} candidates "
                     f"had no parseable chain length, filled with the train mean ({fill:.2f})"
                 )
-                all_values = np.where(missing, fill, all_values)
-            columns["compat"] = (
-                all_values[self.csvtrain.index],
-                all_values[self.csvalidate.index] if not self.csvalidate.empty else np.array([], dtype=float),
-                all_values[self.csvtest.index] if not self.csvtest.empty else np.array([], dtype=float),
+                all_values = [
+                    np.where(np.isnan(row), fill, row) for row in all_values
+                ]
+            columns["compat"] = tuple(
+                ragged_rows(all_values, rows) if len(rows) else []
+                for rows in (
+                    self._original_rows(self.csvtrain),
+                    self._original_rows(self.csvalidate),
+                    self._original_rows(self.csvtest),
+                )
             )
         return columns
 
@@ -497,9 +583,32 @@ class PLIDataset(
         )]
         if not wanted:
             return
-        design_train = np.column_stack([raw_columns[name][0] for name in wanted])
+        # One entry per candidate of every row: compatibility depends on which candidate
+        # structure the sample is encoded as, s_chem does not and is repeated over that
+        # row's candidates. The calibration is fit on all of them with the row's label
+        # repeated -- those are the values the model will actually be handed, and fitting
+        # on one arbitrary candidate would tune the weights to a structure most samples
+        # never see.
+        def candidate_lengths(split_index):
+            for name in wanted:
+                values = raw_columns[name][split_index]
+                if isinstance(values, list):
+                    return [len(row) for row in values]
+            return [1] * len(raw_columns[wanted[0]][split_index])
+
+        def flatten(name, split_index, lengths):
+            values = raw_columns[name][split_index]
+            if isinstance(values, list):
+                return np.concatenate(values) if values else np.array([], dtype=float)
+            return np.repeat(np.asarray(values, dtype=float), lengths)
+
+        train_lengths = candidate_lengths(0)
+        design_train = np.column_stack([
+            flatten(name, 0, train_lengths) for name in wanted
+        ])
         means, spreads, intercept, weights = fit_prior_calibration(
-            design_train, self.csvtrain["Interaction"].to_numpy()
+            design_train,
+            np.repeat(self.csvtrain["Interaction"].to_numpy(), train_lengths),
         )
         print(
             "frozen prior calibration : intercept {:.3f}, weights {} (covariates: {}, "
@@ -510,13 +619,21 @@ class PLIDataset(
         )
 
         def combine(split_index):
-            design = np.column_stack([raw_columns[name][split_index] for name in wanted])
-            return intercept + ((design - means) / spreads) @ weights
+            lengths = candidate_lengths(split_index)
+            design = np.column_stack([
+                flatten(name, split_index, lengths) for name in wanted
+            ])
+            combined = intercept + ((design - means) / spreads) @ weights
+            return np.split(combined, np.cumsum(lengths)[:-1])
 
-        self.csvtrain = self.csvtrain.assign(_frozen_prior=combine(0))
+        self.csvtrain = self.csvtrain.assign(
+            _frozen_prior=candidate_column(combine(0))
+        )
         for split_index, name in ((1, "csvalidate"), (2, "csvtest")):
             frame = getattr(self, name)
-            value = combine(split_index) if not frame.empty else np.array([], dtype=float)
+            value = (
+                candidate_column(combine(split_index)) if not frame.empty else []
+            )
             setattr(self, name, frame.assign(_frozen_prior=value))
 
     def _compute_compatibility_input(self, raw_columns):
@@ -535,12 +652,23 @@ class PLIDataset(
         if not getattr(self.config, "compatibility_input", False):
             return
         train_raw, valid_raw, test_raw = raw_columns["compat"]
-        mean, spread = train_raw.mean(), train_raw.std()
+        # Over every candidate of every train row: that is the distribution the
+        # standardised input is drawn from once a sample can be encoded as any of its
+        # candidates.
+        train_values = np.concatenate(train_raw) if train_raw else np.array([0.0])
+        mean, spread = train_values.mean(), train_values.std()
         spread = spread if spread > 1e-12 else 1.0
-        self.csvtrain = self.csvtrain.assign(_compat_input=(train_raw - mean) / spread)
+        self.csvtrain = self.csvtrain.assign(
+            _compat_input=candidate_column(
+                [(row - mean) / spread for row in train_raw]
+            )
+        )
         for raw, name in ((valid_raw, "csvalidate"), (test_raw, "csvtest")):
             frame = getattr(self, name)
-            value = (raw - mean) / spread if not frame.empty else np.array([], dtype=float)
+            value = (
+                candidate_column([(row - mean) / spread for row in raw])
+                if not frame.empty else []
+            )
             setattr(self, name, frame.assign(_compat_input=value))
 
     def _compute_compatibility_split_input(self, raw_columns):
@@ -595,22 +723,36 @@ class PLIDataset(
 
         def raw_parts(chain, extent):
             if not len(chain):
-                empty = np.array([], dtype=float)
-                return {name: empty for name in parts}
+                return {name: [] for name in parts}
             coarse = coarsen_to_levels(extent, edges) if edges is not None else extent
-            both = {"chain": -chain, "clash": -np.maximum(chain - coarse, 0.0)}
+            # chain is one array per row and the pocket half is one value per row: the
+            # cavity does not change with which isomer is being considered, the tail
+            # that has to fit in it does.
+            both = {
+                "chain": [-row for row in chain],
+                "clash": [
+                    -np.maximum(row - float(coarse[position]), 0.0)
+                    for position, row in enumerate(chain)
+                ],
+            }
             return {name: both[name] for name in parts}
 
         # Standardisation constants from TRAIN, same discipline as everywhere else a
         # train-only statistic feeds a split it was not computed from.
-        stats = {
-            name: (values.mean(), values.std() if values.std() > 1e-12 else 1.0)
-            for name, values in raw_parts(train_chain, train_extent).items()
-        }
+        stats = {}
+        for name, values in raw_parts(train_chain, train_extent).items():
+            real = np.concatenate(values) if values else np.array([], dtype=float)
+            spread = real.std() if len(real) else 0.0
+            stats[name] = (
+                real.mean() if len(real) else 0.0,
+                spread if spread > 1e-12 else 1.0,
+            )
 
         def columns(chain, extent):
             return {
-                f"_compat_input_{name}": (values - stats[name][0]) / stats[name][1]
+                f"_compat_input_{name}": candidate_column(
+                    [(row - stats[name][0]) / stats[name][1] for row in values]
+                )
                 for name, values in raw_parts(chain, extent).items()
             }
 
@@ -621,7 +763,7 @@ class PLIDataset(
         ):
             frame = getattr(self, name)
             assigned = (
-                {f"_compat_input_{part}": np.array([], dtype=float) for part in parts}
+                {f"_compat_input_{part}": [] for part in parts}
                 if frame.empty else columns(chain, extent)
             )
             setattr(self, name, frame.assign(**assigned))
@@ -890,11 +1032,11 @@ class PLIDataset(
         Called before the DataLoader forks its workers, so the workers inherit one warm
         cache copy-on-write instead of each filling its own during the first epoch.
 
-        Under lipid_random_choice the warmed entry is the row's candidate key list, not
-        an encoding, so warming performs no draw and leaves the random stream where it
-        was. (It used to skip lipid warming here precisely because the draw sat inside
-        the cache; it no longer does.) The isomer-graph path still draws inside
-        make_graph_lipid, so that one stays skipped.
+        On the drawing split the warmed entries are the row's candidate key list and the
+        fixed encoding the other two splits read, so warming performs no draw and leaves
+        the random stream where it was. (It used to skip lipid warming here precisely
+        because the draw sat inside the cache; it no longer does.) The isomer-graph path
+        still draws inside make_graph_lipid, so that one stays skipped.
 
         Returns the entry count of each cache, for reporting.
         """
@@ -902,7 +1044,7 @@ class PLIDataset(
         for prot_file in frame["LTPProtein"].dropna().unique().tolist():
             self.protein_graph_parts(prot_file)
         isomer_graphs = getattr(self.config, "lipid_graph_isomers", False)
-        if not (isomer_graphs and self.config.lipid_random_choice):
+        if not (isomer_graphs and self._draw_lipid_candidate):
             seen = set()
             for _, row in frame.iterrows():
                 key = (str(row["SmileGlobal"]), str(row["SmileFragment"]))
@@ -1015,6 +1157,14 @@ class PLIDataset(
 
     def _prepare_indexed_fields(self):
         """Materialize the columns and scalar tensors read by every get()."""
+        # Present only on an expanded evaluation split (_expand_candidate_rows). The
+        # group tensor is the pair id repeated over the row's candidates, which is what
+        # the averaging in new_train groups by.
+        self._candidate_index_by_idx = (
+            self.csv["_candidate_index"].to_numpy(copy=False)
+            if "_candidate_index" in self.csv.columns
+            else None
+        )
         self._protein_by_idx = self.csv["LTPProtein"].to_numpy(copy=False)
         self._smile_global_by_idx = self.csv["SmileGlobal"].to_numpy(copy=False)
         self._smile_fragment_by_idx = self.csv["SmileFragment"].to_numpy(
@@ -1037,6 +1187,13 @@ class PLIDataset(
             if self.config.grab_loss
             else None
         )
+        # Which samples of a batch are the same pair seen through different candidates.
+        # Only built on an expanded split, where it is what the averaging groups by.
+        self._candidate_group_tensor = (
+            torch.tensor(orig_indexes, dtype=torch.long).view(-1, 1)
+            if self._candidate_index_by_idx is not None
+            else None
+        )
         self._tanimoto_pos_tensor = torch.as_tensor(
             self._weight_positions(orig_indexes), dtype=torch.long
         ).view(-1, 1)
@@ -1053,10 +1210,11 @@ class PLIDataset(
         )
         # Only a column when --chem_prior and/or --pocket_compat_prior added it
         # (_compute_frozen_prior); everything else costs nothing when both are off.
-        self._frozen_prior_tensor = (
-            torch.tensor(self.csv["_frozen_prior"].to_numpy(dtype="float32")).view(-1, 1)
-            if "_frozen_prior" in self.csv.columns
-            else None
+        # Flat values plus row offsets rather than a rectangle: rows have between one
+        # and thirty-seven candidates, and get() reads the entry of the candidate the
+        # sample is encoded as, clamped to the row's own count.
+        self._frozen_prior_tensor, self._frozen_prior_offsets = _ragged_tensor(
+            self.csv["_frozen_prior"] if "_frozen_prior" in self.csv.columns else None
         )
         # Only columns under --compatibility_input / --compatibility_split_input
         # (_compute_compatibility_input). One column for the difference, two for the
@@ -1072,13 +1230,61 @@ class PLIDataset(
         # store would index to (width,) and collate to (batch*width,), which happens to
         # reshape correctly today and would stop doing so the moment anything about the
         # collation changed -- the shape is made explicit rather than relied upon.
-        self._compat_input_tensor = (
-            torch.tensor(
-                self.csv[compat_columns].to_numpy(dtype="float32")
-            ).view(len(self.csv), 1, len(compat_columns))
-            if compat_columns
-            else None
+        # The same flat form, one column per part: indexing a candidate gives (width,),
+        # which get() views as (1, width) -- the shape a sample carried before the
+        # candidate axis existed, so the collation and the model are unchanged.
+        self._compat_input_tensor, self._compat_input_offsets = _ragged_tensor(
+            [self.csv[name] for name in compat_columns] if compat_columns else None
         )
+
+    def _expand_candidate_rows(self, frame):
+        """One row per candidate structure, so evaluation can average over the set.
+
+        A measured species is a set of candidate isomers, and under random_choice
+        training is taught to answer the same thing for all of them. Reading the model
+        back on one arbitrary member throws that away, so an evaluation split is
+        expanded here: the row is repeated once per candidate, each copy carries the
+        index it must encode, and new_train averages the predictions back per pair
+        before the threshold. Rows with a single candidate are untouched, which is most
+        of the table's negatives.
+        """
+        cap = int(getattr(self.config, "eval_candidates_per_pair", 0) or 0)
+        chosen = [
+            self._candidate_indices_to_score(
+                len(
+                    self.candidate_keys_for_row(
+                        row["SmileGlobal"], row["SmileFragment"]
+                    )
+                ),
+                cap,
+            )
+            for _, row in frame.iterrows()
+        ]
+        expanded = frame.loc[
+            frame.index.repeat([len(indices) for indices in chosen])
+        ].copy()
+        expanded["_candidate_index"] = [
+            index for indices in chosen for index in indices
+        ]
+        return expanded
+
+    @staticmethod
+    def _candidate_indices_to_score(count, cap):
+        """Which candidates of a row the averaged evaluation scores.
+
+        Everything up to the cap, and evenly spread over the list beyond it -- the ends
+        included -- rather than the first few: a completed candidate list carries the
+        row's own annotation first and the isomers collected from other rows after it,
+        so a prefix would sample one annotation rather than the species. 0 or a cap the
+        row does not reach means every candidate, and the indices are the row's own, so
+        the encoding side needs no translation.
+        """
+        if cap <= 0 or count <= cap:
+            return list(range(count))
+        if cap == 1:
+            return [0]
+        step = (count - 1) / (cap - 1)
+        return sorted({int(round(position * step)) for position in range(cap)})
 
     def __iter__(self):
         train_dataset = copy.copy(self)
@@ -1087,6 +1293,9 @@ class PLIDataset(
         train_dataset.csv = self.csvtrain
         valid_dataset.csv = self.csvalidate
         test_dataset.csv = self.csvtest
+        if getattr(self.config, "eval_average_candidates", False):
+            valid_dataset.csv = self._expand_candidate_rows(valid_dataset.csv)
+            test_dataset.csv = self._expand_candidate_rows(test_dataset.csv)
         # protein_id exists so run_test() can split the test metrics by protein. Only the
         # test split is ever asked for that, yet the field used to ride along in every
         # training and validation batch too -- one more tensor to slice per sample and one
@@ -1095,15 +1304,24 @@ class PLIDataset(
         # Residue subsampling trains on a different random subset of each protein every
         # epoch, so it belongs to the training split alone: on validation it would turn
         # the metric into a draw, and the epoch-to-epoch wobble would be indistinguishable
-        # from learning. The sample cache goes with it, for the reason spelled out where
-        # lipid_random_choice disables it -- a cached sample freezes the draw, and one
-        # frozen subset per row is not an augmentation but a smaller fixed fingerprint.
-        # The per-protein and per-lipid caches stay, so what is paid per access is tensor
-        # indexing, not a file parse.
+        # from learning. The sample cache goes with it -- a cached sample freezes the
+        # draw, and one frozen subset per row is not an augmentation but a smaller fixed
+        # fingerprint. The per-protein and per-lipid caches stay, so what is paid per
+        # access is tensor indexing, not a file parse.
+        #
+        # lipid_random_choice is the same kind of augmentation on the other partner: a
+        # row lists several candidate structures for one measured species and the draw
+        # picks one of them per access. It is marked here for the same reason -- on
+        # validation and test the drawn molecule would change every epoch, so the metric
+        # that selects the checkpoint and stops training early would move for a reason
+        # unrelated to the model. Those two splits take the first candidate instead,
+        # which is what the deterministic treatments encode as well, so their rows stay
+        # comparable across epochs and across runs.
+        train_dataset._draw_lipid_candidate = bool(self.config.lipid_random_choice)
         train_dataset._augment_residues = bool(
             getattr(self.config, "protein_residue_subsample", 0)
         )
-        if train_dataset._augment_residues:
+        if train_dataset._augment_residues or train_dataset._draw_lipid_candidate:
             train_dataset._sample_cache_enabled = False
         # --rank_within_protein is the one training-time consumer: the ranking loss can
         # only form same-protein pairs if it knows which rows share a protein. Everything
@@ -1174,13 +1392,27 @@ class PLIDataset(
         # error and no crash, just wrong numbers. pair_id is the row's position in the
         # interaction table and is unique across all three.
         pair_id = int(self._pair_id_by_idx[idx])
-        cached = self._sample_cache.get(pair_id)
-        if cached is not None:
-            return cached
-
+        # On an expanded split the pair id alone no longer identifies a sample: the same
+        # pair appears once per candidate, and keying by it would serve one candidate's
+        # sample for all of them.
+        candidate_index = (
+            None
+            if self._candidate_index_by_idx is None
+            else int(self._candidate_index_by_idx[idx])
+        )
         protein = self._protein_by_idx[idx]
         smile_global = self._smile_global_by_idx[idx]
         smile_fragment = self._smile_fragment_by_idx[idx]
+        if candidate_index is None and self._draw_lipid_candidate:
+            # Drawn here rather than inside the encoder, so the frozen prior and the
+            # compatibility input can be read for the same candidate the encoding is
+            # built from instead of for whichever one the list happens to start with.
+            candidate_index = self.draw_candidate_index(smile_global, smile_fragment)
+        cache_key = pair_id if candidate_index is None else (pair_id, candidate_index)
+        cached = self._sample_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         if getattr(self.config, "lipid_graph_isomers", False):
             lipid_enc = None
             lipid_batch = None
@@ -1190,7 +1422,7 @@ class PLIDataset(
             )
         else:
             lipid_enc = self.cached_lipid_encoding(
-                smile_global, smile_fragment
+                smile_global, smile_fragment, candidate_index=candidate_index
             )
             lipid_batch = None
 
@@ -1207,9 +1439,10 @@ class PLIDataset(
             lipid_batch,
             smile_global,
             smile_fragment,
+            candidate_index,
         )
         if self._sample_cache_enabled:
-            self._sample_cache[pair_id] = sample
+            self._sample_cache[cache_key] = sample
         return sample
 
 
@@ -1221,6 +1454,7 @@ class PLIDataset(
         lipid_batch,
         smile_global,
         smile_fragment,
+        candidate_index=None,
     ):
         """Attach the per-row identifiers and build the lipid side of one sample."""
         #print(f"pocket shape : {pok.shape}")
@@ -1230,13 +1464,25 @@ class PLIDataset(
         # torch.cat from every collation; nothing that produces a number reads either.
         if self._pair_id_tensor is not None:
             protein_graph.pair_id = self._pair_id_tensor[idx]
+        if self._candidate_group_tensor is not None:
+            protein_graph.candidate_group = self._candidate_group_tensor[idx]
         protein_graph.tanimoto_pos = self._tanimoto_pos_tensor[idx]
         if self._protein_id_tensor is not None:
             protein_graph.protein_id = self._protein_id_tensor[idx]
+        # Both carry a candidate axis: the term describes the structure the sample is
+        # encoded as, so it moves with the draw and with the candidate index of an
+        # expanded evaluation row. Clamped the same way the encoding side clamps, so a
+        # row asked for a candidate it does not have reads its last one.
         if self._frozen_prior_tensor is not None:
-            protein_graph.frozen_prior = self._frozen_prior_tensor[idx]
+            position = _candidate_position(
+                self._frozen_prior_offsets, idx, candidate_index
+            )
+            protein_graph.frozen_prior = self._frozen_prior_tensor[position].view(1)
         if self._compat_input_tensor is not None:
-            protein_graph.compat_input = self._compat_input_tensor[idx]
+            position = _candidate_position(
+                self._compat_input_offsets, idx, candidate_index
+            )
+            protein_graph.compat_input = self._compat_input_tensor[position].view(1, -1)
         if getattr(self.config, "lipid_graph_isomers", False):
             lipid_graph = self.make_graph_lipid(
                 smile_global, smile_fragment

@@ -1,0 +1,374 @@
+\section{Data}
+
+\subsection{Interaction data}
+
+The measured data consist of positive observations only. They come from a system-wide lipidomics
+screen of lipid transfer proteins (LTPs) \cite{acg}. Each protein was assayed in two screens
+against a set of lipid species, and the species recovered from a protein were recorded as bound.
+The screen reports 658 such (protein, lipid) combinations. Each carries the screen or screens the
+species was recovered in, and 28 were recovered in both.
+
+The panel comprises 35 proteins in nine families and 312 lipid species in 34 head-group classes
+(Table~\ref{tab:families}).
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrp{0.52\linewidth}}
+\hline
+family & prot. & pos. & positives per protein \\
+\hline
+CRAL-TRIO & 9 & 167 & RLBP1 63, TTPAL 63, SEC14L6 14, TTPA 10, SEC14L2 9, SEC14L4 3, ATCAY 2, SEC14L5 2, BNIPL 1 \\
+START & 3 & 154 & STARD2 68, STARD10 65, STARD11 21 \\
+lipocalin & 10 & 87 & LCN1 27, FABP1 24, FABP5 10, PMP2 9, FABP7 8, LCN15 5, CRABP2 1, RBP1 1, RBP4 1, RBP5 1 \\
+GLTP & 2 & 80 & GLTPD1 41, GLTP 39 \\
+IP\_trans & 3 & 58 & PITPNB 26, PITPNA 21, PITPNC1 11 \\
+LBP\_BPI\_CETP & 2 & 53 & BPI 29, BPIFB2 24 \\
+scp2 & 3 & 43 & SCP2D1 28, SCP2 10, HSDL2 5 \\
+ML & 1 & 10 & GM2A 10 \\
+OSBP & 2 & 6 & OSBPL5 3, OSBPL9 3 \\
+\hline
+\end{tabular}
+\caption{The panel: proteins per family, and positive combinations per family and per protein.}
+\label{tab:families}
+\end{table}
+
+The negative class is built as the complement. The panel defines $35 \times 312 = 10920$
+combinations, and the 10262 that were not reported bound receive the label zero. The training
+table is therefore the complete grid, one row per combination, at a positive rate of 6.0\%. Its
+zeros are unlabelled combinations, not measured non-binding, and an unknown fraction of them are
+species that bind but escaped detection. That rate is a property of the completion rule as much as
+of the biology.
+
+\subsection{Protein structures}
+
+Each protein was assigned one structure. Twenty-four are experimental structures from the PDB: 22
+by X-ray diffraction, one by solution NMR and one by joint X-ray and neutron diffraction. The
+remaining 11 are AlphaFold DB models \cite{alphafold}, used where no suitable experimental
+structure was available. Candidates were selected on Uniprot family and domain annotation, largely
+from PROSITE, and structures carrying mutations were excluded.
+
+Deposited files were normalised before annotation. Selenomethionine is stored as a heteroatom
+record, so the default protein filter removed it and silently shortened two chains. Rewriting it
+as methionine beforehand gives GM2A and PITPNA 162 and 269 residues, in agreement with their
+sequences. Residues unresolved in the crystal are absent from the coordinate file and are left
+absent, without placeholders, so a contact may form between residues distant in sequence; CERT has
+two such gaps, at 493--495 and 535--540. No residue is discarded on predicted confidence and no
+domain is cropped. The chain enters the representation as deposited.
+
+\subsection{Pocket annotation}
+
+Cavities were annotated with the pocket detection of Voronota \cite{voronota}, which operates on
+the Voronoi tessellation of the atomic balls. The same tessellation yields the residue contacts
+and the burial values used below. Cavity membership, neighbourhood and burial therefore derive
+from one geometric model and refer to the same residues. LTP cavities are large and hydrophobic,
+and the annotation has to separate the interior cavity from surface grooves, so detection
+parameters were tuned per protein and every annotated structure was inspected visually.
+Alternative cavity detection algorithms were not benchmarked. The choice rests on the consistency
+of the representation and on the visual check, not on a measured advantage over them.
+
+A residue is assigned to the cavity when any of its side-chain atoms is annotated. Backbone atoms
+and the beta carbon are excluded, so membership reflects the side chains lining the cavity. Burial
+is kept as a continuous per-residue quantity rather than a second binary mask. Its defined values
+span 0.005 to 0.989 across the 35 structures. The software emits the value 2 where burial is
+undefined; the 716 residues of 7804 (9.2\%) that carry it are passed on unchanged.
+
+\subsection{Structure graphs}
+
+Each structure is a graph over its residues. Two residues are joined when their Voronoi cells
+share a face, so adjacency follows contact rather than a distance threshold or a fixed number of
+nearest neighbours. Nodes carry residue type, solvent-accessible surface area and residue volume,
+together with burial, cavity membership and the language-model embedding of the next subsection.
+Edges carry the distance between the residues, the area of their contact and the solvent-facing
+part of that contact.
+
+The same construction yields an atom-level graph. The residue-level one is used for two reasons.
+With 35 structures the atom-level description is too fine to fit without memorisation. And the
+residue level coincides with the resolution of the protein language model, which allows the
+geometric and the evolutionary description to be concatenated node by node.
+
+\subsection{Protein embeddings}
+
+Geometric and chemical descriptors alone proved insufficient: no configuration trained on them
+exceeded the trivial predictor. The graph is therefore conditioned on a protein language model.
+Sequences are embedded with ESM3 \cite{esm3} and the residue embeddings are attached to the
+corresponding nodes. An embedding of $N$ residues has $N+2$ rows, whose terminal tokens are
+removed, so that nodes, embedding rows and annotated residues agree in number and order. The
+structural normalisation above exists to protect this correspondence, which a residue missing from
+the coordinate file but present in the sequence breaks silently. And 1536 embedding dimensions
+beside three structural attributes would dominate the node representation, so the embedding is
+projected linearly to a low dimension before concatenation.
+
+These embeddings are computed from sequence alone, structural information reaching the model
+through the graph.
+
+What these embeddings distinguish was measured directly. Averaged over residues, the 35 proteins
+are almost one point: over the 595 pairs the median cosine between two ESM3 vectors is 0.974, with
+a floor of 0.905. Their binding profiles are the opposite. The median cosine between two profiles
+is 0.000, and 59\% of pairs share no class at all. The embedding therefore separates proteins by
+family membership, not by what they bind: a protein's nearest neighbour in ESM3 space belongs to
+its own family 94\% of the time, against 16\% for a random neighbour.
+
+Table~\ref{tab:proteinrepr} asks whether any representation beats ignoring the protein. None does.
+ESM-IF1 \cite{esmif}, an inverse-folding encoder reading backbone coordinates, spreads the cloud
+out and still loses, so the tight cloud is a symptom rather than the cause. ProteinMPNN
+\cite{proteinmpnn} packs the proteins tighter than ESM3 and lands between the two. ESM3 itself
+beats the reference on average, but on four of the seven families its neighbours are worse than
+ignoring the protein. The protein side is limited by 35 objects, not by the representation chosen
+for them.
+
+Hand-built cavity descriptors were measured under an easier regime, with a single protein held out
+rather than a whole family, so their relatives stay in training. There ESM3 reconstructs the
+profile at 0.335 against 0.259 for ignoring the protein, thirteen cavity descriptors reach 0.284
+and four shape numbers 0.228, correlating with the profile at $+0.094$ and $-0.029$. Appending the
+thirteen to ESM3 lowers it to 0.291. Their nearest-neighbour family rate is 0.51 and 0.63
+(\texttt{preprocessing/pocket\_descriptor\_identity\_check.py}).
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrrrr}
+\hline
+representation & dim & NN same family & median cos & min cos & corr.\ profile & profile, family out \\
+\hline
+ignore the protein & -- & -- & -- & -- & -- & 0.167 \\
+ESM3 & 1536 & 0.943 & 0.974 & 0.905 & $+0.227$ & \textbf{0.194} \\
+ESM-IF1 & 512 & 0.800 & 0.762 & 0.256 & $+0.127$ & 0.152 \\
+ProteinMPNN & 128 & 0.857 & 0.994 & 0.958 & $+0.103$ & 0.165 \\
+\hline
+\end{tabular}
+\caption{What each protein representation is worth, on the 35 mean-pooled vectors the model would
+receive. \emph{NN same family}: how often a protein's nearest other protein in that representation
+shares its family, against 0.156 for a random neighbour. \emph{median cos} and \emph{min cos}: how
+far apart the representation puts two proteins at all. \emph{corr.\ profile}: correlation between
+representation similarity and binding-profile similarity over the 595 pairs. \emph{profile, family
+out}: cosine between a held-out protein's true binding profile and the one reconstructed from its
+three nearest training proteins, averaged over the seven families. Computed by
+\texttt{preprocessing/protein\_representation\_identity\_check.py}.}
+\label{tab:proteinrepr}
+\end{table}
+
+\subsection{Lipid structures}
+
+The screen identifies a species by head group, total acyl carbon count and total number of double
+bonds, and structures consistent with these identities were retrieved from LIPID MAPS
+\cite{lipidmaps} in SMILES form.
+
+Mass spectrometry constrains the head group and the total mass. It frequently does not constrain
+the distribution of carbons between the chains, the position of the unsaturations, or which chain
+occupies the \emph{sn}-1 and which the \emph{sn}-2 position. This ambiguity is represented
+explicitly: a species is stored as a set of candidate structures, with duplicates merged after
+canonicalisation. Of the 10920 rows, 7909 (72.4\%) carry more than one candidate. Phosphatidyl\-
+ethanolamine (34:1), for example, is represented by four 16:0/18:1 structures, differing in the
+position of the double bond and in the order of the chains on the glycerol backbone.
+
+A row is encoded by one of its candidates, drawn afresh each time the row is presented. Over an
+epoch a species is therefore shown as its whole candidate set, not as one arbitrary member of it.
+Evaluation marginalises over the same set, scoring the row once per candidate and averaging the
+probabilities before the threshold, so that the number reported answers for the species and not for
+a structure the spectrometer never singled out.
+
+The retrieved strings carry the chirality of the glycerol carbon and the geometry of the double
+bonds. The encoding table used by default, however, is built after canonicalisation without
+stereochemical descriptors, so none of the 1226 distinct structures reaches the chemical language
+model with its stereochemistry intact. An isomeric table is available, as is a molecular-graph
+representation carrying chirality and bond geometry as explicit atom and bond attributes. Whether
+the chemical language model separates stereoisomers when they are supplied has not been tested
+here.
+
+\subsection{Lipid embeddings}
+
+Lipids are encoded with MolFormer \cite{molformer}, a transformer pretrained at scale on SMILES
+strings. It is used frozen: the encodings of all distinct candidate structures are computed once
+and no gradient reaches the encoder. A chemical language model matches the level of description
+available for the lipid, a formula and a connectivity rather than a conformation. Its token-level
+output also lets the protein side attend over the structure instead of receiving one pooled
+vector.
+
+Canonical strings are tokenised with the model's own tokeniser and passed through the pretrained
+encoder, and the token-level output is retained. A structure of $T$ tokens is stored as $T+2$
+vectors of dimension 768. The two additional positions are the terminal tokens introduced by the
+tokeniser, the leading one being the sequence-level token the model was trained to summarise a
+structure with. Token counts range from 24 to 132 over the 1226 structures.
+
+One property of the architecture affects reproducibility. The linear attention of MolFormer draws
+a random feature matrix at each forward pass. Our first table was computed without fixing that
+draw, and two encodings of the same structure differed there by as much as 8.8 on a scale of $\pm
+10$. The table used here was computed with the matrix stored in the checkpoint, so figures
+obtained with the earlier table are not comparable with those reported below.
+
+The alternative lipid representation is an explicit atom-bond graph with eleven atom and six bond
+attributes. Molecular fingerprints enter only as a similarity measure between lipids, in the
+sampling weights and in the chemistry baselines, never as model input.
+
+\subsection{Data splits}
+\label{sec:splits}
+
+Because the matrix is filled completely, holding out a set of rows on one axis leaves the other
+axis intact. A species from a held-out protein family still appears in 34 further rows, so its
+frequency of binding across the panel is known. That frequency predicts the held-out labels
+without any information about the held-out protein. Every split is therefore reported against a
+reference predictor that ignores the protein and answers with the training frequency of the
+species, or of its head-group class. Computed on the rows the model receives, it measures how much
+of the metric a lookup can produce. All splits are group-disjoint; no rows are split at random.
+
+The model does not see the whole grid. Every positive is kept, and negatives are drawn to match,
+two per positive within each protein; these rows are the pool. That leaves about one third of it
+positive and equalises the positive rate across proteins, so no protein can be answered by its own
+base rate. The rows a split holds out of the pool are its block, halved into validation and test.
+A seed changes two things and nothing else: which zeros are drawn, and how the block is halved.
+Which proteins and which lipid classes leave training is fixed. Every figure below is averaged
+over five seeds.
+
+\paragraph{Holding out proteins.} One or more families leave training and their rows are divided
+equally between validation and test. Alternatively, validation and test are two different
+families. In the pool, 99.9\% of test species and all head-group classes have been seen in
+training. The reference predictor accordingly reaches 0.588 balanced accuracy on test averaged
+over the nine families, and up to 0.68 on individual ones. No training row repeats as a validation
+row, so the pairs are new: what carries over is the frequency of the species, not the pair.
+Results obtained under this split are to be read against 0.59, not 0.50.
+
+\paragraph{Holding out lipid chemistry.} The complementary split keeps every protein in training
+and removes a chemical family of lipids. Four sets were defined by chemistry: a set is only unseen
+if its close relatives leave with it. Similarity to the training chemistry measures how unseen a
+set is: the mean, over the structures of the set, of the highest fingerprint similarity to any
+structure remaining in training (Table~\ref{tab:lipidsets}). Lower is more isolated. The first
+three sets are well separated. The anionic set is not, and cannot be: the anionic
+glycerophospholipids differ from the phosphatidylcholines that remain only in the head group,
+while a fingerprint is dominated by the two acyl chains. It is retained as the most demanding of
+them because it asks whether the head group is read at all.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{llrl}
+\hline
+set & similarity & positives held out & content \\
+\hline
+sphingolipids & 0.458 & 84 (12.8\%) & sphingoid backbone, all of it \\
+phosphorus-free & 0.553 & 61 (9.3\%) & neutral glycerolipids, free fatty acids, retinol \\
+choline & 0.653 & 227 (34.5\%) & phosphocholine head, di- and lyso- \\
+anionic & 0.766 & 188 (28.6\%) & anionic glycerophospholipid heads \\
+\hline
+\end{tabular}
+\caption{Lipid sets held out of training, ordered by their similarity to the chemistry that stays
+in training. Lower is more isolated.}
+\label{tab:lipidsets}
+\end{table}
+
+\paragraph{Holding out both axes.} The split used below cuts both axes at once. A protein family
+leaves training, and a set of head-group classes leaves training for every protein, not for that
+family alone. A row of the family in a held-out class then has neither its protein nor its lipid
+chemistry in training, and no frequency can be estimated for it.
+
+Which classes leave is decided per family. A family's positives sit in the classes it transports,
+so a fixed partition would be arbitrary for whichever family is held out. Each class $c$ is scored
+by
+\[
+s(c) = \frac{\text{positives of the held-out family in } c}{\text{positives of all other proteins in } c + 1},
+\]
+high for a class the family owns, low for one the rest of the panel also uses. Classes are removed
+in decreasing order of $s$ until they cover a set share of the family's positives. Rows of the
+family in the classes that stayed are discarded rather than evaluated: their protein is absent, so
+they cannot train, and they are the only rows a frequency lookup could still score.
+
+That discarding fixes the reference predictor at 0.500 for every family and every threshold. The
+threshold lowers that similarity instead. The classes the selection stops short of are the nearest
+relatives of the family's own lipids -- for the phosphatidylcholines of START, the
+lysophosphatidylcholines -- and while they stay in training every held-out structure keeps a close
+neighbour to extrapolate from. Table~\ref{tab:coldsplitshare} gives that similarity per family and
+per threshold, measured as above (\texttt{analysis/coldsplit\_geometry.py}).
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrrrrr}
+\hline
+held-out family & 0.30 & 0.50 & 0.70 & 0.75 & \textbf{0.80} & 0.85 & 0.90 \\
+\hline
+CRAL-TRIO & 0.854 & 0.902 & 0.902 & 0.796 & \textbf{0.784} & 0.761 & 0.803 \\
+GLTP & 0.728 & 0.706 & 0.697 & 0.697 & \textbf{0.697} & 0.567 & 0.574 \\
+IP\_trans & 0.827 & 0.827 & 0.827 & 0.827 & \textbf{0.827} & 0.846 & 0.846 \\
+LBP\_BPI\_CETP & 0.827 & 0.827 & 0.827 & 0.827 & \textbf{0.827} & 0.827 & 0.671 \\
+lipocalin & 0.890 & 0.795 & 0.658 & 0.658 & \textbf{0.658} & 0.698 & 0.698 \\
+scp2 & 0.829 & 0.908 & 0.928 & 0.928 & \textbf{0.928} & 0.878 & 0.878 \\
+START & 0.828 & 0.828 & 0.828 & 0.654 & \textbf{0.654} & 0.654 & 0.693 \\
+\hline
+mean & 0.826 & 0.828 & 0.810 & 0.770 & \textbf{0.768} & 0.747 & 0.738 \\
+positives left in training, lowest & 378 & 378 & 343 & 307 & \textbf{307} & 256 & 142 \\
+\hline
+\end{tabular}
+\caption{Similarity of the held-out block to the training chemistry, per family and per threshold:
+the mean over the block's structures of the highest Tanimoto similarity to a structure still in
+training. Lower is more isolated. The column in use is 0.80.}
+\label{tab:coldsplitshare}
+\end{table}
+
+The similarity does not fall monotonically with the threshold, since a newly removed class can
+bring in structures whose own relatives stay behind. The value used is 0.80. It reaches a mean
+similarity of 0.768 and still leaves every family at least 307 positives to train on; beyond it
+the gain is small and the cost is not. One threshold serves all families even though their optima
+differ. scp2 is the one to read with care: it stays near 0.9 wherever the threshold is put, so its
+block is never a test of unseen chemistry.
+
+Table~\ref{tab:doublesplit} reports the resulting blocks. ML and OSBP cannot be run: with ten and
+six positives in the whole family, no block can be assembled at any threshold.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrrrr}
+\hline
+held-out family & classes removed & positives in block & train positives lost & train & valid & test \\
+\hline
+CRAL-TRIO & 8 & 136 & 121 & 1110 & 309 & 309 \\
+GLTP & 3 & 65 & 1 & 1731 & 66 & 67 \\
+IP\_trans & 3 & 47 & 207 & 1179 & 331 & 331 \\
+LBP\_BPI\_CETP & 3 & 45 & 188 & 1251 & 296 & 295 \\
+lipocalin & 15 & 72 & 228 & 1029 & 403 & 403 \\
+scp2 & 9 & 36 & 143 & 1416 & 264 & 263 \\
+START & 5 & 133 & 197 & 921 & 460 & 459 \\
+\hline
+\end{tabular}
+\caption{Blocks produced by the two-axis split, at threshold 0.80 and two negatives per positive,
+averaged over five seeds.}
+\label{tab:doublesplit}
+\end{table}
+
+Two properties of these blocks matter when per-family results are read. Removing the sphingolipids
+costs training a single positive, the one sphingomyelin LCN1 takes. The model therefore reaches the
+GLTP block having seen one positive sphingolipid in all, and that block is also the smallest, at 67
+rows. Second, a protein whose positives all lay in the removed classes
+contributes nothing to training yet still appears in the block, through its own rows in those
+classes. For lipocalin this is four of the 25 proteins outside the held-out family.
+
+The two operations have to be ordered with care. Removing classes cuts across proteins, so a
+protein whose positives lay in a removed class loses nearly all of its positives and almost none
+of its negatives. Sampling negatives over the whole table and cutting afterwards produced proteins
+with four positives against 91 negatives. It also produced proteins that entered training with a
+single label value, which no reweighting can repair. Negatives are therefore matched to positives
+separately within each side of the coming split. After that no protein is one-sided and no row is
+discarded.
+
+\paragraph{What the splits guarantee.} A split is accepted only once the reference predictor
+reaches chance with no species in common between training and test (Table~\ref{tab:baselines}).
+What it still does not remove is extrapolation by chemical similarity. An unseen species can
+resemble one that was seen, and resemblance to a training positive is again a prediction that
+requires no protein. That residual is measured rather than eliminated, which is why the reference
+for ranking quality is a chemistry-based null model rather than chance.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrr}
+\hline
+split & reference predictor (test) & test species seen in training \\
+\hline
+protein families held out & 0.588 & 99.9\% \\
+two axes, familiar rows retained & 0.506 & 9\% \\
+two axes & 0.500 & 0\% \\
+lipid chemistry held out & 0.500 & 0\% \\
+\hline
+\end{tabular}
+\caption{Balanced accuracy of a predictor that ignores the protein and answers with the training
+frequency of the species, and the corresponding overlap of species between training and test, over
+every family that can be held out: nine for the protein split, seven for the two-axis one.}
+\label{tab:baselines}
+\end{table}
+
+With nine families of very unequal size no single split is representative of the panel, so each
+family that can be held out is held out in turn and reported on its own.

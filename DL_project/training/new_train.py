@@ -57,6 +57,10 @@ from architecture.loss import (
 from dataloader.sampler import ClassBalancedBatchSampler
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.New_dataloader import PLIDataset
+from candidate_averaging import (
+    CandidateAccumulator,
+    average_candidate_predictions,
+)
 from reproducibility import seed_everything, seed_worker, seeded_generator
 from run_metrics import (
     RUN_METRIC_FIELDS,
@@ -810,6 +814,10 @@ def _bilevel_lambda_step():
     labels_v = prot_v.inter.to(device, non_blocking=True)
     hyper_optimizer.zero_grad()
     outl_v = model(**_build_forward_args(prot_v, lipid_v))
+    # The bilevel step reads the validation split, so on an expanded one its batches are
+    # candidate copies; averaging them here keeps the hyper loss a per-pair quantity,
+    # the same one the reported validation loss is.
+    outl_v, labels_v, _ = average_candidate_predictions(outl_v, prot_v, labels_v)
     validate_prediction_label_shapes(outl_v, labels_v, "bilevel", 0)
     val_loss = _eval_task_loss(outl_v, labels_v)
     val_loss = val_loss + conf.sparsity_lambda * collect_sparsity_penalty(model).to(val_loss.device)
@@ -914,19 +922,44 @@ def _dynamics_valid_pass(collect_pooled=False):
     pooled_lipid = []
     pooled_protein = []
     protein_ids = []
+    # On an expanded split the rows are candidates, not pairs, so the pass collects them
+    # and the metric is computed once from the per-pair averages (see run_test for the
+    # same shape). Without the flag this is None and nothing changes.
+    accumulator = CandidateAccumulator() if conf.eval_average_candidates else None
+    seen_pairs = set()
     with torch.no_grad():
         for prot, lipid in valid_loader:
             prot = prot.to(device, non_blocking=True)
             lipid = lipid.to(device, non_blocking=True)
             labels = prot.inter.to(device, non_blocking=True).long()
             outl = model(**_build_forward_args(prot, lipid))
-            loss = _eval_task_loss(outl, labels)
-            update_aggregate(stats, outl.argmax(dim=1), labels, loss, labels.shape[0])
+            if accumulator is not None:
+                accumulator.add(outl, prot, labels)
+            else:
+                loss = _eval_task_loss(outl, labels)
+                update_aggregate(stats, outl.argmax(dim=1), labels, loss, labels.shape[0])
             partners = model.final_layer._pooled_partners
             if collect_pooled and partners is not None:
-                pooled_lipid.append(partners[0].cpu())
-                pooled_protein.append(partners[1].cpu())
-                protein_ids.append(prot.protein_id.view(-1).cpu())
+                # One pooled vector per candidate on an expanded split; keeping the first
+                # row of each pair leaves this diagnostic one row per pair, as it is when
+                # nothing is expanded.
+                keep = slice(None)
+                if accumulator is not None:
+                    keep = []
+                    for position, pair in enumerate(
+                        prot.candidate_group.view(-1).tolist()
+                    ):
+                        if pair not in seen_pairs:
+                            seen_pairs.add(pair)
+                            keep.append(position)
+                    keep = torch.tensor(keep, dtype=torch.long)
+                pooled_lipid.append(partners[0][keep].cpu())
+                pooled_protein.append(partners[1][keep].cpu())
+                protein_ids.append(prot.protein_id.view(-1)[keep].cpu())
+    if accumulator is not None:
+        averaged, labels, _ = accumulator.averaged()
+        loss = _eval_task_loss(averaged, labels)
+        update_aggregate(stats, averaged.argmax(dim=1), labels, loss, labels.shape[0])
     metrics = aggregate_values(stats)
     if not pooled_protein:
         return metrics, None
@@ -1281,6 +1314,9 @@ def epoch(idx,counttrain,countval):
         "count": 0,
         "loss_count": 0,
     }
+    valid_accumulator = (
+        CandidateAccumulator() if conf.eval_average_candidates else None
+    )
     with torch.no_grad():
         print("VALIDATION")
         for i , graph in enumerate(valid_loader):
@@ -1292,6 +1328,12 @@ def epoch(idx,counttrain,countval):
     
             forward_args = _build_forward_args(prot, lipid)
             outl = model(**forward_args)
+            if valid_accumulator is not None:
+                # Candidates of one pair are scattered over the shuffled batches; the
+                # pass collects them and the block is scored once below, so the loss and
+                # the counters see pairs rather than candidates.
+                valid_accumulator.add(outl, prot, interaction_labels)
+                continue
             sample_count = validate_prediction_label_shapes(
                 outl, interaction_labels, "valid", i + 1
             )
@@ -1322,6 +1364,22 @@ def epoch(idx,counttrain,countval):
             labels = interaction_labels.long()
             update_aggregate(valid_stats, pred_class, labels, los, sample_count)
             countval +=1
+    if valid_accumulator is not None:
+        outl, interaction_labels, averaged_protein_ids = valid_accumulator.averaged()
+        sample_count = validate_prediction_label_shapes(
+            outl, interaction_labels, "valid", 1
+        )
+        # Chunked to the training batch size, so a loss defined over a batch keeps its
+        # scale; the ranking loss also needs the protein ids that survived the reduction.
+        los, _ = _batched_block_loss(outl, interaction_labels, averaged_protein_ids)
+        update_aggregate(
+            valid_stats,
+            outl.argmax(dim=1),
+            interaction_labels.long(),
+            los,
+            sample_count,
+        )
+        countval += 1
     train_metrics = aggregate_values(train_stats)
     valid_metrics = aggregate_values(valid_stats)
     log_epoch_metrics(writer_tb, idx, "train", train_metrics)
@@ -1332,6 +1390,105 @@ def epoch(idx,counttrain,countval):
     print(f"valid epoch balanced_accuracy: {format_metric(valid_metrics['balanced_accuracy'])}")
     
     return counttrain, countval, train_metrics, valid_metrics
+
+
+def _batched_block_loss(outl, labels, protein_ids=None):
+    """The evaluation loss of one averaged block, computed the way a pass computes it.
+
+    Cross-entropy decomposes per row, so cutting the block into chunks changes nothing.
+    The ranking loss and the positive-unlabelled risk do not: both are defined over the
+    rows in front of them, and evaluating them once over a whole block forms pairs, and
+    estimates class priors, on a sample the training loss never sees at once. The block
+    is therefore cut into chunks the size of a training batch and the chunk losses are
+    averaged by row count -- the same arithmetic the per-batch path performs, so the
+    validation curve stays comparable with the training one.
+
+    Returns (weighted mean loss, row count).
+    """
+    rows = int(labels.shape[0])
+    if rows == 0:
+        return 0.0, 0
+    size = max(1, int(conf.batch))
+    total = 0.0
+    for start in range(0, rows, size):
+        stop = min(start + size, rows)
+        chunk_labels = labels[start:stop]
+        if (
+            conf.loss_type == "pairwise_rank"
+            and conf.rank_within_protein
+            and protein_ids is not None
+        ):
+            chunk_loss = pairwise_ranking_loss(
+                outl[start:stop],
+                chunk_labels.long(),
+                protein_ids=protein_ids.view(-1)[start:stop],
+            )
+        else:
+            chunk_loss = _eval_task_loss(outl[start:stop], chunk_labels)
+        value = (
+            chunk_loss.item() if isinstance(chunk_loss, torch.Tensor) else chunk_loss
+        )
+        total += value * (stop - start)
+    return total / rows, rows
+
+
+def _score_averaged_block(accumulator):
+    """Confusion counts, loss and per-protein counts for one averaged evaluation block.
+
+    The counterpart of the per-batch bookkeeping in run_test, run once on the per-pair
+    averages instead of once per batch. The per-row loss is the cross-entropy of the
+    averaged probability where the run's loss decomposes per row, and the block loss
+    spread evenly over the rows where it does not -- the same substitution the per-batch
+    path makes for the ranking and positive-unlabelled losses.
+    """
+    outl, labels, protein_ids = accumulator.averaged()
+    labels = labels.long()
+    if conf.loss_type == "cross_entropy" and not conf.pu_loss:
+        sample_losses = F.cross_entropy(outl, labels, reduction="none")
+        block_loss = float(sample_losses.mean())
+    else:
+        block_loss, _ = _batched_block_loss(outl, labels, protein_ids)
+        sample_losses = torch.full(labels.shape, block_loss, device=outl.device)
+
+    predictions = outl.argmax(dim=1)
+    correct = predictions == labels
+    positive = predictions == 1
+    total_tp = int((correct & positive).sum())
+    total_fp = int((~correct & positive).sum())
+    total_tn = int((correct & ~positive).sum())
+    total_fn = int((~correct & ~positive).sum())
+
+    subgroup_stats = {}
+    if protein_ids is not None:
+        for protein_id, prediction, label, sample_loss in zip(
+            protein_ids.view(-1).cpu().tolist(),
+            predictions.cpu().tolist(),
+            labels.cpu().tolist(),
+            sample_losses.detach().cpu().tolist(),
+        ):
+            stats = subgroup_stats.setdefault(
+                protein_id, {"TP": 0, "FP": 0, "TN": 0, "FN": 0, "loss": 0.0, "count": 0}
+            )
+            if prediction == label and prediction == 1:
+                stats["TP"] += 1
+            elif prediction != label and prediction == 1:
+                stats["FP"] += 1
+            elif prediction == label and prediction == 0:
+                stats["TN"] += 1
+            else:
+                stats["FN"] += 1
+            stats["loss"] += sample_loss
+            stats["count"] += 1
+
+    return (
+        total_tp,
+        total_fp,
+        total_tn,
+        total_fn,
+        block_loss * labels.shape[0],
+        int(labels.shape[0]),
+        subgroup_stats,
+    )
 
 
 def run_test(run_summary):
@@ -1347,6 +1504,10 @@ def run_test(run_summary):
     total_loss_count = 0
     subgroup_stats = {}
 
+    # Expanded split: one row per candidate structure. The pass collects them and the
+    # block is scored once, below, so a pair contributes one prediction to the totals and
+    # to its protein's subgroup whatever its candidate count.
+    test_accumulator = CandidateAccumulator() if conf.eval_average_candidates else None
     with torch.no_grad():
         for i , graph in enumerate(test_loader):
             prot,lipid = graph
@@ -1357,6 +1518,9 @@ def run_test(run_summary):
 
             forward_args = _build_forward_args(prot, lipid)
             outl = model(**forward_args)
+            if test_accumulator is not None:
+                test_accumulator.add(outl, prot, interaction_labels)
+                continue
             sample_count = validate_prediction_label_shapes(
                 outl, interaction_labels, "test", i + 1
             )
@@ -1430,6 +1594,17 @@ def run_test(run_summary):
                     stats["FN"] += 1
                 stats["loss"] += sample_loss
                 stats["count"] += 1
+
+    if test_accumulator is not None:
+        (
+            total_tp,
+            total_fp,
+            total_tn,
+            total_fn,
+            total_loss,
+            total_loss_count,
+            subgroup_stats,
+        ) = _score_averaged_block(test_accumulator)
 
     metrics = metric_values(total_tp, total_fp, total_tn, total_fn, total_loss, total_loss_count)
 

@@ -19,9 +19,41 @@ def test_model_config_lipid_fragment_modes_are_mutually_exclusive():
     assert config.lipid_random_choice is False
 
 
-def test_lipid_first_fragment_only_defaults_on_and_composes_with_every_treatment():
+def test_lipid_first_fragment_only_defaults_off_for_every_treatment():
     for treatment in ("concat", "random_choice", "fragments_mask"):
         config = ModelConfig(lipid_fragments_treatment=treatment)
+
+        config.validate()
+
+        assert config.lipid_first_fragment_only is False
+
+
+def test_default_treatment_draws_a_candidate_per_presentation():
+    config = ModelConfig()
+
+    config.validate()
+
+    assert config.lipid_fragments_treatment == "random_choice"
+    assert config.lipid_random_choice is True
+    assert config.lipid_first_fragment_only is False
+
+
+def test_random_choice_rejects_lipid_first_fragment_only():
+    config = ModelConfig(
+        lipid_fragments_treatment="random_choice",
+        lipid_first_fragment_only=True,
+    )
+
+    with pytest.raises(ValueError, match="lipid_first_fragment_only"):
+        config.validate()
+
+
+def test_first_fragment_only_still_composes_with_the_other_treatments():
+    for treatment in ("concat", "fragments_mask"):
+        config = ModelConfig(
+            lipid_fragments_treatment=treatment,
+            lipid_first_fragment_only=True,
+        )
 
         config.validate()
 

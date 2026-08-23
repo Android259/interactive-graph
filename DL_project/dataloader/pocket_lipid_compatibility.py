@@ -42,16 +42,30 @@ def smiles_for_row(row):
 
     SmileGlobal first, SmileFragment as fallback -- the same preference order
     chain_length_per_protein used before this was factored out. A cell can carry
-    several candidates separated by ';'; only the first is used, matching how the
-    rest of the project treats multi-candidate cells (e.g. species_similarity's
-    per-structure max, not an average over candidates).
+    several candidates separated by ';'; this returns the first of them, and
+    candidates_for_row returns all.
+    """
+    candidates = candidates_for_row(row)
+    return candidates[0] if candidates else None
+
+
+def candidates_for_row(row):
+    """Every candidate structure listed for one row, in field order.
+
+    The candidates are the isomers the spectrum could not separate, so which of them the
+    measured molecule was is unknown. A quantity derived from the structure is therefore
+    a quantity with a spread, and taking the first candidate reports one arbitrary member
+    of it -- the member the annotation happened to list first, which is not a property of
+    the lipid. The callers here average over the whole list instead, which is also what
+    the averaged evaluation does to the model's own predictions.
     """
     for column in ("SmileGlobal", "SmileFragment"):
         text = str(row.get(column, "")).strip()
         if text in EMPTY:
             continue
-        return text.split(";")[0].strip()
-    return None
+        parts = [part.strip() for part in text.split(";")]
+        return [part for part in parts if part and part not in EMPTY]
+    return []
 
 
 def longest_acyl_chain(smiles):
@@ -103,23 +117,120 @@ def longest_acyl_chain(smiles):
     return longest
 
 
-def chain_length_by_species(csv):
-    """Longest acyl chain per distinct FullIdentityOfLipid, computed once each.
+def chain_lengths_by_species(csv):
+    """Longest acyl chain of EVERY candidate structure, per FullIdentityOfLipid.
 
     A species can appear hundreds of times (once per protein it was screened against);
-    computing longest_acyl_chain per ROW would redo the same RDKit parse and BFS that
-    many times. None for a species RDKit cannot parse or that carries no qualifying
-    carbon at all -- the caller decides how to fill that in (see raw_compatibility).
+    computing this per ROW would redo the same RDKit parse and BFS that many times.
+
+    One value per candidate rather than one per species, because the candidates differ
+    in how the carbons are split between the two chains and their longest chains differ
+    with them -- PC(34:1) as 16:0/18:1 is 18 long, as 14:0/20:1 it is 20. Which of them
+    the model is looking at is decided per sample (the draw during training, the
+    candidate index during averaged evaluation), so the term that describes it has to be
+    available per candidate too; collapsing the list to one number would describe a
+    molecule that was never encoded.
+
+    Entries are NaN where RDKit cannot parse the candidate or it carries no qualifying
+    carbon at all, and a species with no usable candidate gets a single NaN -- the caller
+    decides how to fill that in (see raw_compatibility_matrix).
     """
     lengths = {}
     for species, rows in csv.groupby("FullIdentityOfLipid"):
-        smiles = None
+        candidates = []
         for _, row in rows.iterrows():
-            smiles = smiles_for_row(row)
-            if smiles is not None:
+            candidates = candidates_for_row(row)
+            if candidates:
                 break
-        lengths[species] = longest_acyl_chain(smiles) if smiles is not None else None
+        measured = [longest_acyl_chain(smiles) for smiles in candidates]
+        lengths[species] = numpy.array(
+            [numpy.nan if length is None else float(length) for length in measured]
+            or [numpy.nan],
+            dtype=float,
+        )
     return lengths
+
+
+def chain_length_by_species(csv):
+    """Mean longest acyl chain per species -- the candidate-blind summary.
+
+    What a caller that has no candidate to look at should use: the analysis scripts, and
+    the train-only statistics that must not depend on which candidate a row happened to
+    draw. The per-sample values come from chain_lengths_by_row instead, which numbers
+    the candidates the way the encoder does.
+    """
+    return {
+        species: (
+            None
+            if numpy.isnan(lengths).all()
+            else float(numpy.nanmean(lengths))
+        )
+        for species, lengths in chain_lengths_by_species(csv).items()
+    }
+
+
+def chain_lengths_by_row(csv, isomeric=False):
+    """Longest acyl chain per candidate, in the order the encoder numbers them.
+
+    Per ROW rather than per species, and deduplicated by canonical SMILES the way
+    LipidGraphBuilder._lipid_fragment_keys deduplicates: candidate index k has to name
+    the same structure on both sides. Rows of one species carry the same candidate SET
+    after preprocessing/complete_lipid_candidate_sets.py, but not the same ORDER -- each
+    row keeps its own annotation first -- so numbering off one arbitrary row of the
+    species would hand the compatibility term the length of a structure the encoder gave
+    a different index to.
+
+    Parsing is cached by field text and by candidate string, so the whole table costs
+    about as many RDKit parses as it has distinct structures.
+
+    Returns a list of per-row lists; entries are None where RDKit cannot parse the
+    candidate or it has no qualifying carbon, and a row with no usable candidate gets
+    [None].
+    """
+    by_field = {}
+    by_smiles = {}
+    per_row = []
+    for _, row in csv.iterrows():
+        field = tuple(candidates_for_row(row))
+        lengths = by_field.get(field)
+        if lengths is None:
+            lengths = []
+            seen = set()
+            for raw in field:
+                molecule = Chem.MolFromSmiles(raw)
+                if molecule is None or molecule.GetNumAtoms() == 0:
+                    continue
+                key = Chem.MolToSmiles(
+                    molecule, canonical=True, isomericSmiles=isomeric
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                if key not in by_smiles:
+                    by_smiles[key] = longest_acyl_chain(key)
+                lengths.append(by_smiles[key])
+            lengths = lengths or [None]
+            by_field[field] = lengths
+        per_row.append(lengths)
+    return per_row
+
+
+def _candidate_arrays(per_row):
+    """Per-candidate chain lengths, one array per row and each its own length.
+
+    Ragged on purpose. A rectangle would have to be padded to the widest candidate list
+    in the table -- 37 -- and every statistic computed over it would then count a row's
+    last structure once per padding slot, so a row with one candidate would weigh
+    thirty-seven times what it should. Each row carries exactly its own candidates
+    instead, and a lookup clamps the index to the row's own length.
+    """
+    return [
+        numpy.array(
+            [numpy.nan if length is None else float(length) for length in lengths],
+            dtype=float,
+        )
+        for lengths in per_row
+    ]
 
 
 def pocket_extent_by_protein(root_dir, protein_names):
@@ -171,8 +282,12 @@ def compat_input_width(config):
     return 0
 
 
-def raw_compatibility_parts(csv, root_dir):
+def raw_compatibility_parts(csv, root_dir, isomeric=False):
     """The two halves of the compatibility term, unmixed: (chain, extent, missing).
+
+    `chain` and `missing` are one array per row, as long as that row's candidate list,
+    and `extent` is one value per row, for the reason spelled out in raw_compatibility:
+    the lipid half is a property of the candidate structure, the protein half is not.
 
     Why the halves are worth having separately (files/compat_input_audit.md 1 and 7):
     `raw_compatibility` returns their DIFFERENCE, and a difference of a protein-only
@@ -188,13 +303,12 @@ def raw_compatibility_parts(csv, root_dir):
 
     Neither half reads Interaction, so nothing here can leak a label.
     """
-    lengths = chain_length_by_species(csv)
     protein_names = sorted(csv["LTPProtein"].dropna().unique().tolist())
     extents = pocket_extent_by_protein(root_dir, protein_names)
 
-    chain = csv["FullIdentityOfLipid"].map(lengths).to_numpy(dtype=float)
+    chain = _candidate_arrays(chain_lengths_by_row(csv, isomeric))
     extent = csv["LTPProtein"].map(extents).to_numpy(dtype=float)
-    return chain, extent, numpy.isnan(chain)
+    return chain, extent, [numpy.isnan(values) for values in chain]
 
 
 def coarsen_to_levels(values, edges):
@@ -223,26 +337,30 @@ def coarsen_to_levels(values, edges):
     return centres[which]
 
 
-def raw_compatibility(csv, root_dir):
+def raw_compatibility(csv, root_dir, isomeric=False):
     """pocket_extent(protein) - chain_length(lipid) for every row of `csv`.
 
     Both terms are pure geometry/chemistry -- neither reads Interaction -- so unlike
     dataloader/chemistry_prior.py's leave-one-out score, there is no label to leak and
     no special handling is needed for rows that are themselves part of a reference set.
 
+    Both are one array per row, as long as that row's candidate list: the lipid half of
+    the term depends on which candidate structure the sample is encoded as, so the
+    difference does too, and which entry a sample reads is chosen where that structure is
+    chosen (New_dataloader.get). Entry 0 is the row's first candidate, which is what a
+    run that never draws sees.
+
     Returns (values, missing_chain_mask): a lipid whose SMILES RDKit cannot parse, or
     that has no non-aromatic non-ring carbon at all, gets NaN rather than a silently
-    wrong number; the mask says which rows those are so the caller can impute
+    wrong number; the mask says which entries those are so the caller can impute
     explicitly (raw_compatibility itself has no notion of "train", so it cannot decide
     what a safe fill value is) and log how many were affected rather than losing them
     quietly.
     """
-    lengths = chain_length_by_species(csv)
     protein_names = sorted(csv["LTPProtein"].dropna().unique().tolist())
     extents = pocket_extent_by_protein(root_dir, protein_names)
 
-    chain = csv["FullIdentityOfLipid"].map(lengths).to_numpy(dtype=float)
+    chain = _candidate_arrays(chain_lengths_by_row(csv, isomeric))
     extent = csv["LTPProtein"].map(extents).to_numpy(dtype=float)
-    missing = numpy.isnan(chain)
-    values = extent - chain
-    return values, missing
+    values = [extent[position] - lengths for position, lengths in enumerate(chain)]
+    return values, [numpy.isnan(row) for row in values]

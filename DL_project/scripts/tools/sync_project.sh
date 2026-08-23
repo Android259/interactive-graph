@@ -85,7 +85,12 @@ if [[ "${DIRECTION}" == "up" ]]; then
     (( NO_DELETE )) || rsync_flags+=(--delete --delete-excluded)
     rsync_filters=("${SYNC_PROTECT[@]}" "${SYNC_EXCLUDES[@]}")
 else
-    SYNC_EXCLUDES+=(--exclude='/data/')
+    # PREPENDED, not appended: the shared list now carves the interaction table and the
+    # Tanimoto artifacts out of the data exclusion so a cluster launch carries them up,
+    # and rsync takes the first matching rule. Appended, this exclusion would sit behind
+    # those includes and a download would pull the cluster's copy of the table over the
+    # local one -- the wrong direction for a file that is edited here.
+    SYNC_EXCLUDES=(--exclude='/data/' "${SYNC_EXCLUDES[@]}")
     rsync_filters=("${SYNC_EXCLUDES[@]}")
 fi
 

@@ -496,7 +496,20 @@ class ModelConfig:
     # expands a bare --lipid_coldsplit into one run per set.
     lipid_coldsplit: str = ""
     # How much of the held-out family's positives the derived class set has to cover.
-    coldsplit_share: float = 0.7
+    #
+    # 0.8 rather than 0.7: the value decides how many of a family's own classes leave
+    # with it, and the classes it stops short of are its lipids' closest relatives, so
+    # what it really sets is how far the held-out chemistry ends up from the chemistry
+    # left behind. Measured as the mean best Tanimoto similarity from the block to
+    # training (analysis/coldsplit_geometry.py --sweep), 0.7 leaves START at 0.828 and
+    # CRAL-TRIO at 0.902, while 0.8 brings them to 0.654 and 0.784 and the seven-family
+    # mean from 0.810 to 0.768. Past 0.8 the trade turns: 0.85 buys 0.02 more for fifty
+    # training positives, and 0.9 drops CRAL-TRIO to 142 of them.
+    #
+    # Both lookup baselines stay at 0.500 for every family at any value from 0.4 up
+    # (preprocessing/lipid_marginal_baseline.py), so this choice is about the distance,
+    # not about the guarantee; 0.3 is the one value in the sweep that breaks it.
+    coldsplit_share: float = 0.8
     excluded_subgroups: list = field(default_factory=list)
     balance_excluded_group_negatives: bool = False
     balance_negatives_by_family: bool = False
@@ -527,7 +540,7 @@ class ModelConfig:
     protein_only: bool = False
     batch: int = 16
     num_workers: int = 4
-    lipid_fragments_treatment: str = "concat"
+    lipid_fragments_treatment: str = "random_choice"
     protein_pooling: str = "attention_pos_bias"
     
     lipid_concat: bool = False
@@ -537,13 +550,28 @@ class ModelConfig:
     # species (sn-positional / double-bond isomers the spectrum cannot separate), and
     # the embedding path used to keep only the first of them regardless of
     # lipid_fragments_treatment -- which made all three treatments the same run. This
-    # flag is that behaviour, kept on by default so earlier runs stay reproducible;
-    # turn it off (no_lipid_first_fragment_only) to let the chosen treatment actually
-    # see the whole candidate set. It composes with every treatment: with it on,
-    # concat and fragments_mask degenerate to the single first candidate and
-    # random_choice always draws that same one. It governs the embedding path only;
-    # the lipid_graph_isomers path has always used every candidate.
-    lipid_first_fragment_only: bool = True
+    # flag is that behaviour. It is now OFF by default, so the chosen treatment sees
+    # the whole candidate set; runs before this change had it on and encoded the first
+    # candidate alone, whichever treatment they named. Turning it back on
+    # (--lipid_first_fragment_only) is only meaningful with concat or fragments_mask,
+    # which then degenerate to that single candidate; with random_choice the draw would
+    # have nothing to draw from, so validate() rejects the pair. It governs the
+    # embedding path only; the lipid_graph_isomers path has always used every candidate.
+    lipid_first_fragment_only: bool = False
+    # Marginalize evaluation over the candidate set instead of scoring one member of it.
+    # Training under random_choice teaches invariance to the degrees of freedom the mass
+    # spectrum left open, and this is that invariance on the reading side: a validation
+    # or test row is scored once per candidate and the probabilities are averaged before
+    # the threshold, so the metric is one quantity across epochs and is the answer for
+    # the species rather than for an arbitrary member of it.
+    eval_average_candidates: bool = False
+    # How many candidates of a pair the averaged evaluation actually scores. A species
+    # can list up to 37 of them and scoring every one makes the evaluation blocks larger
+    # than the training epoch (2912 rows against 345 pairs on START), while the
+    # candidates of one species sit at cosine 0.98 of each other in the embedding, so
+    # four evenly spread over the list carry nearly all of the variation at 2.7x the
+    # rows rather than 8.4x. 0 means every candidate.
+    eval_candidates_per_pair: int = 4
     lipid_isomers: bool = False
     lipid_graph_isomers: bool = False
 
@@ -885,6 +913,31 @@ class ModelConfig:
         self.lipid_concat = self.lipid_fragments_treatment == "concat"
         self.lipid_random_choice = self.lipid_fragments_treatment == "random_choice"
         self.lipid_fragments_mask = self.lipid_fragments_treatment == "fragments_mask"
+
+        if self.eval_candidates_per_pair < 0:
+            raise ValueError(
+                "eval_candidates_per_pair is how many candidate structures of a pair "
+                "the averaged evaluation scores and cannot be negative; pass 0 for all "
+                f"of them. Got {self.eval_candidates_per_pair}"
+            )
+
+        if self.eval_average_candidates and not self.lipid_random_choice:
+            raise ValueError(
+                "eval_average_candidates marginalizes a row over its candidate "
+                "structures, which only means something when the treatment picks one "
+                "of them: concat and fragments_mask already put every candidate into "
+                "the same input. Use it with --lipid_fragments_treatment=random_choice"
+            )
+
+        if self.lipid_random_choice and self.lipid_first_fragment_only:
+            raise ValueError(
+                "lipid_first_fragment_only truncates a row's candidate list to its "
+                "first entry before the draw happens, so random_choice would draw the "
+                "same structure every time and the two options cancel each other. Drop "
+                "lipid_first_fragment_only for a real draw over the candidates, or ask "
+                "for the single first candidate through "
+                "--lipid_fragments_treatment=concat instead"
+            )
         self.ordinary_prot_pooling = self.protein_pooling == "ordinary"
         self.prot_attention_pos_bias = self.protein_pooling == "attention_pos_bias"
         self.prot_pooling_by_pockets = self.protein_pooling == "pooling_by_pockets"
@@ -1671,6 +1724,8 @@ SIMPLE_BOOL_FLAGS = {
     "--lipid_output_graph_norm": "lipid_output_graph_norm",
     "lipid_first_fragment_only": "lipid_first_fragment_only",
     "--lipid_first_fragment_only": "lipid_first_fragment_only",
+    "eval_average_candidates": "eval_average_candidates",
+    "--eval_average_candidates": "eval_average_candidates",
     "lipid_isomers": "lipid_isomers",
     "--lipid_isomers": "lipid_isomers",
     "lipid_graph_isomers": "lipid_graph_isomers",
@@ -1811,6 +1866,9 @@ VALUE_HANDLERS = {
     ),
     "--excluded_groups=": set_config_field("excluded_groups", read_excluded_groups),
     "--negatives_per_positive=": set_config_field("negatives_per_positive", int),
+    "--eval_candidates_per_pair=": set_config_field(
+        "eval_candidates_per_pair", int
+    ),
     "--coldsplit_share=": set_config_field("coldsplit_share", float),
     "--lipid_coldsplit=": set_config_field("lipid_coldsplit", read_lipid_coldsplit),
     "--test_group=": set_config_field("test_group", read_test_group),

@@ -50,6 +50,9 @@ def make_dataset(config=None, graph_dir=None):
     dataset._lipid_graph_table_cache = {}
     dataset._lipid_encoding_cache = {}
     dataset._lipid_candidate_key_cache = {}
+    # Set per split by __iter__, which marks the training clone alone; a fixture stands
+    # for a non-drawing split unless a test says otherwise.
+    dataset._draw_lipid_candidate = False
     return dataset
 
 
@@ -168,23 +171,45 @@ def test_lipid_encoding_marks_every_fragment_when_flag_is_off():
     assert fragment_batch.tolist() == [0, 0, 1, 1]
 
 
-def test_lipid_encoding_random_choice_draws_among_all_fragments(monkeypatch):
+def test_lipid_encoding_is_fixed_on_a_split_that_does_not_draw(monkeypatch):
     dataset = make_embedding_dataset(
         lipid_random_choice=True, lipid_first_fragment_only=False
     )
-    monkeypatch.setattr(
-        "dataloader.lipid_graph_builder.random.choice", lambda values: values[-1]
-    )
+
+    def fail(values):
+        raise AssertionError("a non-drawing split must not consume the random stream")
+
+    monkeypatch.setattr("dataloader.lipid_graph_builder.random.choice", fail)
 
     encoding = dataset.lipid_encoding("0", "CC;CCC")
 
-    assert torch.equal(encoding, dataset.smiles_encoding["CCC"].squeeze())
+    assert torch.equal(encoding, dataset.smiles_encoding["CC"].squeeze())
+
+
+def test_cached_lipid_encoding_is_fixed_and_cached_without_the_draw(monkeypatch):
+    dataset = make_embedding_dataset(
+        lipid_random_choice=True, lipid_first_fragment_only=False
+    )
+
+    def fail(values):
+        raise AssertionError("a non-drawing split must not consume the random stream")
+
+    monkeypatch.setattr("dataloader.lipid_graph_builder.random.choice", fail)
+
+    seen = [dataset.cached_lipid_encoding("0", "CC;CCC") for _ in range(3)]
+
+    # Validation and test read the same molecule every epoch, so their metric is one
+    # quantity across epochs rather than a new draw each time.
+    for encoding in seen:
+        assert torch.equal(encoding, dataset.smiles_encoding["CC"].squeeze())
+    assert set(dataset._lipid_encoding_cache) == {("0", "CC;CCC")}
 
 
 def test_cached_lipid_encoding_redraws_on_every_access(monkeypatch):
     dataset = make_embedding_dataset(
         lipid_random_choice=True, lipid_first_fragment_only=False
     )
+    dataset._draw_lipid_candidate = True
     drawn = iter([0, 1, 1, 0])
     monkeypatch.setattr(
         "dataloader.lipid_graph_builder.random.choice",
@@ -207,6 +232,7 @@ def test_warm_lipid_encoding_does_not_draw_under_random_choice(monkeypatch):
     dataset = make_embedding_dataset(
         lipid_random_choice=True, lipid_first_fragment_only=False
     )
+    dataset._draw_lipid_candidate = True
 
     def fail(values):
         raise AssertionError("warming must not consume the random stream")
@@ -215,7 +241,13 @@ def test_warm_lipid_encoding_does_not_draw_under_random_choice(monkeypatch):
 
     dataset.warm_lipid_encoding("0", "CC;CCC")
 
+    # Both entries: the keys the training draw picks from, and the fixed encoding the
+    # other two splits read out of the shared cache.
     assert dataset._lipid_candidate_key_cache == {("0", "CC;CCC"): ("CC", "CCC")}
+    assert torch.equal(
+        dataset._lipid_encoding_cache[("0", "CC;CCC")],
+        dataset.smiles_encoding["CC"].squeeze(),
+    )
 
 
 def test_lipid_encoding_skips_empty_and_duplicate_fragments():
@@ -262,10 +294,28 @@ def test_lipid_graph_smiles_uses_random_fragment(monkeypatch):
         lipid_fragments_mask=False,
     )
     dataset = make_dataset(config)
+    dataset._draw_lipid_candidate = True
     monkeypatch.setattr("dataloader.New_dataloader.random.choice", lambda values: values[-1])
     row = pd.Series({"SmileGlobal": "CCO", "SmileFragment": "CC;CCC"})
 
     assert dataset.lipid_graph_smiles(row) == ["CCC"]
+
+
+def test_lipid_graph_smiles_is_fixed_on_a_split_that_does_not_draw(monkeypatch):
+    config = SimpleNamespace(
+        lipid_concat=False,
+        lipid_random_choice=True,
+        lipid_fragments_mask=False,
+    )
+    dataset = make_dataset(config)
+
+    def fail(values):
+        raise AssertionError("a non-drawing split must not consume the random stream")
+
+    monkeypatch.setattr("dataloader.New_dataloader.random.choice", fail)
+    row = pd.Series({"SmileGlobal": "CCO", "SmileFragment": "CC;CCC"})
+
+    assert dataset.lipid_graph_smiles(row) == ["CCO"]
 
 
 def test_lipid_graph_id_raises_when_graph_is_missing(tmp_path):

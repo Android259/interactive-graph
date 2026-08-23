@@ -251,7 +251,12 @@ def rnabang_edge_node_mode(config):
 
 class ProteinGraphData(Data):
     def __inc__(self, key, value, *args, **kwargs):
-        if key == "pair_id":
+        # Both are row identifiers rather than node indices: pair_id names the row in
+        # the interaction table, candidate_group names the pair whose candidates the
+        # averaged evaluation puts back together. Shifting either by the node count of
+        # the preceding graphs, which is what PyG does by default, would turn them into
+        # numbers that identify nothing.
+        if key in ("pair_id", "candidate_group"):
             return 0
         return super().__inc__(key, value, *args, **kwargs)
 

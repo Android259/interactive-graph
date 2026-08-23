@@ -53,7 +53,10 @@ class LipidIsomerGraphBuilder:
         global_smiles = self.canonical_lipid_smiles_list(smile_global)
         fragment_smiles = self.canonical_lipid_smiles_list(smile_fragment)
 
-        if self.config.lipid_random_choice and fragment_smiles:
+        # Same rule as the embedding path: the draw is a training-split augmentation,
+        # marked per clone in New_dataloader.__iter__. Validation and test fall through
+        # to the fixed first candidate below.
+        if self._draw_lipid_candidate and fragment_smiles:
             return [random.choice(fragment_smiles)]
         if self.config.lipid_concat or self.config.lipid_fragments_mask:
             if fragment_smiles:
