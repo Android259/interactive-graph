@@ -1,0 +1,197 @@
+\section{Experimental results}
+\label{sec:results}
+
+Results below are for
+\texttt{bbp\_dcs\_rand\_smd\_fa\_nps\_dpt01\_gm\_plm8\_hid8\_wd001\_ep120}: the 27286-parameter
+configuration of Table~\ref{tab:params}, on the two-axis split of Section~\ref{sec:splits}
+at threshold 0.80 (Table~\ref{tab:doublesplit}), with a lipid candidate drawn afresh at
+every presentation (\texttt{lipid\_random\_choice}) rather than fixed for the run. Every
+figure is over the two seeds this configuration was run at, 0 and 1, which change which
+zeros are drawn and how a block is halved into validation and test and nothing else.
+
+\subsection{Balanced accuracy at a fixed threshold}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrr}
+\hline
+family & test BA & reference (chemistry-blind) \\
+\hline
+CRAL-TRIO & 0.552 & 0.500 \\
+GLTP & 0.464 & 0.500 \\
+IP\_trans & 0.573 & 0.500 \\
+LBP\_BPI\_CETP & 0.601 & 0.500 \\
+lipocalin & 0.546 & 0.500 \\
+scp2 & 0.571 & 0.500 \\
+START & 0.505 & 0.500 \\
+\hline
+mean & 0.545 & 0.500 \\
+\hline
+\end{tabular}
+\caption{Balanced accuracy at the classifier's fixed 0.5 threshold, test split, epoch
+selected by the five-epoch rolling-mean rule of Section~\ref{sec:results}'s
+configuration. The reference is 0.500 by construction on this split
+(Table~\ref{tab:baselines}), so every entry above it is compared against a fixed point
+rather than against a moving one. No family reaches 0.60 by more than 0.001.}
+\label{tab:randba}
+\end{table}
+
+Balanced accuracy does not calibrate a threshold on this split: a chemistry-only
+predictor that ignores the protein and scores a lipid by the training positive rate of
+its nearest neighbours reaches BA 0.512 at a threshold fit on training while ranking the
+same rows at AUC 0.565--0.589 (Section~\ref{sec:splits}). A network compared to it by BA
+alone is credited for where its decision boundary sits, not for what it knows. Everything
+past this point is therefore reported as AUC, against the same chemistry-only null model,
+computed on the identical rows.
+
+\subsection{Ranking against the chemistry null model}
+
+Two questions are conflated by an AUC taken over the whole block: whether a lipid binds
+anything at all, which needs no protein and is what the null model answers, and whether
+it binds \emph{this} protein, which is the term the network exists to add. Pairs between
+two different proteins outnumber pairs within one by an order of magnitude, so the
+pooled AUC over a block answers mostly the first question. The same AUC computed inside
+one protein and averaged over proteins removes it by construction: every row of one
+protein shares the same partner, so only the pair is left to rank by. Both are reported,
+$k = 15$ nearest neighbours for the null model.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrrrr}
+\hline
+family & rows & pos. & net, pooled & net, in-protein & chem, pooled & chem, in-protein \\
+\hline
+CRAL-TRIO & 129 & 67 & 0.325 & 0.422 & 0.446 & 0.475 \\
+GLTP & 52 & 26 & 0.609 & 0.517 & 0.525 & 0.500 \\
+IP\_trans & 71 & 24 & 0.332 & 0.344 & 0.740 & 0.733 \\
+LBP\_BPI\_CETP & 71 & 24 & 0.627 & 0.609 & 0.660 & 0.688 \\
+lipocalin & 108 & 36 & 0.239 & 0.166 & 0.445 & 0.436 \\
+scp2 & 51 & 17 & 0.683 & 0.658 & 0.679 & 0.623 \\
+START & 153 & 64 & 0.446 & 0.445 & 0.481 & 0.459 \\
+\hline
+\end{tabular}
+\caption{Validation block, epoch 120, mean over two seeds. \emph{net}: the network's AUC
+on the checkpoint's own scores. \emph{chem}: the chemistry-only null model, $k=15$, on the
+same rows. \emph{pooled}: every cross-block pair. \emph{in-protein}: ranked inside one
+protein, then averaged over proteins (2 to 5 usable proteins per family, fewer than 6
+rows or a single class excluded).}
+\label{tab:randaucvalid}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrrrr}
+\hline
+family & rows & pos. & net, pooled & net, in-protein & chem, pooled & chem, in-protein \\
+\hline
+CRAL-TRIO & 128 & 67 & 0.292 & 0.310 & 0.426 & 0.419 \\
+GLTP & 50 & 25 & 0.606 & 0.524 & 0.491 & 0.500 \\
+IP\_trans & 70 & 23 & 0.385 & 0.387 & 0.657 & 0.729 \\
+LBP\_BPI\_CETP & 70 & 23 & 0.524 & 0.573 & 0.705 & 0.696 \\
+lipocalin & 108 & 36 & 0.355 & 0.238 & 0.471 & 0.380 \\
+scp2 & 51 & 17 & 0.545 & 0.531 & 0.653 & 0.575 \\
+START & 154 & 65 & 0.446 & 0.439 & 0.488 & 0.488 \\
+\hline
+\end{tabular}
+\caption{Test block, same checkpoints, same measurement as Table~\ref{tab:randaucvalid}.}
+\label{tab:randauctest}
+\end{table}
+
+The network exceeds the null model on exactly two of seven families in validation, GLTP
+and scp2, and on exactly one in test, GLTP -- the same two columns, pooled and
+in-protein, agree on which families these are, even though the two questions they answer
+are not the same. Every other family ranks below the chemistry-only model on both
+columns and both splits, LBP\_BPI\_CETP by as little as 0.033 pooled in validation and
+IP\_trans by as much as 0.408 pooled in validation. In-protein, the null model itself
+reaches 0.575--0.733 on the three families with the most chemically familiar blocks
+(IP\_trans, LBP\_BPI\_CETP, scp2), which is the residual similarity-based leak
+Section~\ref{sec:splits} measures rather than removes; a network below that line is
+ranking the block worse than nearest-neighbour chemistry alone.
+
+\subsection{Increment over chemistry}
+
+An upper bound on what the network adds to the chemistry score is a logistic fit of the
+label on the standardised chemistry score alone, then on chemistry plus the network's
+score, both fit \emph{on the block itself}: if the network cannot beat chemistry even
+with a coefficient chosen from the block's own labels, it has nothing left to add under
+any calibration learned elsewhere.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrr|rr}
+\hline
+& \multicolumn{2}{c}{validation} & \multicolumn{2}{c}{test} \\
+family & pooled & in-protein & pooled & in-protein \\
+\hline
+CRAL-TRIO & +0.096 & +0.033 & +0.138 & +0.114 \\
+GLTP & +0.200 & +0.221 & +0.144 & +0.032 \\
+IP\_trans & +0.022 & +0.013 & $-$0.025 & $-$0.005 \\
+LBP\_BPI\_CETP & $-$0.022 & $-$0.012 & +0.004 & $-$0.002 \\
+lipocalin & +0.195 & +0.124 & +0.160 & +0.144 \\
+scp2 & +0.075 & +0.020 & +0.018 & $-$0.018 \\
+START & +0.060 & +0.027 & +0.131 & +0.081 \\
+\hline
+\end{tabular}
+\caption{In-sample increment of AUC-equivalent fit quality, network plus chemistry over
+chemistry alone, epoch 120. A positive pooled entry can still be the marginal: lipocalin
+and CRAL-TRIO show large pooled increments while their in-protein networks rank below
+chemistry (Tables~\ref{tab:randaucvalid}--\ref{tab:randauctest}), so the pooled fit is
+crediting the network for chemistry it already had access to, not for a pair term.}
+\label{tab:randincrement}
+\end{table}
+
+Four families hold a positive in-protein increment on both splits: CRAL-TRIO, GLTP,
+lipocalin, START. On three of them -- CRAL-TRIO, lipocalin, START -- Tables
+\ref{tab:randaucvalid}--\ref{tab:randauctest} already show the network's own in-protein
+AUC ranking \emph{below} the chemistry null model on both splits. The increment is an
+in-sample fit free to assign the network's score any coefficient, including a negative
+one, so a positive value here does not corroborate the raw ranking; it is consistent with
+the fit absorbing block-specific noise, which is exactly the caveat an in-sample upper
+bound carries. GLTP is the one family where the two measurements agree with each other:
+its in-protein AUC exceeds chemistry on both splits (Tables
+\ref{tab:randaucvalid}--\ref{tab:randauctest}) and so does its increment -- but its block
+trains on a single positive of any kind (Table~\ref{tab:doublesplit}) and 2 usable
+proteins, so the agreement is read as a near-degenerate block, not as evidence of a pair
+term. scp2, the only family a pooled-AUC comparison on an earlier, non-deduplicated
+version of this table had reported as a reproducible positive case, holds a positive
+in-protein increment on validation (+0.020, matching its raw AUC there) and a negative
+one on test ($-$0.018, also matching). IP\_trans and LBP\_BPI\_CETP are the two families
+where raw AUC is clearly below chemistry on both splits and the increment does not
+contradict it: LBP\_BPI\_CETP's is negative on both ($-$0.012, $-$0.002), IP\_trans's is
+within 0.013 of zero on both rather than positive.
+
+\subsection{Epoch trajectory of the in-protein increment, scp2}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{lrrrrr}
+\hline
+& epoch 1 & epoch 10 & epoch 49 & epoch 51 & epoch 120 \\
+\hline
+valid, seed 0 & $-$0.365 & $-$0.224 & $-$0.071 & +0.017 & +0.010 \\
+valid, seed 1 & $-$0.096 & $-$0.099 & +0.072 & +0.070 & +0.061 \\
+test, seed 0 & +0.038 & +0.104 & +0.017 & $-$0.002 & +0.006 \\
+test, seed 1 & $-$0.237 & $-$0.014 & $-$0.117 & $-$0.135 & $-$0.095 \\
+\hline
+\end{tabular}
+\caption{net$_{\text{prot}}$ $-$ chem$_{\text{prot}}$ for scp2 at every saved checkpoint,
+by seed and split. Both validation seeds move from strongly negative to a stable positive
+plateau from epoch 49 on. Neither test seed shows the same trajectory: seed 0 peaks at
+epoch 10 (+0.104) and decays to +0.006; seed 1 stays negative at every saved epoch,
+$-$0.237 to $-$0.014.}
+\label{tab:scp2epochs}
+\end{table}
+
+\subsection{Conclusion}
+
+At a fixed threshold the network exceeds the chemistry-blind reference by 0.045 balanced
+accuracy on average and by no more than 0.101 on any family; ranked in-protein against a
+chemistry-only null model that requires no protein, it exceeds that model, mean over two
+seeds, on two of seven families in validation (GLTP, scp2) and one in test (GLTP), and no
+family on both splits. scp2's own per-seed, per-epoch trajectory shows why: both seeds
+learn something on validation, climbing from clearly negative to a stable positive
+plateau by epoch 49, but neither reproduces that trajectory on test, one decaying to
+zero and the other staying negative throughout. GLTP's two usable proteins and single
+training positive of any kind leave its margin unread as evidence of a pair term. On this panel,
+at this split, no family yet shows a pairwise lipid--protein signal beyond what chemical
+similarity to the training positives, or a near-degenerate block, already supplies.

@@ -855,7 +855,18 @@ class PLIDataset(
             )
         else:
             csvtrue, csvfalse = split_and_sample_interactions(csv, seed)
-        if self.excluded_groups and self.balance_excluded_group_negatives:
+        # Not under the two-axis split. This redraws the excluded group's negatives to
+        # 1:1 over its whole domain, blind to `strata`, so the negatives it adds land in
+        # held-out and retained classes alike and only the first kind survives into the
+        # block. Measured on the seven families it both shrank the block (lipocalin 216
+        # rows to 138-145) and made its size depend on the seed, which the per-(protein,
+        # class-side) match above is precisely what removes. With that match in place the
+        # ratio is already exact, so there is nothing for this to repair.
+        if (
+            self.excluded_groups
+            and self.balance_excluded_group_negatives
+            and not self.excluded_lipid_classes
+        ):
             csvfalse = rebalance_excluded_group_negatives(
                 csv, csvfalse, self.excluded_groups, seed
             )
@@ -898,18 +909,46 @@ class PLIDataset(
         # other proteins -- so keeping them lets a per-lipid label prior score on them,
         # which is the leak the class holdout exists to close; measured, they hold the
         # prior at 0.498 instead of the 0.500 the rest of the pool gives. They cannot go
-        # to train either, since their protein is held out. Dropping costs 3-17% of the
-        # working set and nothing from train, which never contained them.
+        # to train either, since their protein is held out. Dropping costs 1.1-5.1% of
+        # the working set at share 0.80 and two negatives per positive (scp2 1.1%, LBP
+        # 1.3%, IP_trans 1.8%, GLTP and lipocalin 2.4%, START 3.3%, CRAL-TRIO 5.1%) and
+        # nothing from train, which never contained them.
+        # The block is also restricted to the held-out proteins. A row of another
+        # protein in a removed class is cold on the lipid axis only -- its own family
+        # sits in train, and the model has seen that family bind and not bind -- so
+        # scoring it answers the one-axis question, not this one. Left in, it dominated:
+        # the held-out family held 20-44% of its own block (98% for GLTP, whose classes
+        # no other protein binds), so five of the seven per-family numbers were majority
+        # other-protein. Those rows cannot go to train either, since their class is what
+        # the second axis removes, so they are dropped like the ones above. What remains
+        # is the intersection the split is named for: neither the protein nor the lipid
+        # chemistry anywhere in train.
         if self.double_coldsplit and self.excluded_lipid_classes:
             excluded_classes = lipid_class_series(excluded_data).str.lower()
-            excluded_data = excluded_data[
-                excluded_classes.isin(self.excluded_lipid_classes)
-            ]
+            in_cold_chemistry = excluded_classes.isin(self.excluded_lipid_classes)
+            if self.excluded_groups:
+                held_out_protein = (
+                    excluded_data["ProteinDomain"].str.lower().isin(self.excluded_groups)
+                )
+            elif self.excluded_subgroups:
+                held_out_protein = excluded_data["LTPProtein"].isin(
+                    self.excluded_subgroups
+                )
+            else:
+                held_out_protein = pandas.Series(True, index=excluded_data.index)
+            excluded_data = excluded_data[in_cold_chemistry & held_out_protein]
         if self.test_group:
             domain_lower = excluded_data["ProteinDomain"].str.lower()
             csvtest = excluded_data[domain_lower == self.test_group].sample(frac=1)
             csvalidate = excluded_data[domain_lower != self.test_group].sample(frac=1)
-        elif self.balance_excluded_group_negatives:
+        else:
+            # Halve the two labels separately rather than the block as a whole. An
+            # undivided draw fixes only the total, so the positives fall where the seed
+            # puts them: on the two-axis blocks, which run from 108 to 328 rows, that
+            # put 23 of scp2's 36 positives in test and 13 in valid, and the two halves
+            # then measure different quantities. Splitting each label in half makes
+            # valid and test carry the same positive rate by construction, which is what
+            # lets a threshold picked on one be read on the other.
             positive_pool = excluded_data[excluded_data["Interaction"] == 1]
             negative_pool = excluded_data[excluded_data["Interaction"] == 0]
             positive_validate = positive_pool.sample(frac=0.5, random_state=seed)
@@ -917,9 +956,6 @@ class PLIDataset(
             csvalidate = pandas.concat(
                 [positive_validate, negative_validate]
             ).sample(frac=1, random_state=seed)
-            csvtest = excluded_data.drop(csvalidate.index).sample(frac=1)
-        else:
-            csvalidate = excluded_data.sample(frac=0.5, random_state=seed)
             csvtest = excluded_data.drop(csvalidate.index).sample(frac=1)
         return csvtrain, csvalidate, csvtest
 

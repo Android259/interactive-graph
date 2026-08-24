@@ -98,11 +98,24 @@ def split(csvt, family, seed, lipid_classes=(), double=False):
     excluded = csvt.drop(train.index)
     if double and lipid_classes:
         # --double_coldsplit: the family's rows in classes that stayed in train are
-        # dropped rather than evaluated, so no evaluated lipid has been seen in train.
+        # dropped rather than evaluated, so no evaluated lipid has been seen in train,
+        # and so are every other protein's rows in the removed classes -- their lipid is
+        # unseen but their family sits in train, which is the one-axis question, not
+        # this one. Mirrors the same restriction in `_split_interactions`.
         held = {name.lower() for name in lipid_classes}
-        excluded = excluded[lipid_class_series(excluded).str.lower().isin(held)]
-    valid = excluded.sample(frac=0.5, random_state=seed)
-    test = excluded.drop(valid.index)
+        excluded = excluded[
+            lipid_class_series(excluded).str.lower().isin(held)
+            & (excluded["ProteinDomain"].str.lower() == family.lower())
+        ]
+    # Stratified by label, matching `_split_interactions`: an undivided draw fixes only
+    # the total, so the positives fall where the seed puts them (measured there: 23 of
+    # scp2's 36 positives in test, 13 in valid), and valid/test then measure different
+    # quantities. Splitting each label in half separately keeps the same positive rate
+    # in both, which is what makes them agree row for row with the loader's own split.
+    positive_validate = excluded[excluded["Interaction"] == 1].sample(frac=0.5, random_state=seed)
+    negative_validate = excluded[excluded["Interaction"] == 0].sample(frac=0.5, random_state=seed)
+    valid = pandas.concat([positive_validate, negative_validate]).sample(frac=1, random_state=seed)
+    test = excluded.drop(valid.index).sample(frac=1)
     return train, valid, test
 
 

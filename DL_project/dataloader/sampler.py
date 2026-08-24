@@ -1,5 +1,7 @@
 """Interaction-pool and batch sampling utilities."""
 
+import re
+
 import pandas
 import torch
 
@@ -97,30 +99,14 @@ def split_and_sample_protein_balanced_interactions(csv, seed, ratio=1, strata=No
     return csvtrue, csvfalse
 
 
-def lipid_class_series(csv):
-    """Return the head-group class of every row, e.g. 'Phosphatidylcholine (34:1)' -> 'Phosphatidylcholine'.
-
-    `FullIdentityOfLipid` spells the class out in full and puts the acyl composition in
-    a trailing parenthesis; stripping that leaves 34 chemical classes over the 312
-    distinct lipids. The class, not the individual species, is the level a binding
-    preference actually lives at (a protein that takes PC(32:1) takes PC(34:1) too).
-
-    Two entries carry a stray ': ' prefix -- ': Phosphatidylcholine (32:2)' and
-    ': Phosphatidylglycerol (32:1)', 35 rows each. Dropping only the parenthesis left
-    them as classes of their own, so phosphatidylcholine and phosphatidylglycerol each
-    came out split in two and the count read 36. That is harmless for a balancer, which
-    merely matched two extra tiny cells, and not harmless at all for a split that holds
-    whole classes out of training: the real class would land in one fold and its double
-    in another, and the class prior would cross the cut through those 70 rows. Leading
-    punctuation is therefore removed before the class is read.
-    """
-    return (
-        csv["FullIdentityOfLipid"]
-        .astype(str)
-        .str.replace(r"\s*\(.*", "", regex=True)
-        .str.replace(r"^[^A-Za-z]+", "", regex=True)
-        .str.strip()
-    )
+# lipid_class_series and the ambiguity table live in dataloader.lipid_classes so the
+# preprocessing scripts can apply the same rule without importing torch. Re-exported
+# here because everything already reaches for them through this module.
+from dataloader.lipid_classes import (  # noqa: F401
+    AMBIGUOUS_CLASS_RESOLUTION,
+    head_group_class,
+    lipid_class_series,
+)
 
 
 # Lipid-class sets for --lipid_coldsplit: whole chemical families held out of training
