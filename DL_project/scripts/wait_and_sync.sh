@@ -3,7 +3,7 @@
 # then every POLL_SECONDS (default 60) pull each cluster's logs / TensorBoard
 # events / results and rebuild the metrics table once from the merged local tree.
 #
-#   bash scripts/wait_and_sync.sh                  # bigfoot, then kraken, repeat
+#   bash scripts/wait_and_sync.sh                  # bigfoot, kraken, kraken-cpu, repeat
 #   CLUSTERS=kraken bash scripts/wait_and_sync.sh  # one cluster only
 #   bash scripts/wait_and_sync.sh --once           # a single round, then exit
 #
@@ -31,7 +31,7 @@ export LC_ALL=C
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_PROJECT="${LOCAL_PROJECT:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 
-CLUSTERS="${CLUSTERS:-bigfoot kraken}"
+CLUSTERS="${CLUSTERS:-bigfoot kraken kraken-cpu}"
 read -r -a CLUSTER_LIST <<< "${CLUSTERS}"
 (( ${#CLUSTER_LIST[@]} > 0 )) || { printf 'CLUSTERS is empty.\n' >&2; exit 2; }
 

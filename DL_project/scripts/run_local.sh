@@ -40,8 +40,12 @@
 #   RESERVED_CORES          Cores held back from the CPU split. Default: 25% of
 #                           the CPUs detected on this machine, at least 2.
 #                           Override with 0 on a headless worker.
-#   MAX_OMP_THREADS_PER_JOB Upper bound for one training process. Default: 4,
-#                           the measured optimum on the local 12-CPU machine.
+#   MAX_OMP_THREADS_PER_JOB Upper bound for one training process. Default: 4, the
+#                           measured optimum on the local 12-CPU machine -- 1 instead
+#                           when the args file has --descriptors_head or
+#                           --pair_descriptors_only (measured too little compute per
+#                           batch for multithreading to pay for itself; see the comment
+#                           at MAX_OMP_THREADS_PER_JOB's assignment below).
 #   RESERVED_MEM_GIB        RAM held back from the job-count cap, same idea as
 #                           RESERVED_CORES but for memory. Default: 2 -- margin
 #                           on top of the free memory the kernel reports, NOT an
@@ -468,7 +472,20 @@ if (( LOCAL_JOBS < 1 )); then LOCAL_JOBS=1; fi
 if (( LOCAL_JOBS > total_jobs )); then LOCAL_JOBS=${total_jobs}; fi
 OMP_THREADS_PER_JOB="${OMP_THREADS_PER_JOB:-$(( usable_cores / LOCAL_JOBS ))}"
 if (( OMP_THREADS_PER_JOB < 1 )); then OMP_THREADS_PER_JOB=1; fi
-MAX_OMP_THREADS_PER_JOB="${MAX_OMP_THREADS_PER_JOB:-4}"
+# --descriptors_head/--pair_descriptors_only build ~1000 parameters/~3% of a full run's
+# (training/read_configuration.py's own docstrings for each) -- too little arithmetic
+# per batch for multithreading to earn back its own synchronisation cost. Measured on
+# this machine: a --descriptors_head grid stuck at 2 concurrent jobs under the default
+# cap of 4 threads/job (9 usable cores / 4 = 2) runs 9 at a time once threads/job drops
+# to 1 (9 / 1 = 9) -- pure wall-clock, no metric moves, since thread count only changes
+# which cores run the same at::parallel_for splits, never the arithmetic itself. An
+# explicit MAX_OMP_THREADS_PER_JOB still wins, same as every override on this page.
+default_max_omp_threads_per_job=4
+if args_file_has_flag "${ARGS_FILE}" --descriptors_head \
+    || args_file_has_flag "${ARGS_FILE}" --pair_descriptors_only; then
+    default_max_omp_threads_per_job=1
+fi
+MAX_OMP_THREADS_PER_JOB="${MAX_OMP_THREADS_PER_JOB:-${default_max_omp_threads_per_job}}"
 if (( OMP_THREADS_PER_JOB > MAX_OMP_THREADS_PER_JOB )); then
     OMP_THREADS_PER_JOB="${MAX_OMP_THREADS_PER_JOB}"
 fi
@@ -557,6 +574,16 @@ fi
 if ! python3 "${PROJECT_ROOT}/data/build_lipid_embedding_store.py" \
     --args_file="${ARGS_FILE}"; then
     printf 'WARNING: could not build the embedding store; jobs will read the pickle.\n' >&2
+fi
+
+# Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values (dataloader/
+# pair_descriptor_cache.py): built once here so the grid's N (group, seed) processes
+# share one cache instead of each re-running RDKit over the whole interaction table.
+# Never fatal: without it a job computes these values itself, exactly as before this
+# cache existed -- slower, not wrong.
+if ! python3 "${PROJECT_ROOT}/data/build_pair_descriptor_cache.py" \
+    --args_file="${ARGS_FILE}"; then
+    printf 'WARNING: could not build the pair descriptor cache; jobs will compute it themselves.\n' >&2
 fi
 
 # --- the memory budget, measured rather than assumed -----------------------------

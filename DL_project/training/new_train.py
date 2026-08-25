@@ -95,6 +95,10 @@ if conf.rnabang_frozen_node_adapter:
     model.set_rnabang_normalization(
         train_dataset.rnabang_normalization_stats()
     )
+if conf.pair_descriptor_pocket_shares_split:
+    model.set_pair_descriptor_pocket_share_normalization(
+        train_dataset.pocket_descriptor_stats()
+    )
 model = model.to(device)
 number_of_parameters=sum(p.numel() for p in model.parameters() if p.requires_grad)
 print(f"number of parameters : {number_of_parameters}")
@@ -1791,8 +1795,13 @@ for eepoch in range(EPOCHS):
         # After the epoch's own validation, so the ablated passes are compared against a
         # full-model number measured on the same weights.
         log_branch_dynamics(epoch_number, valid_metrics)
-        if conf.save_model_in_dynamics:
-            save_dynamics_milestone(epoch_number + 1)
+    if conf.save_model_in_dynamics:
+        # No longer nested under save_dynamics: the checkpoint itself does not depend on
+        # the curve-logging pass above (save_dynamics_milestone only reads model/conf),
+        # so a run that wants milestones without the two extra ablated validation passes
+        # (e.g. --descriptors_head, where those passes are no-ops -- see read_
+        # configuration.py's save_dynamics docstring) can set this flag alone.
+        save_dynamics_milestone(epoch_number + 1)
     if uses_fit_ramp:
         fit_progress = max(
             fit_progress,

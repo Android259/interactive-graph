@@ -24,10 +24,12 @@ from dataloader.pocket_lipid_compatibility import (
     coarsen_to_levels,
     compat_input_parts,
     pocket_extent_by_protein,
+    pocket_rim_core_aromatic_share_by_protein,
     raw_compatibility,
     raw_compatibility_parts,
 )
 from dataloader.pair_descriptors import as_arrays, descriptor_values_by_row
+from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.grab_dataset_graph import GrabDatasetGraphMixin
 from dataloader.lipid_embedding_store import load_lipid_embedding_store
 from dataloader.lipid_graph_builder import LipidGraphBuilder
@@ -777,7 +779,8 @@ class PLIDataset(
             setattr(self, name, frame.assign(**assigned))
 
     def _compute_pair_descriptors(self, csv):
-        """Attach --pair_descriptors' 6 standardised columns.
+        """Attach --pair_descriptors' 6 standardised columns (5 under
+        --no_pair_descriptor_extent, 8 under --pair_descriptor_pocket_shares_split).
 
         Fed to architecture/pair_descriptor_head.py's self-attention token set, one
         token each: chain length, unsaturation count and H-bond capacity (lipid-only),
@@ -794,6 +797,21 @@ class PLIDataset(
         --pair_descriptors requires --pocket_descriptors (ModelConfig.validate) and
         that tensor already carries them.
 
+        --pair_descriptor_pocket_shares_split swaps that pair for aromatic_share_core/
+        aromatic_share_rim (computed here, per protein, same as extent -- no split of
+        aromatic_share exists in the pocket descriptor tensor to read at forward time
+        the way extent's replacement, hydropathy_core/hydropathy_rim, does) plus
+        hydropathy_core/hydropathy_rim (read at forward time, already in that tensor).
+        See architecture/pair_descriptor_head.py and project memory
+        [[descriptors-path-fingerprint-leak]].
+
+        --no_pair_descriptor_extent drops the standalone extent token (the highest
+        family-identity signal of the three protein-only entries, eta^2 0.78 at full
+        resolution). occupancy keeps reading coarse_extent regardless -- it is a pair
+        term (heavy_atom_count vs extent), not a duplicate of the extent token, so
+        dropping the token does not remove the quantity from the model, only its
+        standalone exposure to self-attention.
+
         Standardised on TRAIN candidates only, same discipline as
         _compute_compatibility_input; missing (RDKit-unparseable) values are filled
         with the train mean, same as _raw_frozen_prior_columns.
@@ -802,12 +820,43 @@ class PLIDataset(
             return
 
         isomeric = getattr(self.config, "lipid_isomers", False)
-        chain = as_arrays(chain_lengths_by_row(csv, isomeric))
-        unsaturation = as_arrays(descriptor_values_by_row(csv, "unsaturation", isomeric))
-        hbond = as_arrays(descriptor_values_by_row(csv, "hbond", isomeric))
-        heavy = as_arrays(descriptor_values_by_row(csv, "heavy_atoms", isomeric))
-        extents = pocket_extent_by_protein(self.ROOT_DIR, self.protein_names)
+        # None (no current cache -- never built, or the interaction table/data/graphs
+        # changed since it was) falls every lookup below back to computing directly,
+        # exactly as before this cache existed. See dataloader/pair_descriptor_cache.py
+        # and data/build_pair_descriptor_cache.py, which scripts/run_local.sh runs once
+        # before a grid launches so its N (group, seed) processes share one build.
+        pair_cache = load_pair_descriptor_cache(self.ROOT_DIR, isomeric)
+        protein_cache = pair_cache["proteins"] if pair_cache else None
+        chain = as_arrays(chain_lengths_by_row(csv, isomeric, cache=pair_cache))
+        unsaturation = as_arrays(
+            descriptor_values_by_row(csv, "unsaturation", isomeric, cache=pair_cache)
+        )
+        hbond = as_arrays(descriptor_values_by_row(csv, "hbond", isomeric, cache=pair_cache))
+        heavy = as_arrays(
+            descriptor_values_by_row(csv, "heavy_atoms", isomeric, cache=pair_cache)
+        )
+        extents = pocket_extent_by_protein(
+            self.ROOT_DIR, self.protein_names, cache=protein_cache
+        )
         extent = csv["LTPProtein"].map(extents).to_numpy(dtype=float)
+
+        # --no_pair_descriptor_extent drops only the standalone extent TOKEN below;
+        # coarse_extent (right after) still feeds occupancy either way, since occupancy
+        # is a pair term (heavy_atom_count vs extent) regardless of whether extent is
+        # also exposed on its own.
+        include_extent = getattr(self.config, "pair_descriptor_extent", True)
+
+        split_pocket_shares = getattr(
+            self.config, "pair_descriptor_pocket_shares_split", False
+        ) and getattr(self.config, "pair_descriptor_pocket_shares", True)
+        if split_pocket_shares:
+            rim_core = pocket_rim_core_aromatic_share_by_protein(
+                self.ROOT_DIR, self.protein_names, cache=protein_cache
+            )
+            core_by_protein = {protein: value[0] for protein, value in rim_core.items()}
+            rim_by_protein = {protein: value[1] for protein, value in rim_core.items()}
+            aromatic_share_core = csv["LTPProtein"].map(core_by_protein).to_numpy(dtype=float)
+            aromatic_share_rim = csv["LTPProtein"].map(rim_by_protein).to_numpy(dtype=float)
 
         train_rows = self._original_rows(self.csvtrain)
 
@@ -865,8 +914,24 @@ class PLIDataset(
         extent_spread = extent_train.std() if len(extent_train) else 1.0
         extent_spread = extent_spread if extent_spread > 1e-12 else 1.0
 
+        def train_stats(values):
+            train_values = values[train_rows] if len(train_rows) else np.array([0.0])
+            mean = train_values.mean() if len(train_values) else 0.0
+            spread = train_values.std() if len(train_values) else 1.0
+            return mean, (spread if spread > 1e-12 else 1.0)
+
+        if split_pocket_shares:
+            aromatic_share_core_mean, aromatic_share_core_spread = train_stats(
+                aromatic_share_core
+            )
+            aromatic_share_rim_mean, aromatic_share_rim_spread = train_stats(
+                aromatic_share_rim
+            )
+
         def columns(rows):
-            names = list(raw) + ["extent"]
+            names = list(raw) + (["extent"] if include_extent else []) + (
+                ["aromatic_share_core", "aromatic_share_rim"] if split_pocket_shares else []
+            )
             if not len(rows):
                 return {f"_pair_desc_{name}": [] for name in names}
             out = {}
@@ -875,13 +940,32 @@ class PLIDataset(
                 out[f"_pair_desc_{name}"] = candidate_column(
                     [(row - mean) / spread for row in ragged_rows(values, rows)]
                 )
-            # Extent is one value per ROW (protein-level), repeated over that row's
-            # candidates -- chain gives the candidate count, not the value.
+            # Extent, and (under the split) aromatic_share_core/rim, are one value per
+            # ROW (protein-level), repeated over that row's candidates -- chain gives
+            # the candidate count, not the value.
             counts = [len(row) for row in ragged_rows(chain, rows)]
-            out["_pair_desc_extent"] = candidate_column([
-                np.full(count, (coarse_extent[row] - extent_mean) / extent_spread)
-                for count, row in zip(counts, rows)
-            ])
+            if include_extent:
+                out["_pair_desc_extent"] = candidate_column([
+                    np.full(count, (coarse_extent[row] - extent_mean) / extent_spread)
+                    for count, row in zip(counts, rows)
+                ])
+            if split_pocket_shares:
+                out["_pair_desc_aromatic_share_core"] = candidate_column([
+                    np.full(
+                        count,
+                        (aromatic_share_core[row] - aromatic_share_core_mean)
+                        / aromatic_share_core_spread,
+                    )
+                    for count, row in zip(counts, rows)
+                ])
+                out["_pair_desc_aromatic_share_rim"] = candidate_column([
+                    np.full(
+                        count,
+                        (aromatic_share_rim[row] - aromatic_share_rim_mean)
+                        / aromatic_share_rim_spread,
+                    )
+                    for count, row in zip(counts, rows)
+                ])
             return out
 
         self.csvtrain = self.csvtrain.assign(**columns(train_rows))
@@ -1406,10 +1490,20 @@ class PLIDataset(
         )
         # Only columns under --pair_descriptors (_compute_pair_descriptors): the 6
         # standardised tokens, in a fixed order architecture/pair_descriptor_head.py
-        # relies on (chain, unsaturation, hbond, heavy, occupancy, extent).
+        # relies on (chain, unsaturation, hbond, heavy, occupancy, extent) -- 5 under
+        # --no_pair_descriptor_extent, which _compute_pair_descriptors never creates
+        # the extent column for -- plus, under --pair_descriptor_pocket_shares_split,
+        # aromatic_share_core and aromatic_share_rim, in the same fixed order
+        # PairDescriptorHead.DATALOADER_TOKENS + SPLIT_DATALOADER_TOKENS relies on.
+        pair_descriptor_names = ["chain", "unsaturation", "hbond", "heavy", "occupancy"]
+        if getattr(self.config, "pair_descriptor_extent", True):
+            pair_descriptor_names.append("extent")
+        if getattr(
+            self.config, "pair_descriptor_pocket_shares_split", False
+        ) and getattr(self.config, "pair_descriptor_pocket_shares", True):
+            pair_descriptor_names += ["aromatic_share_core", "aromatic_share_rim"]
         pair_descriptor_columns = [
-            f"_pair_desc_{name}" for name in
-            ("chain", "unsaturation", "hbond", "heavy", "occupancy", "extent")
+            f"_pair_desc_{name}" for name in pair_descriptor_names
             if f"_pair_desc_{name}" in self.csv.columns
         ]
         self._pair_descriptor_tensor, self._pair_descriptor_offsets = _ragged_tensor(

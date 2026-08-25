@@ -33,13 +33,16 @@ source "${PROJECT_ROOT}/scripts/lib/grid_lib.sh"
 source "${PROJECT_ROOT}/scripts/lib/ssh_master_lib.sh"
 
 SKIP_PREFLIGHT="${SKIP_PREFLIGHT:-0}"
+DO_GRAPHICS="${DO_GRAPHICS:-0}"
+DO_SUMMARIZE="${DO_SUMMARIZE:-0}"
 
 usage() {
-    printf 'Usage: bash %s [--complete] [--seeds=LIST] [--groups=LIST] [--no_groups=LIST] SUBMIT_SCRIPT_OR_ARGS_FILE\n' "${0##*/}" >&2
+    printf 'Usage: bash %s [--complete] [--graphics] [--summarize] [--seeds=LIST] [--groups=LIST] [--no_groups=LIST] SUBMIT_SCRIPT_OR_ARGS_FILE\n' "${0##*/}" >&2
     printf 'Example: bash %s common_attention_all_groups\n' "${0##*/}" >&2
     printf 'Example: bash %s scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
     printf 'Example: bash %s --seeds=0,1,2 scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
     printf 'Example: bash %s --no_groups=GLTP scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
+    printf 'Example: bash %s --graphics --summarize scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
     printf '\n' >&2
     printf '  --seeds=LIST     Comma-separated seeds to run every excluded group on.\n' >&2
     printf '                   --seeds=0,1,2 runs all 9 groups on seeds 0, 1 and 2\n' >&2
@@ -51,6 +54,16 @@ usage() {
     printf '                   group out of a full run does not mean spelling out\n' >&2
     printf '                   the other 8.\n' >&2
     printf '  --complete       Submit only group/seed pairs without final test_metrics.\n' >&2
+    printf '  --graphics       After every submitted OAR job on this cluster drains,\n' >&2
+    printf '                   sync once more and run scripts/generate_config_graphics.sh\n' >&2
+    printf '                   for this label, quietly (its own narration goes to\n' >&2
+    printf '                   graphics/<label>/generate_graphics.log, not the terminal).\n' >&2
+    printf '                   Exits instead of handing off to the indefinite watcher.\n' >&2
+    printf '  --summarize      Same wait, then writes graphics/<label>/<label>.md from\n' >&2
+    printf '                   analysis/summarize_label.py and analysis/full_label_report.py\n' >&2
+    printf '                   (AUC vs the chemistry null model, in-sample increment --\n' >&2
+    printf '                   empty for a label with no saved checkpoints). Combines\n' >&2
+    printf '                   with --graphics; either alone still waits and exits.\n' >&2
 }
 
 # Pull option flags off the argument list; exactly one positional (the submitter
@@ -61,6 +74,14 @@ while (( $# > 0 )); do
     case "$1" in
         --complete)
             COMPLETE_ONLY=1
+            shift
+            ;;
+        --graphics)
+            DO_GRAPHICS=1
+            shift
+            ;;
+        --summarize)
+            DO_SUMMARIZE=1
             shift
             ;;
         --seeds=*)
@@ -228,12 +249,22 @@ if [[ -n "${REMOTE_SCRIPT}" && ! -f "${PROJECT_ROOT}/${REMOTE_SCRIPT}" ]]; then
     exit 2
 fi
 
+# variant is the label graphics/summarize below (and --complete's own
+# already-done scan) key everything on -- only an args-file target has one; the
+# legacy scripts/submit/*.sh path names no single label a report could be for.
+variant=""
+if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
+    variant="$(basename "${REMOTE_INPUT_PATH}" .md)"
+elif (( DO_GRAPHICS || DO_SUMMARIZE )); then
+    printf -- '--graphics/--summarize need an args-file target (which has a label), not a scripts/submit/*.sh script.\n' >&2
+    exit 2
+fi
+
 # Preserve locally completed pairs across the code-only rsync: the cluster's copy
 # of the project has no test_metrics tree of its own to scan, so this scan has to
 # happen here and travel as an environment variable. The remote submitter merges
 # it with reports already present on that cluster (grid_load_completed).
 if [[ "${COMPLETE_ONLY}" == "1" && -n "${REMOTE_INPUT_PATH}" ]]; then
-    variant="$(basename "${REMOTE_INPUT_PATH}" .md)"
     cold_series=0
     if args_file_has_flag "${PROJECT_ROOT}/${REMOTE_INPUT_PATH}" --cold_split; then
         cold_series=1
@@ -350,6 +381,16 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
         printf 'WARNING: could not build the embedding store; jobs will read the pickle instead.\n' >&2
     fi
 
+    # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values
+    # (dataloader/pair_descriptor_cache.py). Never fatal, same as above: a job that
+    # cannot read it just computes the values itself, slower but not wrong.
+    printf 'Building shared pair descriptor cache on %s (skipped if current).\n' "${remote}"
+    if ! ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+        "cd '${REMOTE_PROJECT}' && source $(printf '%q' "${CONDA_SH}") && conda activate $(printf '%q' "${CONDA_ENV}") && python3 data/build_pair_descriptor_cache.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")" \
+        2>&1 | sed 's/^/  /'; then
+        printf 'WARNING: could not build the pair descriptor cache; jobs will compute it themselves.\n' >&2
+    fi
+
     # One submitter for both series: it reads the config and picks the ordinary
     # or the cold-split rotation from the --cold_split flag in it.
     REMOTE_SCRIPT="scripts/launch/submit_grid.sh"
@@ -379,6 +420,85 @@ SESSION_MARKER="$(
         "cat '${REMOTE_QUEUE_DIR}/session_marker' 2>/dev/null || printf '%s\n' '${SESSION_MARKER}'"
 )"
 
+if (( DO_GRAPHICS || DO_SUMMARIZE )); then
+    # Bounded instead of the indefinite watcher below: poll only THIS cluster's
+    # OAR queue for this user until it drains, sync once more, generate what was
+    # asked for, exit -- "run this and hand back a report", not "watch forever".
+    # oarstat_json.py jobs is the same one-job-per-line primitive
+    # scripts/lib/progress_table.sh's own job table already uses; 60s rather
+    # than the watcher's 300s default because a --graphics/--summarize caller is
+    # explicitly waiting on this, not glancing at a table every so often.
+    what="$( { (( DO_GRAPHICS )) && printf 'graphics'
+                (( DO_GRAPHICS && DO_SUMMARIZE )) && printf ' and '
+                (( DO_SUMMARIZE )) && printf 'the summary'; } )"
+    printf 'Jobs queued. Waiting for %s@%s to drain before %s.\n' \
+        "${REMOTE_USER}" "${CLUSTER_NAME}" "${what}"
+    while :; do
+        remaining="$(
+            ssh -S "${SSH_CONTROL_PATH}" "${remote}" "oarstat -J -f -u '${REMOTE_USER}' 2>/dev/null" |
+                python3 "${PROJECT_ROOT}/scripts/lib/oarstat_json.py" jobs 2>/dev/null | wc -l
+        )"
+        (( remaining == 0 )) && break
+        sleep 60
+    done
+
+    CLUSTERS="${CLUSTER_NAME}" \
+    REMOTE_USER="${REMOTE_USER}" \
+    REMOTE_PROJECT="${REMOTE_PROJECT}" \
+    LOCAL_PROJECT="${PROJECT_ROOT}" \
+    CONDA_ENV="${CONDA_ENV}" \
+    MAX_WAITING_JOBS="${MAX_WAITING_JOBS}" \
+        bash "${PROJECT_ROOT}/scripts/wait_and_sync.sh" --once >/dev/null 2>&1 || true
+
+    mkdir -p "${PROJECT_ROOT}/graphics/${variant}"
+
+    if (( DO_GRAPHICS )); then
+        graphics_log="${PROJECT_ROOT}/graphics/${variant}/generate_graphics.log"
+        if bash "${PROJECT_ROOT}/scripts/generate_config_graphics.sh" "${variant}" \
+                > "${graphics_log}" 2>&1; then
+            printf 'Graphics written under graphics/%s/ (log: %s).\n' \
+                "${variant}" "${graphics_log#"${PROJECT_ROOT}"/}"
+        else
+            printf 'generate_config_graphics.sh failed; see %s\n' \
+                "${graphics_log#"${PROJECT_ROOT}"/}" >&2
+        fi
+    fi
+
+    if (( DO_SUMMARIZE )); then
+        # Same seed set this invocation actually submitted -- SEEDS_OVERRIDE if
+        # --seeds was given, DEFAULT_SEEDS (scripts/settings.sh) otherwise.
+        if [[ -n "${SEEDS_OVERRIDE:-}" ]]; then
+            read -r -a _report_seeds <<< "${SEEDS_OVERRIDE}"
+        else
+            _report_seeds=("${DEFAULT_SEEDS[@]}")
+        fi
+        seeds_csv="$(IFS=,; printf '%s' "${_report_seeds[*]}")"
+        summary_path="${PROJECT_ROOT}/graphics/${variant}/${variant}.md"
+        {
+            printf '# %s\n\n' "${variant}"
+            printf '## Summary (analysis/summarize_label.py)\n\n```\n'
+            python3 "${PROJECT_ROOT}/analysis/summarize_label.py" "${variant}" --by-groups 2>&1 \
+                || printf '(summarize_label.py exited non-zero; output above, if any, is what it printed before failing)\n'
+            printf '```\n\n'
+            # AUC against the chemistry null model and the in-sample increment,
+            # from analysis/full_label_report.py -- reads model checkpoints
+            # under models/<label>/. checkpoint_scores.score_checkpoints raises
+            # SystemExit("no checkpoints scored") when the label saved none
+            # (--save_model_in_dynamics was off, as descriptors_path_v2's is);
+            # `|| printf` keeps that from tripping this script's own set -e and
+            # aborting mid-file, so the section just ends with why it is empty.
+            printf '## AUC vs chemistry null model, in-sample increment (analysis/full_label_report.py)\n\n```\n'
+            python3 "${PROJECT_ROOT}/analysis/full_label_report.py" \
+                --label "${variant}" --seeds="${seeds_csv}" 2>&1 \
+                || printf '(full_label_report.py exited non-zero -- most likely no --save_model_in_dynamics checkpoints saved for this label)\n'
+            printf '```\n'
+        } > "${summary_path}"
+        printf 'Summary written to %s.\n' "${summary_path#"${PROJECT_ROOT}"/}"
+    fi
+
+    exit 0
+fi
+
 # Hand off to the watcher: it visits every cluster in turn, so jobs still running
 # on the OTHER cluster keep being synced too, and the metrics table is rebuilt
 # once per round from the merged local tree. WATCH_CLUSTERS=<name> narrows it
@@ -391,7 +511,7 @@ SESSION_MARKER="$(
 # installs on the frontend, so neither this terminal nor this computer has to
 # stay up for the queue to drain.
 printf 'Jobs queued. Waiting for completion and synchronization.\n'
-CLUSTERS="${WATCH_CLUSTERS:-bigfoot kraken}" \
+CLUSTERS="${WATCH_CLUSTERS:-bigfoot kraken kraken-cpu}" \
 REMOTE_USER="${REMOTE_USER}" \
 REMOTE_PROJECT="${REMOTE_PROJECT}" \
 LOCAL_PROJECT="${PROJECT_ROOT}" \

@@ -24,12 +24,18 @@ Two independent consumers of the raw value, wired in New_dataloader:
 Neither requires the other; both read the same raw_compatibility() output.
 """
 import os
+from pathlib import Path
 
 import numpy
 import pandas
 from rdkit import Chem
 
-from dataloader.protein_graph_builder import pocket_atom_coordinates, pocket_shape
+from dataloader.protein_graph_builder import (
+    AROMATIC_RESIDUE_TYPES,
+    pocket_atom_coordinates,
+    pocket_shape,
+)
+from dataloader.protein_graph_tensor_cache import _pocket_tensor
 
 # Sentinels this project's SMILES columns use for "no structure recorded", matching
 # analysis/pocket_shape_vs_binding.py, which imports EMPTY from here rather than
@@ -169,7 +175,7 @@ def chain_length_by_species(csv):
     }
 
 
-def chain_lengths_by_row(csv, isomeric=False):
+def chain_lengths_by_row(csv, isomeric=False, cache=None):
     """Longest acyl chain per candidate, in the order the encoder numbers them.
 
     Per ROW rather than per species, and deduplicated by canonical SMILES the way
@@ -183,10 +189,19 @@ def chain_lengths_by_row(csv, isomeric=False):
     Parsing is cached by field text and by candidate string, so the whole table costs
     about as many RDKit parses as it has distinct structures.
 
+    `cache`, when given, is a dataloader/pair_descriptor_cache.py load result
+    ({"raw_to_canonical", "values", ...}): a raw candidate present there skips both the
+    canonicalising parse and the length computation entirely. A raw string the cache has
+    never seen (a candidate added to the table since the cache was built) falls back to
+    computing it here exactly as without a cache -- an accelerator, not a second source
+    of truth this table could disagree with.
+
     Returns a list of per-row lists; entries are None where RDKit cannot parse the
     candidate or it has no qualifying carbon, and a row with no usable candidate gets
     [None].
     """
+    raw_to_canonical = cache["raw_to_canonical"] if cache else {}
+    cached_values = cache["values"] if cache else {}
     by_field = {}
     by_smiles = {}
     per_row = []
@@ -197,17 +212,25 @@ def chain_lengths_by_row(csv, isomeric=False):
             lengths = []
             seen = set()
             for raw in field:
-                molecule = Chem.MolFromSmiles(raw)
-                if molecule is None or molecule.GetNumAtoms() == 0:
-                    continue
-                key = Chem.MolToSmiles(
-                    molecule, canonical=True, isomericSmiles=isomeric
-                )
+                if raw in raw_to_canonical:
+                    key = raw_to_canonical[raw]
+                    if key is None:
+                        continue
+                else:
+                    molecule = Chem.MolFromSmiles(raw)
+                    if molecule is None or molecule.GetNumAtoms() == 0:
+                        continue
+                    key = Chem.MolToSmiles(
+                        molecule, canonical=True, isomericSmiles=isomeric
+                    )
                 if key in seen:
                     continue
                 seen.add(key)
                 if key not in by_smiles:
-                    by_smiles[key] = longest_acyl_chain(key)
+                    cached = cached_values.get(key)
+                    by_smiles[key] = (
+                        cached["chain"] if cached is not None else longest_acyl_chain(key)
+                    )
                 lengths.append(by_smiles[key])
             lengths = lengths or [None]
             by_field[field] = lengths
@@ -233,17 +256,74 @@ def _candidate_arrays(per_row):
     ]
 
 
-def pocket_extent_by_protein(root_dir, protein_names):
+def pocket_extent_by_protein(root_dir, protein_names, cache=None):
     """pocket_extent(p) for each named protein, reusing the model-facing geometry.
 
     Same pocket_atom_coordinates + pocket_shape that POCKET_DESCRIPTOR_NAMES' own
     pocket_extent entry uses -- this is that entry, not a second measurement of it.
+
+    `cache`, when given, is dataloader/pair_descriptor_cache.py's per-protein dict
+    ({name: {"extent", "aromatic_share_core", "aromatic_share_rim"}}); a name present
+    there skips the PDB re-parse. A name the cache has never seen falls back to parsing
+    it here, same as without a cache.
     """
+    cache = cache or {}
     extents = {}
     for protein in protein_names:
+        cached = cache.get(protein)
+        if cached is not None:
+            extents[protein] = cached["extent"]
+            continue
         path = os.path.join(root_dir, "graphs", protein, "pocketness.pdb")
         extents[protein] = pocket_shape(pocket_atom_coordinates(path))[0]
     return extents
+
+
+def pocket_rim_core_aromatic_share_by_protein(root_dir, protein_names, cache=None):
+    """(aromatic_share_core, aromatic_share_rim) for each named protein.
+
+    `cache`, when given, is dataloader/pair_descriptor_cache.py's per-protein dict; a
+    name present there skips the PDB/CSV re-parse below entirely, same fallback
+    discipline as pocket_extent_by_protein.
+
+    --pair_descriptor_pocket_shares_split (architecture/pair_descriptor_head.py) swaps
+    the whole-pocket aromatic_share/polar_share pair for this split plus
+    hydropathy_core/hydropathy_rim, which POCKET_DESCRIPTOR_NAMES already carries and are
+    read directly off the pocket descriptor tensor -- no aromatic_share_core/rim entry
+    exists there to match, so it is computed independently here rather than widening
+    that shared tensor, which every --pocket_descriptors run depends on, not just this
+    one flag. project memory [[descriptors-path-fingerprint-leak]]: on the descriptors_path
+    label, aromatic_share/polar_share are the suspected channel behind an excluded-family
+    outlier (LBP_BPI_CETP test BA 0.796 vs 0.44-0.60 everywhere else); this pair is the
+    untested alternative, motivated by files/pocket_shape_descriptors.md section 4a, where
+    hydropathy_core is the one entry whose sign survives both the within-family and the
+    all-protein check.
+
+    Same median-buriedness core/rim split and AROMATIC_RESIDUE_TYPES mask
+    protein_graph_builder.pocket_descriptor uses for hydropathy_core/hydropathy_rim --
+    imported, not re-derived, so the two definitions of "core" cannot silently diverge.
+    """
+    cache = cache or {}
+    shares = {}
+    for protein in protein_names:
+        cached = cache.get(protein)
+        if cached is not None:
+            shares[protein] = (cached["aromatic_share_core"], cached["aromatic_share_rim"])
+            continue
+        protein_dir = os.path.join(root_dir, "graphs", protein)
+        pocket = _pocket_tensor(Path(protein_dir) / "pocketness.pdb")
+        vertices = pandas.read_csv(os.path.join(protein_dir, "coarse_graph_nodes.csv"))
+        site = vertices[pocket.bool().numpy()]
+        residue_types = site["residue_type"].to_numpy(copy=True).astype(int)
+        aromatic = numpy.isin(residue_types, AROMATIC_RESIDUE_TYPES)
+        burial = site["residue_mean_buriedness"].to_numpy(dtype=float)
+        core = burial >= numpy.median(burial)
+        rim = ~core
+        shares[protein] = (
+            float(aromatic[core].mean()),
+            float(aromatic[rim].mean()) if rim.any() else float(aromatic.mean()),
+        )
+    return shares
 
 
 SPLIT_INPUT_PARTS = ("chain", "clash")

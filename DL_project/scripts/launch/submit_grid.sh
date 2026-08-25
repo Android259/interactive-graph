@@ -99,9 +99,14 @@ CONDA_ENV="${CONDA_ENV:-Kalinin_project_LP}"
 PROJECT="${PROJECT-pr-molgen}"
 GPU_PROPERTY="${GPU_PROPERTY-(gpumodel='A100' OR gpumodel='V100')}"
 # Shell `case` pattern matched against `nvidia-smi --query-gpu=name` inside the
-# job, hence the character whitelist below.
+# job, hence the character whitelist below. Empty on a CPU-only cluster
+# (CPU_ONLY=1, scripts/lib/cluster_common.sh's kraken-cpu profile), where there
+# is no GPU to name.
 GPU_MODEL_GLOB="${GPU_MODEL_GLOB:-*A100*|*V100*}"
-GPU_RESOURCES="${GPU_RESOURCES:-/nodes=1/gpu=1}"
+OAR_RESOURCES="${OAR_RESOURCES:-/nodes=1/gpu=1}"
+# 1 on kraken-cpu: no nvidia-smi, no GPU admission/lock/memory-wait in
+# run_one_experiment.sh / run_experiment_pack.sh, concurrency from cores alone.
+CPU_ONLY="${CPU_ONLY:-0}"
 MIN_FREE_GPU_MIB="${MIN_FREE_GPU_MIB:-16384}"
 # Distinguishes OAR output filenames between clusters, whose job-ID spaces
 # overlap (the progress table locates a running job's log by `*_${job_id}.out`).
@@ -149,7 +154,7 @@ if [[ ! "${MIN_FREE_GPU_MIB}" =~ ^[0-9]+$ ]]; then
     printf "MIN_FREE_GPU_MIB must be an integer: %s\n" "${MIN_FREE_GPU_MIB}" >&2
     exit 2
 fi
-if [[ ! "${GPU_MODEL_GLOB}" =~ ^[A-Za-z0-9_*?.|@%^:+-]+$ ]]; then
+if [[ "${CPU_ONLY}" != "1" && ! "${GPU_MODEL_GLOB}" =~ ^[A-Za-z0-9_*?.|@%^:+-]+$ ]]; then
     printf "GPU_MODEL_GLOB contains unsafe characters: %s\n" "${GPU_MODEL_GLOB}" >&2
     exit 2
 fi
@@ -286,7 +291,7 @@ oarsub_submit() {
     local job_name="$1" walltime="$2" out_prefix="$3" job_command="$4"
     local -a oarsub_args=(
         --name "${job_name}"
-        -l "${GPU_RESOURCES},walltime=${walltime}"
+        -l "${OAR_RESOURCES},walltime=${walltime}"
     )
     if [[ -n "${GPU_PROPERTY}" ]]; then
         oarsub_args+=(-p "${GPU_PROPERTY}")
@@ -328,9 +333,9 @@ submit_one() {
     IFS=$'\t' read -r _ log_file out_base _ <<< "${record}"
 
     printf -v job_command \
-        'cd %q && source %q && conda activate %q && GPU_MODEL_GLOB=%q MIN_FREE_GPU_MIB=%q bash scripts/launch/run_one_experiment.sh %q' \
+        'cd %q && source %q && conda activate %q && GPU_MODEL_GLOB=%q MIN_FREE_GPU_MIB=%q CPU_ONLY=%q bash scripts/launch/run_one_experiment.sh %q' \
         "${PROJECT_DIR}" "${CONDA_SH}" "${CONDA_ENV}" \
-        "${GPU_MODEL_GLOB}" "${MIN_FREE_GPU_MIB}" "$(pack_spec_encode "${record}")"
+        "${GPU_MODEL_GLOB}" "${MIN_FREE_GPU_MIB}" "${CPU_ONLY}" "$(pack_spec_encode "${record}")"
 
     oarsub_submit "$(job_name "${group}" "${seed}")" "${WALLTIME}" \
         "${out_base}${JOB_ID_TAG}%jobid%" "${job_command}"
@@ -350,8 +355,8 @@ submit_pack() {
     mkdir -p "${pack_dir}"
 
     printf -v runner_env \
-        'GPU_MODEL_GLOB=%q MIN_FREE_GPU_MIB=%q JOB_ID_TAG=%q PACK_PARALLEL=%q GPU_MIB_PER_RUN=%q PACK_GPU_PERCENT=%q PACK_CPU_PER_RUN=%q PACK_MIN_FREE_GPU_MIB=%q PACK_HARDWARE_AUTO=%q PACK_SKIP_DONE=%q' \
-        "${GPU_MODEL_GLOB}" "${MIN_FREE_GPU_MIB}" "${JOB_ID_TAG}" \
+        'GPU_MODEL_GLOB=%q MIN_FREE_GPU_MIB=%q CPU_ONLY=%q JOB_ID_TAG=%q PACK_PARALLEL=%q GPU_MIB_PER_RUN=%q PACK_GPU_PERCENT=%q PACK_CPU_PER_RUN=%q PACK_MIN_FREE_GPU_MIB=%q PACK_HARDWARE_AUTO=%q PACK_SKIP_DONE=%q' \
+        "${GPU_MODEL_GLOB}" "${MIN_FREE_GPU_MIB}" "${CPU_ONLY}" "${JOB_ID_TAG}" \
         "${PACK_PARALLEL}" "${GPU_MIB_PER_RUN}" "${PACK_GPU_PERCENT}" \
         "${PACK_CPU_PER_RUN}" "${PACK_MIN_FREE_GPU_MIB}" \
         "${PACK_HARDWARE_AUTO}" "${PACK_SKIP_DONE}"

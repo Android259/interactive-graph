@@ -368,6 +368,58 @@ class ModelConfig:
     # This flag reruns that same label with the suspect channel removed, to confirm
     # or kill the attribution.
     pair_descriptor_pocket_shares: bool = True
+    # --pair_descriptor_pocket_shares_split : replaces the whole-pocket aromatic_share/
+    # polar_share pair (POCKET_DESCRIPTOR_NAMES indices 10, 9) with aromatic_share_core,
+    # aromatic_share_rim (dataloader/pocket_lipid_compatibility.py's
+    # pocket_rim_core_aromatic_share_by_protein -- no such split exists in
+    # POCKET_DESCRIPTOR_NAMES, so it is computed independently rather than widening that
+    # shared tensor) and hydropathy_core, hydropathy_rim (already in that tensor, indices
+    # 11-12, read directly at forward time like aromatic_share/polar_share were). Four
+    # tokens instead of two: 10 total with --pair_descriptors, not 8.
+    #
+    # Untested alternative to the suspected leak in project memory
+    # [[descriptors-path-fingerprint-leak]]: on descriptors_path, aromatic_share/
+    # polar_share are the suspected channel behind LBP_BPI_CETP's outlier test BA (0.796,
+    # vs 0.44-0.60 on every other excluded family -- a profile a genuine cross-family
+    # lipid-chemistry signal should not produce). files/pocket_shape_descriptors.md
+    # section 4a flags hydropathy_core as the one entry whose sign survives both the
+    # within-family and the all-protein check, i.e. the best available "site not fold"
+    # candidate, and the rim/core split is physically closer to what these tokens are
+    # meant to proxy (aromatic near the double bond, polar at the headgroup) than a
+    # whole-pocket average. Requires --pair_descriptor_pocket_shares (see validate()) --
+    # nothing to split once the pocket-derived tokens are off.
+    pair_descriptor_pocket_shares_split: bool = False
+    # --no_pair_descriptor_extent : drops the coarsened pocket_extent token, the last of
+    # DATALOADER_TOKENS' base 6 (architecture/pair_descriptor_head.py) still unexamined --
+    # highest family-identity signal of the protein-only entries at full resolution
+    # (eta^2 0.78, files/compat_input_audit.md) even after the same coarsening
+    # --compatibility_split_input's "clash" term uses. occupancy keeps computing from
+    # extent internally (relu(cbrt(heavy_atom_count) - coarse_extent), dataloader/
+    # New_dataloader.py) regardless of this flag -- only the standalone extent token
+    # disappears from the self-attention set, occupancy is a pair term either way.
+    #
+    # Next suspect after --pair_descriptor_pocket_shares_split: on descriptors_path_v2,
+    # replacing aromatic_share/polar_share with the rim/core split did not close the
+    # LBP_BPI_CETP gap (test BA 0.796 -> 0.812, if anything wider), so extent -- the
+    # other protein-only channel among DATALOADER_TOKENS -- is next to isolate.
+    pair_descriptor_extent: bool = True
+    # PairDescriptorHead's own end-of-attention reduction (architecture/
+    # pair_descriptor_head.py) is tied to pool_type below, the SAME flag the rest of
+    # the model already answers "how to reduce many vectors to one" with -- under
+    # --descriptors_head there is no protein/lipid pooling anywhere else for pool_type
+    # to affect, so without this it would be read and silently ignored. "gem" reuses
+    # architecture.final_layer.GeMPool (one instance, its own learnable exponent);
+    # "add_max" doubles the head's output width (concat of add+max), same as it
+    # doubles pooled_lip_dim/pooled_prot_dim elsewhere -- Final_Layer sizes the
+    # classifier from PairDescriptorHead.output_dim, not a hardcoded hiddim, to match.
+    #
+    # --pair_descriptor_flatten skips this reduction entirely and concatenates the
+    # tokens instead (token_count*hiddim wide): the classifier reads every token's
+    # post-attention state at its own fixed position rather than one pool_type-
+    # reduced average/sum/max across them, at negligible extra parameter cost given
+    # how few tokens and how small hiddim are here. Takes priority over pool_type,
+    # same as attention_pooling/swe_pooling already do for the main pooling.
+    pair_descriptor_flatten: bool = False
     # Diagnostic ablation, mirroring --lipid_only/--protein_only: zeroes BOTH pooled
     # partners so the classifier reads only the descriptor head's output. Meant to be
     # set at EVAL time on a checkpoint trained with --pair_descriptors on, to measure
@@ -886,10 +938,14 @@ class ModelConfig:
     # per-branch gradient norms, the classifier's per-half input weight norms and the
     # between-protein spread of the pooled protein vector. Kilobytes over a whole run,
     # against the hundreds of megabytes that saving every epoch's weights would cost.
-    # save_model_in_dynamics adds weights at a few milestone epochs on top, for the
-    # probes that cannot be reduced to a scalar decided in advance; it turns
-    # save_dynamics on by itself, since milestone weights without the curves they are
-    # meant to explain would be weights nobody knows where to look in.
+    # save_model_in_dynamics adds weights at a few milestone epochs
+    # (DYNAMICS_CHECKPOINT_EPOCHS, training/new_train.py) -- independent of
+    # save_dynamics, not implied by it: a run that only wants the checkpoints (e.g. a
+    # --descriptors_head probe, whose branch curves are two no-op passes -- Final_Layer
+    # returns before the ablation code they read even runs, see [[descriptors-path-
+    # fingerprint-leak]]) no longer pays for save_dynamics' two extra full validation
+    # passes and per-batch gradient-norm bookkeeping just to get them. Pass both flags
+    # for the original "checkpoints read alongside the curves that explain them" use.
     save_dynamics: bool = False
     save_model_in_dynamics: bool = False
 
@@ -897,9 +953,6 @@ class ModelConfig:
         """Validate dependent model dimensions and implied options."""
         if self.HEADS <= 0:
             raise ValueError("HEADS must be greater than zero")
-        # Milestone weights are read alongside the per-epoch curves, never on their own.
-        if self.save_model_in_dynamics:
-            self.save_dynamics = True
         self.loss_type = str(self.loss_type).lower()
         if self.loss_type not in LOSS_TYPES:
             raise ValueError(f"loss_type must be one of {', '.join(LOSS_TYPES)}")
@@ -1427,6 +1480,12 @@ class ModelConfig:
                 "head's aromatic/H-bond pair terms read aromatic_share and "
                 "apolar_sasa_share off the pocket descriptor tensor"
             )
+        if self.pair_descriptor_pocket_shares_split and not self.pair_descriptor_pocket_shares:
+            raise ValueError(
+                "pair_descriptor_pocket_shares_split requires pair_descriptor_pocket_shares "
+                "-- there is nothing to split once the pocket-derived tokens are off "
+                "(--no_pair_descriptor_pocket_shares)"
+            )
         if self.pair_descriptors_only and not self.pair_descriptors:
             raise ValueError("pair_descriptors_only requires pair_descriptors")
         if self.pair_descriptors_only and (self.lipid_only or self.protein_only):
@@ -1756,6 +1815,12 @@ SIMPLE_BOOL_FLAGS = {
     "--descriptors_head": "descriptors_head",
     "pair_descriptor_pocket_shares": "pair_descriptor_pocket_shares",
     "--pair_descriptor_pocket_shares": "pair_descriptor_pocket_shares",
+    "pair_descriptor_pocket_shares_split": "pair_descriptor_pocket_shares_split",
+    "--pair_descriptor_pocket_shares_split": "pair_descriptor_pocket_shares_split",
+    "pair_descriptor_extent": "pair_descriptor_extent",
+    "--pair_descriptor_extent": "pair_descriptor_extent",
+    "pair_descriptor_flatten": "pair_descriptor_flatten",
+    "--pair_descriptor_flatten": "pair_descriptor_flatten",
     "dann_lambda_ramp": "dann_lambda_ramp",
     "--dann_lambda_ramp": "dann_lambda_ramp",
     "dann_lambda_ramp_by_fit": "dann_lambda_ramp_by_fit",
@@ -1972,6 +2037,8 @@ FLAG_HANDLERS = {
     "--no_pair_descriptor_pocket_shares": set_config_flag(
         "pair_descriptor_pocket_shares", False
     ),
+    "no_pair_descriptor_extent": set_config_flag("pair_descriptor_extent", False),
+    "--no_pair_descriptor_extent": set_config_flag("pair_descriptor_extent", False),
     "no_lipid_first_fragment_only": set_config_flag(
         "lipid_first_fragment_only", False
     ),

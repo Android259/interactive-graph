@@ -2046,3 +2046,430 @@ By subgroup, metric=loss (mean+/-std, n, seeds, groups):
   STARD2           0.8603+/-0.8913 n=10 seeds=0,1 groups=IP_trans,LBP_BPI_CETP,START,lipocalin,scp2
   TTPA             0.6103+/-0.1602 n= 6 seeds=0,1 groups=CRAL-TRIO,IP_trans,scp2
   TTPAL            0.9610+/-0.8289 n=12 seeds=0,1 groups=CRAL-TRIO,IP_trans,LBP_BPI_CETP,START,lipocalin,scp2
+========================================================================
+label: descriptors_path
+generated: 2026-08-25 21:08:17
+rows (latest per group+seed): 35
+groups (7): CRAL-TRIO, GLTP, IP_trans, LBP_BPI_CETP, START, lipocalin, scp2
+seeds (5): 0, 1, 2, 3, 4
+
+Overall (mean / median / std / min / max / n):
+  checkpoint_valid_balanced_accuracy mean=0.6155 median=0.6042 std=0.0950 min=0.4960 max=0.8307 n=35
+  max_valid_balanced_accuracy      mean=0.6232 median=0.6042 std=0.0951 min=0.5000 max=0.8422 n=35
+  best_valid_F1                    mean=0.5804 median=0.5802 std=0.1088 min=0.3051 max=0.7843 n=35
+  balanced_accuracy                mean=0.5756 median=0.5463 std=0.1119 min=0.3600 max=0.8279 n=35
+  F1                               mean=0.4875 median=0.5000 std=0.1659 min=0.0000 max=0.7600 n=35
+  sensitivity                      mean=0.5752 median=0.5846 std=0.2441 min=0.0000 max=1.0000 n=35
+  specificity                      mean=0.5759 median=0.6230 std=0.2313 min=0.0000 max=1.0000 n=35
+  precision                        mean=0.4758 median=0.4444 std=0.1084 min=0.3175 max=0.7037 n=33
+  loss                             mean=0.6882 median=0.6914 std=0.0146 min=0.6261 max=0.7157 n=35
+
+By group (mean+/-std):
+  groups_CRAL-TRIO         n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5697+/-0.0397  max_valid_balanced_accuracy=0.5761+/-0.0401  best_valid_F1=0.6213+/-0.0736  balanced_accuracy=0.5515+/-0.0377  F1=0.5390+/-0.0824  sensitivity=0.5194+/-0.1513  specificity=0.5836+/-0.1441  precision=0.5793+/-0.0379  loss=0.6903+/-0.0043
+  groups_GLTP              n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5577+/-0.0490  max_valid_balanced_accuracy=0.5615+/-0.0479  best_valid_F1=0.5976+/-0.1160  balanced_accuracy=0.4440+/-0.0518  F1=0.3051+/-0.1752  sensitivity=0.2880+/-0.1863  specificity=0.6000+/-0.2843  precision=0.4242+/-0.0225  loss=0.6983+/-0.0042
+  groups_IP_trans          n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.6345+/-0.0622  max_valid_balanced_accuracy=0.6513+/-0.0607  best_valid_F1=0.5545+/-0.0679  balanced_accuracy=0.6032+/-0.0372  F1=0.4747+/-0.0611  sensitivity=0.5043+/-0.0902  specificity=0.7021+/-0.0398  precision=0.4514+/-0.0399  loss=0.6813+/-0.0069
+  groups_LBP_BPI_CETP      n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.8037+/-0.0206  max_valid_balanced_accuracy=0.8079+/-0.0264  best_valid_F1=0.7368+/-0.0330  balanced_accuracy=0.7957+/-0.0243  F1=0.7191+/-0.0291  sensitivity=0.7913+/-0.0567  specificity=0.8000+/-0.0356  precision=0.6610+/-0.0335  loss=0.6646+/-0.0229
+  groups_START             n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5244+/-0.0357  max_valid_balanced_accuracy=0.5347+/-0.0338  best_valid_F1=0.4998+/-0.0985  balanced_accuracy=0.4909+/-0.0470  F1=0.3932+/-0.2446  sensitivity=0.5323+/-0.3910  specificity=0.4494+/-0.3732  precision=0.4053+/-0.0608  loss=0.6988+/-0.0101
+  groups_lipocalin         n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5861+/-0.0516  max_valid_balanced_accuracy=0.5958+/-0.0624  best_valid_F1=0.4940+/-0.1164  balanced_accuracy=0.5583+/-0.0293  F1=0.4670+/-0.0624  sensitivity=0.6500+/-0.2337  specificity=0.4667+/-0.2164  precision=0.3878+/-0.0440  loss=0.6912+/-0.0041
+  groups_scp2              n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.6324+/-0.0345  max_valid_balanced_accuracy=0.6353+/-0.0381  best_valid_F1=0.5589+/-0.0299  balanced_accuracy=0.5853+/-0.0627  F1=0.5143+/-0.0587  sensitivity=0.7412+/-0.1220  specificity=0.4294+/-0.1373  precision=0.3975+/-0.0532  loss=0.6925+/-0.0050
+
+========================================================================
+label: bbp_dcs_rand_smd_fa_nps_3rd_head_dpt01_gm_plm8_hid8_wd001_ep120
+generated: 2026-08-25 21:08:55
+rows (latest per group+seed): 35
+groups (7): CRAL-TRIO, GLTP, IP_trans, LBP_BPI_CETP, START, lipocalin, scp2
+seeds (5): 0, 1, 2, 3, 4
+
+Overall (mean / median / std / min / max / n):
+  checkpoint_valid_balanced_accuracy mean=0.5626 median=0.5588 std=0.0548 min=0.4559 max=0.6853 n=35
+  max_valid_balanced_accuracy      mean=0.5966 median=0.5833 std=0.0620 min=0.5000 max=0.7172 n=35
+  best_valid_F1                    mean=0.5416 median=0.5588 std=0.1152 min=0.2247 max=0.7229 n=35
+  balanced_accuracy                mean=0.5420 median=0.5294 std=0.0843 min=0.4118 max=0.7220 n=35
+  F1                               mean=0.4075 median=0.4314 std=0.1975 min=0.0000 max=0.6879 n=35
+  sensitivity                      mean=0.4603 median=0.4348 std=0.2964 min=0.0000 max=1.0000 n=35
+  specificity                      mean=0.6237 median=0.7447 std=0.3090 min=0.0000 max=1.0000 n=35
+  precision                        mean=0.4638 median=0.4444 std=0.1960 min=0.0000 max=1.0000 n=33
+  loss                             mean=0.7433 median=0.6987 std=0.1242 min=0.5551 max=1.1961 n=35
+
+By group (mean+/-std):
+  groups_CRAL-TRIO         n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5354+/-0.0453  max_valid_balanced_accuracy=0.5961+/-0.0551  best_valid_F1=0.6952+/-0.0160  balanced_accuracy=0.5295+/-0.0649  F1=0.6190+/-0.1103  sensitivity=0.7672+/-0.2580  specificity=0.2918+/-0.3180  precision=0.5578+/-0.0572  loss=0.6931+/-0.0034
+  groups_GLTP              n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5423+/-0.0161  max_valid_balanced_accuracy=0.5577+/-0.0192  best_valid_F1=0.4716+/-0.1554  balanced_accuracy=0.4760+/-0.0498  F1=0.1486+/-0.1395  sensitivity=0.1040+/-0.1043  specificity=0.8480+/-0.1481  precision=0.3600+/-0.4099  loss=0.8370+/-0.2068
+  groups_IP_trans          n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.6218+/-0.0570  max_valid_balanced_accuracy=0.6772+/-0.0345  best_valid_F1=0.5958+/-0.0337  balanced_accuracy=0.6274+/-0.0727  F1=0.4901+/-0.1468  sensitivity=0.5739+/-0.2722  specificity=0.6809+/-0.1793  precision=0.4691+/-0.0657  loss=0.6827+/-0.0441
+  groups_LBP_BPI_CETP      n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.6150+/-0.0425  max_valid_balanced_accuracy=0.6548+/-0.0504  best_valid_F1=0.5477+/-0.0479  balanced_accuracy=0.6317+/-0.0463  F1=0.4705+/-0.0726  sensitivity=0.3826+/-0.0714  specificity=0.8809+/-0.0613  precision=0.6292+/-0.1377  loss=0.6519+/-0.0638
+  groups_START             n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5510+/-0.0298  max_valid_balanced_accuracy=0.5797+/-0.0365  best_valid_F1=0.5892+/-0.0335  balanced_accuracy=0.5195+/-0.0756  F1=0.4989+/-0.1066  sensitivity=0.6031+/-0.1992  specificity=0.4360+/-0.1472  precision=0.4350+/-0.0750  loss=0.8799+/-0.1099
+  groups_lipocalin         n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5167+/-0.0376  max_valid_balanced_accuracy=0.5194+/-0.0359  best_valid_F1=0.3911+/-0.1010  balanced_accuracy=0.5278+/-0.0829  F1=0.2648+/-0.2612  sensitivity=0.3444+/-0.4128  specificity=0.7111+/-0.4221  precision=0.4382+/-0.2242  loss=0.6878+/-0.0279
+  groups_scp2              n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5559+/-0.0610  max_valid_balanced_accuracy=0.5912+/-0.0283  best_valid_F1=0.5007+/-0.0313  balanced_accuracy=0.4824+/-0.0601  F1=0.3605+/-0.0394  sensitivity=0.4471+/-0.1933  specificity=0.5176+/-0.3131  precision=0.3468+/-0.0682  loss=0.7705+/-0.1106
+
+By subgroup, metric=sensitivity (mean+/-std, n, seeds, groups):
+  BPI              0.3033+/-0.1330 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.5050+/-0.2327 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.3333+/-0.5774 n= 3 seeds=0,1,4 groups=lipocalin
+  FABP1            0.4286+/-0.4738 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.3333+/-0.4714 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.2800+/-0.4382 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.0000+/-0.0000 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.2067+/-0.2165 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.7000+/-0.2739 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.3231+/-0.4628 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.4754+/-0.3314 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.4943+/-0.3588 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.9600+/-0.0894 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.3000+/-0.4472 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.0000+/-0.0000 n= 3 seeds=0,3,4 groups=lipocalin
+  RBP4             0.3333+/-0.5774 n= 3 seeds=1,2,3 groups=lipocalin
+  RBP5             0.5000+/-0.7071 n= 2 seeds=2,3 groups=lipocalin
+  RLBP1            0.7607+/-0.2838 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.4000+/-0.5477 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.4733+/-0.1342 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.2333+/-0.4346 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.6667+/-0.5774 n= 3 seeds=1,3,4 groups=CRAL-TRIO
+  SEC14L6          1.0000+/-0.0000 n= 2 seeds=0,2 groups=CRAL-TRIO
+  STARD10          0.8031+/-0.1159 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.2359+/-0.1317 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.5831+/-0.3113 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.7810+/-0.3115 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.8262+/-0.2934 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+By subgroup, metric=precision (mean+/-std, n, seeds, groups):
+  BPI              0.8429+/-0.1558 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.5383+/-0.1073 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.3333+/-0.5774 n= 3 seeds=2,3,4 groups=lipocalin
+  FABP1            0.5486+/-0.3911 n= 3 seeds=2,3,4 groups=lipocalin
+  FABP5            0.3434+/-0.3338 n= 3 seeds=2,3,4 groups=lipocalin
+  FABP7            0.3056+/-0.3368 n= 3 seeds=2,3,4 groups=lipocalin
+  GLTP             0.0000+/-0.0000 n= 4 seeds=0,2,3,4 groups=GLTP
+  GLTPD1           1.0000+/-0.0000 n= 3 seeds=1,2,4 groups=GLTP
+  HSDL2            0.2988+/-0.1364 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.2594+/-0.2390 n= 3 seeds=2,3,4 groups=lipocalin
+  PITPNA           0.3680+/-0.2326 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.4033+/-0.2461 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.6465+/-0.2670 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.5000+/-0.5000 n= 3 seeds=2,3,4 groups=lipocalin
+  RBP1             0.0000+/-0.0000 n= 2 seeds=2,3 groups=lipocalin
+  RBP4             0.1667+/-0.2357 n= 2 seeds=2,3 groups=lipocalin
+  RBP5             0.2500+/-0.3536 n= 2 seeds=2,3 groups=lipocalin
+  RLBP1            0.7112+/-0.1821 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.1667+/-0.1528 n= 3 seeds=0,1,2 groups=scp2
+  SCP2D1           0.4209+/-0.1430 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.0643+/-0.1010 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.4444+/-0.5092 n= 3 seeds=2,3,4 groups=CRAL-TRIO
+  SEC14L6          0.5000+/-0.5774 n= 4 seeds=0,2,3,4 groups=CRAL-TRIO
+  STARD10          0.4945+/-0.0840 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.1507+/-0.0746 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.5099+/-0.1039 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.3112+/-0.1389 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.6106+/-0.0778 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+By subgroup, metric=specificity (mean+/-std, n, seeds, groups):
+  BPI              0.9526+/-0.0517 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.8094+/-0.1254 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.6000+/-0.5477 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP1            0.7333+/-0.4346 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.7248+/-0.4166 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.7255+/-0.4206 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.6953+/-0.3312 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           1.0000+/-0.0000 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.3067+/-0.2702 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.7059+/-0.4152 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.6475+/-0.1700 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.7206+/-0.1845 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.6974+/-0.3535 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.7600+/-0.4336 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.5000+/-0.5774 n= 4 seeds=0,2,3,4 groups=lipocalin
+  RBP4             0.5000+/-0.5774 n= 4 seeds=1,2,3,4 groups=lipocalin
+  RBP5             0.6000+/-0.5477 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RLBP1            0.3700+/-0.4712 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.5886+/-0.4880 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.5815+/-0.2908 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.3598+/-0.4530 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.5000+/-0.5774 n= 4 seeds=0,1,2,4 groups=CRAL-TRIO
+  SEC14L6          0.3333+/-0.5774 n= 3 seeds=1,3,4 groups=CRAL-TRIO
+  STARD10          0.4884+/-0.1929 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.3299+/-0.2940 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.4414+/-0.1002 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.2117+/-0.2068 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.2681+/-0.2838 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+By subgroup, metric=F1 (mean+/-std, n, seeds, groups):
+  BPI              0.4215+/-0.1543 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.4913+/-0.1209 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.2000+/-0.4472 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP1            0.3414+/-0.3843 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.2400+/-0.3320 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.1800+/-0.2490 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.0000+/-0.0000 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.3000+/-0.2981 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.4127+/-0.1775 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.2008+/-0.2758 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.4010+/-0.2468 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.4175+/-0.2383 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.7369+/-0.1754 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.2667+/-0.3651 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.0000+/-0.0000 n= 4 seeds=0,2,3,4 groups=lipocalin
+  RBP4             0.1667+/-0.2887 n= 3 seeds=1,2,3 groups=lipocalin
+  RBP5             0.3333+/-0.4714 n= 2 seeds=2,3 groups=lipocalin
+  RLBP1            0.6761+/-0.1212 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.1590+/-0.2224 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.4261+/-0.0941 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.0985+/-0.1627 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.3750+/-0.4787 n= 4 seeds=1,2,3,4 groups=CRAL-TRIO
+  SEC14L6          0.5000+/-0.5774 n= 4 seeds=0,2,3,4 groups=CRAL-TRIO
+  STARD10          0.6078+/-0.0751 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.1783+/-0.0806 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.5274+/-0.1944 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.4303+/-0.1664 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.6827+/-0.1671 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+By subgroup, metric=balanced_accuracy (mean+/-std, n, seeds, groups):
+  BPI              0.6280+/-0.0522 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.6572+/-0.0861 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.6667+/-0.2887 n= 3 seeds=0,1,4 groups=lipocalin
+  FABP1            0.5810+/-0.1946 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.5291+/-0.1359 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.5027+/-0.1013 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.3476+/-0.1656 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.6033+/-0.1083 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.5033+/-0.2299 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.5145+/-0.0846 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.5615+/-0.1045 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.6074+/-0.1021 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.8287+/-0.1602 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.5300+/-0.1304 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.3333+/-0.2887 n= 3 seeds=0,3,4 groups=lipocalin
+  RBP4             0.3333+/-0.2887 n= 3 seeds=1,2,3 groups=lipocalin
+  RBP5             0.2500+/-0.3536 n= 2 seeds=2,3 groups=lipocalin
+  RLBP1            0.5653+/-0.1185 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.4943+/-0.0548 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.5274+/-0.1143 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.2966+/-0.2146 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.5000+/-0.0000 n= 2 seeds=1,4 groups=CRAL-TRIO
+  STARD10          0.6457+/-0.0760 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.2829+/-0.1362 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.5122+/-0.1511 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.4963+/-0.1344 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.5472+/-0.0815 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+By subgroup, metric=loss (mean+/-std, n, seeds, groups):
+  BPI              0.7110+/-0.1119 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.5718+/-0.1211 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.7037+/-0.0629 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP1            0.6787+/-0.0345 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.6911+/-0.0422 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.6992+/-0.0305 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.9193+/-0.3142 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.7436+/-0.1022 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            1.0454+/-0.5814 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.6898+/-0.0253 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.7249+/-0.0979 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.6780+/-0.0616 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.6060+/-0.1199 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.6746+/-0.0297 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.7498+/-0.0560 n= 4 seeds=0,2,3,4 groups=lipocalin
+  RBP4             0.7052+/-0.0661 n= 4 seeds=1,2,3,4 groups=lipocalin
+  RBP5             0.6624+/-0.0613 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RLBP1            0.6846+/-0.0076 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.7792+/-0.0827 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.6803+/-0.0786 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.7452+/-0.0424 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.7190+/-0.0544 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L6          0.6717+/-0.0511 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  STARD10          0.6455+/-0.1112 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          1.4301+/-0.3271 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.8256+/-0.1682 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.7083+/-0.0189 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.6828+/-0.0072 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+========================================================================
+label: bbp_dcs_rand_smd_fa_nps_dpt01_gm_plm8_hid8_wd001_ep120
+generated: 2026-08-25 23:15:17
+rows (latest per group+seed): 35
+groups (7): CRAL-TRIO, GLTP, IP_trans, LBP_BPI_CETP, START, lipocalin, scp2
+seeds (5): 0, 1, 2, 3, 4
+
+Overall (mean / median / std / min / max / n):
+  checkpoint_valid_balanced_accuracy mean=0.5770 median=0.5625 std=0.0666 min=0.5000 max=0.7061 n=35
+  max_valid_balanced_accuracy      mean=0.6087 median=0.6028 std=0.0709 min=0.5000 max=0.7206 n=35
+  best_valid_F1                    mean=0.5580 median=0.5905 std=0.1092 min=0.2295 max=0.7368 n=35
+  balanced_accuracy                mean=0.5372 median=0.5254 std=0.0728 min=0.3618 max=0.6869 n=35
+  F1                               mean=0.3653 median=0.4286 std=0.1933 min=0.0000 max=0.6923 n=35
+  sensitivity                      mean=0.4201 median=0.3846 std=0.3181 min=0.0000 max=1.0000 n=35
+  specificity                      mean=0.6542 median=0.7872 std=0.3191 min=0.0000 max=1.0000 n=35
+  precision                        mean=0.4865 median=0.4320 std=0.1960 min=0.1250 max=1.0000 n=32
+  loss                             mean=0.7194 median=0.6959 std=0.0739 min=0.6000 max=0.9928 n=35
+
+By group (mean+/-std):
+  groups_CRAL-TRIO         n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5250+/-0.0285  max_valid_balanced_accuracy=0.5841+/-0.0583  best_valid_F1=0.6824+/-0.0502  balanced_accuracy=0.4862+/-0.0720  F1=0.2749+/-0.2976  sensitivity=0.3134+/-0.4010  specificity=0.6590+/-0.4253  precision=0.5277+/-0.1088  loss=0.7059+/-0.0179
+  groups_GLTP              n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5962+/-0.0451  max_valid_balanced_accuracy=0.5962+/-0.0451  best_valid_F1=0.5530+/-0.1083  balanced_accuracy=0.5440+/-0.0865  F1=0.4036+/-0.1439  sensitivity=0.3440+/-0.2393  specificity=0.7440+/-0.3041  precision=0.6492+/-0.2361  loss=0.7613+/-0.1304
+  groups_IP_trans          n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.6306+/-0.0731  max_valid_balanced_accuracy=0.6885+/-0.0087  best_valid_F1=0.5977+/-0.0202  balanced_accuracy=0.5669+/-0.1025  F1=0.3919+/-0.2242  sensitivity=0.4870+/-0.3538  specificity=0.6468+/-0.2324  precision=0.3667+/-0.1686  loss=0.6771+/-0.0497
+  groups_LBP_BPI_CETP      n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.6125+/-0.0741  max_valid_balanced_accuracy=0.6630+/-0.0527  best_valid_F1=0.5564+/-0.0641  balanced_accuracy=0.6039+/-0.0505  F1=0.4069+/-0.1407  sensitivity=0.3652+/-0.1935  specificity=0.8426+/-0.0993  precision=0.5683+/-0.1061  loss=0.6974+/-0.0492
+  groups_START             n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5402+/-0.0303  max_valid_balanced_accuracy=0.5495+/-0.0420  best_valid_F1=0.5654+/-0.0753  balanced_accuracy=0.4856+/-0.0275  F1=0.3609+/-0.2096  sensitivity=0.4185+/-0.2646  specificity=0.5528+/-0.2758  precision=0.4051+/-0.0336  loss=0.7629+/-0.0949
+  groups_lipocalin         n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.5139+/-0.0273  max_valid_balanced_accuracy=0.5208+/-0.0246  best_valid_F1=0.3817+/-0.1174  balanced_accuracy=0.5236+/-0.0624  F1=0.3130+/-0.2403  sensitivity=0.4833+/-0.4909  specificity=0.5639+/-0.5161  precision=0.4919+/-0.3374  loss=0.7116+/-0.0731
+  groups_scp2              n= 5 seeds=0,1,2,3,4    checkpoint_valid_balanced_accuracy=0.6206+/-0.0653  max_valid_balanced_accuracy=0.6588+/-0.0481  best_valid_F1=0.5694+/-0.0526  balanced_accuracy=0.5500+/-0.0305  F1=0.4057+/-0.1271  sensitivity=0.5294+/-0.3430  specificity=0.5706+/-0.3158  precision=0.3971+/-0.0658  loss=0.7196+/-0.0460
+
+By subgroup, metric=sensitivity (mean+/-std, n, seeds, groups):
+  BPI              0.2544+/-0.1533 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.5456+/-0.3427 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.6667+/-0.5774 n= 3 seeds=0,1,4 groups=lipocalin
+  FABP1            0.6162+/-0.4122 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.5000+/-0.5000 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.4400+/-0.5177 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.0800+/-0.1789 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.5918+/-0.2546 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.7000+/-0.2739 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.4000+/-0.5477 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.4616+/-0.3328 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.4371+/-0.4157 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.6700+/-0.4117 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.5000+/-0.5000 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.3333+/-0.5774 n= 3 seeds=0,3,4 groups=lipocalin
+  RBP4             0.6667+/-0.5774 n= 3 seeds=1,2,3 groups=lipocalin
+  RBP5             0.5000+/-0.7071 n= 2 seeds=2,3 groups=lipocalin
+  RLBP1            0.3466+/-0.4136 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.4000+/-0.4346 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.5456+/-0.3322 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.2000+/-0.4472 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.3333+/-0.5774 n= 3 seeds=1,3,4 groups=CRAL-TRIO
+  SEC14L6          0.5000+/-0.7071 n= 2 seeds=0,2 groups=CRAL-TRIO
+  STARD10          0.5979+/-0.3558 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.2490+/-0.2929 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.3554+/-0.2440 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.4000+/-0.5477 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.2810+/-0.4247 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+By subgroup, metric=precision (mean+/-std, n, seeds, groups):
+  BPI              0.7267+/-0.1797 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.5165+/-0.0992 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.4444+/-0.5092 n= 3 seeds=1,3,4 groups=lipocalin
+  FABP1            0.7346+/-0.3642 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.3939+/-0.2092 n= 3 seeds=1,3,4 groups=lipocalin
+  FABP7            0.2544+/-0.2214 n= 4 seeds=1,2,3,4 groups=lipocalin
+  GLTP             0.0381+/-0.0852 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.9765+/-0.0526 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.3086+/-0.1527 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.1864+/-0.2213 n= 4 seeds=1,2,3,4 groups=lipocalin
+  PITPNA           0.3961+/-0.1310 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.2677+/-0.2672 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.5238+/-0.4530 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.5784+/-0.3883 n= 3 seeds=1,3,4 groups=lipocalin
+  RBP1             0.5000+/-0.0000 n= 1 seeds=3 groups=lipocalin
+  RBP4             0.3333+/-0.0000 n= 2 seeds=1,3 groups=lipocalin
+  RBP5             0.2500+/-0.3536 n= 2 seeds=1,3 groups=lipocalin
+  RLBP1            0.6593+/-0.2226 n= 3 seeds=0,1,3 groups=CRAL-TRIO
+  SCP2             0.3113+/-0.1309 n= 3 seeds=0,2,3 groups=scp2
+  SCP2D1           0.5642+/-0.2602 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.1481+/-0.2566 n= 3 seeds=0,1,3 groups=CRAL-TRIO
+  SEC14L5          0.5000+/-0.0000 n= 1 seeds=1 groups=CRAL-TRIO
+  SEC14L6          0.5000+/-0.7071 n= 2 seeds=0,1 groups=CRAL-TRIO
+  STARD10          0.4410+/-0.0536 n= 4 seeds=0,1,2,3 groups=START
+  STARD11          0.2029+/-0.1530 n= 4 seeds=0,1,2,3 groups=START
+  STARD2           0.4509+/-0.1004 n= 4 seeds=0,1,2,3 groups=START
+  TTPA             0.2205+/-0.1996 n= 3 seeds=0,1,3 groups=CRAL-TRIO
+  TTPAL            0.5040+/-0.0850 n= 3 seeds=0,1,3 groups=CRAL-TRIO
+By subgroup, metric=specificity (mean+/-std, n, seeds, groups):
+  BPI              0.9120+/-0.1063 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.7647+/-0.1751 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.6000+/-0.5477 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP1            0.6000+/-0.5477 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.5692+/-0.5234 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.5356+/-0.4952 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.6044+/-0.3960 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.9500+/-0.1118 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.3152+/-0.2982 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.5384+/-0.4955 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.6686+/-0.1912 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.6229+/-0.2384 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.6343+/-0.4226 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.6000+/-0.5477 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.7500+/-0.5000 n= 4 seeds=0,2,3,4 groups=lipocalin
+  RBP4             0.5000+/-0.5774 n= 4 seeds=1,2,3,4 groups=lipocalin
+  RBP5             0.6000+/-0.5477 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RLBP1            0.6616+/-0.4413 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.6333+/-0.3789 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.6225+/-0.3752 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.6183+/-0.4392 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.7500+/-0.5000 n= 4 seeds=0,1,2,4 groups=CRAL-TRIO
+  SEC14L6          0.6667+/-0.5774 n= 3 seeds=1,3,4 groups=CRAL-TRIO
+  STARD10          0.5732+/-0.2710 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.5912+/-0.3203 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.4925+/-0.3099 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.6218+/-0.4830 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.6853+/-0.3950 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+By subgroup, metric=F1 (mean+/-std, n, seeds, groups):
+  BPI              0.3396+/-0.1325 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.4673+/-0.1786 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.3750+/-0.4787 n= 4 seeds=0,1,3,4 groups=lipocalin
+  FABP1            0.4915+/-0.2162 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.2849+/-0.2797 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.2171+/-0.2244 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.0516+/-0.1154 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.7075+/-0.1620 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.4221+/-0.1950 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.2160+/-0.2995 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.3875+/-0.2036 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.3273+/-0.3187 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.5103+/-0.3326 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.3429+/-0.3340 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.2222+/-0.3849 n= 3 seeds=0,3,4 groups=lipocalin
+  RBP4             0.3333+/-0.2887 n= 3 seeds=1,2,3 groups=lipocalin
+  RBP5             0.2222+/-0.3849 n= 3 seeds=1,2,3 groups=lipocalin
+  RLBP1            0.3311+/-0.3341 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.2501+/-0.2640 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.4535+/-0.0928 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.1231+/-0.2752 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.2222+/-0.3849 n= 3 seeds=1,3,4 groups=CRAL-TRIO
+  SEC14L6          0.3333+/-0.5774 n= 3 seeds=0,1,2 groups=CRAL-TRIO
+  STARD10          0.4380+/-0.2475 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.1924+/-0.2080 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.3540+/-0.2265 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.1977+/-0.2747 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.2480+/-0.3156 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+By subgroup, metric=balanced_accuracy (mean+/-std, n, seeds, groups):
+  BPI              0.5832+/-0.0283 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.6552+/-0.1130 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.6667+/-0.2887 n= 3 seeds=0,1,4 groups=lipocalin
+  FABP1            0.6081+/-0.1467 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.5346+/-0.0774 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.4878+/-0.0594 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.3422+/-0.1303 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.7709+/-0.0811 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.5076+/-0.1977 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.4692+/-0.0422 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.5651+/-0.1012 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.5300+/-0.1558 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.6522+/-0.2138 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.5500+/-0.1118 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.5000+/-0.0000 n= 3 seeds=0,3,4 groups=lipocalin
+  RBP4             0.5000+/-0.0000 n= 3 seeds=1,2,3 groups=lipocalin
+  RBP5             0.5000+/-0.0000 n= 2 seeds=2,3 groups=lipocalin
+  RLBP1            0.5041+/-0.1099 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.5167+/-0.0342 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.5840+/-0.0292 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.4092+/-0.2044 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.5000+/-0.0000 n= 2 seeds=1,4 groups=CRAL-TRIO
+  STARD10          0.5855+/-0.0619 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.4201+/-0.1910 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.4240+/-0.0891 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.5109+/-0.0536 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.4831+/-0.0762 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+By subgroup, metric=loss (mean+/-std, n, seeds, groups):
+  BPI              0.7464+/-0.1072 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  BPIFB2           0.6434+/-0.0306 n= 5 seeds=0,1,2,3,4 groups=LBP_BPI_CETP
+  CRABP2           0.7323+/-0.1775 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP1            0.6958+/-0.0739 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP5            0.7090+/-0.0544 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  FABP7            0.7330+/-0.1210 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  GLTP             0.8847+/-0.2525 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  GLTPD1           0.6190+/-0.0353 n= 5 seeds=0,1,2,3,4 groups=GLTP
+  HSDL2            0.7723+/-0.1706 n= 5 seeds=0,1,2,3,4 groups=scp2
+  LCN1             0.7159+/-0.0780 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  PITPNA           0.6906+/-0.0406 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNB           0.6734+/-0.0743 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PITPNC1          0.6505+/-0.0801 n= 5 seeds=0,1,2,3,4 groups=IP_trans
+  PMP2             0.6928+/-0.0423 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RBP1             0.6920+/-0.0739 n= 4 seeds=0,2,3,4 groups=lipocalin
+  RBP4             0.7210+/-0.0796 n= 4 seeds=1,2,3,4 groups=lipocalin
+  RBP5             0.6957+/-0.0491 n= 5 seeds=0,1,2,3,4 groups=lipocalin
+  RLBP1            0.7079+/-0.0373 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SCP2             0.7370+/-0.0380 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SCP2D1           0.6989+/-0.0543 n= 5 seeds=0,1,2,3,4 groups=scp2
+  SEC14L2          0.7106+/-0.0932 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L5          0.6381+/-0.1499 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  SEC14L6          0.7416+/-0.1251 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  STARD10          0.6690+/-0.0217 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD11          0.9113+/-0.2439 n= 5 seeds=0,1,2,3,4 groups=START
+  STARD2           0.7824+/-0.1508 n= 5 seeds=0,1,2,3,4 groups=START
+  TTPA             0.6856+/-0.0328 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO
+  TTPAL            0.7117+/-0.0246 n= 5 seeds=0,1,2,3,4 groups=CRAL-TRIO

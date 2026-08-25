@@ -29,6 +29,8 @@ if [[ -z "${_CLUSTER_ENV_CAPTURED:-}" ]]; then
     _ENV_JOB_ID_TAG="${JOB_ID_TAG-}"
     _ENV_MAX_WALLTIME_SET="${MAX_WALLTIME+set}"
     _ENV_MAX_WALLTIME="${MAX_WALLTIME-}"
+    _ENV_OAR_RESOURCES="${OAR_RESOURCES:-}"
+    _ENV_CPU_ONLY="${CPU_ONLY:-}"
     _ENV_CLUSTER_QUEUE_ROOT="${CLUSTER_QUEUE_ROOT:-}"
     _ENV_CLUSTER_SESSION_PREFIX="${CLUSTER_SESSION_PREFIX:-}"
     _ENV_SSH_CONTROL_PATH="${SSH_CONTROL_PATH:-}"
@@ -51,10 +53,16 @@ cluster_profile() {
             # Caps how deep a pack may be: a job asking for more is rejected at
             # oarsub time, which would stall the whole drain.
             _default_max_walltime="48:00:00"
+            # Bigfoot's unit of allocation is a GPU; cores and memory come bundled
+            # pro-rata (GRICAD docs: "the resource unit to request is usually a
+            # gpu"). Prefer A100 nodes when GPU_PROPERTY allows either -- 64 cores
+            # / 2 GPUs = 32 cores per gpu=1, against a V100 node's 8-10.
+            _default_oar_resources="/nodes=1/gpu=1"
+            _default_cpu_only=0
             ;;
         kraken)
-            # kraken-gpu is the GPU frontend; kraken-cpu exists but this project
-            # trains single-GPU only and needs no CPU-only allocation.
+            # kraken-gpu is the GPU frontend; kraken-cpu is the separate CPU-only
+            # frontend below.
             _default_host="kraken-gpu"
             # H100 (94GB) and H200 (142GB); both are sm_90.
             _default_gpu_property="(gpumodel='H100' OR gpumodel='H200')"
@@ -68,9 +76,36 @@ cluster_profile() {
             # means "no known cap, do not check" -- guessing one here would
             # silently shrink packs. Set MAX_WALLTIME if the site announces one.
             _default_max_walltime=""
+            _default_oar_resources="/nodes=1/gpu=1"
+            _default_cpu_only=0
+            ;;
+        kraken-cpu)
+            # Genuinely CPU-only frontend, separate from kraken-gpu -- unlike
+            # Bigfoot/kraken-gpu, cores are the unit to request directly (GRICAD
+            # Kraken docs: "oarsub -l /core=54" / "-l /nodes=1" for a whole node),
+            # no GPU ticket needed at all. One node is 192 cores (2x AMD EPYC
+            # 9654/9655, 768-1536 GiB RAM) -- for a --descriptors_head-sized model
+            # (~1000 params, 1 OMP thread/run measured optimal, see run_local.sh)
+            # that is enough to run an entire 35-45 job grid concurrently on one
+            # node instead of one GPU allocation's bundled 8-32 cores on Bigfoot.
+            _default_host="kraken-cpu"
+            _default_gpu_property=""
+            _default_gpu_glob=""
+            # "c" for CPU: distinct from Bigfoot's "" and kraken-gpu's "k", so the
+            # three clusters' OAR ids never collide in script_logs/*.out names.
+            _default_job_id_tag="c"
+            # Not documented for kraken-cpu specifically (only kraken-gpu's cap is
+            # published, and it has none either); leave unchecked rather than
+            # guessing kraken-gpu's number applies here too.
+            _default_max_walltime=""
+            # One whole node, not a partial /core=N: the anti-fragmentation note
+            # in GRICAD's docs favours full architectural units, and one node's
+            # 192 cores are already far more than this project's grids need.
+            _default_oar_resources="/nodes=1"
+            _default_cpu_only=1
             ;;
         *)
-            printf 'Unknown cluster: %s (expected bigfoot or kraken)\n' \
+            printf 'Unknown cluster: %s (expected bigfoot, kraken or kraken-cpu)\n' \
                 "${CLUSTER_NAME}" >&2
             return 1
             ;;
@@ -93,6 +128,8 @@ cluster_profile() {
     else
         MAX_WALLTIME="${_default_max_walltime}"
     fi
+    OAR_RESOURCES="${_ENV_OAR_RESOURCES:-${_default_oar_resources}}"
+    CPU_ONLY="${_ENV_CPU_ONLY:-${_default_cpu_only}}"
 
     CLUSTER_QUEUE_ROOT="${_ENV_CLUSTER_QUEUE_ROOT:-${REMOTE_PROJECT}/.${CLUSTER_NAME}_job_queues}"
     CLUSTER_SESSION_PREFIX="${_ENV_CLUSTER_SESSION_PREFIX:-${REMOTE_PROJECT}/.${CLUSTER_NAME}_session_}"
@@ -104,7 +141,6 @@ REMOTE_USER="${REMOTE_USER:-kalinina}"
 REMOTE_PROJECT="${REMOTE_PROJECT:-/home/kalinina/DL_project}"
 
 PROJECT="${PROJECT-pr-molgen}"
-GPU_RESOURCES="${GPU_RESOURCES:-/nodes=1/gpu=1}"
 MIN_FREE_GPU_MIB="${MIN_FREE_GPU_MIB:-16384}"
 OARSUB_EXTRA="${OARSUB_EXTRA:-}"
 GROUPS_OVERRIDE="${GROUPS_OVERRIDE:-}"
@@ -136,14 +172,40 @@ case "${CLUSTER_NAME:-bigfoot}" in
         # tried on 2026-08-19 and reverted -- see the h100 profile in pack_lib.sh; past
         # four the card is saturated and total throughput drops rather than rises.
         _default_pack_walltime_parallel=4
+        _default_pack_cpu_per_run=0
+        ;;
+    kraken-cpu)
+        # 45 covers a full 9-group x 5-seed grid in one pack -- one node's 192
+        # cores hold that many at once for a --descriptors_head-sized model (1
+        # core/run, see PACK_CPU_PER_RUN below), so PACK_SIZE does not have to be
+        # split across several jobs the way Bigfoot's GPU-bundled 8-32 cores force.
+        _default_pack_size=45
+        # 1, not measured-and-confident: unlike Bigfoot/kraken-gpu, the card that
+        # gets handed out is not heterogeneous (a /nodes=1 request always gives
+        # the same 192 cores), so real concurrency here IS knowable in principle
+        # -- but no run has been timed on kraken-cpu yet. 1 sizes the walltime
+        # request generously (depth = PACK_SIZE) rather than assuming the fast
+        # case; override once a config's real per-run time here is measured.
+        _default_pack_walltime_parallel=1
+        # 1 core/run: this project's one measured tiny-model config
+        # (--descriptors_head, ~1000 parameters) tops out at 1 OMP thread/run
+        # before multithreading synchronisation overhead exceeds its own payoff
+        # (scripts/run_local.sh's MAX_OMP_THREADS_PER_JOB auto-detection for the
+        # same flag). A heavier config run here needs an explicit
+        # PACK_CPU_PER_RUN override -- there is no GPU-model-keyed profile to
+        # infer one from the way pack_hardware_profile() does for bigfoot/kraken.
+        _default_pack_cpu_per_run=1
         ;;
 esac
 PACK_SIZE="${PACK_SIZE:-${_default_pack_size}}"
-# 0 means use pack_hardware_profile() on the compute node.
+# 0 means use pack_hardware_profile() on the compute node (bigfoot/kraken); for
+# kraken-cpu (CPU_ONLY=1, no GPU to profile) run_experiment_pack.sh instead
+# falls back to PACK_CPU_PER_RUN itself when this is 0, so 0 keeps working as
+# "no override" for both paths.
 PACK_PARALLEL="${PACK_PARALLEL:-0}"
 GPU_MIB_PER_RUN="${GPU_MIB_PER_RUN:-0}"
 PACK_GPU_PERCENT="${PACK_GPU_PERCENT:-80}"
-PACK_CPU_PER_RUN="${PACK_CPU_PER_RUN:-0}"
+PACK_CPU_PER_RUN="${PACK_CPU_PER_RUN:-${_default_pack_cpu_per_run:-0}}"
 PACK_MIN_FREE_GPU_MIB="${PACK_MIN_FREE_GPU_MIB:-0}"
 PACK_HARDWARE_AUTO="${PACK_HARDWARE_AUTO:-1}"
 PACK_SKIP_DONE="${PACK_SKIP_DONE:-1}"
@@ -170,9 +232,9 @@ LOCAL_CONDA_ENV="${LOCAL_CONDA_ENV:-rsync-env}"
 # GPU_PROPERTY carries single quotes and parentheses, hence %q rather than
 # manual quoting.
 cluster_remote_env() {
-    printf 'CONDA_SH=%q CONDA_ENV=%q PROJECT=%q GPU_PROPERTY=%q GPU_MODEL_GLOB=%q GPU_RESOURCES=%q WALLTIME=%q FAST_ATTENTION_WALLTIME=%q MIN_FREE_GPU_MIB=%q JOB_ID_TAG=%q OARSUB_EXTRA=%q GROUPS_OVERRIDE=%q SEEDS_OVERRIDE=%q PACK_SIZE=%q PACK_PARALLEL=%q GPU_MIB_PER_RUN=%q PACK_GPU_PERCENT=%q PACK_CPU_PER_RUN=%q PACK_MIN_FREE_GPU_MIB=%q PACK_HARDWARE_AUTO=%q PACK_SKIP_DONE=%q COMPLETE_ONLY=%q COMPLETED_EXPERIMENTS=%q PACK_WALLTIME_PARALLEL=%q MAX_WALLTIME=%q' \
+    printf 'CONDA_SH=%q CONDA_ENV=%q PROJECT=%q GPU_PROPERTY=%q GPU_MODEL_GLOB=%q OAR_RESOURCES=%q CPU_ONLY=%q WALLTIME=%q FAST_ATTENTION_WALLTIME=%q MIN_FREE_GPU_MIB=%q JOB_ID_TAG=%q OARSUB_EXTRA=%q GROUPS_OVERRIDE=%q SEEDS_OVERRIDE=%q PACK_SIZE=%q PACK_PARALLEL=%q GPU_MIB_PER_RUN=%q PACK_GPU_PERCENT=%q PACK_CPU_PER_RUN=%q PACK_MIN_FREE_GPU_MIB=%q PACK_HARDWARE_AUTO=%q PACK_SKIP_DONE=%q COMPLETE_ONLY=%q COMPLETED_EXPERIMENTS=%q PACK_WALLTIME_PARALLEL=%q MAX_WALLTIME=%q' \
         "${CONDA_SH}" "${CONDA_ENV}" "${PROJECT}" "${GPU_PROPERTY}" \
-        "${GPU_MODEL_GLOB}" "${GPU_RESOURCES}" "${WALLTIME}" \
+        "${GPU_MODEL_GLOB}" "${OAR_RESOURCES}" "${CPU_ONLY}" "${WALLTIME}" \
         "${FAST_ATTENTION_WALLTIME}" \
         "${MIN_FREE_GPU_MIB}" "${JOB_ID_TAG}" "${OARSUB_EXTRA}" \
         "${GROUPS_OVERRIDE}" "${SEEDS_OVERRIDE}" \

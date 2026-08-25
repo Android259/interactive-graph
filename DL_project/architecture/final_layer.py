@@ -296,14 +296,20 @@ class Final_Layer(torch.nn.Module):
 
         if config.descriptors_head:
             # Sufficiency test for --pair_descriptors alone (ModelConfig docstring):
-            # nothing but the descriptor head and a small classifier on its hiddim-wide
-            # output. No pooling/bilinear/adversary/DANN/chem-prior machinery -- none of
-            # it applies (validate() rejects the combinations that would need it), and
+            # nothing but the descriptor head and a small classifier on its output. No
+            # pooling/bilinear/adversary/DANN/chem-prior machinery -- none of it
+            # applies (validate() rejects the combinations that would need it), and
             # InteractionClassification never builds protein1/lipid1/cross_attention1
             # under this flag, so forward() must not read anything else either.
+            #
+            # PairDescriptorHead.output_dim, not a hardcoded hiddim: pool_type=
+            # "add_max" doubles it (concat of add+max, same as it doubles
+            # pooled_lip_dim/pooled_prot_dim below) and --pair_descriptor_flatten
+            # widens it to token_count*hiddim.
             self.pair_descriptor_head = PairDescriptorHead(config, act_fn)
+            head_dim = self.pair_descriptor_head.output_dim
             self.binar = torch.nn.Sequential(
-                torch.nn.Linear(config.hiddim, config.hiddim),
+                torch.nn.Linear(head_dim, config.hiddim),
                 make_activation(config, act_fn),
                 *make_final_dropout(config, config.hiddim),
                 torch.nn.Linear(config.hiddim, 2),
@@ -355,15 +361,17 @@ class Final_Layer(torch.nn.Module):
         classifier_input_dim += self.compat_width
 
         # --pair_descriptors (training/read_configuration.py, architecture/
-        # pair_descriptor_head.py): one self-attention-pooled vector, width hiddim,
-        # concatenated the same way compat_input is -- both are rejected in
-        # combination with bilinear_fusion for the same reason (ModelConfig.validate).
+        # pair_descriptor_head.py): one self-attention-pooled vector, concatenated
+        # the same way compat_input is -- both are rejected in combination with
+        # bilinear_fusion for the same reason (ModelConfig.validate). Width is
+        # PairDescriptorHead.output_dim, not a hardcoded hiddim -- see its own
+        # __init__ for when pool_type/--pair_descriptor_flatten widen it.
         self.pair_descriptor_head = (
             PairDescriptorHead(self.config, act_fn) if self.config.pair_descriptors
             else None
         )
         if self.pair_descriptor_head is not None:
-            classifier_input_dim += self.config.hiddim
+            classifier_input_dim += self.pair_descriptor_head.output_dim
 
         if self.config.attention_pooling:
             # Learned-query attention pooling replaces the fixed reduction; the protein

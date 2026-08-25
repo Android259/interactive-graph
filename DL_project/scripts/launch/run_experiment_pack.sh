@@ -21,6 +21,10 @@ source "${PROJECT_DIR}/scripts/lib/pack_lib.sh"
 # Same knobs the one-experiment-per-job path uses, plus the packing ones.
 GPU_MODEL_GLOB="${GPU_MODEL_GLOB:-*A100*|*V100*}"
 MIN_FREE_GPU_MIB="${MIN_FREE_GPU_MIB:-16384}"
+# 1 on a CPU-only cluster (kraken-cpu): no nvidia-smi, no GPU admission/lock/
+# memory-wait below -- concurrency comes from cores (nproc/PACK_CPU_PER_RUN)
+# alone, same arithmetic the GPU path already uses for its own CPU cap.
+CPU_ONLY="${CPU_ONLY:-0}"
 JOB_ID_TAG="${JOB_ID_TAG:-}"
 # Upper bound on concurrent trainings. The effective number is decided below
 # from the card that was actually allocated.
@@ -48,67 +52,95 @@ spec="$(printf '%s' "$1" | base64 -d)" || {
     exit 2
 }
 
-# --- GPU admission: identical guard to the single-experiment command ---------
-gpu_name="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)"
+omp_threads_per_run=0
+if (( CPU_ONLY )); then
+    # --- CPU-only admission: no card to name, lock or wait memory on ---------
+    # kraken-cpu (scripts/lib/cluster_common.sh) has no nvidia-smi at all, and no
+    # GPU-bundled core count to profile the way pack_hardware_profile() does for
+    # bigfoot/kraken -- the whole allocation IS the cores (OAR_RESOURCES=/nodes=1),
+    # so concurrency is nproc/PACK_CPU_PER_RUN alone, same formula the GPU path
+    # already uses as its OWN cpu cap (the "by_cpu" arithmetic below).
+    gpu_name="cpu"
+    gpu_uuid="job${OAR_JOB_ID:-local}"
+    gpu_total_mib=0
+    hardware_profile="cpu"
+    run_min_free_gpu_mib=0
 
-# The alternation in GPU_MODEL_GLOB ("*A100*|*V100*") must be split by hand.
-# In the one-experiment-per-job path the glob is spliced into the *text* of the
-# generated command, so bash parses the `|` as a case-pattern separator; here it
-# arrives in a variable, where `|` is just a character and the whole string
-# would be matched literally -- rejecting every real GPU.
-gpu_supported=0
-IFS='|' read -r -a gpu_globs <<< "${GPU_MODEL_GLOB}"
-for gpu_glob in "${gpu_globs[@]}"; do
-    # Unquoted on purpose: one alternative, still a pattern.
-    # shellcheck disable=SC2254
-    case "${gpu_name}" in
-        ${gpu_glob}) gpu_supported=1; break ;;
-    esac
-done
-if (( gpu_supported == 0 )); then
-    printf 'Unsupported GPU model: %s\n' "${gpu_name}" >&2
-    exit 1
+    (( PACK_CPU_PER_RUN > 0 )) || PACK_CPU_PER_RUN=1
+    slots=$(( $(nproc) / PACK_CPU_PER_RUN ))
+    (( slots >= 1 )) || slots=1
+    (( PACK_PARALLEL <= 0 || slots <= PACK_PARALLEL )) || slots="${PACK_PARALLEL}"
+    # Threads per run pinned to the cores it was budgeted, same discipline
+    # run_local.sh uses OMP_THREADS_PER_JOB for: fixed once, not re-derived
+    # mid-pack, so at::parallel_for splits every reduction the same way for
+    # every run regardless of how many slots happened to be free when it started.
+    omp_threads_per_run="${PACK_CPU_PER_RUN}"
+
+    printf '=== PACK on %s cores (CPU-only, job %s): %d concurrent slot(s), %s thread(s)/run ===\n' \
+        "$(nproc)" "${OAR_JOB_ID:-local}" "${slots}" "${omp_threads_per_run}"
+else
+    # --- GPU admission: identical guard to the single-experiment command -----
+    gpu_name="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)"
+
+    # The alternation in GPU_MODEL_GLOB ("*A100*|*V100*") must be split by hand.
+    # In the one-experiment-per-job path the glob is spliced into the *text* of
+    # the generated command, so bash parses the `|` as a case-pattern separator;
+    # here it arrives in a variable, where `|` is just a character and the whole
+    # string would be matched literally -- rejecting every real GPU.
+    gpu_supported=0
+    IFS='|' read -r -a gpu_globs <<< "${GPU_MODEL_GLOB}"
+    for gpu_glob in "${gpu_globs[@]}"; do
+        # Unquoted on purpose: one alternative, still a pattern.
+        # shellcheck disable=SC2254
+        case "${gpu_name}" in
+            ${gpu_glob}) gpu_supported=1; break ;;
+        esac
+    done
+    if (( gpu_supported == 0 )); then
+        printf 'Unsupported GPU model: %s\n' "${gpu_name}" >&2
+        exit 1
+    fi
+
+    gpu_uuid="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n 1 | tr -cd 'A-Za-z0-9_-')"
+    gpu_total_mib="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1 | tr -d ' ')"
+    [[ "${gpu_total_mib}" =~ ^[0-9]+$ ]] || gpu_total_mib=0
+
+    # --- How many trainings this particular card can hold ---------------------
+    # This is the point of resolving concurrency inside the job: a 32GB V100 and
+    # a 142GB H200 both match GPU_PROPERTY, but they do not hold the same number
+    # of these trainings.
+    IFS=$'\t' read -r hardware_profile profile_parallel profile_mib_per_run \
+        profile_min_free profile_cpu_per_run < <(pack_hardware_profile "${gpu_name}")
+
+    if [[ "${PACK_HARDWARE_AUTO}" == "1" ]]; then
+        (( PACK_PARALLEL > 0 )) || PACK_PARALLEL="${profile_parallel}"
+        (( GPU_MIB_PER_RUN > 0 )) || GPU_MIB_PER_RUN="${profile_mib_per_run}"
+        (( PACK_CPU_PER_RUN > 0 )) || PACK_CPU_PER_RUN="${profile_cpu_per_run}"
+        (( PACK_MIN_FREE_GPU_MIB > 0 )) || PACK_MIN_FREE_GPU_MIB="${profile_min_free}"
+    fi
+
+    slots="${PACK_PARALLEL}"
+    (( slots >= 1 )) || slots=1
+    run_min_free_gpu_mib="${PACK_MIN_FREE_GPU_MIB}"
+    (( run_min_free_gpu_mib > 0 )) || run_min_free_gpu_mib="${MIN_FREE_GPU_MIB}"
+
+    if (( GPU_MIB_PER_RUN > 0 && gpu_total_mib > 0 )); then
+        by_memory=$(( gpu_total_mib * PACK_GPU_PERCENT / 100 / GPU_MIB_PER_RUN ))
+        (( by_memory >= 1 )) || by_memory=1
+        (( slots > by_memory )) && slots="${by_memory}"
+    fi
+
+    if (( PACK_CPU_PER_RUN > 0 )); then
+        # nproc reports the OAR cpuset, i.e. the cores this job may actually use.
+        by_cpu=$(( $(nproc) / PACK_CPU_PER_RUN ))
+        (( by_cpu >= 1 )) || by_cpu=1
+        (( slots > by_cpu )) && slots="${by_cpu}"
+    fi
+
+    printf '=== PACK on %s (%s MiB, %s cores): profile=%s, %d concurrent slot(s), cap=%s, per-run=%s MiB, min-free=%s MiB ===\n' \
+        "${gpu_name}" "${gpu_total_mib}" "$(nproc)" "${hardware_profile}" \
+        "${slots}" "${PACK_PARALLEL}" "${GPU_MIB_PER_RUN}" "${run_min_free_gpu_mib}"
 fi
-
-gpu_uuid="$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -n 1 | tr -cd 'A-Za-z0-9_-')"
-gpu_total_mib="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n 1 | tr -d ' ')"
-[[ "${gpu_total_mib}" =~ ^[0-9]+$ ]] || gpu_total_mib=0
-
-# --- How many trainings this particular card can hold ------------------------
-# This is the point of resolving concurrency inside the job: a 32GB V100 and a
-# 142GB H200 both match GPU_PROPERTY, but they do not hold the same number of
-# these trainings.
-IFS=$'\t' read -r hardware_profile profile_parallel profile_mib_per_run \
-    profile_min_free profile_cpu_per_run < <(pack_hardware_profile "${gpu_name}")
-
-if [[ "${PACK_HARDWARE_AUTO}" == "1" ]]; then
-    (( PACK_PARALLEL > 0 )) || PACK_PARALLEL="${profile_parallel}"
-    (( GPU_MIB_PER_RUN > 0 )) || GPU_MIB_PER_RUN="${profile_mib_per_run}"
-    (( PACK_CPU_PER_RUN > 0 )) || PACK_CPU_PER_RUN="${profile_cpu_per_run}"
-    (( PACK_MIN_FREE_GPU_MIB > 0 )) || PACK_MIN_FREE_GPU_MIB="${profile_min_free}"
-fi
-
-slots="${PACK_PARALLEL}"
-(( slots >= 1 )) || slots=1
-run_min_free_gpu_mib="${PACK_MIN_FREE_GPU_MIB}"
-(( run_min_free_gpu_mib > 0 )) || run_min_free_gpu_mib="${MIN_FREE_GPU_MIB}"
-
-if (( GPU_MIB_PER_RUN > 0 && gpu_total_mib > 0 )); then
-    by_memory=$(( gpu_total_mib * PACK_GPU_PERCENT / 100 / GPU_MIB_PER_RUN ))
-    (( by_memory >= 1 )) || by_memory=1
-    (( slots > by_memory )) && slots="${by_memory}"
-fi
-
-if (( PACK_CPU_PER_RUN > 0 )); then
-    # nproc reports the OAR cpuset, i.e. the cores this job may actually use.
-    by_cpu=$(( $(nproc) / PACK_CPU_PER_RUN ))
-    (( by_cpu >= 1 )) || by_cpu=1
-    (( slots > by_cpu )) && slots="${by_cpu}"
-fi
-
-printf '=== PACK on %s (%s MiB, %s cores): profile=%s, %d concurrent slot(s), cap=%s, per-run=%s MiB, min-free=%s MiB ===\n' \
-    "${gpu_name}" "${gpu_total_mib}" "$(nproc)" "${hardware_profile}" \
-    "${slots}" "${PACK_PARALLEL}" "${GPU_MIB_PER_RUN}" "${run_min_free_gpu_mib}"
 
 # --- One experiment ----------------------------------------------------------
 run_experiment() {
@@ -141,15 +173,21 @@ run_experiment() {
 
                 # Only once the slot is held does waiting for memory make sense:
                 # otherwise every queued stream would race on the same reading.
-                while true; do
-                    free_gpu_mib="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -n 1 | tr -d ' ')"
-                    if [[ "${free_gpu_mib}" =~ ^[0-9]+$ ]] && (( free_gpu_mib >= run_min_free_gpu_mib )); then
-                        break
-                    fi
-                    printf 'Waiting for GPU memory: free=%s MiB, required=%s MiB. Checking again in 60 seconds.\n' \
-                        "${free_gpu_mib:-unknown}" "${run_min_free_gpu_mib}"
-                    sleep 60
-                done
+                # Nothing to wait for on CPU_ONLY: there is no nvidia-smi, and
+                # OAR's cpuset already partitions memory with the cores (kraken-c/
+                # f nodes are 4-8 GiB/core, this project's heaviest measured
+                # per-job footprint so far is under 2 GiB, see run_local.sh).
+                if (( ! CPU_ONLY )); then
+                    while true; do
+                        free_gpu_mib="$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -n 1 | tr -d ' ')"
+                        if [[ "${free_gpu_mib}" =~ ^[0-9]+$ ]] && (( free_gpu_mib >= run_min_free_gpu_mib )); then
+                            break
+                        fi
+                        printf 'Waiting for GPU memory: free=%s MiB, required=%s MiB. Checking again in 60 seconds.\n' \
+                            "${free_gpu_mib:-unknown}" "${run_min_free_gpu_mib}"
+                        sleep 60
+                    done
+                fi
 
                 printf '=== %s | GPU: %s | SLOT: %d ===\n' \
                     "${header}" "${gpu_name}" "${slot}" > "${out_file}"
@@ -160,9 +198,20 @@ run_experiment() {
                 # would hand python the quote characters themselves and change
                 # the run. This reproduces that single round of interpretation.
                 eval "set -- ${python_args}"
-                PYTHONUNBUFFERED=1 python ./training/new_train.py "$@" 2>&1 |
-                    tee -a "${out_file}" |
-                    tee "${log_file}"
+                if (( CPU_ONLY )); then
+                    # Pinned to the cores this run was budgeted (PACK_CPU_PER_RUN),
+                    # not left at PyTorch's default (all visible cores): with
+                    # `slots` runs sharing the node, an unset thread count would
+                    # have every one of them try to use the whole node at once.
+                    OMP_NUM_THREADS="${omp_threads_per_run}" MKL_NUM_THREADS="${omp_threads_per_run}" \
+                    PYTHONUNBUFFERED=1 python ./training/new_train.py "$@" 2>&1 |
+                        tee -a "${out_file}" |
+                        tee "${log_file}"
+                else
+                    PYTHONUNBUFFERED=1 python ./training/new_train.py "$@" 2>&1 |
+                        tee -a "${out_file}" |
+                        tee "${log_file}"
+                fi
                 exit "${PIPESTATUS[0]}"
             )
             status=$?

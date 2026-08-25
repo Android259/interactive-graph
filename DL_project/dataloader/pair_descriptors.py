@@ -77,7 +77,7 @@ _MEASURES = {
 }
 
 
-def descriptor_values_by_row(csv, measure, isomeric=False):
+def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
     """One of `_MEASURES`, per candidate, in the order the encoder numbers them.
 
     Same shape and the same per-field/per-SMILES caching discipline as
@@ -87,8 +87,16 @@ def descriptor_values_by_row(csv, measure, isomeric=False):
     within a row collapse into one canonical-SMILES entry, so a mismatch would make
     this function's per-row list a different length than chain's, and
     New_dataloader._ragged_tensor stacks columns on the assumption they agree.
+
+    `cache`, when given, is a dataloader/pair_descriptor_cache.py load result: a raw
+    candidate present in its "raw_to_canonical" skips the canonicalising parse, and a
+    canonical key present in its "values" skips `fn`. Same fallback discipline as
+    chain_lengths_by_row -- an entry the cache has never seen is computed here exactly
+    as without a cache.
     """
     fn = _MEASURES[measure]
+    raw_to_canonical = cache["raw_to_canonical"] if cache else {}
+    cached_values = cache["values"] if cache else {}
     by_field = {}
     by_smiles = {}
     per_row = []
@@ -99,17 +107,23 @@ def descriptor_values_by_row(csv, measure, isomeric=False):
             values = []
             seen = set()
             for raw in field:
-                molecule = Chem.MolFromSmiles(raw)
-                if molecule is None or molecule.GetNumAtoms() == 0:
-                    continue
-                key = Chem.MolToSmiles(
-                    molecule, canonical=True, isomericSmiles=isomeric
-                )
+                if raw in raw_to_canonical:
+                    key = raw_to_canonical[raw]
+                    if key is None:
+                        continue
+                else:
+                    molecule = Chem.MolFromSmiles(raw)
+                    if molecule is None or molecule.GetNumAtoms() == 0:
+                        continue
+                    key = Chem.MolToSmiles(
+                        molecule, canonical=True, isomericSmiles=isomeric
+                    )
                 if key in seen:
                     continue
                 seen.add(key)
                 if key not in by_smiles:
-                    by_smiles[key] = fn(key)
+                    cached = cached_values.get(key)
+                    by_smiles[key] = cached[measure] if cached is not None else fn(key)
                 values.append(by_smiles[key])
             values = values or [None]
             by_field[field] = values

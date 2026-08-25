@@ -104,6 +104,19 @@ class InteractionClassification(torch.nn.Module):
     def set_pocket_descriptor_normalization(self, stats):
         self.protein1.set_pocket_descriptor_normalization(stats)
 
+    def set_pair_descriptor_pocket_share_normalization(self, stats):
+        """Train-only hydropathy_core/hydropathy_rim stats for --pair_descriptor_
+        pocket_shares_split (architecture/pair_descriptor_head.py), independent of
+        set_pocket_descriptor_normalization above: that one only fires under --rnabang_
+        frozen_node_adapter, and pair_descriptor_head needs its own copy regardless of
+        that flag. No-ops when pair_descriptors is off (final_layer builds no head) or
+        the split is off (PairDescriptorHead.set_pocket_descriptor_normalization itself
+        no-ops).
+        """
+        head = getattr(self.final_layer, "pair_descriptor_head", None)
+        if head is not None:
+            head.set_pocket_descriptor_normalization(stats)
+
     def discovered_dropout(self):
         """Learned dropout p per Concrete Dropout site, keyed by module path.
 

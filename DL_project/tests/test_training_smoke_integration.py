@@ -108,7 +108,12 @@ def synthetic_forward_args(config):
     if getattr(config, "pocket_descriptors", False):
         args["pocket_descriptor"] = torch.rand(2, config.pocket_descriptor_count)
     if getattr(config, "pair_descriptors", False):
-        args["pair_descriptor_input"] = torch.randn(2, 6)
+        base_width = 6 if getattr(config, "pair_descriptor_extent", True) else 5
+        split = (
+            getattr(config, "pair_descriptor_pocket_shares_split", False)
+            and getattr(config, "pair_descriptor_pocket_shares", True)
+        )
+        args["pair_descriptor_input"] = torch.randn(2, base_width + (2 if split else 0))
 
     return args
 
@@ -775,6 +780,126 @@ def test_pair_descriptor_pocket_shares_can_be_dropped():
 
     loss = one_training_step(config)
     assert loss == loss  # not NaN
+
+
+def test_pair_descriptor_extent_can_be_dropped():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_extent = False
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.pair_descriptor_head
+    assert head.token_count == 7  # 5 base + aromatic_share/polar_share
+    assert "extent" not in head.token_names
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_pair_descriptor_extent_combines_with_pocket_shares_split():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_extent = False
+    config.pair_descriptor_pocket_shares_split = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.pair_descriptor_head
+    assert head.token_count == 9  # 5 base + 4 split tokens
+    assert "extent" not in head.token_names
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+@pytest.mark.parametrize("pool_type", ["add", "max", "mean", "gem"])
+def test_pair_descriptor_head_pool_type_output_matches_hiddim(pool_type):
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pool_type = pool_type
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.pair_descriptor_head
+    assert head.output_dim == config.hiddim
+    if pool_type == "gem":
+        assert hasattr(head, "gem_pool")
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_pair_descriptor_head_pool_type_add_max_doubles_output_dim():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pool_type = "add_max"
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.pair_descriptor_head
+    assert head.output_dim == 2 * config.hiddim
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_pair_descriptor_flatten_concatenates_tokens_instead_of_pooling():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_flatten = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.pair_descriptor_head
+    assert head.output_dim == head.token_count * config.hiddim
+    assert not hasattr(head, "gem_pool")
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_pair_descriptor_pocket_shares_split_replaces_them_with_four_tokens():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_pocket_shares_split = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.pair_descriptor_head
+    assert head.token_count == 10
+    assert "aromatic_share" not in head.token_names
+    assert "polar_share" not in head.token_names
+    assert head.token_names[-4:] == (
+        "aromatic_share_core", "aromatic_share_rim", "hydropathy_core", "hydropathy_rim",
+    )
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in head.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_pair_descriptor_pocket_shares_split_requires_pocket_shares():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_pocket_shares = False
+    config.pair_descriptor_pocket_shares_split = True
+    with pytest.raises(ValueError, match="pair_descriptor_pocket_shares_split"):
+        config.validate()
 
 
 def test_descriptors_head_rejects_the_full_architecture_options():
