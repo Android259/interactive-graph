@@ -12,12 +12,14 @@ try:
         insert_hidden_gate, insert_input_gate, insert_output_gate,
         mlp_hidden_dims, link_concrete_dropouts, build_ffn_with_residual,
     )
+    from .pair_descriptor_head import PairDescriptorHead
 except ImportError:
     from mlp_utils import (
         make_activation, make_final_dropout, make_extra_hidden_layer,
         insert_hidden_gate, insert_input_gate, insert_output_gate,
         mlp_hidden_dims, link_concrete_dropouts, build_ffn_with_residual,
     )
+    from pair_descriptor_head import PairDescriptorHead
 
 
 class _GradientReversal(torch.autograd.Function):
@@ -290,13 +292,34 @@ class Final_Layer(torch.nn.Module):
     def __init__(self, config, act_fn=None) -> None:
         """Initialize the pooled protein-lipid binary classifier."""
         super(Final_Layer, self).__init__()
+        self.config = config
+
+        if config.descriptors_head:
+            # Sufficiency test for --pair_descriptors alone (ModelConfig docstring):
+            # nothing but the descriptor head and a small classifier on its hiddim-wide
+            # output. No pooling/bilinear/adversary/DANN/chem-prior machinery -- none of
+            # it applies (validate() rejects the combinations that would need it), and
+            # InteractionClassification never builds protein1/lipid1/cross_attention1
+            # under this flag, so forward() must not read anything else either.
+            self.pair_descriptor_head = PairDescriptorHead(config, act_fn)
+            self.binar = torch.nn.Sequential(
+                torch.nn.Linear(config.hiddim, config.hiddim),
+                make_activation(config, act_fn),
+                *make_final_dropout(config, config.hiddim),
+                torch.nn.Linear(config.hiddim, 2),
+            )
+            self._adv = None
+            self._pooled_partners = None
+            self._dann_features = None
+            self._chem_features = None
+            return
+
         middim = config.hiddim
         lip_dim = config.hiddim
         prot_dim = config.hiddim
         final_m = config.m if config.final_m is None else config.final_m
         self.lip_dim = lip_dim
         self.prot_dim = prot_dim
-        self.config = config
         enlarged, last = mlp_hidden_dims(self.config, "final", final_m * middim)
         # Attention and sliced-Wasserstein pooling each emit one vector per graph
         # (multiplier 1), overriding the pool_type width (add_max would otherwise
@@ -330,6 +353,17 @@ class Final_Layer(torch.nn.Module):
         # vectors, and pair-level scalars have no well-defined place in that product.
         self.compat_width = compat_input_width(self.config)
         classifier_input_dim += self.compat_width
+
+        # --pair_descriptors (training/read_configuration.py, architecture/
+        # pair_descriptor_head.py): one self-attention-pooled vector, width hiddim,
+        # concatenated the same way compat_input is -- both are rejected in
+        # combination with bilinear_fusion for the same reason (ModelConfig.validate).
+        self.pair_descriptor_head = (
+            PairDescriptorHead(self.config, act_fn) if self.config.pair_descriptors
+            else None
+        )
+        if self.pair_descriptor_head is not None:
+            classifier_input_dim += self.config.hiddim
 
         if self.config.attention_pooling:
             # Learned-query attention pooling replaces the fixed reduction; the protein
@@ -513,9 +547,25 @@ class Final_Layer(torch.nn.Module):
 
     def forward(
         self, lip, prot, lip_batch, prot_batch, pool, prot_pocket=None,
-        frozen_prior=None, compat_input=None,
+        frozen_prior=None, compat_input=None, pocket_descriptor=None,
+        pair_descriptor_input=None,
     ):
         """Pool both modalities by sample and return binary logits."""
+        if self.config.descriptors_head:
+            if pair_descriptor_input is None or pocket_descriptor is None:
+                raise ValueError(
+                    "descriptors_head is set but forward() got no "
+                    "pair_descriptor_input/pocket_descriptor -- New_dataloader and "
+                    "forward_args only attach these when --pair_descriptors and "
+                    "--pocket_descriptors were both set at data-load time too; check "
+                    "the flags match."
+                )
+            batch_size = pocket_descriptor.shape[0]
+            vec = self.pair_descriptor_head(
+                pair_descriptor_input.view(batch_size, -1), pocket_descriptor
+            )
+            return self.binar(vec)
+
         lip_outs, prot_outs = self._pool_partners(lip, prot, lip_batch, prot_batch, pool, prot_pocket)
 
         # Stashed BEFORE the ablations below, which is what lets one diagnostic pass do
@@ -537,6 +587,13 @@ class Final_Layer(torch.nn.Module):
         elif getattr(self.config, "protein_only", False):
             # Mirror ablation: hide the lipid half instead.
             lip_outs = torch.zeros_like(lip_outs)
+        elif getattr(self.config, "pair_descriptors_only", False):
+            # Mirrors lipid_only/protein_only, zeroing BOTH pooled partners so
+            # self.binar reads only the descriptor head's output below. Meant for
+            # eval on an already-trained checkpoint (see ModelConfig.pair_descriptors
+            # docstring), not a training mode of its own.
+            lip_outs = torch.zeros_like(lip_outs)
+            prot_outs = torch.zeros_like(prot_outs)
 
         if self.config.bilinear_fusion:
             common_out = self.bilinear(lip_outs, prot_outs)
@@ -567,6 +624,20 @@ class Final_Layer(torch.nn.Module):
                     "were configured with different compatibility flags"
                 )
             common_out = torch.cat([common_out, compat_input], dim=1)
+
+        if self.pair_descriptor_head is not None:
+            if pair_descriptor_input is None or pocket_descriptor is None:
+                raise ValueError(
+                    "pair_descriptors is set but forward() got no "
+                    "pair_descriptor_input/pocket_descriptor -- New_dataloader and "
+                    "forward_args only attach these when --pair_descriptors and "
+                    "--pocket_descriptors were both set at data-load time too; check "
+                    "the flags match."
+                )
+            descriptor_vec = self.pair_descriptor_head(
+                pair_descriptor_input.view(common_out.shape[0], -1), pocket_descriptor
+            )
+            common_out = torch.cat([common_out, descriptor_vec], dim=1)
 
         # Family DANN reads the FUSED vector -- the one place the per-partner adversary
         # cannot reach, and where cross-attention deposits the family-specific

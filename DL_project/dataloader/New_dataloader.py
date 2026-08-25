@@ -20,11 +20,14 @@ from dataloader.chemistry_prior import (
     species_similarity,
 )
 from dataloader.pocket_lipid_compatibility import (
+    chain_lengths_by_row,
     coarsen_to_levels,
     compat_input_parts,
+    pocket_extent_by_protein,
     raw_compatibility,
     raw_compatibility_parts,
 )
+from dataloader.pair_descriptors import as_arrays, descriptor_values_by_row
 from dataloader.grab_dataset_graph import GrabDatasetGraphMixin
 from dataloader.lipid_embedding_store import load_lipid_embedding_store
 from dataloader.lipid_graph_builder import LipidGraphBuilder
@@ -325,6 +328,7 @@ class PLIDataset(
         raw_columns = self._raw_frozen_prior_columns(csv)
         self._compute_frozen_prior(raw_columns)
         self._compute_compatibility_input(raw_columns)
+        self._compute_pair_descriptors(csv)
         self.csv = self.csvtrain
         self.pair_graph = None
         
@@ -382,6 +386,10 @@ class PLIDataset(
         # the samplers were written for; see dataloader/sampler.py.
         self.negatives_per_positive = int(
             getattr(config, "negatives_per_positive", 2) or 2
+        )
+        self.hard_negative_mining = bool(getattr(config, "hard_negative_mining", False))
+        self.hard_negative_share = float(
+            getattr(config, "hard_negative_share", 0.5) or 0.5
         )
         # Head-group classes held out of training alongside excluded_groups: the second
         # axis of the cold split. Compared case-insensitively, as the groups are.
@@ -768,6 +776,120 @@ class PLIDataset(
             )
             setattr(self, name, frame.assign(**assigned))
 
+    def _compute_pair_descriptors(self, csv):
+        """Attach --pair_descriptors' 6 standardised columns.
+
+        Fed to architecture/pair_descriptor_head.py's self-attention token set, one
+        token each: chain length, unsaturation count and H-bond capacity (lipid-only),
+        coarsened pocket extent (protein-only -- coarsened the same way
+        --compatibility_split_input's "clash" coarsens it, on TRAIN-only quantile
+        edges, so a held-out protein's raw cavity size cannot identify it the way full-
+        resolution pocket_extent does, eta^2 0.78 against protein identity per
+        files/compat_input_audit.md), and occupancy = relu(cbrt(heavy_atom_count) -
+        coarse_extent), the one genuine pair term here -- a cheap, docking-free stand-in
+        for the paper's bound-ligand/cavity volume ratio (see
+        dataloader/pair_descriptors.py for why 3D volume itself is not attempted). Two
+        more protein-only tokens (aromatic_share, polar_share) are read directly off the
+        pocket descriptor tensor at forward time instead of duplicated here --
+        --pair_descriptors requires --pocket_descriptors (ModelConfig.validate) and
+        that tensor already carries them.
+
+        Standardised on TRAIN candidates only, same discipline as
+        _compute_compatibility_input; missing (RDKit-unparseable) values are filled
+        with the train mean, same as _raw_frozen_prior_columns.
+        """
+        if not getattr(self.config, "pair_descriptors", False):
+            return
+
+        isomeric = getattr(self.config, "lipid_isomers", False)
+        chain = as_arrays(chain_lengths_by_row(csv, isomeric))
+        unsaturation = as_arrays(descriptor_values_by_row(csv, "unsaturation", isomeric))
+        hbond = as_arrays(descriptor_values_by_row(csv, "hbond", isomeric))
+        heavy = as_arrays(descriptor_values_by_row(csv, "heavy_atoms", isomeric))
+        extents = pocket_extent_by_protein(self.ROOT_DIR, self.protein_names)
+        extent = csv["LTPProtein"].map(extents).to_numpy(dtype=float)
+
+        train_rows = self._original_rows(self.csvtrain)
+
+        def fill_train_mean(values, label):
+            missing = sum(int(np.isnan(row).sum()) for row in values)
+            if not missing:
+                return values
+            train_values = (
+                np.concatenate(ragged_rows(values, train_rows))
+                if len(train_rows) else np.array([], dtype=float)
+            )
+            usable = train_values[~np.isnan(train_values)]
+            fill = float(usable.mean()) if len(usable) else 0.0
+            print(
+                f"pair descriptors : {missing} of {sum(len(row) for row in values)} "
+                f"{label} candidates unparseable, filled with the train mean ({fill:.2f})"
+            )
+            return [np.where(np.isnan(row), fill, row) for row in values]
+
+        chain = fill_train_mean(chain, "chain-length")
+        unsaturation = fill_train_mean(unsaturation, "unsaturation")
+        hbond = fill_train_mean(hbond, "H-bond-capacity")
+        heavy = fill_train_mean(heavy, "heavy-atom")
+
+        bins = max(int(getattr(self.config, "compat_extent_bins", 4) or 0), 1)
+        edges = None
+        if len(train_rows) and bins > 1:
+            train_extent = extent[train_rows]
+            edges = np.quantile(train_extent, np.linspace(0, 1, bins + 1))
+            edges[0], edges[-1] = -np.inf, np.inf
+            edges = np.unique(edges)
+        coarse_extent = coarsen_to_levels(extent, edges) if edges is not None else extent
+        occupancy = [
+            np.maximum(np.cbrt(np.maximum(heavy_row, 0.0)) - coarse_extent[position], 0.0)
+            for position, heavy_row in enumerate(heavy)
+        ]
+
+        raw = {
+            "chain": chain, "unsaturation": unsaturation, "hbond": hbond,
+            "heavy": heavy, "occupancy": occupancy,
+        }
+        stats = {}
+        for name, values in raw.items():
+            train_values = (
+                np.concatenate(ragged_rows(values, train_rows))
+                if len(train_rows) else np.array([0.0])
+            )
+            spread = train_values.std() if len(train_values) else 1.0
+            stats[name] = (
+                train_values.mean() if len(train_values) else 0.0,
+                spread if spread > 1e-12 else 1.0,
+            )
+        extent_train = coarse_extent[train_rows] if len(train_rows) else np.array([0.0])
+        extent_mean = extent_train.mean() if len(extent_train) else 0.0
+        extent_spread = extent_train.std() if len(extent_train) else 1.0
+        extent_spread = extent_spread if extent_spread > 1e-12 else 1.0
+
+        def columns(rows):
+            names = list(raw) + ["extent"]
+            if not len(rows):
+                return {f"_pair_desc_{name}": [] for name in names}
+            out = {}
+            for name, values in raw.items():
+                mean, spread = stats[name]
+                out[f"_pair_desc_{name}"] = candidate_column(
+                    [(row - mean) / spread for row in ragged_rows(values, rows)]
+                )
+            # Extent is one value per ROW (protein-level), repeated over that row's
+            # candidates -- chain gives the candidate count, not the value.
+            counts = [len(row) for row in ragged_rows(chain, rows)]
+            out["_pair_desc_extent"] = candidate_column([
+                np.full(count, (coarse_extent[row] - extent_mean) / extent_spread)
+                for count, row in zip(counts, rows)
+            ])
+            return out
+
+        self.csvtrain = self.csvtrain.assign(**columns(train_rows))
+        for name in ("csvalidate", "csvtest"):
+            frame = getattr(self, name)
+            rows = self._original_rows(frame) if not frame.empty else np.array([], dtype=int)
+            setattr(self, name, frame.assign(**columns(rows)))
+
     def _derive_lipid_class_holdout(self, csv):
         """Work out which head-group classes leave training, from the held-out family.
 
@@ -841,17 +963,27 @@ class PLIDataset(
                 lipid_class_series(csv).str.lower().isin(self.excluded_lipid_classes)
             )
 
+        # --hard_negative_mining: built once per dataset (not per group) since it is
+        # the same Tanimoto matrix every group's weighting reads. Only the samplers
+        # that go through _sample_group_balanced_negatives accept it; validate()
+        # already requires one of them to be active whenever the flag is set.
+        hard_negative_pool = None
+        if self.hard_negative_mining:
+            hard_negative_pool = species_similarity(csv, self.ROOT_DIR)
+
         if self.balanced_lipid_classes:
             csvtrue, csvfalse = split_and_sample_lipid_class_balanced_interactions(
                 csv, seed, ratio=self.negatives_per_positive
             )
         elif self.balanced_proteins:
             csvtrue, csvfalse = split_and_sample_protein_balanced_interactions(
-                csv, seed, self.negatives_per_positive, strata
+                csv, seed, self.negatives_per_positive, strata,
+                hard_negative_pool, self.excluded_groups, self.hard_negative_share,
             )
         elif self.balance_negatives_by_family:
             csvtrue, csvfalse = split_and_sample_family_balanced_interactions(
-                csv, seed, self.negatives_per_positive, strata
+                csv, seed, self.negatives_per_positive, strata,
+                hard_negative_pool, self.excluded_groups, self.hard_negative_share,
             )
         else:
             csvtrue, csvfalse = split_and_sample_interactions(csv, seed)
@@ -1272,6 +1404,18 @@ class PLIDataset(
         self._compat_input_tensor, self._compat_input_offsets = _ragged_tensor(
             [self.csv[name] for name in compat_columns] if compat_columns else None
         )
+        # Only columns under --pair_descriptors (_compute_pair_descriptors): the 6
+        # standardised tokens, in a fixed order architecture/pair_descriptor_head.py
+        # relies on (chain, unsaturation, hbond, heavy, occupancy, extent).
+        pair_descriptor_columns = [
+            f"_pair_desc_{name}" for name in
+            ("chain", "unsaturation", "hbond", "heavy", "occupancy", "extent")
+            if f"_pair_desc_{name}" in self.csv.columns
+        ]
+        self._pair_descriptor_tensor, self._pair_descriptor_offsets = _ragged_tensor(
+            [self.csv[name] for name in pair_descriptor_columns]
+            if pair_descriptor_columns else None
+        )
 
     def _expand_candidate_rows(self, frame):
         """One row per candidate structure, so evaluation can average over the set.
@@ -1519,6 +1663,13 @@ class PLIDataset(
                 self._compat_input_offsets, idx, candidate_index
             )
             protein_graph.compat_input = self._compat_input_tensor[position].view(1, -1)
+        if self._pair_descriptor_tensor is not None:
+            position = _candidate_position(
+                self._pair_descriptor_offsets, idx, candidate_index
+            )
+            protein_graph.pair_descriptor_input = (
+                self._pair_descriptor_tensor[position].view(1, -1)
+            )
         if getattr(self.config, "lipid_graph_isomers", False):
             lipid_graph = self.make_graph_lipid(
                 smile_global, smile_fragment

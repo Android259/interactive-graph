@@ -337,6 +337,56 @@ class ModelConfig:
     compatibility_split_input: bool = False
     compat_input_parts: str = "chain,clash"
     compat_extent_bins: int = 4
+    # Descriptors from Lipovsky et al. (Nature 2025, s41586-025-10040-y), the paper
+    # behind this project's LTP-lipid measurements (dataloader/pair_descriptors.py):
+    # chain length (reusing pocket_lipid_compatibility.chain_lengths_by_row),
+    # unsaturation count, an H-bond-capacity proxy, and an occupancy term (heavy-atom
+    # count vs the SAME coarsened pocket_extent --compatibility_split_input's "clash"
+    # uses, so a held-out protein's raw cavity size cannot leak through it either).
+    # architecture/pair_descriptor_head.py embeds each as a token, adds two more
+    # multiplicative pair terms (pocket aromatic_share x unsaturation, pocket polar
+    # share x H-bond capacity -- proxies for the paper's pose-specific Phe/H-bond
+    # findings, since this project has no docking pipeline to place them properly),
+    # runs one self-attention layer over the token set, and mean-pools it to one
+    # vector concatenated into the fused representation (Final_Layer), the same slot
+    # --compatibility_input uses. Requires --pocket_descriptors (the aromatic_share /
+    # apolar_sasa_share source) and is incompatible with --bilinear_fusion for the
+    # same reason --compatibility_input is (see validate()).
+    pair_descriptors: bool = False
+    # Whether aromatic_share/polar_share (pocket_descriptor-derived, protein-only)
+    # are among the head's tokens. Default True, matching every run so far. Set
+    # --no_pair_descriptor_pocket_shares to drop them and keep only the 6
+    # dataloader-computed tokens (chain, unsaturation, hbond, heavy, occupancy,
+    # extent): those two are read straight off POCKET_DESCRIPTOR_NAMES, which
+    # dataloader/pocket_lipid_compatibility.py's own docstring already flags as a
+    # family fingerprint (eta^2 0.28-0.85 against protein identity,
+    # preprocessing/pocket_descriptor_identity_check.py) -- see project memory
+    # [[descriptors-path-fingerprint-leak]]: on descriptors_path (--descriptors_head),
+    # LBP_BPI_CETP's net_AUC_prot (0.869) exceeded the protein-blind chemistry null
+    # (0.699) by more than the null's own richer lipid-structure input could explain,
+    # and aromatic_share/polar_share were the only channel left that could carry it.
+    # This flag reruns that same label with the suspect channel removed, to confirm
+    # or kill the attribution.
+    pair_descriptor_pocket_shares: bool = True
+    # Diagnostic ablation, mirroring --lipid_only/--protein_only: zeroes BOTH pooled
+    # partners so the classifier reads only the descriptor head's output. Meant to be
+    # set at EVAL time on a checkpoint trained with --pair_descriptors on, to measure
+    # what that head alone (its already-trained weights) predicts -- not a training
+    # mode of its own.
+    pair_descriptors_only: bool = False
+    # Sufficiency test for --pair_descriptors alone: InteractionClassification never
+    # builds protein1/lipid1/cross_attention1 (or their double_attention pairs) under
+    # this flag, and Final_Layer builds only the descriptor head and a small 2-layer
+    # classifier on its hiddim-wide output -- no pooling, bilinear, adversary, DANN or
+    # chem-prior machinery. A genuinely separate, cheap model (GPU cost is the ~3% of
+    # parameters architecture/pair_descriptor_head.py spends, not the ~93% the encoders
+    # and cross-attention spend, see analysis/model_parameter_breakdown.py), not an
+    # ablation of the full one: a checkpoint trained under --descriptors_head has a
+    # different state_dict than one trained without it and the two cannot load into
+    # each other. Requires --pair_descriptors (which requires --pocket_descriptors);
+    # everything that assumes the full architecture's modules is rejected in
+    # combination (see validate()) since Final_Layer would not have built them.
+    descriptors_head: bool = False
     # Give the lipid branch a smaller learning rate than the rest of the model, leaving
     # the forward pass exactly as it was: the lipid stream learns proportionally slower
     # while the protein branch keeps its full step, which is the warm-up remedy for the
@@ -529,6 +579,20 @@ class ModelConfig:
     # --negatives_per_positive=1 explicitly; results from before this default are 1:1
     # and are not directly comparable.
     negatives_per_positive: int = 2
+    # Bias the negatives drawn for a protein's TRAIN-side rows toward its own chemistry
+    # hard cases -- unlabeled lipids Tanimoto-similar to a lipid that protein IS
+    # positive for -- instead of drawing them uniformly, so the loss must separate
+    # binder from non-binder chemistry rather than lean on the base rate. Applies only
+    # to groups whose family is not in --excluded_groups: a held-out family's rows
+    # become validation/test after the split, and this flag must not change what those
+    # measure, only what training sees. See dataloader/sampler.py's
+    # _sample_group_balanced_negatives and _hard_negative_weights.
+    hard_negative_mining: bool = False
+    # Sampling-weight mass steered toward the hardest candidates; the rest (1 - share)
+    # stays uniform, so a protein whose positives have no chemically close negatives in
+    # its own pool still draws its full quota instead of concentrating on whatever is
+    # least-far-from-zero similarity.
+    hard_negative_share: float = 0.5
     test_group: str = ""
     cold_split: bool = False
     # Diagnostic shortcut ablation: zero one pooled partner before the final
@@ -884,6 +948,22 @@ class ModelConfig:
                 "negatives_per_positive is how many negatives each positive draws "
                 "inside its balancing group and must be at least 1; "
                 f"got {self.negatives_per_positive}"
+            )
+
+        if self.hard_negative_mining and not (
+            self.balanced_proteins or self.balance_negatives_by_family
+        ):
+            raise ValueError(
+                "hard_negative_mining reweights the per-group negative draw in "
+                "_sample_group_balanced_negatives and needs one of "
+                "balanced_proteins/balance_negatives_by_family to select that draw"
+            )
+
+        if not 0.0 <= self.hard_negative_share <= 1.0:
+            raise ValueError(
+                "hard_negative_share is the sampling-weight mass steered toward "
+                f"chemistry-hard candidates and belongs in [0, 1]; got "
+                f"{self.hard_negative_share}"
             )
 
         if (self.double_coldsplit or self.mixed_coldsplit) and not self.excluded_groups:
@@ -1331,6 +1411,52 @@ class ModelConfig:
             raise ValueError(
                 f"compat_extent_bins must be at least 1, got {self.compat_extent_bins}"
             )
+        if self.pair_descriptors and self.bilinear_fusion:
+            # Same reasoning as compatibility_input/compatibility_split_input above:
+            # the descriptor head's pooled vector is concatenated after fusion, which
+            # is exactly the single-partner-survivable shortcut bilinear_fusion exists
+            # to close.
+            raise ValueError(
+                "pair_descriptors cannot be combined with bilinear_fusion -- its "
+                "pooled vector would be concatenated after the bilinear product, the "
+                "same shortcut bilinear_fusion is meant to close"
+            )
+        if self.pair_descriptors and not self.pocket_descriptors:
+            raise ValueError(
+                "pair_descriptors requires pocket_descriptors -- the descriptor "
+                "head's aromatic/H-bond pair terms read aromatic_share and "
+                "apolar_sasa_share off the pocket descriptor tensor"
+            )
+        if self.pair_descriptors_only and not self.pair_descriptors:
+            raise ValueError("pair_descriptors_only requires pair_descriptors")
+        if self.pair_descriptors_only and (self.lipid_only or self.protein_only):
+            raise ValueError(
+                "pair_descriptors_only already zeroes both pooled partners; combining "
+                "it with lipid_only/protein_only is redundant and their zeroing order "
+                "would be ambiguous"
+            )
+        if self.descriptors_head and not self.pair_descriptors:
+            raise ValueError("descriptors_head requires pair_descriptors")
+        if self.descriptors_head:
+            # Final_Layer builds only pair_descriptor_head + a small binar under this
+            # flag (see its docstring above); none of these have anything to attach to.
+            unsupported = [
+                name for name in (
+                    "bilinear_fusion", "adversarial_grl", "dann_family", "chem_prior",
+                    "chem_adversary", "pocket_compat_prior", "compatibility_input",
+                    "compatibility_split_input", "attention_pooling", "swe_pooling",
+                    "lipid_only", "protein_only", "pair_descriptors_only",
+                    "lipid_path_handicap", "double_attention",
+                )
+                if getattr(self, name)
+            ]
+            if unsupported:
+                raise ValueError(
+                    "descriptors_head builds only the descriptor self-attention head "
+                    "and a small classifier -- protein1/lipid1/cross_attention1/"
+                    "final_layer's usual modules are never built, so these options "
+                    "have nothing to attach to: " + ", ".join(unsupported)
+                )
         if self.compatibility_split_input:
             named = [n.strip() for n in self.compat_input_parts.split(",") if n.strip()]
             unknown = [n for n in named if n not in ("chain", "clash")]
@@ -1596,6 +1722,8 @@ SIMPLE_BOOL_FLAGS = {
     "--cross_attention": "cross_attention",
     "bilinear_fusion": "bilinear_fusion",
     "--bilinear_fusion": "bilinear_fusion",
+    "hard_negative_mining": "hard_negative_mining",
+    "--hard_negative_mining": "hard_negative_mining",
     "adversarial_grl": "adversarial_grl",
     "--adversarial_grl": "adversarial_grl",
     "adv_deep": "adv_deep",
@@ -1620,6 +1748,14 @@ SIMPLE_BOOL_FLAGS = {
     "--compatibility_split_input": "compatibility_split_input",
     "compat_extent_bins": "compat_extent_bins",
     "--compat_extent_bins": "compat_extent_bins",
+    "pair_descriptors": "pair_descriptors",
+    "--pair_descriptors": "pair_descriptors",
+    "pair_descriptors_only": "pair_descriptors_only",
+    "--pair_descriptors_only": "pair_descriptors_only",
+    "descriptors_head": "descriptors_head",
+    "--descriptors_head": "descriptors_head",
+    "pair_descriptor_pocket_shares": "pair_descriptor_pocket_shares",
+    "--pair_descriptor_pocket_shares": "pair_descriptor_pocket_shares",
     "dann_lambda_ramp": "dann_lambda_ramp",
     "--dann_lambda_ramp": "dann_lambda_ramp",
     "dann_lambda_ramp_by_fit": "dann_lambda_ramp_by_fit",
@@ -1830,6 +1966,12 @@ FLAG_HANDLERS = {
     "--no_lipid_self_attention": set_config_flag("lipid_self_attention", False),
     "no_cross_attention": set_config_flag("cross_attention", False),
     "--no_cross_attention": set_config_flag("cross_attention", False),
+    "no_pair_descriptor_pocket_shares": set_config_flag(
+        "pair_descriptor_pocket_shares", False
+    ),
+    "--no_pair_descriptor_pocket_shares": set_config_flag(
+        "pair_descriptor_pocket_shares", False
+    ),
     "no_lipid_first_fragment_only": set_config_flag(
         "lipid_first_fragment_only", False
     ),
@@ -1866,6 +2008,7 @@ VALUE_HANDLERS = {
     ),
     "--excluded_groups=": set_config_field("excluded_groups", read_excluded_groups),
     "--negatives_per_positive=": set_config_field("negatives_per_positive", int),
+    "--hard_negative_share=": set_config_field("hard_negative_share", float),
     "--eval_candidates_per_pair=": set_config_field(
         "eval_candidates_per_pair", int
     ),

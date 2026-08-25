@@ -42,11 +42,27 @@ A network compared by BA alone is credited for where its decision boundary sits,
 what it knows. Everything past this point is therefore reported as AUC, against a
 chemistry-only null model, computed on the identical rows.
 
+LBP\_BPI\_CETP is the clearest instance of exactly that failure mode: it is the only
+family above 0.60 BA (Table~\ref{tab:randba}), yet by AUC (Tables
+\ref{tab:randaucvalid}--\ref{tab:randauctest}) it is the one family whose raw ranking
+sits below the chemistry null model on both splits, and the one family with no
+compensating in-sample increment (Table~\ref{tab:randincrement}). Its BA lead reflects
+where the decision boundary sits, not a pairwise signal the network has learned; taken
+alone, Table~\ref{tab:randba} would rank it the strongest family, and everything past
+this point ranks it the weakest.
+
 \subsection{Ranking against the chemistry null model}
 
-A chemistry-only predictor that ignores the protein and scores a lipid by the training
-positive rate of its $k = 15$ nearest neighbours reaches BA 0.512 at a threshold fit on training
-while ranking the same rows at AUC 0.565--0.589 (Section~\ref{sec:splits}). Two questions
+A chemistry-only predictor that ignores the protein and scores a lipid by the
+similarity-weighted positive rate of its $k = 15$ nearest training neighbours ranks the
+pooled block, averaged over all seven families, at AUC 0.570 in validation and 0.560 in
+test (\texttt{analysis/chemistry\_null\_model.py}, five seeds, this run's coldsplit
+share and negative ratio) -- well above chance despite needing no protein at all, and
+uneven per family, from near-chance to well above (Tables
+\ref{tab:randaucvalid}--\ref{tab:randauctest} give the exact split, pooled and
+in-protein). It is reported as AUC rather than balanced accuracy for the same reason as
+the network above: at a fixed threshold, ranking ability is not separable from where the
+threshold happens to sit. Two questions
 are conflated by an AUC taken over the whole block: whether a lipid binds
 anything at all, which needs no protein and is what the null model answers, and whether
 it binds \emph{this} protein, which is the term the network exists to add. Pairs between
@@ -99,8 +115,13 @@ START & 154 & 65 & 0.461 & 0.432 & 0.501 & 0.495 \\
 
 GLTP is the family that comes closest to a consistent win: the network exceeds the null
 model pooled in validation (by 0.001), pooled in test (by 0.060) and in-protein in test
-(by 0.035), and is a near-tie in-protein in validation (0.500 to 0.501, 0.001 below).
-scp2 exceeds the null model only in-protein in validation, by 0.072. No other
+(by 0.035), and is a near-tie in-protein in validation (0.500 to 0.501, 0.001 below). The
+family average hides its two proteins disagreeing outright: at the fixed threshold
+(Table~\ref{tab:randba}'s underlying per-protein breakdown), GLTP itself predicts
+negative on every real positive in four of its five test seeds (sensitivity 0.000),
+while GLTPD1 alone reaches sensitivity 0.36--1.00 with specificity 1.000 in every seed;
+the family-level numbers above describe GLTPD1, not a property the family shares. scp2
+exceeds the null model only in-protein in validation, by 0.072. No other
 family-column-split combination favours the network: the closest miss is START pooled
 in validation, 0.005 below, and the largest gap is IP\_trans pooled in validation, 0.297
 below. In-protein, the null model itself reaches 0.519--0.714 on the three families with

@@ -33,7 +33,20 @@ pack_hardware_profile() {
 
     case "${gpu_name}" in
         *V100*)
-            printf 'v100\t2\t12288\t11000\t5\n'
+            # CPU per run was 5 (default --num_workers=4 + the main process, no
+            # slack), which silently caps concurrency to 1 on any V100 node OAR
+            # hands out fewer than 10 cores for /nodes=1/gpu=1 -- measured
+            # 2026-08-25 on bbp_dcs_rand_smd_fa_nps_bilinear_fusion...: 8 cores,
+            # 8/5=1, the whole 9-run pack serialised even though the memory cap
+            # (2, 12288 MiB fits twice in 32768*0.8) and the walltime request
+            # (sized for parallel=2, scripts/lib/cluster_common.sh) both assumed
+            # 2. At 4, 8/4=2 -- matches the memory cap on the lean node and still
+            # fits the historical 10-core node (10/4=2, same as before). Each run
+            # is then budgeted one core short of its real process count (4
+            # workers + main), a mild, tolerable oversubscription given
+            # DataLoader workers spend most of their time waiting on I/O rather
+            # than pegging a core -- far cheaper than running at 1x.
+            printf 'v100\t2\t12288\t11000\t4\n'
             ;;
         *A100*)
             printf 'a100\t4\t14336\t13000\t5\n'

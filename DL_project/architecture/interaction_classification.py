@@ -26,18 +26,23 @@ class InteractionClassification(torch.nn.Module):
         config.validate()
         self.config = config
 
-        self.lipid1 = Lipid_encoder(self.config)
-        self.protein1 = Protein_encoder(self.config)
-        if self.config.cross_attention:
-            self.cross_attention1 = CrossAttention(
-                self.config.hiddim, self.config.hiddim, self.config
-            )
-        if self.config.double_attention:
-            self.lipid2 = Lipid_encoder(self.config, start=False)
-            self.protein2 = Protein_encoder(self.config, start=False)
-            self.cross_attention2 = CrossAttention(
-                self.config.hiddim, self.config.hiddim, self.config
-            )
+        if not self.config.descriptors_head:
+            # --descriptors_head (training/read_configuration.py) is a sufficiency
+            # test for --pair_descriptors alone: none of the usual encoder/attention
+            # modules are built, and forward() below never reaches the code that would
+            # use them.
+            self.lipid1 = Lipid_encoder(self.config)
+            self.protein1 = Protein_encoder(self.config)
+            if self.config.cross_attention:
+                self.cross_attention1 = CrossAttention(
+                    self.config.hiddim, self.config.hiddim, self.config
+                )
+            if self.config.double_attention:
+                self.lipid2 = Lipid_encoder(self.config, start=False)
+                self.protein2 = Protein_encoder(self.config, start=False)
+                self.cross_attention2 = CrossAttention(
+                    self.config.hiddim, self.config.hiddim, self.config
+                )
         self.final_layer = Final_Layer(self.config)
 
     def lipid_branch_parameters(self):
@@ -241,9 +246,19 @@ class InteractionClassification(torch.nn.Module):
         prot_edge_node_degree=None,
         pocket_descriptor=None,
         frozen_prior=None,
-        compat_input=None):
+        compat_input=None,
+        pair_descriptor_input=None):
         """Encode a batched protein-lipid input and return binary logits."""
 
+        if config.descriptors_head:
+            # No protein1/lipid1/cross_attention1 exist under this flag (__init__
+            # above); every other argument here is ignored. Final_Layer.forward()
+            # short-circuits the same way, reading only these two.
+            return self.final_layer(
+                None, None, None, None, None,
+                pocket_descriptor=pocket_descriptor,
+                pair_descriptor_input=pair_descriptor_input,
+            )
 
         if config.lipid_fragments_mask:
             assert lipid_batch is not None
@@ -369,6 +384,8 @@ class InteractionClassification(torch.nn.Module):
                 self._pocket_pool_signal(prot_batch, pocket_mask, node_confidence),
                 frozen_prior=frozen_prior,
                 compat_input=compat_input,
+                pocket_descriptor=pocket_descriptor,
+                pair_descriptor_input=pair_descriptor_input,
             )
 
         if config.double_attention:
@@ -437,6 +454,8 @@ class InteractionClassification(torch.nn.Module):
                 self._pocket_pool_signal(prot_batch, pocket_mask, node_confidence),
                 frozen_prior=frozen_prior,
                 compat_input=compat_input,
+                pocket_descriptor=pocket_descriptor,
+                pair_descriptor_input=pair_descriptor_input,
             )
 
         return out

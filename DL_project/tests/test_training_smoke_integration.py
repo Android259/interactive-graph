@@ -105,6 +105,11 @@ def synthetic_forward_args(config):
     if config.lipid_fragments_mask:
         args["lipid_batch"] = torch.tensor([0, 0, 1, 1], dtype=torch.long)
 
+    if getattr(config, "pocket_descriptors", False):
+        args["pocket_descriptor"] = torch.rand(2, config.pocket_descriptor_count)
+    if getattr(config, "pair_descriptors", False):
+        args["pair_descriptor_input"] = torch.randn(2, 6)
+
     return args
 
 
@@ -676,6 +681,110 @@ def test_active_configuration_has_no_parameters_without_gradients(mode):
         if parameter.requires_grad and parameter.grad is None
     ]
     assert unused == []
+
+
+def test_pair_descriptors_head_trains_and_gets_gradients():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.validate()
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name
+        for name, parameter in model.final_layer.pair_descriptor_head.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_pair_descriptors_only_ignores_lipid_and_protein_pooling():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptors_only = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    args = synthetic_forward_args(config)
+    output_a = model(**args)
+    args["lip"] = args["lip"] * 0 + torch.randn_like(args["lip"])
+    args["prot"] = args["prot"] * 0 + torch.randn_like(args["prot"])
+    output_b = model(**args)
+
+    assert torch.allclose(output_a, output_b)
+
+
+def test_pair_descriptors_rejects_bilinear_fusion():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.bilinear_fusion = True
+    with pytest.raises(ValueError, match="bilinear_fusion"):
+        config.validate()
+
+
+def test_pair_descriptors_requires_pocket_descriptors():
+    config = make_config()
+    config.pair_descriptors = True
+    with pytest.raises(ValueError, match="pocket_descriptors"):
+        config.validate()
+
+
+def test_descriptors_head_builds_no_encoder_or_cross_attention_modules():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.descriptors_head = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert not hasattr(model, "lipid1")
+    assert not hasattr(model, "protein1")
+    assert not hasattr(model, "cross_attention1")
+    assert hasattr(model.final_layer, "pair_descriptor_head")
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in model.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_pair_descriptor_pocket_shares_can_be_dropped():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_pocket_shares = False
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.pair_descriptor_head
+    assert head.token_count == 6
+    assert "aromatic_share" not in head.token_names
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_descriptors_head_rejects_the_full_architecture_options():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.descriptors_head = True
+    config.dann_family = True
+    with pytest.raises(ValueError, match="descriptors_head"):
+        config.validate()
 
 
 def test_single_attention_pooling_uses_only_pocket_nodes():

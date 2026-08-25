@@ -1,18 +1,27 @@
 #!/usr/bin/env python3
-"""Rebuilds the four tables of files/results_section.tex from a checkpoint-scores CSV.
+"""Rebuilds the four tables of files/results_section.tex, given only a sweep label.
 
 files/results_section.tex reports bbp_dcs_rand_smd_fa_nps_dpt01_gm_plm8_hid8_wd001_ep120
 (lipid_random_choice on) over five seeds. This script is the single place that turns a
-scores CSV from analysis/checkpoint_scores.py into the four tables: BA at the checkpoint
-epoch (from metrics_summary.csv directly, since only the five dynamics milestones --
-1, 10, 49, 51, 120 -- have saved weights, and the checkpoint epoch is usually none of
-them), AUC pooled/in-protein against the chemistry null model at epoch 120, the in-sample
-increment at epoch 120, and the scp2 net_prot-chem_prot trajectory over all five epochs.
+label's saved checkpoints into the four tables: BA at the checkpoint epoch (from
+metrics_summary.csv directly, since only the five dynamics milestones -- 1, 10, 49, 51,
+120 -- have saved weights, and the checkpoint epoch is usually none of them), AUC
+pooled/in-protein against the chemistry null model at a fixed epoch (120 by default; see
+--by_best_checkpoint), the in-sample increment at that same epoch, and the scp2
+net_prot-chem_prot trajectory over all five epochs.
 
-Reads only.
+Reads only (scoring a checkpoint is a forward pass, no gradient, nothing written back).
 
     scripts/env.sh python3 analysis/build_rand_results_tables.py \
-        --scores /path/to/rand_scores_5seed.csv --label bbp_dcs_rand_smd_fa_nps_dpt01_gm_plm8_hid8_wd001_ep120
+        --label bbp_dcs_rand_smd_fa_nps_dpt01_gm_plm8_hid8_wd001_ep120
+
+Scores every requested (family, seed, epoch) from models/<label>/groups_<family>/
+dynamics/seed<seed>_epoch<epoch>.pt the same way analysis/checkpoint_scores.py does --
+missing checkpoints (a sweep still in flight) are skipped, not fatal, same as there. Pass
+an existing CSV via --scores (from analysis/checkpoint_scores.py, or a previous
+--save-scores here) to reuse it instead of re-scoring, e.g. while iterating on the tables
+themselves; --seeds/--families/--epochs then only filter which of ITS rows are used and
+are not re-scored.
 """
 import argparse
 import os
@@ -25,6 +34,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
+from analysis.checkpoint_scores import DEFAULT_EPOCHS, score_checkpoints  # noqa: E402
 from analysis.chemistry_null_model import DEFAULT_FAMILIES, species_similarity  # noqa: E402
 from analysis.interaction_increment import increment_table  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
@@ -55,18 +65,47 @@ def rows_pos_counts(scores, families, split, epoch=120):
     print()
 
 
-def auc_and_increment_tables(csv, similarity, index, scores, families, seeds, split):
+def auc_and_increment_tables(csv, similarity, index, scores, families, seeds, split, epoch=120):
     table = increment_table(
         csv, similarity, index, scores, families=families, seeds=seeds,
-        neighbours=15, share=0.8, ratio=2, split=split, epochs=[120],
+        neighbours=15, share=0.8, ratio=2, split=split, epochs=[epoch],
     )
-    print(f"=== AUC + increment, {split} block, epoch 120, mean over {len(seeds)} seeds ===")
+    print(f"=== AUC + increment, {split} block, epoch {epoch}, mean over {len(seeds)} seeds ===")
     per_family = table.groupby("fam")[
         ["chem", "net", "chem_prot", "net_prot", "increment", "increment_prot"]
     ].mean()
     print(per_family.round(3).to_string())
     print()
     return table
+
+
+def select_best_epoch(csv, similarity, index, scores, families, seeds):
+    """The single saved epoch with the best mean in-protein AUC, VALID split only.
+
+    "Best" is judged the way the rest of this file already reports: net_prot averaged
+    per family, then over families (equal weight regardless of how many rows a family
+    has), never on test -- picking an epoch by test performance would be exactly the
+    leak this project's checkpoint rule exists to avoid. One epoch for every family and
+    seed, not a per-family pick: the point is a single, honestly-comparable reporting
+    point for the whole panel, standing in for the fixed epoch 120 the tables otherwise
+    use -- which scp2_epoch_trajectory's own table already shows can be well past the
+    point where a family's in-protein signal peaked.
+    """
+    candidates = sorted(int(e) for e in scores["epoch"].unique())
+    print(f"=== --by_best_checkpoint: mean valid net_prot AUC per candidate epoch {candidates} ===")
+    scored = {}
+    for epoch in candidates:
+        table = increment_table(
+            csv, similarity, index, scores, families=families, seeds=seeds,
+            neighbours=15, share=0.8, ratio=2, split="valid", epochs=[epoch],
+        )
+        per_family_mean = table.groupby("fam")["net_prot"].mean()
+        scored[epoch] = float(per_family_mean.mean())
+        print(f"  epoch {epoch:>4d} : mean net_prot (valid, over {len(per_family_mean)} families) = {scored[epoch]:.4f}")
+    best_epoch = max(scored, key=scored.get)
+    print(f"selected epoch {best_epoch} (highest mean valid net_prot)")
+    print()
+    return best_epoch
 
 
 def scp2_epoch_trajectory(csv, similarity, index, scores, seeds):
@@ -92,11 +131,34 @@ def scp2_epoch_trajectory(csv, similarity, index, scores, seeds):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scores", required=True, help="CSV from analysis/checkpoint_scores.py")
+    parser.add_argument(
+        "--scores", default=None,
+        help="CSV from analysis/checkpoint_scores.py (or a previous --save-scores here); "
+        "if omitted, checkpoints are scored directly from models/<label>/",
+    )
     parser.add_argument("--label", required=True)
     parser.add_argument("--metrics-csv", default=os.path.join(PROJECT_ROOT, "metrics_summary.csv"))
     parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
     parser.add_argument("--seeds", default="0,1,2,3,4")
+    parser.add_argument(
+        "--epochs", default=DEFAULT_EPOCHS,
+        help="only used when --scores is omitted -- which saved checkpoints to score",
+    )
+    parser.add_argument(
+        "--batch", type=int, default=16,
+        help="only used when --scores is omitted -- affects only the split's sampler",
+    )
+    parser.add_argument(
+        "--save-scores", default=None,
+        help="only used when --scores is omitted -- also write the freshly scored rows here, "
+        "so a repeat run (e.g. while iterating on the tables) can pass them back via --scores",
+    )
+    parser.add_argument(
+        "--by_best_checkpoint", action="store_true",
+        help="build the AUC/increment tables at the single saved epoch with the best mean "
+        "valid in-protein AUC across every excluded group and seed, instead of the fixed "
+        "epoch 120 -- see select_best_epoch. Never looks at test to choose it.",
+    )
     args = parser.parse_args()
 
     families = [f for f in args.families.split(",") if f]
@@ -106,13 +168,34 @@ def main():
 
     csv = pd.read_csv(interaction_csv_path(os.path.join(PROJECT_ROOT, "data") + os.sep))
     similarity, index = species_similarity(csv, os.path.join(PROJECT_ROOT, "data"))
-    scores = pd.read_csv(args.scores)
+
+    if args.scores:
+        scores = pd.read_csv(args.scores)
+    else:
+        print(
+            f"No --scores given; scoring {args.label}'s own checkpoints directly "
+            f"(epochs={args.epochs}, seeds={args.seeds}, families={args.families})."
+        )
+        scores = score_checkpoints(
+            args.label,
+            epochs=[int(e) for e in args.epochs.split(",")],
+            seeds=seeds,
+            families=families,
+            batch=args.batch,
+        )
+        if args.save_scores:
+            scores.to_csv(args.save_scores, index=False)
+            print(f"wrote scores : {args.save_scores}")
 
     rows_pos_counts(scores, families, "valid")
     rows_pos_counts(scores, families, "test")
 
-    auc_and_increment_tables(csv, similarity, index, scores, families, seeds, "valid")
-    auc_and_increment_tables(csv, similarity, index, scores, families, seeds, "test")
+    epoch = 120
+    if args.by_best_checkpoint:
+        epoch = select_best_epoch(csv, similarity, index, scores, families, seeds)
+
+    auc_and_increment_tables(csv, similarity, index, scores, families, seeds, "valid", epoch)
+    auc_and_increment_tables(csv, similarity, index, scores, families, seeds, "test", epoch)
 
     scp2_epoch_trajectory(csv, similarity, index, scores, seeds)
 

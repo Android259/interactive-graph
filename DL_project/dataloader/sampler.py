@@ -2,6 +2,7 @@
 
 import re
 
+import numpy as np
 import pandas
 import torch
 
@@ -16,7 +17,46 @@ def split_and_sample_interactions(csv, seed, unlabeled_fraction=0.056):
     return csvtrue, csvfalse
 
 
-def _sample_group_balanced_negatives(csv, seed, group_column, ratio=1, strata=None):
+def _hard_negative_weights(candidates, positive_lipid_names, similarity, species_index, share):
+    """Sampling weight per candidate, blending chemistry-hardness with uniform.
+
+    `share` of the mass goes to candidates by how similar (Tanimoto, max over the
+    group's own positives) their lipid is to a lipid this SAME group is already
+    positive for -- a hard negative, chemically close enough to look like a binder yet
+    labeled unlabeled. The rest of the mass stays uniform, so a group whose positives
+    have no chemically close negatives in its pool still draws its full quota instead
+    of concentrating on the handful nearest zero similarity. Returns None (fall back to
+    plain uniform sampling) when none of the group's positives have a similarity entry.
+    """
+    positive_positions = [
+        species_index[name] for name in positive_lipid_names.unique() if name in species_index
+    ]
+    if not positive_positions:
+        return None
+    n = len(candidates)
+    sims = np.array(
+        [
+            similarity[species_index[name], positive_positions].max() if name in species_index else 0.0
+            for name in candidates["FullIdentityOfLipid"]
+        ]
+    )
+    sims = np.clip(sims, 0.0, None)
+    total = sims.sum()
+    similarity_mass = sims / total if total > 0 else np.full(n, 1.0 / n)
+    uniform_mass = np.full(n, 1.0 / n)
+    return share * similarity_mass + (1 - share) * uniform_mass
+
+
+def _sample_group_balanced_negatives(
+    csv,
+    seed,
+    group_column,
+    ratio=1,
+    strata=None,
+    hard_negative_pool=None,
+    excluded_groups=None,
+    hard_negative_share=0.5,
+):
     """Sample `ratio` negatives per positive within each group.
 
     `ratio` is 1 for the exact 1:1 the samplers were written for. Higher values keep
@@ -26,10 +66,22 @@ def _sample_group_balanced_negatives(csv, seed, group_column, ratio=1, strata=No
     the between-protein prior the grouping exists to remove -- every group keeps the
     same pos:neg proportion, just a coarser one. What it does change is the class prior
     the loss sees, which is `--class_weights`' job.
+
+    `hard_negative_pool`, if given, is `(similarity, species_index)` from
+    `dataloader.chemistry_prior.species_similarity`: negatives are then drawn weighted
+    toward chemistry-hard candidates (see `_hard_negative_weights`) instead of
+    uniformly. `excluded_groups`, if given alongside it, exempts any group whose
+    ProteinDomain is in it from the reweighting -- those rows become validation/test
+    after the coming split, and must be drawn exactly as a run without
+    `--hard_negative_mining` would draw them, so enabling the flag changes what
+    training sees and nothing about what is measured.
     """
     if ratio < 1:
         raise ValueError(f"negatives per positive must be at least 1, got {ratio}")
     groups = csv[group_column].str.lower()
+    family_of_group = None
+    if hard_negative_pool is not None and excluded_groups:
+        family_of_group = csv.groupby(groups)["ProteinDomain"].first().str.lower()
     if strata is not None:
         # Matching per (group, stratum) instead of per group. The cold split's second
         # axis needs this: without it the negatives of a protein are drawn from its
@@ -50,14 +102,44 @@ def _sample_group_balanced_negatives(csv, seed, group_column, ratio=1, strata=No
             continue
         candidates = csv[is_negative & group_mask]
         draw_n = min(positive_count * ratio, len(candidates))
-        if draw_n > 0:
+        if draw_n == 0:
+            continue
+        weights = None
+        if hard_negative_pool is not None:
+            plain_group = group.split("\x00", 1)[0] if strata is not None else group
+            group_excluded = (
+                family_of_group is not None and family_of_group.get(plain_group) in excluded_groups
+            )
+            if not group_excluded:
+                similarity, species_index = hard_negative_pool
+                positive_lipids = csv.loc[is_positive & group_mask, "FullIdentityOfLipid"]
+                weights = _hard_negative_weights(
+                    candidates, positive_lipids, similarity, species_index, hard_negative_share
+                )
+        if weights is None:
             parts.append(candidates.sample(n=draw_n, random_state=seed))
+        else:
+            # pandas' own weighted .sample(replace=False) refuses whenever one
+            # candidate's normalized weight alone exceeds 1/draw_n
+            # (pandas/core/sample.py's `size * weights.max() > 1` guard), which a
+            # concentrated hard-negative pool (one very close candidate, the rest at
+            # similarity 0) hits routinely. numpy's sequential without-replacement
+            # draw has no such restriction and is well-defined for any nonnegative
+            # weights, so it takes over for exactly this path.
+            rng = np.random.default_rng(seed)
+            chosen = rng.choice(
+                len(candidates), size=draw_n, replace=False, p=weights / weights.sum()
+            )
+            parts.append(candidates.iloc[chosen])
     if parts:
         return pandas.concat(parts)
     return csv[is_negative].iloc[0:0]
 
 
-def sample_family_balanced_negatives(csv, seed, ratio=1, strata=None):
+def sample_family_balanced_negatives(
+    csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
+    hard_negative_share=0.5,
+):
     """Sample negatives per protein family to match its positive count (1:1).
 
     Instead of the global fixed-fraction subsample of `split_and_sample_interactions`,
@@ -65,18 +147,32 @@ def sample_family_balanced_negatives(csv, seed, ratio=1, strata=None):
     unlabeled rows as that family has positives, so the working set is 1:1
     positive:negative both globally and within every family. Sampling is seeded
     (`random_state=seed`) and preserves the original interaction-CSV row index.
+
+    `hard_negative_pool`/`excluded_groups`/`hard_negative_share`: see
+    `_sample_group_balanced_negatives`.
     """
-    return _sample_group_balanced_negatives(csv, seed, "ProteinDomain", ratio, strata)
+    return _sample_group_balanced_negatives(
+        csv, seed, "ProteinDomain", ratio, strata,
+        hard_negative_pool, excluded_groups, hard_negative_share,
+    )
 
 
-def split_and_sample_family_balanced_interactions(csv, seed, ratio=1, strata=None):
+def split_and_sample_family_balanced_interactions(
+    csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
+    hard_negative_share=0.5,
+):
     """Keep every positive and sample per-family-matched negatives (1:1)."""
     csvtrue = csv[csv["Interaction"] == 1].copy()
-    csvfalse = sample_family_balanced_negatives(csv, seed, ratio, strata).copy()
+    csvfalse = sample_family_balanced_negatives(
+        csv, seed, ratio, strata, hard_negative_pool, excluded_groups, hard_negative_share
+    ).copy()
     return csvtrue, csvfalse
 
 
-def sample_protein_balanced_negatives(csv, seed, ratio=1, strata=None):
+def sample_protein_balanced_negatives(
+    csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
+    hard_negative_share=0.5,
+):
     """Sample negatives per protein to match its positive count (1:1).
 
     `sample_family_balanced_negatives` matches counts per `ProteinDomain`, which
@@ -88,14 +184,25 @@ def sample_protein_balanced_negatives(csv, seed, ratio=1, strata=None):
     prior a model could otherwise learn as "this protein is usually positive".
     Sampling is seeded (`random_state=seed`) and preserves the original
     interaction-CSV row index.
+
+    `hard_negative_pool`/`excluded_groups`/`hard_negative_share`: see
+    `_sample_group_balanced_negatives`.
     """
-    return _sample_group_balanced_negatives(csv, seed, "LTPProtein", ratio, strata)
+    return _sample_group_balanced_negatives(
+        csv, seed, "LTPProtein", ratio, strata,
+        hard_negative_pool, excluded_groups, hard_negative_share,
+    )
 
 
-def split_and_sample_protein_balanced_interactions(csv, seed, ratio=1, strata=None):
+def split_and_sample_protein_balanced_interactions(
+    csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
+    hard_negative_share=0.5,
+):
     """Keep every positive and sample per-protein-matched negatives (1:1)."""
     csvtrue = csv[csv["Interaction"] == 1].copy()
-    csvfalse = sample_protein_balanced_negatives(csv, seed, ratio, strata).copy()
+    csvfalse = sample_protein_balanced_negatives(
+        csv, seed, ratio, strata, hard_negative_pool, excluded_groups, hard_negative_share
+    ).copy()
     return csvtrue, csvfalse
 
 

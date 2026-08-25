@@ -65,4 +65,6 @@ def build_forward_args(config, prot, lipid):
         or getattr(config, "compatibility_split_input", False)
     ):
         forward_args["compat_input"] = prot.compat_input
+    if getattr(config, "pair_descriptors", False):
+        forward_args["pair_descriptor_input"] = prot.pair_descriptor_input
     return forward_args
