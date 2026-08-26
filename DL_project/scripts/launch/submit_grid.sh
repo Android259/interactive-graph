@@ -412,7 +412,7 @@ submit_one() {
 
 submit_pack() {
     local pack_index="$1" spec="$2" pack_count="$3" pack_walltime_str="$4" pack_tag="$5" job_tag="$6"
-    local job_walltime pack_dir job_command runner_env
+    local job_walltime pack_dir job_command runner_env spec_file
 
     job_walltime="$(pack_job_walltime "${pack_count}" "${pack_walltime_str}" "${PACK_WALLTIME_PARALLEL}")"
     pack_check_walltime "${job_walltime}" "${MAX_WALLTIME}" || exit 2
@@ -431,10 +431,19 @@ submit_pack() {
         "${PACK_CPU_PER_RUN}" "${PACK_MIN_FREE_GPU_MIB}" \
         "${PACK_HARDWARE_AUTO}" "${PACK_SKIP_DONE}"
 
+    # Written to a file rather than base64-spliced onto the oarsub command
+    # line: a full-size pack (PACK_SIZE=180 on kraken-cpu, several labels
+    # sharing one pack) encodes past Linux's ~128 KiB single-argument limit,
+    # which fails oarsub's execve with "Argument list too long" -- see
+    # pack_spec_write_file's comment in pack_lib.sh. mktemp keeps concurrent
+    # submitters (pack_index resets to 0 in each) from colliding on the name.
+    spec_file="$(mktemp "${pack_dir}/pack${pack_index}_spec.XXXXXX")"
+    pack_spec_write_file "${spec}" "${spec_file}"
+
     printf -v job_command \
         'cd %q && source %q && conda activate %q && %s bash scripts/launch/run_experiment_pack.sh %q' \
         "${PROJECT_DIR}" "${CONDA_SH}" "${CONDA_ENV}" \
-        "${runner_env}" "$(pack_spec_encode "${spec}")"
+        "${runner_env}" "${spec_file}"
 
     printf "Pack %d: %d experiment(s) [%s], walltime=%s.\n" \
         "${pack_index}" "${pack_count}" "${pack_tag}" "${job_walltime}"
@@ -442,7 +451,26 @@ submit_pack() {
     # "+" (used above only for the human-readable pack_tag, to list every label
     # in a cross-label pack) is not in that set, so the job name uses "-" as
     # the label separator instead.
-    oarsub_submit "${job_tag}_pack${pack_index}" \
+    #
+    # OAR's jobs.job_name column is `character varying(100)` (hit in production:
+    # 5 long descriptor labels packed together built a 139-char name and oarsub
+    # died with a Postgres StringDataRightTruncation error, past the point of no
+    # return -- the job was never created). A truncated name would collide
+    # across different label combinations that happen to share a long common
+    # prefix, so an over-length tag is cut and given an 8-hex-char digest of the
+    # FULL tag instead -- short, unique per label combination, and stable
+    # across re-submissions of the same combination (so the oarsub-command dedup
+    # in cluster_queue_remote.sh's capture_queue still recognises it).
+    local suffix="_pack${pack_index}"
+    local oar_job_name="${job_tag}${suffix}"
+    if (( ${#oar_job_name} > 100 )); then
+        local digest keep
+        digest="$(printf '%s' "${job_tag}" | md5sum | cut -c1-8)"
+        keep=$(( 100 - ${#suffix} - ${#digest} - 1 ))
+        (( keep > 0 )) || keep=0
+        oar_job_name="${job_tag:0:keep}-${digest}${suffix}"
+    fi
+    oarsub_submit "${oar_job_name}" \
         "${job_walltime}" \
         "${pack_dir}/pack${pack_index}_${JOB_ID_TAG}%jobid%.pack" \
         "${job_command}"

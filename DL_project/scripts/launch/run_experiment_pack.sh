@@ -2,11 +2,12 @@
 # Runs a PACK of experiments inside ONE OAR job.
 #
 # Invoked on the compute node as the job command:
-#   bash scripts/run_experiment_pack.sh <base64-spec>
-# where the spec is built by scripts/pack_lib.sh (see its header for the record
-# layout). Keeping the logic in a real repository file rather than in a printf'd
-# one-liner is what makes it reviewable and testable; the submitter only splices
-# a single base64 blob into the oarsub command line.
+#   bash scripts/run_experiment_pack.sh <pack-spec-file>
+# where the spec file is written by scripts/pack_lib.sh's pack_spec_write_file
+# (see its header for the record layout and why it is a file, not an inline
+# argument). Keeping the logic in a real repository file rather than in a
+# printf'd one-liner is what makes it reviewable and testable; the submitter
+# only splices the spec file's path onto the oarsub command line.
 #
 # Deliberately NOT `set -e`: a pack exists to amortise one GPU allocation over
 # several trainings, so one training that dies must not take the rest of the
@@ -43,14 +44,15 @@ PACK_HARDWARE_AUTO="${PACK_HARDWARE_AUTO:-0}"
 PACK_SKIP_DONE="${PACK_SKIP_DONE:-1}"
 
 if (( $# != 1 )); then
-    printf 'Usage: %s <base64-pack-spec>\n' "${0##*/}" >&2
+    printf 'Usage: %s <pack-spec-file>\n' "${0##*/}" >&2
     exit 2
 fi
 
-spec="$(printf '%s' "$1" | base64 -d)" || {
-    printf 'Could not decode the pack specification.\n' >&2
+if [[ ! -f "$1" ]]; then
+    printf 'Pack specification file not found: %s\n' "$1" >&2
     exit 2
-}
+fi
+spec="$(<"$1")"
 
 omp_threads_per_run=0
 if (( CPU_ONLY )); then

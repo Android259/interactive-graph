@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # The project's python, from anywhere, without remembering where conda lives.
 #
-# Analysis and preprocessing scripts import torch, and the system python3 on the
-# local machine has none: every one of them dies on the import line in under a
-# second. The training path already solved this (run_local.sh and
-# tools/parameters.sh both source lib/activate_training_env.sh), but nothing
-# solved it for the one-off command -- so this file is that entry point, and it
-# sources the same helper rather than repeating the conda search a fourth time.
+# Analysis and preprocessing scripts import torch, which not every system
+# python3 has. The training path already solved this (run_local.sh and
+# tools/parameters.sh both source lib/activate_training_env.sh, warning and
+# falling back to whatever python3 is on PATH when conda isn't there), but
+# nothing solved it for the one-off command -- so this file is that entry
+# point, and it sources the same helper the same way rather than repeating the
+# conda search and hard-failing a fourth way.
 #
 # Three ways to use it:
 #
@@ -24,32 +25,31 @@
 # is PYTHONPATH, so `python3 -c 'import dataloader...'` works from any directory.
 #
 # For a first-time setup that CREATES the env when it is missing, use
-# tools/enter_project_env.sh instead; this file assumes it exists and says so
-# plainly when it does not.
+# tools/enter_project_env.sh instead; this file only activates an existing one
+# and warns (rather than failing) when there isn't one to activate.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# Sourced or executed: the difference decides whether a failure should return or
-# exit, and whether a trailing command is expected at all.
+# Sourced or executed: the difference decides whether a trailing command is
+# expected at all.
 _env_sh_sourced=0
 [[ "${BASH_SOURCE[0]}" != "$0" ]] && _env_sh_sourced=1
 
-_env_sh_fail() {
-    printf '%s\n' "$1" >&2
-    (( _env_sh_sourced )) && return 1
-    exit 1
-}
-
+_env_sh_conda_active=0
 if [[ "${CONDA_DEFAULT_ENV:-}" != "Kalinin_project_LP" ]]; then
-    # Unlike run_local.sh, this does NOT fall back to whatever python3 is on
-    # PATH. There the fallback is right -- some machines genuinely have no conda
-    # and still train. Here the fallback would hand back the interpreter the
-    # caller was already trying to escape, and the error would surface later as
-    # a missing module rather than here as a missing env.
-    if ! source "${SCRIPT_DIR}/lib/activate_training_env.sh"; then
-        _env_sh_fail "Could not activate Kalinin_project_LP. To create it: source ${SCRIPT_DIR}/tools/enter_project_env.sh"
+    # Same activation, and same fallback, as run_local.sh and parameters.sh:
+    # warn and keep going with whatever python3 is on PATH rather than
+    # hard-fail. Some machines genuinely have no conda and still have every
+    # package these scripts need on the system python3.
+    if source "${SCRIPT_DIR}/lib/activate_training_env.sh"; then
+        _env_sh_conda_active=1
+    else
+        printf 'Could not activate Kalinin_project_LP (create it with: source %s/tools/enter_project_env.sh); using current python3: %s\n' \
+            "${SCRIPT_DIR}" "$(command -v python3 || echo 'not found')" >&2
     fi
+else
+    _env_sh_conda_active=1
 fi
 
 export PROJECT_ROOT
@@ -77,12 +77,16 @@ if [[ -n "${CONDA_PREFIX:-}" && -e "${CONDA_PREFIX}/lib/libstdc++.so.6" ]]; then
 fi
 
 if (( _env_sh_sourced )); then
-    printf 'Kalinin_project_LP active: %s\n' "$(command -v python3)"
-    unset _env_sh_sourced
+    if (( _env_sh_conda_active )); then
+        printf 'Kalinin_project_LP active: %s\n' "$(command -v python3)"
+    else
+        printf 'Kalinin_project_LP not available; using current python3: %s\n' "$(command -v python3)"
+    fi
+    unset _env_sh_sourced _env_sh_conda_active
     return 0
 fi
 
-unset _env_sh_sourced
+unset _env_sh_sourced _env_sh_conda_active
 
 if (( $# == 0 )); then
     printf 'env      : %s\n' "${CONDA_DEFAULT_ENV:-none}"

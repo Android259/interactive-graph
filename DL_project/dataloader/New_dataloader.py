@@ -40,6 +40,7 @@ from dataloader.lipid_isomer_graph_builder import (
 from dataloader.protein_graph_builder import (
     ProteinGraphBuilder,
     ProteinGraphData,
+    protein_node_columns,
     restrict_parts_to_mask,
 )
 from dataloader.protein_graph_tensor_cache import load_protein_graph_tensor_cache
@@ -293,7 +294,9 @@ class PLIDataset(
         # DataLoader workers fork after warm_caches(), so a pre-warmed cache is shared
         # copy-on-write instead of being rebuilt once per worker.
         self._protein_graph_cache = {}
-        self._protein_tensor_cache = load_protein_graph_tensor_cache(self.ROOT_DIR)
+        self._protein_tensor_cache = load_protein_graph_tensor_cache(
+            self.ROOT_DIR, protein_node_columns(config)
+        )
         self._lipid_encoding_cache = {}
         # lipid_random_choice fills this one instead: the drawn encoding must not be
         # cached (that would freeze the draw for the whole run), only the canonical

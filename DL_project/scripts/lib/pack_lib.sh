@@ -179,10 +179,21 @@ pack_check_walltime() {
 #                  lib/progress_table.sh expects to find it
 #     python_args  everything after `python ./training/new_train.py`
 #
-# None of these fields can contain a TAB (they are paths and CLI flags). The
-# whole spec is base64-encoded before it goes onto the oarsub command line, so
-# it survives the submitter -> oarsub -> queue file -> login shell -> `bash -c`
-# chain without a second layer of quoting to get wrong.
+# None of these fields can contain a TAB (they are paths and CLI flags). A
+# single-experiment spec (submit_one, run_one_experiment.sh) is small and
+# bounded, so it is base64-encoded and spliced straight onto the oarsub command
+# line: it survives the submitter -> oarsub -> queue file -> login shell ->
+# `bash -c` chain without a second layer of quoting to get wrong.
+#
+# A multi-experiment pack spec has no such bound -- PACK_SIZE=180 on
+# kraken-cpu, cross-label packing filling every slot -- and a base64 blob past
+# ~131072 bytes (Linux's MAX_ARG_STRLEN, the kernel's limit on any ONE argv
+# string, well below the total ARG_MAX a command line may reach) makes execve()
+# of oarsub fail with "Argument list too long" even though the pending-jobs
+# queue file, disk and every other limit involved have room to spare. Those
+# specs are instead written to a file on the project's shared storage
+# (pack_spec_write_file below) and only the file's short path travels the
+# oarsub command line; run_experiment_pack.sh reads the spec back from it.
 
 pack_record() {
     printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4"
@@ -190,4 +201,11 @@ pack_record() {
 
 pack_spec_encode() {
     printf '%s' "$1" | base64 -w 0
+}
+
+# Writes a (potentially large) pack spec to "$2" so its path, not its content,
+# is what goes on the oarsub command line -- see the size-limit note above.
+pack_spec_write_file() {
+    local spec="$1" spec_file="$2"
+    printf '%s' "${spec}" > "${spec_file}"
 }

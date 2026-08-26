@@ -432,6 +432,14 @@ class ModelConfig:
     # replacing aromatic_share/polar_share with the rim/core split did not close the
     # LBP_BPI_CETP gap (test BA 0.796 -> 0.812, if anything wider), so extent -- the
     # other protein-only channel among DATALOADER_TOKENS -- is next to isolate.
+    #
+    # Cheap pre-check done (analysis/pocket_extent_lbp_lipocalin_check.py, files/
+    # signal_state.md section 8): extent, in the coarse form occupancy actually reads,
+    # does NOT separate LBP_BPI_CETP (outrank rate 0.48, no separation) but DOES
+    # separate lipocalin (0.05, clean). LBP_BPI_CETP's outlier -- now +0.165 within-
+    # protein increment on descriptors_no_extent_coarse_add_lipprop, wider than when
+    # first flagged -- still has no identified channel; lipocalin's is a live
+    # candidate. A real run with this flag on is the next measurement either way.
     pair_descriptor_extent: bool = True
     # PairDescriptorHead's own end-of-attention reduction (architecture/
     # pair_descriptor_head.py) is tied to pool_type below, the SAME flag the rest of
@@ -864,6 +872,15 @@ class ModelConfig:
     pocket_descriptors: bool = False
     # Width of the descriptor, derived in validate(); 0 when the flag is off.
     pocket_descriptor_count: int = 0
+    # Restricts the --pocket_descriptors broadcast (architecture/protein_encoder.py's
+    # expand_pocket_descriptor) to POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES (dataloader/
+    # protein_graph_builder.py) -- the 7 of 13 entries whose eta^2 against the 9-family
+    # split sits at or near the no-structure floor, dropping the 6 closest to a pure
+    # family label (files/pocket_shape_descriptors.md section 5). Only affects that one
+    # broadcast: PairDescriptorHead (--descriptors_head, --pair_descriptors) reads
+    # aromatic_share/polar_share at their own fixed indices regardless of this flag, so
+    # under plain --descriptors_head it changes nothing measurable.
+    pocket_descriptors_family_neutral: bool = False
     # Width of the protein node vector, derived in validate(). Single source of truth
     # for the loader that builds it and the encoder that sizes its input layer, so the
     # two cannot drift; also recorded in metrics_summary, where a run's node width is
@@ -1581,6 +1598,11 @@ class ModelConfig:
                 "head's aromatic/H-bond pair terms read aromatic_share and "
                 "apolar_sasa_share off the pocket descriptor tensor"
             )
+        if self.pocket_descriptors_family_neutral and not self.pocket_descriptors:
+            raise ValueError(
+                "pocket_descriptors_family_neutral requires pocket_descriptors -- "
+                "there is no broadcast to restrict when the flag is off"
+            )
         if self.pair_descriptor_pocket_shares_split and not self.pair_descriptor_pocket_shares:
             raise ValueError(
                 "pair_descriptor_pocket_shares_split requires pair_descriptor_pocket_shares "
@@ -2072,6 +2094,8 @@ SIMPLE_BOOL_FLAGS = {
     "--protein_extra_node_features": "protein_extra_node_features",
     "pocket_descriptors": "pocket_descriptors",
     "--pocket_descriptors": "pocket_descriptors",
+    "pocket_descriptors_family_neutral": "pocket_descriptors_family_neutral",
+    "--pocket_descriptors_family_neutral": "pocket_descriptors_family_neutral",
     "protein_group_weight": "protein_group_weight",
     "--protein_group_weight": "protein_group_weight",
     "double_coldsplit": "double_coldsplit",

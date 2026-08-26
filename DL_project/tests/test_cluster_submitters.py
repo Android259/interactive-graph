@@ -247,8 +247,11 @@ def test_pack_runner_resolves_slots_from_allocated_gpu(
         }
     )
 
+    spec_file = tmp_path / "empty.spec"
+    spec_file.write_text("")
+
     result = subprocess.run(
-        ["bash", str(REPO / "scripts" / "launch" / "run_experiment_pack.sh"), ""],
+        ["bash", str(REPO / "scripts" / "launch" / "run_experiment_pack.sh"), str(spec_file)],
         cwd=REPO,
         env=env,
         check=True,

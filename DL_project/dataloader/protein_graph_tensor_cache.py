@@ -7,10 +7,31 @@ from pathlib import Path
 import pandas
 import torch
 
+from dataloader.protein_graph_builder import BASE_NODE_COLUMNS
+
 
 CACHE_FORMAT_VERSION = 1
 CACHE_FILE = "protein_graph_tensors.pt"
 MANIFEST_FILE = "protein_graph_tensors.manifest.json"
+
+
+def _cache_files(node_columns):
+    """Cache/manifest filenames for one protein-node column set.
+
+    BASE_NODE_COLUMNS keeps the original CACHE_FILE/MANIFEST_FILE names, so the
+    cache built before per-config variants existed is read and overwritten
+    exactly as before. Any other column set -- --no_protein_geometry's empty
+    tuple, or a future --protein_extra_node_features cache -- gets its own
+    pair named after the columns, so it can never collide with or overwrite a
+    cache another config still relies on.
+    """
+    if tuple(node_columns) == BASE_NODE_COLUMNS:
+        return CACHE_FILE, MANIFEST_FILE
+    suffix = "no_geometry" if not node_columns else "_".join(node_columns)
+    return (
+        f"protein_graph_tensors.{suffix}.pt",
+        f"protein_graph_tensors.{suffix}.manifest.json",
+    )
 
 
 def _source_record(path, root_dir):
@@ -41,7 +62,7 @@ def _pocket_tensor(path):
     )
 
 
-def _base_graph(nodes_path, edges_path, pocket_path):
+def _base_graph(nodes_path, edges_path, pocket_path, node_columns):
     vertices = pandas.read_csv(nodes_path)
     edges = pandas.read_csv(edges_path)
     residue_to_node = {
@@ -55,9 +76,7 @@ def _base_graph(nodes_path, edges_path, pocket_path):
     edge_index.apply_(lambda value: residue_to_node.get(value, 0))
     return {
         "x": torch.tensor(
-            vertices[
-                ["residue_type", "residue_sas_area", "residue_volume"]
-            ].values,
+            vertices[list(node_columns)].values,
             dtype=torch.float32,
         ),
         "edge_index": edge_index.t().contiguous(),
@@ -93,7 +112,7 @@ def _geometric_graph(path, vertices):
     }
 
 
-def build_protein_graph_tensor_cache(root_dir):
+def build_protein_graph_tensor_cache(root_dir, node_columns=BASE_NODE_COLUMNS):
     root_dir = Path(root_dir).resolve()
     graphs_dir = root_dir / "graphs"
     payload = {}
@@ -104,7 +123,7 @@ def build_protein_graph_tensor_cache(root_dir):
         pocket_path = protein_dir / "pocketness.pdb"
         if not (nodes_path.exists() and edges_path.exists() and pocket_path.exists()):
             continue
-        base, vertices = _base_graph(nodes_path, edges_path, pocket_path)
+        base, vertices = _base_graph(nodes_path, edges_path, pocket_path, node_columns)
         entry = {"base": base}
         source_paths = [nodes_path, edges_path, pocket_path]
         geometric_path = protein_dir / "geometric_transformer_nodes.csv"
@@ -114,12 +133,14 @@ def build_protein_graph_tensor_cache(root_dir):
         payload[protein_dir.name] = entry
         sources.extend(_source_record(path, root_dir) for path in source_paths)
 
-    cache_path = root_dir / CACHE_FILE
-    manifest_path = root_dir / MANIFEST_FILE
+    cache_file, manifest_file = _cache_files(node_columns)
+    cache_path = root_dir / cache_file
+    manifest_path = root_dir / manifest_file
     torch.save(payload, cache_path)
     manifest = {
         "format_version": CACHE_FORMAT_VERSION,
-        "cache_file": CACHE_FILE,
+        "cache_file": cache_file,
+        "node_columns": list(node_columns),
         "proteins": sorted(payload),
         "sources": sources,
     }
@@ -127,10 +148,11 @@ def build_protein_graph_tensor_cache(root_dir):
     return cache_path, manifest_path, len(payload)
 
 
-def load_protein_graph_tensor_cache(root_dir):
+def load_protein_graph_tensor_cache(root_dir, node_columns=BASE_NODE_COLUMNS):
     root_dir = Path(root_dir).resolve()
-    cache_path = root_dir / CACHE_FILE
-    manifest_path = root_dir / MANIFEST_FILE
+    cache_file, manifest_file = _cache_files(node_columns)
+    cache_path = root_dir / cache_file
+    manifest_path = root_dir / manifest_file
     if not cache_path.exists() or not manifest_path.exists():
         return {}
     try:

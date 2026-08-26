@@ -185,9 +185,12 @@ one-experiment-per-job path.
 
 - `lib/pack_lib.sh` — sourced by both submitters: walltime arithmetic, the cluster
   walltime check, and the pack-record format (documented in its header).
-- `launch/run_experiment_pack.sh` — the job command on the compute node. The submitters
-  splice one base64 blob into the `oarsub` line; the logic lives in this file
-  rather than in a printf'd one-liner so it can be read and tested.
+- `launch/run_experiment_pack.sh` — the job command on the compute node. The submitter
+  writes the pack spec to a file under `script_logs/_cross_label_packs/` and splices
+  only that file's path into the `oarsub` line (a full-size pack's spec, base64-encoded
+  inline, can exceed Linux's ~128 KiB single-argument limit and make oarsub's execve
+  fail with "Argument list too long"); the logic lives in this file rather than in a
+  printf'd one-liner so it can be read and tested.
 
 **Concurrency is resolved inside the job, not at submit time.** With the
 canonical launchers, `PACK_PARALLEL=0` and `PACK_HARDWARE_AUTO=1` select a

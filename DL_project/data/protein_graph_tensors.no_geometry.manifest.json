@@ -1,0 +1,744 @@
+{
+  "format_version": 1,
+  "cache_file": "protein_graph_tensors.no_geometry.pt",
+  "node_columns": [],
+  "proteins": [
+    "ATCAY",
+    "BNIPL",
+    "BPI",
+    "BPIFB2",
+    "CRABP2",
+    "FABP1",
+    "FABP5",
+    "FABP7",
+    "GLTP",
+    "GLTPD1",
+    "GM2A",
+    "HSDL2",
+    "LCN1",
+    "LCN15",
+    "OSBPL5",
+    "OSBPL9",
+    "PITPNA",
+    "PITPNB",
+    "PITPNC1",
+    "PMP2",
+    "RBP1",
+    "RBP4",
+    "RBP5",
+    "RLBP1",
+    "SCP2",
+    "SCP2D1",
+    "SEC14L2",
+    "SEC14L4",
+    "SEC14L5",
+    "SEC14L6",
+    "STARD10",
+    "STARD11",
+    "STARD2",
+    "TTPA",
+    "TTPAL"
+  ],
+  "sources": [
+    {
+      "path": "graphs/ATCAY/coarse_graph_nodes.csv",
+      "size": 25704,
+      "mtime_ns": 1781079473528706329
+    },
+    {
+      "path": "graphs/ATCAY/coarse_graph_links.csv",
+      "size": 54221,
+      "mtime_ns": 1781079473180705879
+    },
+    {
+      "path": "graphs/ATCAY/pocketness.pdb",
+      "size": 106436,
+      "mtime_ns": 1781079473160705853
+    },
+    {
+      "path": "graphs/ATCAY/geometric_transformer_nodes.csv",
+      "size": 182574,
+      "mtime_ns": 1785772840297826071
+    },
+    {
+      "path": "graphs/BNIPL/coarse_graph_nodes.csv",
+      "size": 27563,
+      "mtime_ns": 1781079483868719676
+    },
+    {
+      "path": "graphs/BNIPL/coarse_graph_links.csv",
+      "size": 57735,
+      "mtime_ns": 1781079483524719232
+    },
+    {
+      "path": "graphs/BNIPL/pocketness.pdb",
+      "size": 110290,
+      "mtime_ns": 1781079483460719150
+    },
+    {
+      "path": "graphs/BNIPL/geometric_transformer_nodes.csv",
+      "size": 194005,
+      "mtime_ns": 1785772840511071808
+    },
+    {
+      "path": "graphs/BPI/coarse_graph_nodes.csv",
+      "size": 73031,
+      "mtime_ns": 1781079467840698982
+    },
+    {
+      "path": "graphs/BPI/coarse_graph_links.csv",
+      "size": 158235,
+      "mtime_ns": 1781079467468698502
+    },
+    {
+      "path": "graphs/BPI/pocketness.pdb",
+      "size": 288722,
+      "mtime_ns": 1781079467400698414
+    },
+    {
+      "path": "graphs/BPI/geometric_transformer_nodes.csv",
+      "size": 531289,
+      "mtime_ns": 1785772841015715186
+    },
+    {
+      "path": "graphs/BPIFB2/coarse_graph_nodes.csv",
+      "size": 72905,
+      "mtime_ns": 1781079484628720657
+    },
+    {
+      "path": "graphs/BPIFB2/coarse_graph_links.csv",
+      "size": 155265,
+      "mtime_ns": 1781079484184720085
+    },
+    {
+      "path": "graphs/BPIFB2/pocketness.pdb",
+      "size": 284294,
+      "mtime_ns": 1781079484108719986
+    },
+    {
+      "path": "graphs/BPIFB2/geometric_transformer_nodes.csv",
+      "size": 531551,
+      "mtime_ns": 1785772841520572765
+    },
+    {
+      "path": "graphs/CRABP2/coarse_graph_nodes.csv",
+      "size": 23165,
+      "mtime_ns": 1781079487144723905
+    },
+    {
+      "path": "graphs/CRABP2/coarse_graph_links.csv",
+      "size": 43964,
+      "mtime_ns": 1781079486880723564
+    },
+    {
+      "path": "graphs/CRABP2/pocketness.pdb",
+      "size": 89216,
+      "mtime_ns": 1781079486816723481
+    },
+    {
+      "path": "graphs/CRABP2/geometric_transformer_nodes.csv",
+      "size": 160916,
+      "mtime_ns": 1785772841993336790
+    },
+    {
+      "path": "graphs/FABP1/coarse_graph_nodes.csv",
+      "size": 21629,
+      "mtime_ns": 1781079483172718779
+    },
+    {
+      "path": "graphs/FABP1/coarse_graph_links.csv",
+      "size": 41855,
+      "mtime_ns": 1781079482972718520
+    },
+    {
+      "path": "graphs/FABP1/pocketness.pdb",
+      "size": 81590,
+      "mtime_ns": 1781079482924718458
+    },
+    {
+      "path": "graphs/FABP1/geometric_transformer_nodes.csv",
+      "size": 148142,
+      "mtime_ns": 1785772842151309812
+    },
+    {
+      "path": "graphs/FABP5/coarse_graph_nodes.csv",
+      "size": 22490,
+      "mtime_ns": 1781079477664711669
+    },
+    {
+      "path": "graphs/FABP5/coarse_graph_links.csv",
+      "size": 42249,
+      "mtime_ns": 1781079477492711446
+    },
+    {
+      "path": "graphs/FABP5/pocketness.pdb",
+      "size": 85854,
+      "mtime_ns": 1781079477424711359
+    },
+    {
+      "path": "graphs/FABP5/geometric_transformer_nodes.csv",
+      "size": 154163,
+      "mtime_ns": 1785772842312105489
+    },
+    {
+      "path": "graphs/FABP7/coarse_graph_nodes.csv",
+      "size": 22561,
+      "mtime_ns": 1781079488548725716
+    },
+    {
+      "path": "graphs/FABP7/coarse_graph_links.csv",
+      "size": 42126,
+      "mtime_ns": 1781079488308725406
+    },
+    {
+      "path": "graphs/FABP7/pocketness.pdb",
+      "size": 85362,
+      "mtime_ns": 1781079488284725375
+    },
+    {
+      "path": "graphs/FABP7/geometric_transformer_nodes.csv",
+      "size": 153245,
+      "mtime_ns": 1785772842468601358
+    },
+    {
+      "path": "graphs/GLTP/coarse_graph_nodes.csv",
+      "size": 33311,
+      "mtime_ns": 1781079479496714033
+    },
+    {
+      "path": "graphs/GLTP/coarse_graph_links.csv",
+      "size": 70280,
+      "mtime_ns": 1781079479176713620
+    },
+    {
+      "path": "graphs/GLTP/pocketness.pdb",
+      "size": 134890,
+      "mtime_ns": 1781079479112713538
+    },
+    {
+      "path": "graphs/GLTP/geometric_transformer_nodes.csv",
+      "size": 238062,
+      "mtime_ns": 1785772842760973008
+    },
+    {
+      "path": "graphs/GLTPD1/coarse_graph_nodes.csv",
+      "size": 32811,
+      "mtime_ns": 1781079471040703115
+    },
+    {
+      "path": "graphs/GLTPD1/coarse_graph_links.csv",
+      "size": 71662,
+      "mtime_ns": 1781079470720702702
+    },
+    {
+      "path": "graphs/GLTPD1/pocketness.pdb",
+      "size": 134972,
+      "mtime_ns": 1781079470656702619
+    },
+    {
+      "path": "graphs/GLTPD1/geometric_transformer_nodes.csv",
+      "size": 237200,
+      "mtime_ns": 1785772842994652561
+    },
+    {
+      "path": "graphs/GM2A/coarse_graph_nodes.csv",
+      "size": 27550,
+      "mtime_ns": 1785772831894477647
+    },
+    {
+      "path": "graphs/GM2A/coarse_graph_links.csv",
+      "size": 48573,
+      "mtime_ns": 1785772831895978617
+    },
+    {
+      "path": "graphs/GM2A/pocketness.pdb",
+      "size": 99792,
+      "mtime_ns": 1785772831901771085
+    },
+    {
+      "path": "graphs/GM2A/geometric_transformer_nodes.csv",
+      "size": 188962,
+      "mtime_ns": 1785772843182444040
+    },
+    {
+      "path": "graphs/HSDL2/coarse_graph_nodes.csv",
+      "size": 41409,
+      "mtime_ns": 1781079488040725061
+    },
+    {
+      "path": "graphs/HSDL2/coarse_graph_links.csv",
+      "size": 98622,
+      "mtime_ns": 1781079487452724302
+    },
+    {
+      "path": "graphs/HSDL2/pocketness.pdb",
+      "size": 166952,
+      "mtime_ns": 1781079487360724183
+    },
+    {
+      "path": "graphs/HSDL2/geometric_transformer_nodes.csv",
+      "size": 310858,
+      "mtime_ns": 1785772843532814605
+    },
+    {
+      "path": "graphs/LCN1/coarse_graph_nodes.csv",
+      "size": 23785,
+      "mtime_ns": 1781079478184712340
+    },
+    {
+      "path": "graphs/LCN1/coarse_graph_links.csv",
+      "size": 46031,
+      "mtime_ns": 1781079477904711978
+    },
+    {
+      "path": "graphs/LCN1/pocketness.pdb",
+      "size": 90692,
+      "mtime_ns": 1781079477844711900
+    },
+    {
+      "path": "graphs/LCN1/geometric_transformer_nodes.csv",
+      "size": 167263,
+      "mtime_ns": 1785772843701398478
+    },
+    {
+      "path": "graphs/LCN15/coarse_graph_nodes.csv",
+      "size": 24500,
+      "mtime_ns": 1781079481312716378
+    },
+    {
+      "path": "graphs/LCN15/coarse_graph_links.csv",
+      "size": 50808,
+      "mtime_ns": 1781079481040716027
+    },
+    {
+      "path": "graphs/LCN15/pocketness.pdb",
+      "size": 95694,
+      "mtime_ns": 1781079480976715944
+    },
+    {
+      "path": "graphs/LCN15/geometric_transformer_nodes.csv",
+      "size": 171211,
+      "mtime_ns": 1785772843942406178
+    },
+    {
+      "path": "graphs/OSBPL5/coarse_graph_nodes.csv",
+      "size": 64400,
+      "mtime_ns": 1781079482148717456
+    },
+    {
+      "path": "graphs/OSBPL5/coarse_graph_links.csv",
+      "size": 147597,
+      "mtime_ns": 1781079481648716811
+    },
+    {
+      "path": "graphs/OSBPL5/pocketness.pdb",
+      "size": 276750,
+      "mtime_ns": 1781079481580716724
+    },
+    {
+      "path": "graphs/OSBPL5/geometric_transformer_nodes.csv",
+      "size": 485224,
+      "mtime_ns": 1785772844397094654
+    },
+    {
+      "path": "graphs/OSBPL9/coarse_graph_nodes.csv",
+      "size": 57466,
+      "mtime_ns": 1781079478844713192
+    },
+    {
+      "path": "graphs/OSBPL9/coarse_graph_links.csv",
+      "size": 131924,
+      "mtime_ns": 1781079478484712727
+    },
+    {
+      "path": "graphs/OSBPL9/pocketness.pdb",
+      "size": 247722,
+      "mtime_ns": 1781079478416712640
+    },
+    {
+      "path": "graphs/OSBPL9/geometric_transformer_nodes.csv",
+      "size": 430772,
+      "mtime_ns": 1785772844933316141
+    },
+    {
+      "path": "graphs/PITPNA/coarse_graph_nodes.csv",
+      "size": 42698,
+      "mtime_ns": 1785772831927629027
+    },
+    {
+      "path": "graphs/PITPNA/coarse_graph_links.csv",
+      "size": 92431,
+      "mtime_ns": 1785772831929095565
+    },
+    {
+      "path": "graphs/PITPNA/pocketness.pdb",
+      "size": 174150,
+      "mtime_ns": 1785772831959500696
+    },
+    {
+      "path": "graphs/PITPNA/geometric_transformer_nodes.csv",
+      "size": 312042,
+      "mtime_ns": 1785772845247198076
+    },
+    {
+      "path": "graphs/PITPNB/coarse_graph_nodes.csv",
+      "size": 43513,
+      "mtime_ns": 1781079471664703922
+    },
+    {
+      "path": "graphs/PITPNB/coarse_graph_links.csv",
+      "size": 94458,
+      "mtime_ns": 1781079471332703493
+    },
+    {
+      "path": "graphs/PITPNB/pocketness.pdb",
+      "size": 182204,
+      "mtime_ns": 1781079471268703410
+    },
+    {
+      "path": "graphs/PITPNB/geometric_transformer_nodes.csv",
+      "size": 315514,
+      "mtime_ns": 1785772845615664501
+    },
+    {
+      "path": "graphs/PITPNC1/coarse_graph_nodes.csv",
+      "size": 39940,
+      "mtime_ns": 1781079486568723161
+    },
+    {
+      "path": "graphs/PITPNC1/coarse_graph_links.csv",
+      "size": 87875,
+      "mtime_ns": 1781079486232722728
+    },
+    {
+      "path": "graphs/PITPNC1/pocketness.pdb",
+      "size": 173266,
+      "mtime_ns": 1781079486164722640
+    },
+    {
+      "path": "graphs/PITPNC1/geometric_transformer_nodes.csv",
+      "size": 291691,
+      "mtime_ns": 1785772845907615559
+    },
+    {
+      "path": "graphs/PMP2/coarse_graph_nodes.csv",
+      "size": 22803,
+      "mtime_ns": 1781079476552710233
+    },
+    {
+      "path": "graphs/PMP2/coarse_graph_links.csv",
+      "size": 42451,
+      "mtime_ns": 1781079476332709949
+    },
+    {
+      "path": "graphs/PMP2/pocketness.pdb",
+      "size": 85936,
+      "mtime_ns": 1781079476304709913
+    },
+    {
+      "path": "graphs/PMP2/geometric_transformer_nodes.csv",
+      "size": 154227,
+      "mtime_ns": 1785772846084672773
+    },
+    {
+      "path": "graphs/RBP1/coarse_graph_nodes.csv",
+      "size": 22959,
+      "mtime_ns": 1781079469212700755
+    },
+    {
+      "path": "graphs/RBP1/coarse_graph_links.csv",
+      "size": 45697,
+      "mtime_ns": 1781079468928700388
+    },
+    {
+      "path": "graphs/RBP1/pocketness.pdb",
+      "size": 94464,
+      "mtime_ns": 1781079468868700311
+    },
+    {
+      "path": "graphs/RBP1/geometric_transformer_nodes.csv",
+      "size": 160419,
+      "mtime_ns": 1785772846249820148
+    },
+    {
+      "path": "graphs/RBP4/coarse_graph_nodes.csv",
+      "size": 28401,
+      "mtime_ns": 1781079474076707036
+    },
+    {
+      "path": "graphs/RBP4/coarse_graph_links.csv",
+      "size": 57872,
+      "mtime_ns": 1781079473784706659
+    },
+    {
+      "path": "graphs/RBP4/pocketness.pdb",
+      "size": 115456,
+      "mtime_ns": 1781079473752706617
+    },
+    {
+      "path": "graphs/RBP4/geometric_transformer_nodes.csv",
+      "size": 201942,
+      "mtime_ns": 1785772846543685427
+    },
+    {
+      "path": "graphs/RBP5/coarse_graph_nodes.csv",
+      "size": 22197,
+      "mtime_ns": 1781079467140698078
+    },
+    {
+      "path": "graphs/RBP5/coarse_graph_links.csv",
+      "size": 44224,
+      "mtime_ns": 1781079466876697737
+    },
+    {
+      "path": "graphs/RBP5/pocketness.pdb",
+      "size": 90528,
+      "mtime_ns": 1781079466852697706
+    },
+    {
+      "path": "graphs/RBP5/geometric_transformer_nodes.csv",
+      "size": 154345,
+      "mtime_ns": 1785772846702969026
+    },
+    {
+      "path": "graphs/RLBP1/coarse_graph_nodes.csv",
+      "size": 44810,
+      "mtime_ns": 1781079475312708631
+    },
+    {
+      "path": "graphs/RLBP1/coarse_graph_links.csv",
+      "size": 100452,
+      "mtime_ns": 1781079475016708249
+    },
+    {
+      "path": "graphs/RLBP1/pocketness.pdb",
+      "size": 189994,
+      "mtime_ns": 1781079474952708167
+    },
+    {
+      "path": "graphs/RLBP1/geometric_transformer_nodes.csv",
+      "size": 329749,
+      "mtime_ns": 1785772847105241662
+    },
+    {
+      "path": "graphs/SCP2/coarse_graph_nodes.csv",
+      "size": 20617,
+      "mtime_ns": 1781079482696718164
+    },
+    {
+      "path": "graphs/SCP2/coarse_graph_links.csv",
+      "size": 38484,
+      "mtime_ns": 1781079482484717890
+    },
+    {
+      "path": "graphs/SCP2/pocketness.pdb",
+      "size": 76014,
+      "mtime_ns": 1781079482416717802
+    },
+    {
+      "path": "graphs/SCP2/geometric_transformer_nodes.csv",
+      "size": 145141,
+      "mtime_ns": 1785772847251662850
+    },
+    {
+      "path": "graphs/SCP2D1/coarse_graph_nodes.csv",
+      "size": 18686,
+      "mtime_ns": 1781079485424721685
+    },
+    {
+      "path": "graphs/SCP2D1/coarse_graph_links.csv",
+      "size": 37690,
+      "mtime_ns": 1781079485192721385
+    },
+    {
+      "path": "graphs/SCP2D1/pocketness.pdb",
+      "size": 74374,
+      "mtime_ns": 1781079485124721298
+    },
+    {
+      "path": "graphs/SCP2D1/geometric_transformer_nodes.csv",
+      "size": 129401,
+      "mtime_ns": 1785772847498025104
+    },
+    {
+      "path": "graphs/SEC14L2/coarse_graph_nodes.csv",
+      "size": 43723,
+      "mtime_ns": 1781079474716707863
+    },
+    {
+      "path": "graphs/SEC14L2/coarse_graph_links.csv",
+      "size": 95962,
+      "mtime_ns": 1781079474368707413
+    },
+    {
+      "path": "graphs/SEC14L2/pocketness.pdb",
+      "size": 181794,
+      "mtime_ns": 1781079474300707325
+    },
+    {
+      "path": "graphs/SEC14L2/geometric_transformer_nodes.csv",
+      "size": 318570,
+      "mtime_ns": 1785772847802776549
+    },
+    {
+      "path": "graphs/SEC14L4/coarse_graph_nodes.csv",
+      "size": 62751,
+      "mtime_ns": 1781079476044709578
+    },
+    {
+      "path": "graphs/SEC14L4/coarse_graph_links.csv",
+      "size": 138922,
+      "mtime_ns": 1781079475692709122
+    },
+    {
+      "path": "graphs/SEC14L4/pocketness.pdb",
+      "size": 258054,
+      "mtime_ns": 1781079475608709014
+    },
+    {
+      "path": "graphs/SEC14L4/geometric_transformer_nodes.csv",
+      "size": 459999,
+      "mtime_ns": 1785772848296880012
+    },
+    {
+      "path": "graphs/SEC14L5/coarse_graph_nodes.csv",
+      "size": 28347,
+      "mtime_ns": 1781079470440702341
+    },
+    {
+      "path": "graphs/SEC14L5/coarse_graph_links.csv",
+      "size": 61571,
+      "mtime_ns": 1781079470168701990
+    },
+    {
+      "path": "graphs/SEC14L5/pocketness.pdb",
+      "size": 115538,
+      "mtime_ns": 1781079470104701907
+    },
+    {
+      "path": "graphs/SEC14L5/geometric_transformer_nodes.csv",
+      "size": 202762,
+      "mtime_ns": 1785772848503800379
+    },
+    {
+      "path": "graphs/SEC14L6/coarse_graph_nodes.csv",
+      "size": 31303,
+      "mtime_ns": 1781079480780715691
+    },
+    {
+      "path": "graphs/SEC14L6/coarse_graph_links.csv",
+      "size": 67351,
+      "mtime_ns": 1781079480456715273
+    },
+    {
+      "path": "graphs/SEC14L6/pocketness.pdb",
+      "size": 126444,
+      "mtime_ns": 1781079480384715180
+    },
+    {
+      "path": "graphs/SEC14L6/geometric_transformer_nodes.csv",
+      "size": 224950,
+      "mtime_ns": 1785772848727213602
+    },
+    {
+      "path": "graphs/STARD10/coarse_graph_nodes.csv",
+      "size": 39291,
+      "mtime_ns": 1781079477196711064
+    },
+    {
+      "path": "graphs/STARD10/coarse_graph_links.csv",
+      "size": 83902,
+      "mtime_ns": 1781079476872710646
+    },
+    {
+      "path": "graphs/STARD10/pocketness.pdb",
+      "size": 163098,
+      "mtime_ns": 1781079476804710559
+    },
+    {
+      "path": "graphs/STARD10/geometric_transformer_nodes.csv",
+      "size": 286176,
+      "mtime_ns": 1785772849018180794
+    },
+    {
+      "path": "graphs/STARD11/coarse_graph_nodes.csv",
+      "size": 35946,
+      "mtime_ns": 1781079480132714854
+    },
+    {
+      "path": "graphs/STARD11/coarse_graph_links.csv",
+      "size": 78645,
+      "mtime_ns": 1781079479832714467
+    },
+    {
+      "path": "graphs/STARD11/pocketness.pdb",
+      "size": 148420,
+      "mtime_ns": 1781079479768714385
+    },
+    {
+      "path": "graphs/STARD11/geometric_transformer_nodes.csv",
+      "size": 263024,
+      "mtime_ns": 1785772841826651564
+    },
+    {
+      "path": "graphs/STARD2/coarse_graph_nodes.csv",
+      "size": 32400,
+      "mtime_ns": 1781079468672700057
+    },
+    {
+      "path": "graphs/STARD2/coarse_graph_links.csv",
+      "size": 67679,
+      "mtime_ns": 1781079468160699396
+    },
+    {
+      "path": "graphs/STARD2/pocketness.pdb",
+      "size": 136694,
+      "mtime_ns": 1781079468096699314
+    },
+    {
+      "path": "graphs/STARD2/geometric_transformer_nodes.csv",
+      "size": 237026,
+      "mtime_ns": 1785772849245562704
+    },
+    {
+      "path": "graphs/TTPA/coarse_graph_nodes.csv",
+      "size": 36729,
+      "mtime_ns": 1781079472908705528
+    },
+    {
+      "path": "graphs/TTPA/coarse_graph_links.csv",
+      "size": 83788,
+      "mtime_ns": 1781079472592705120
+    },
+    {
+      "path": "graphs/TTPA/pocketness.pdb",
+      "size": 155882,
+      "mtime_ns": 1781079472564705084
+    },
+    {
+      "path": "graphs/TTPA/geometric_transformer_nodes.csv",
+      "size": 269159,
+      "mtime_ns": 1785772849518439338
+    },
+    {
+      "path": "graphs/TTPAL/coarse_graph_nodes.csv",
+      "size": 42504,
+      "mtime_ns": 1781079472320704768
+    },
+    {
+      "path": "graphs/TTPAL/coarse_graph_links.csv",
+      "size": 97400,
+      "mtime_ns": 1781079471976704325
+    },
+    {
+      "path": "graphs/TTPAL/pocketness.pdb",
+      "size": 179252,
+      "mtime_ns": 1781079471912704241
+    },
+    {
+      "path": "graphs/TTPAL/geometric_transformer_nodes.csv",
+      "size": 313502,
+      "mtime_ns": 1785772849831071097
+    }
+  ]
+}

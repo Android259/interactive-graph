@@ -1,6 +1,8 @@
 import torch
 import torch_geometric
 
+from dataloader.protein_graph_builder import POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES
+
 try:
     from .edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
     from .geometric_transformer import ProteinGeometricTransformerBlock
@@ -151,8 +153,21 @@ class Protein_encoder(torch.nn.Module):
             # Standardisation lives here rather than in the loader because the
             # statistics must come from train proteins only; the buffers are filled by
             # set_pocket_descriptor_normalization before the first epoch.
+            # --pocket_descriptors_family_neutral restricts this broadcast to the 7
+            # POCKET_DESCRIPTOR_NAMES entries at/near the no-structure eta^2 floor
+            # (dataloader/protein_graph_builder.py); the incoming pocket_descriptor
+            # tensor stays the full 13-wide vector (pocket_descriptor() and
+            # PairDescriptorHead's fixed indices are untouched), sliced here at both
+            # normalisation and forward time.
+            self.pocket_descriptor_indices = (
+                POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES
+                if getattr(self.config, "pocket_descriptors_family_neutral", False)
+                else None
+            )
             self.pocket_descriptor_count = int(
-                getattr(self.config, "pocket_descriptor_count", 0)
+                len(self.pocket_descriptor_indices)
+                if self.pocket_descriptor_indices is not None
+                else getattr(self.config, "pocket_descriptor_count", 0)
             )
             if self.pocket_descriptor_count:
                 self.register_buffer(
@@ -366,9 +381,12 @@ class Protein_encoder(torch.nn.Module):
         """Install fixed descriptor statistics computed from train proteins only."""
         if not getattr(self, "pocket_descriptor_count", 0) or stats is None:
             return
+        indices = getattr(self, "pocket_descriptor_indices", None)
         for name in ("pocket_descriptor_mean", "pocket_descriptor_std"):
             target = getattr(self, name)
             value = stats[name].to(device=target.device, dtype=target.dtype)
+            if indices is not None:
+                value = value[list(indices)]
             if value.shape != target.shape:
                 raise ValueError(
                     f"{name} shape {tuple(value.shape)} != {tuple(target.shape)}"
@@ -381,6 +399,9 @@ class Protein_encoder(torch.nn.Module):
             return node
         if pocket_descriptor is None:
             raise ValueError("pocket_descriptors requires pocket_descriptor")
+        indices = getattr(self, "pocket_descriptor_indices", None)
+        if indices is not None:
+            pocket_descriptor = pocket_descriptor[:, list(indices)]
         scaled = (
             pocket_descriptor.to(node.dtype) - self.pocket_descriptor_mean
         ) / self.pocket_descriptor_std

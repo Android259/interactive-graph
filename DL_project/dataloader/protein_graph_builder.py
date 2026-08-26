@@ -77,6 +77,27 @@ POCKET_DESCRIPTOR_NAMES = (
     "hydropathy_rim",
 )
 
+# --pocket_descriptors_family_neutral (training/read_configuration.py): the seven
+# POCKET_DESCRIPTOR_NAMES entries whose eta^2 against the 9-family split sits at or
+# near the no-structure floor of 0.24 (files/pocket_shape_descriptors.md section 5,
+# preprocessing/pocket_descriptor_identity_check.py). Excludes the six entries closest
+# to a pure family label: pocket_sasa_share (0.85), hydropathy_core (0.77),
+# pocket_residue_share (0.71), pocket_extent (0.62), ev14_q50 (0.59), depth_q10 (0.55).
+# Indices resolved from POCKET_DESCRIPTOR_NAMES itself so a reordering there cannot
+# silently desync this list. Consumed only by architecture/protein_encoder.py's
+# expand_pocket_descriptor (the --pocket_descriptors broadcast under the ordinary
+# protein branch / --descriptors_in_protein_lipid) -- --descriptors_head's
+# PairDescriptorHead never reads this full vector at all, only aromatic_share/
+# polar_share (and hydropathy_core/rim under --pair_descriptor_pocket_shares_split) at
+# their own fixed indices, so this flag has no effect there.
+POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES = (
+    "pocket_volume_per_sasa", "pocket_elongation", "pocket_flatness",
+    "buriedness_q50", "apolar_sasa_share", "aromatic_share", "hydropathy_rim",
+)
+POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES = tuple(
+    POCKET_DESCRIPTOR_NAMES.index(name) for name in POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES
+)
+
 # Voronota's residue_type code is alphabetical by one-letter code (verified against
 # ID_resName), the same order KYTE_DOOLITTLE is indexed in; Phe, Trp, Tyr sit here.
 AROMATIC_RESIDUE_TYPES = (13, 17, 18)
@@ -280,20 +301,23 @@ class ProteinGraphBuilder:
     def _check_node_width(self, parts, nodes_path):
         """Node vector width must match what the encoder's input layer was sized for.
 
-        Also the guard against a stale data/protein_graph_tensors.pt: the cache stores
-        ``x`` as it was built, so enabling protein_extra_node_features without
-        rebuilding it would otherwise hand a 3-wide tensor to a 6-wide layer and fail
-        somewhere inside the GAT instead of here.
+        Also the guard against a stale cache: each column set (BASE_NODE_COLUMNS,
+        or --no_protein_geometry's empty one) reads its own cache file (see
+        protein_node_columns and protein_graph_tensor_cache._cache_files), but that
+        file can still predate a source CSV changing shape, or --protein_extra_node_features
+        can be turned on without its hydrophobicity-augmented cache existing yet --
+        either way this is where the mismatch would otherwise turn into an
+        unexplained shape error inside the GAT instead of a plain one here.
         """
         expected = getattr(self.config, "protein_node_feature_count", 3)
         width = int(parts["x"].shape[1])
         if width != expected:
             raise ValueError(
                 f"{nodes_path}: protein node vector is {width} wide but the encoder "
-                f"is sized for {expected}. With --protein_extra_node_features, "
-                "rebuild the tensor cache "
-                "(data/build_protein_graph_tensor_cache.py) or delete "
-                "data/protein_graph_tensors.pt"
+                f"is sized for {expected}. Rebuild the matching tensor cache "
+                "(data/build_protein_graph_tensor_cache.py, with --no_protein_geometry "
+                "if that's this config's flag) or delete it so it gets rebuilt live "
+                "during warm_caches"
             )
         return parts
 

@@ -136,6 +136,38 @@ remove_job_logs() {
     rmdir -- "$(dirname "${directory}")" 2>/dev/null || true
 }
 
+# Drop pending.commands lines (queued, never yet a real OAR job) that belong to
+# the current TARGETS/LABEL scope. Runs against the raw command text: --name is
+# always a plain word (OAR job names are restricted to a-zA-Z0-9_.-, so %q never
+# quotes it) and the -O path is a plain word too, so both are grep -o'able even
+# though the rest of the line is %q-escaped.
+purge_pending_queue() {
+    local cluster="$1"
+    local pending_path="${CLUSTER_QUEUE_ROOT}/active/pending.commands"
+    local pending_content line name stdout_file variant
+    local kept="" removed=0
+
+    pending_content="$(ssh "${ssh_args[@]}" "${remote}" "cat '${pending_path}' 2>/dev/null" || true)"
+    [[ -n "${pending_content}" ]] || return 0
+
+    while IFS= read -r line; do
+        [[ -n "${line}" ]] || continue
+        name="$(grep -oE -- '--name [^ ]+' <<< "${line}" | cut -d' ' -f2 || true)"
+        stdout_file="$(grep -oE -- ' -O [^ ]+' <<< "${line}" | awk '{print $2}' || true)"
+        variant="$(job_variant "${name}" "${stdout_file}")"
+        if matches_label "${variant}"; then
+            removed=$((removed + 1))
+        else
+            kept+="${line}"$'\n'
+        fi
+    done <<< "${pending_content}"
+
+    (( removed > 0 )) || return 0
+    printf 'Removing %d not-yet-submitted queued command(s) for %s from the queue on %s.\n' \
+        "${removed}" "${LABEL:-everything}" "${cluster}"
+    printf '%s' "${kept}" | ssh "${ssh_args[@]}" "${remote}" "cat > '${pending_path}'"
+}
+
 # --- one cluster ---------------------------------------------------------------
 kill_cluster() {
     local cluster="$1"
@@ -172,6 +204,16 @@ kill_cluster() {
         fi
     done <<< "${jobs}"
     targets="${targets%$'\n'}"
+
+    # oardel below only touches jobs oarstat already knows about. A command that
+    # never even reached a real OAR job (e.g. oarsub itself failed, as with an
+    # oversized argument list) sits only in pending.commands, invisible to the
+    # loop above, and survives a kill forever unless purged here too -- the same
+    # job_variant()/matches_label() rule applied to each pending line's own -O
+    # path instead of oarstat's JSON, since a not-yet-submitted line already
+    # carries that path (only %jobid% is still unresolved, and label detection
+    # never looks at the id).
+    purge_pending_queue "${cluster}"
 
     if [[ -z "${targets}" ]]; then
         printf 'Nothing to stop%s.\n' "${LABEL:+ for label ${LABEL}}"
