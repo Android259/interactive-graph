@@ -441,6 +441,51 @@ print_next_waiting_start() {
         "$(((remaining % 3600) / 60))" "$((remaining % 60))"
 }
 
+# --- pending reports (cross-machine --graphics/--summarize handoff) ------
+# launch/run_cluster.sh --graphics/--summarize drops one marker file per label
+# under this cluster's own queue dir (CLUSTER_QUEUE_ROOT/active/pending_reports,
+# on the cluster, not on whichever computer submitted) before it starts
+# waiting. Called only once poll_cluster has this cluster's queue confirmed
+# idle this round, so results are already synced and a checkpoint really is
+# on disk to report on.
+#
+# This is what makes the handoff work from a different computer than the one
+# that submitted: that machine's terminal or wait_and_sync.sh need not still
+# be running -- the marker lives on the cluster, so whichever computer's
+# wait_and_sync.sh next polls this cluster idle picks it up, generates the
+# report locally on ITSELF, and clears the marker. Two watchers racing on the
+# same idle cluster is handled by mv being atomic: it succeeds for exactly one
+# of them, so only one machine ever generates a given label's report.
+check_pending_reports() {
+    local cluster="$1"
+    local markers marker label claimed report_body seeds_csv do_graphics do_summarize
+
+    markers="$(ssh "${ssh_args[@]}" "${remote}" \
+        "ls '${CLUSTER_QUEUE_ROOT}/active/pending_reports/'*.report 2>/dev/null" || true)"
+    [[ -n "${markers}" ]] || return 0
+
+    while IFS= read -r marker; do
+        [[ -n "${marker}" ]] || continue
+        label="$(basename "${marker}" .report)"
+
+        claimed="$(ssh "${ssh_args[@]}" "${remote}" \
+            "mv '${marker}' '${marker}.claimed' 2>/dev/null && echo yes || echo no")"
+        [[ "${claimed}" == "yes" ]] || continue
+
+        report_body="$(ssh "${ssh_args[@]}" "${remote}" "cat '${marker}.claimed'" || true)"
+        seeds_csv="$(printf '%s\n' "${report_body}" | sed -n 's/^seeds_csv=//p')"
+        do_graphics="$(printf '%s\n' "${report_body}" | sed -n 's/^graphics=//p')"
+        do_summarize="$(printf '%s\n' "${report_body}" | sed -n 's/^summarize=//p')"
+
+        printf '%s: generating the report for %s (queued elsewhere, picked up here).\n' \
+            "${cluster}" "${label}"
+        bash "${LOCAL_PROJECT}/scripts/lib/generate_label_report.sh" \
+            "${label}" "${seeds_csv:-0,1,2,3,4}" "${do_graphics:-1}" "${do_summarize:-1}" || true
+
+        ssh "${ssh_args[@]}" "${remote}" "rm -f '${marker}.claimed'" || true
+    done <<< "${markers}"
+}
+
 # --- one cluster, one round ----------------------------------------------
 poll_cluster() {
     local cluster="$1"
@@ -558,6 +603,7 @@ poll_cluster() {
             printf 'All %s jobs completed; nothing pending.\n' "${cluster}"
             (( ARCHIVE_IDLE_QUEUES )) && archive_idle_queues "${cluster}"
         fi
+        check_pending_reports "${cluster}" || true
     fi
     return 0
 }

@@ -331,6 +331,8 @@ class PLIDataset(
         self._compute_frozen_prior(raw_columns)
         self._compute_compatibility_input(raw_columns)
         self._compute_pair_descriptors(csv)
+        if getattr(self.config, "lipid_propensity_weight", False):
+            self._lipid_propensity_weights = self._compute_lipid_propensity_weights(csv)
         self.csv = self.csvtrain
         self.pair_graph = None
         
@@ -575,6 +577,48 @@ class PLIDataset(
                 )
             )
         return columns
+
+    def _compute_lipid_propensity_weights(self, csv):
+        """Per-train-row loss weight, |label - s_chem|, class-normalized to mean 1.
+
+        s_chem is the same leave-one-out, similarity-weighted k-NN score
+        --chem_prior uses (null_scores_leave_one_row_out, dataloader/
+        chemistry_prior.py) -- not a second measurement of it. Downweights rows a
+        pure lipid-chemistry baseline already predicts correctly (label agrees
+        with s_chem), upweights rows where the label disagrees with what the
+        lipid alone predicts -- concentrates the loss on rows that need
+        protein-specific signal, not the lipid's own marginal propensity to bind
+        SOMETHING (--lipid_propensity_weight).
+
+        `csv` must be the ORIGINAL, unsampled interaction table: species_similarity
+        indexes rows by their position in it (Tanimoto_compact_isomeric_row_ids.npy),
+        which self.csvtrain no longer matches once negative sampling has
+        re-indexed it -- same requirement as _raw_frozen_prior_columns, which is
+        why this is called from __init__ with __init__'s own `csv` local rather
+        than from get_lipid_propensity_weights after the fact.
+
+        Normalized separately within each class (mean 1.0 for positives, mean 1.0
+        for negatives) so this reweights WITHIN each class only and leaves the
+        positive:negative balance --balanced_batches/--balanced_proteins already
+        set at the sampling level untouched -- a within-class emphasis shift, not
+        a second class-balancing mechanism.
+        """
+        similarity, index = species_similarity(csv, self.ROOT_DIR)
+        s_chem = null_scores_leave_one_row_out(
+            self.csvtrain, similarity, index, self.config.chem_neighbours
+        )
+        labels = self.csvtrain["Interaction"].to_numpy(dtype=float)
+        raw_weight = np.abs(labels - s_chem)
+        for class_label in (0.0, 1.0):
+            mask = labels == class_label
+            if mask.any():
+                class_mean = raw_weight[mask].mean()
+                if class_mean > 1e-9:
+                    raw_weight[mask] = raw_weight[mask] / class_mean
+        weights = torch.zeros(len(self.id2pos), dtype=torch.float32)
+        for pair_id, weight in zip(self.csvtrain["pair_id"].astype(int), raw_weight):
+            weights[self.id2pos[int(pair_id)]] = float(weight)
+        return weights
 
     def _compute_frozen_prior(self, raw_columns):
         """Attach the frozen, calibrated additive term(s) -- variant A.
@@ -1209,6 +1253,23 @@ class PLIDataset(
 
         return protein_group_weights
 
+    def get_lipid_propensity_weights(self):
+        """The --lipid_propensity_weight tensor computed in __init__, or zeros.
+
+        Computed there (not here) because it needs the ORIGINAL, unsampled
+        interaction table for species_similarity's row-position indexing, which
+        __init__ still has as a local and this method does not (self.csv is
+        reassigned to self.csvtrain by the time __init__ returns, same reason
+        _raw_frozen_prior_columns takes csv as an argument rather than reading
+        self.csv). The zeros fallback matches get_protein_weights' contract of
+        always returning a same-shaped tensor, for a caller that toggled the
+        flag off mid-run without rebuilding the dataset.
+        """
+        return getattr(
+            self, "_lipid_propensity_weights",
+            torch.zeros(len(self.id2pos), dtype=torch.float32),
+        )
+
     def get_protein_balance_weights(self):
         """Per-row weights that restore each protein's pos:neg ratio inside train.
 
@@ -1687,7 +1748,13 @@ class PLIDataset(
         if cached is not None:
             return cached
 
-        if getattr(self.config, "lipid_graph_isomers", False):
+        if getattr(self.config, "lipid_graph_isomers", False) or getattr(
+            self.config, "no_embeddings", False
+        ):
+            # no_embeddings: MolFormer is not used at all -- finish_sample builds the
+            # lipid graph's single node from pair_descriptor_input instead (see
+            # there). Skipped here too, not just unused later, so the embedding
+            # cache is never even looked up for this run.
             lipid_enc = None
             lipid_batch = None
         elif self.config.lipid_fragments_mask:
@@ -1768,6 +1835,22 @@ class PLIDataset(
             lipid_graph = self.make_graph_lipid(
                 smile_global, smile_fragment
             )
+        elif getattr(self.config, "no_embeddings", False):
+            # No MolFormer, and without it no per-token structure to build multiple
+            # nodes from (validate() requires descriptors_in_protein_lipid for
+            # exactly this reason) -- one node, whose feature vector is the same
+            # chain/unsaturation/hbond/heavy columns architecture/lipid_encoder.py
+            # broadcasts onto every node when embeddings ARE on. Sliced from
+            # protein_graph.pair_descriptor_input (attached above) rather than
+            # recomputed -- same tensor, same fixed DATALOADER_TOKENS column order
+            # (architecture/pair_descriptor_head.py), one read instead of two.
+            if not hasattr(protein_graph, "pair_descriptor_input"):
+                raise ValueError(
+                    "no_embeddings requires pair_descriptors (pair_descriptor_input "
+                    "was not attached -- check --pocket_descriptors/--pair_descriptors "
+                    "are set, per ModelConfig.validate)"
+                )
+            lipid_graph = Data(x=protein_graph.pair_descriptor_input[:, :4].clone())
         else:
             # No edge_index here any more. It used to hold the complete graph over the
             # 768 embedding columns (295296 edges), which nothing consumed: lip_edgidx

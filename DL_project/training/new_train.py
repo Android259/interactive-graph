@@ -120,6 +120,10 @@ if conf.protein_class_sqrt_weight:
         square_root=True,
     ).to(device)
     common_weights_parts.append(protein_class_sqrt_weights)
+if conf.lipid_propensity_weight:
+    common_weights_parts.append(
+        train_dataset.get_lipid_propensity_weights().to(device)
+    )
 common_weights = (
     torch.stack(common_weights_parts).mean(dim=0)
     if common_weights_parts

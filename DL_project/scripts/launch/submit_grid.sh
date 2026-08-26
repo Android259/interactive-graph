@@ -1,11 +1,23 @@
 #!/usr/bin/env bash
-# Submit one variant's whole group x seed grid to OAR.
+# Submit one or several variants' whole group x seed grids to OAR, packed
+# together as densely as PACK_SIZE allows.
 #
 #   bash scripts/launch/submit_grid.sh scripts/arg_files/<config>.md
+#   bash scripts/launch/submit_grid.sh scripts/arg_files/a.md scripts/arg_files/b.md
 #
-# One file for both series. Which one runs is decided by the config itself: a
+# One file for both series. Which one runs is decided by each config itself: a
 # --cold_split flag in it selects separate held-out validation and test groups
 # (the table below), anything else excludes one group and uses it for both.
+#
+# Several labels in one call is what makes packing cross labels possible: with
+# one label per call (the old contract here), each label's grid fills its own
+# pack(s) and each pack is its own OAR job -- on kraken-cpu, where PACK_SIZE is
+# sized to fit an entire descriptors_head grid already, that means one whole
+# 192-core node per label even when three tiny labels together would fit on
+# one. Passed several labels, this script builds ONE combined (label, group,
+# seed) stream and packs records into a job without caring which label they
+# came from, so packs -- and therefore nodes -- are filled to PACK_SIZE before
+# a new one opens, regardless of label boundaries.
 #
 # Called through scripts/run_bigfoot.sh / run_kraken.sh, which supply every
 # cluster-dependent setting as an environment variable -- never by patching this
@@ -112,7 +124,9 @@ MIN_FREE_GPU_MIB="${MIN_FREE_GPU_MIB:-16384}"
 # overlap (the progress table locates a running job's log by `*_${job_id}.out`).
 JOB_ID_TAG="${JOB_ID_TAG:-}"
 OARSUB_EXTRA="${OARSUB_EXTRA:-}"
-# Space-separated subsets, for a smoke test instead of the full 45.
+# Space-separated subsets, for a smoke test instead of the full 45. Applied to
+# EVERY label in this call, same as before -- there was never a per-label
+# override and this does not add one.
 GROUPS_OVERRIDE="${GROUPS_OVERRIDE:-}"
 SEEDS_OVERRIDE="${SEEDS_OVERRIDE:-}"
 COMPLETE_ONLY="${COMPLETE_ONLY:-0}"
@@ -161,69 +175,116 @@ fi
 
 cd "${PROJECT_DIR}"
 
-if [[ $# -ne 1 ]]; then
-    printf "Usage: %s arguments_file.md\n" "$0" >&2
+if [[ $# -lt 1 ]]; then
+    printf "Usage: %s arguments_file.md [arguments_file.md ...]\n" "$0" >&2
     exit 1
 fi
-args_file="$1"
-if [[ ! -f "${args_file}" ]]; then
-    printf "Arguments file not found: %s\n" "${args_file}" >&2
-    exit 1
-fi
-
-# --- what this config asks for ------------------------------------------------
-COLD_SPLIT=0
-if args_file_has_flag "${args_file}" --cold_split; then
-    COLD_SPLIT=1
-fi
-
-# The shorter request only for configurations that explicitly enable the fast
-# path. Feeds both unpacked jobs and pack walltime arithmetic.
-if args_file_has_flag "${args_file}" --fast_attention; then
-    WALLTIME="${FAST_ATTENTION_WALLTIME}"
-    printf "Detected --fast_attention; per-experiment walltime=%s.\n" "${WALLTIME}"
-fi
-
-variant="$(basename "${args_file}" .md)"
-args_template="$(args_file_flags "${args_file}")"
+# scripts/cluster/cluster_queue_remote.sh's capture_queue hands this script its
+# whole submit_args as ONE shell word (run_cluster.sh joins several requested
+# labels space-separated before making its single capture call, precisely so
+# they land in the SAME pack -- see the header comment above), so several
+# labels arrive here as one "$1", not as "$1 $2 $3". Word-splitting it is safe:
+# every label in this project is a bare identifier or a plain path, never one
+# containing whitespace.
+read -r -a REQUESTED_ARGS_FILES <<< "$*"
 
 # --lipid_coldsplit in the args file switches the grid to the other axis: whole chemical
 # families of lipids leave training while every protein stays, so there is no held-out
-# protein group and the grid iterates the four lipid sets instead. The bare flag is
-# stripped from the template because the trainer only accepts the named form, which
-# experiment_record appends per run. Keep the names in step with LIPID_COLDSPLIT_SETS
-# (dataloader/sampler.py); one absent from there is rejected at parse time.
+# protein group and the grid iterates the four lipid sets instead. Keep the names in
+# step with LIPID_COLDSPLIT_SETS (dataloader/sampler.py); one absent from there is
+# rejected at parse time.
 LIPID_COLDSPLIT_SETS_LIST=(sphingolipids phosphorus_free choline anionic)
-lipid_coldsplit=0
-if args_file_has_flag "${args_file}" --lipid_coldsplit; then
-    lipid_coldsplit=1
-    if (( COLD_SPLIT )); then
-        printf -- '--lipid_coldsplit and --cold_split hold out different axes; pick one.\n' >&2
-        exit 2
+
+# --- per-label setup ----------------------------------------------------------
+# Parallel arrays, one entry per requested label (index order == command-line
+# order). experiment_record/job_name/submit_one below take a label index and
+# read these instead of the single-label globals this script used to have.
+LABEL_VARIANT=()
+LABEL_ARGS_TEMPLATE=()
+LABEL_COLD_SPLIT=()
+LABEL_LIPID_COLDSPLIT=()
+LABEL_OUTPUT_ROOT=()
+LABEL_WALLTIME=()
+# One line per (label_index, group, seed), across ALL labels -- the combined
+# stream the main loop below packs from, label boundaries included on purpose.
+combined_pairs=""
+
+for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
+    if [[ ! -f "${args_file}" ]]; then
+        printf "Arguments file not found: %s\n" "${args_file}" >&2
+        exit 1
     fi
-    args_template="$(printf '%s' "${args_template}" \
-        | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
-fi
 
-if (( COLD_SPLIT )); then
-    output_root="script_logs/${variant}_coldval_seeds01234"
-    groups=("${COLD_TEST_GROUPS[@]}")
-else
-    output_root="script_logs/${variant}_seeds01234"
-    groups=("${PROTEIN_GROUPS[@]}")
-fi
-seeds=("${DEFAULT_SEEDS[@]}")
-if (( lipid_coldsplit )); then
-    output_root="script_logs/${variant}_lipidsets"
-    groups=("${LIPID_COLDSPLIT_SETS_LIST[@]}")
-fi
-[[ -z "${GROUPS_OVERRIDE}" ]] || read -r -a groups <<< "${GROUPS_OVERRIDE}"
-[[ -z "${SEEDS_OVERRIDE}" ]] || read -r -a seeds <<< "${SEEDS_OVERRIDE}"
+    this_cold_split=0
+    if args_file_has_flag "${args_file}" --cold_split; then
+        this_cold_split=1
+    fi
 
-mkdir -p "${output_root}"
-grid_load_completed "${variant}" "" "${COLD_SPLIT}"
+    # The shorter request only for configs that explicitly enable the fast path.
+    # Per label: two labels in one call can disagree, and the pack that ends up
+    # holding both takes the SLOWER of the two (see the max-walltime tracking in
+    # the main loop below), never the base WALLTIME blindly.
+    this_walltime="${WALLTIME}"
+    if args_file_has_flag "${args_file}" --descriptors_head; then
+        this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
+        printf "Detected --descriptors_head in %s; per-experiment walltime=%s.\n" \
+            "${args_file}" "${this_walltime}"
+    elif args_file_has_flag "${args_file}" --fast_attention; then
+        this_walltime="${FAST_ATTENTION_WALLTIME}"
+        printf "Detected --fast_attention in %s; per-experiment walltime=%s.\n" \
+            "${args_file}" "${this_walltime}"
+    fi
 
-# TEST -> VAL mapping (see the table at the top). Only read in cold-split mode.
+    this_variant="$(basename "${args_file}" .md)"
+    this_args_template="$(args_file_flags "${args_file}")"
+
+    this_lipid_coldsplit=0
+    if args_file_has_flag "${args_file}" --lipid_coldsplit; then
+        this_lipid_coldsplit=1
+        if (( this_cold_split )); then
+            printf -- '--lipid_coldsplit and --cold_split hold out different axes; pick one (%s).\n' \
+                "${args_file}" >&2
+            exit 2
+        fi
+        this_args_template="$(printf '%s' "${this_args_template}" \
+            | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
+    fi
+
+    if (( this_cold_split )); then
+        this_output_root="script_logs/${this_variant}_coldval_seeds01234"
+        this_groups=("${COLD_TEST_GROUPS[@]}")
+    else
+        this_output_root="script_logs/${this_variant}_seeds01234"
+        this_groups=("${PROTEIN_GROUPS[@]}")
+    fi
+    this_seeds=("${DEFAULT_SEEDS[@]}")
+    if (( this_lipid_coldsplit )); then
+        this_output_root="script_logs/${this_variant}_lipidsets"
+        this_groups=("${LIPID_COLDSPLIT_SETS_LIST[@]}")
+    fi
+    [[ -z "${GROUPS_OVERRIDE}" ]] || read -r -a this_groups <<< "${GROUPS_OVERRIDE}"
+    [[ -z "${SEEDS_OVERRIDE}" ]] || read -r -a this_seeds <<< "${SEEDS_OVERRIDE}"
+
+    mkdir -p "${this_output_root}"
+    grid_load_completed "${this_variant}" "" "${this_cold_split}"
+
+    label_index="${#LABEL_VARIANT[@]}"
+    LABEL_VARIANT+=("${this_variant}")
+    LABEL_ARGS_TEMPLATE+=("${this_args_template}")
+    LABEL_COLD_SPLIT+=("${this_cold_split}")
+    LABEL_LIPID_COLDSPLIT+=("${this_lipid_coldsplit}")
+    LABEL_OUTPUT_ROOT+=("${this_output_root}")
+    LABEL_WALLTIME+=("${this_walltime}")
+
+    while IFS=$'\t' read -r group seed; do
+        [[ -n "${group}" ]] || continue
+        combined_pairs+="${label_index}"$'\t'"${group}"$'\t'"${seed}"$'\n'
+    done < <(grid_pairs "${this_groups[*]}" "${this_seeds[*]}")
+done
+
+# TEST -> VAL mapping (see the table at the top). Only read in cold-split mode;
+# shared across labels, since it is a property of the group rotation, not of
+# any one config.
 declare -A val_for_test=(
     ["lipocalin"]="scp2"
     ["CRAL-TRIO"]="IP_trans"
@@ -248,12 +309,18 @@ resolve_val_group() {
 # --- one experiment as a record ----------------------------------------------
 # The record layout is scripts/lib/pack_lib.sh's; both runners read it, so an
 # experiment is described the same way whether it is run alone or in a pack, and
-# both write the same tree.
+# both write the same tree. label_index selects which requested label this
+# (group, seed) belongs to -- see LABEL_* above.
 experiment_record() {
-    local group="$1" seed="$2"
+    local label_index="$1" group="$2" seed="$3"
+    local variant="${LABEL_VARIANT[label_index]}"
+    local args_template="${LABEL_ARGS_TEMPLATE[label_index]}"
+    local cold_split="${LABEL_COLD_SPLIT[label_index]}"
+    local lipid_coldsplit="${LABEL_LIPID_COLDSPLIT[label_index]}"
+    local output_root="${LABEL_OUTPUT_ROOT[label_index]}"
     local val_group excluded output_dir stem header extra=""
 
-    if (( COLD_SPLIT )); then
+    if (( cold_split )); then
         val_group="$(resolve_val_group "${group}")"
         excluded="${group},${val_group}"
         output_dir="${output_root}/${group}"
@@ -316,8 +383,9 @@ oarsub_submit() {
 # output path OAR does not report, so a cold-split job has to keep naming its
 # validation group here.
 job_name() {
-    local group="$1" seed="$2"
-    if (( COLD_SPLIT )); then
+    local label_index="$1" group="$2" seed="$3"
+    local variant="${LABEL_VARIANT[label_index]}"
+    if (( LABEL_COLD_SPLIT[label_index] )); then
         printf '%s_%s_v%s_s%s\n' \
             "${variant}" "${group}" "$(resolve_val_group "${group}")" "${seed}"
     else
@@ -326,10 +394,10 @@ job_name() {
 }
 
 submit_one() {
-    local group="$1" seed="$2"
+    local label_index="$1" group="$2" seed="$3"
     local record log_file out_base job_command
 
-    record="$(experiment_record "${group}" "${seed}")"
+    record="$(experiment_record "${label_index}" "${group}" "${seed}")"
     IFS=$'\t' read -r _ log_file out_base _ <<< "${record}"
 
     printf -v job_command \
@@ -337,21 +405,23 @@ submit_one() {
         "${PROJECT_DIR}" "${CONDA_SH}" "${CONDA_ENV}" \
         "${GPU_MODEL_GLOB}" "${MIN_FREE_GPU_MIB}" "${CPU_ONLY}" "$(pack_spec_encode "${record}")"
 
-    oarsub_submit "$(job_name "${group}" "${seed}")" "${WALLTIME}" \
+    oarsub_submit "$(job_name "${label_index}" "${group}" "${seed}")" \
+        "${LABEL_WALLTIME[label_index]}" \
         "${out_base}${JOB_ID_TAG}%jobid%" "${job_command}"
 }
 
 submit_pack() {
-    local pack_index="$1" spec="$2" pack_count="$3"
+    local pack_index="$1" spec="$2" pack_count="$3" pack_walltime_str="$4" pack_tag="$5" job_tag="$6"
     local job_walltime pack_dir job_command runner_env
 
-    job_walltime="$(pack_job_walltime "${pack_count}" "${WALLTIME}" "${PACK_WALLTIME_PARALLEL}")"
+    job_walltime="$(pack_job_walltime "${pack_count}" "${pack_walltime_str}" "${PACK_WALLTIME_PARALLEL}")"
     pack_check_walltime "${job_walltime}" "${MAX_WALLTIME}" || exit 2
 
     # The job's own stdout must NOT land on a "*_<tag><jobid>.out" path: that
     # pattern belongs to the per-experiment files the runner writes, and the
-    # progress table turns every match into a row.
-    pack_dir="${output_root}/_packs"
+    # progress table turns every match into a row. Shared across labels rather
+    # than one label's own output_root/_packs, since a pack can span several.
+    pack_dir="script_logs/_cross_label_packs"
     mkdir -p "${pack_dir}"
 
     printf -v runner_env \
@@ -366,57 +436,88 @@ submit_pack() {
         "${PROJECT_DIR}" "${CONDA_SH}" "${CONDA_ENV}" \
         "${runner_env}" "$(pack_spec_encode "${spec}")"
 
-    printf "Pack %d: %d experiment(s), walltime=%s.\n" \
-        "${pack_index}" "${pack_count}" "${job_walltime}"
-    oarsub_submit "${variant}$( (( COLD_SPLIT )) && printf _coldval )_pack${pack_index}" \
+    printf "Pack %d: %d experiment(s) [%s], walltime=%s.\n" \
+        "${pack_index}" "${pack_count}" "${pack_tag}" "${job_walltime}"
+    # OAR rejects any job name (-n) with characters outside a-z A-Z 0-9 _.- --
+    # "+" (used above only for the human-readable pack_tag, to list every label
+    # in a cross-label pack) is not in that set, so the job name uses "-" as
+    # the label separator instead.
+    oarsub_submit "${job_tag}_pack${pack_index}" \
         "${job_walltime}" \
-        "${pack_dir}/${variant}_pack${pack_index}_${JOB_ID_TAG}%jobid%.pack" \
+        "${pack_dir}/pack${pack_index}_${JOB_ID_TAG}%jobid%.pack" \
         "${job_command}"
 }
 
 # --- the grid -----------------------------------------------------------------
-# The seed loop stays innermost (grid_pairs), so a pack of 5 is exactly one
-# group's seeds and a pack of 9 spans groups at a fixed seed -- both natural
-# units to resubmit or cancel as a whole.
+# The seed loop stays innermost per label (grid_pairs), so a pack of 5 is
+# exactly one group's seeds and a pack of 9 spans groups at a fixed seed within
+# one label -- both natural units to resubmit or cancel as a whole. Labels are
+# concatenated after that, in command-line order, in combined_pairs above, so a
+# pack only spans a label boundary once the label ahead of it in the stream has
+# been exhausted -- filling PACK_SIZE takes priority over keeping one pack to
+# one label.
 submitted=0
 experiments=0
 pack_index=0
 pack_count=0
 pack_spec=""
+# Empty means "no record added yet"; set to the first record's own label
+# walltime and only ever raised after that -- see the comparison below. Never
+# initialised to the base WALLTIME: a pack built entirely from --fast_attention
+# labels must not inherit the slower default just because it once existed.
+pack_walltime_str=""
+declare -A pack_labels_seen=()
+pack_labels_list=()
 
 flush_pack() {
     (( pack_count > 0 )) || return 0
-    submit_pack "${pack_index}" "${pack_spec}" "${pack_count}"
+    local tag job_tag
+    tag="$(IFS=+; printf '%s' "${pack_labels_list[*]}")"
+    job_tag="$(IFS=-; printf '%s' "${pack_labels_list[*]}")"
+    submit_pack "${pack_index}" "${pack_spec}" "${pack_count}" "${pack_walltime_str}" "${tag}" "${job_tag}"
     pack_index=$((pack_index + 1))
     submitted=$((submitted + 1))
     pack_count=0
     pack_spec=""
+    pack_walltime_str=""
+    pack_labels_seen=()
+    pack_labels_list=()
 }
 
-while IFS=$'\t' read -r group seed; do
+while IFS=$'\t' read -r label_index group seed; do
     [[ -n "${group}" ]] || continue
     experiments=$((experiments + 1))
     if (( PACK_SIZE <= 1 )); then
-        submit_one "${group}" "${seed}"
+        submit_one "${label_index}" "${group}" "${seed}"
         submitted=$((submitted + 1))
         continue
     fi
-    pack_spec+="$(experiment_record "${group}" "${seed}")"$'\n'
+    pack_spec+="$(experiment_record "${label_index}" "${group}" "${seed}")"$'\n'
     pack_count=$((pack_count + 1))
+
+    this_walltime="${LABEL_WALLTIME[label_index]}"
+    if [[ -z "${pack_walltime_str}" ]] \
+        || (( $(pack_walltime_seconds "${this_walltime}") > $(pack_walltime_seconds "${pack_walltime_str}") )); then
+        pack_walltime_str="${this_walltime}"
+    fi
+    this_label="${LABEL_VARIANT[label_index]}"
+    if [[ -z "${pack_labels_seen[${this_label}]:-}" ]]; then
+        pack_labels_seen["${this_label}"]=1
+        pack_labels_list+=("${this_label}")
+    fi
+
     if (( pack_count >= PACK_SIZE )); then
         flush_pack
     fi
-done < <(grid_pairs "${groups[*]}" "${seeds[*]}")
+done < <(printf '%s' "${combined_pairs}")
 flush_pack
 
+all_labels_csv="$(IFS=,; printf '%s' "${LABEL_VARIANT[*]}")"
 if (( PACK_SIZE <= 1 )); then
-    printf "Submitted %d jobs %s across %d groups and %d seeds%s.\n" \
-        "${submitted}" "${variant}" "${#groups[@]}" "${#seeds[@]}" \
-        "$( (( COLD_SPLIT )) && printf ', separate cold validation group per fold' )"
+    printf "Submitted %d jobs across %d label(s) (%s).\n" \
+        "${submitted}" "${#LABEL_VARIANT[@]}" "${all_labels_csv}"
 else
-    printf "Submitted %d packed job(s) %s: %d experiments (%d groups x %d seeds), up to %d per job, up to %d concurrent per GPU%s.\n" \
-        "${submitted}" "${variant}" "${experiments}" "${#groups[@]}" "${#seeds[@]}" \
-        "${PACK_SIZE}" "${PACK_PARALLEL}" \
-        "$( (( COLD_SPLIT )) && printf ', cold split' )"
+    printf "Submitted %d packed job(s), %d experiment(s) total across %d label(s) (%s), up to %d per job, up to %d concurrent per GPU.\n" \
+        "${submitted}" "${experiments}" "${#LABEL_VARIANT[@]}" "${all_labels_csv}" \
+        "${PACK_SIZE}" "${PACK_PARALLEL}"
 fi
-

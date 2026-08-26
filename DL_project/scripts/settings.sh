@@ -42,6 +42,20 @@ WALLTIME="${WALLTIME:-5:00:00}"
 # more total walltime, because the extra concurrency removes a whole sequential wave.
 FAST_ATTENTION_WALLTIME="${FAST_ATTENTION_WALLTIME:-0:35:00}"
 
+# --descriptors_head budget: this is a ~1000-parameter model (only
+# architecture/pair_descriptor_head.py's self-attention head + a small
+# classifier, no protein/lipid encoders at all), not the fast-attention full
+# model FAST_ATTENTION_WALLTIME above is sized for -- using that number here
+# means asking for 35 minutes for a run that needs a fraction of it. Measured
+# from metrics_summary.csv (385 completed descriptors_* runs,
+# training_sec_per_epoch): 2.75-5.96s/epoch, mean 3.86s; at 120 epochs the
+# slowest observed run is ~12 minutes of training alone. 20 minutes covers that
+# plus data-loading/embedding-cache warm-up overhead with real margin, checked
+# per label ahead of the more general --fast_attention branch below (a config
+# can set both; descriptors_head is the more specific and correct budget when
+# it does).
+DESCRIPTORS_HEAD_WALLTIME="${DESCRIPTORS_HEAD_WALLTIME:-0:20:00}"
+
 # How many jobs may sit WAITING in OAR at once. The cluster's own copy of this
 # (<queue>/max_waiting) wins when it exists, so two computers draining the same
 # queue cannot use two different limits.

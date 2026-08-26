@@ -11,7 +11,9 @@
 --pair_descriptors
 --descriptors_head
 --no_pair_descriptor_extent
+--pair_descriptor_pocket_shares_coarse
 
+--save_model_in_dynamics
 
 --balanced_batches
 --balanced_proteins

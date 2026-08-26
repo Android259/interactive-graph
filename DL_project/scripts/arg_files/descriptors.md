@@ -5,13 +5,13 @@
 
 --dropout=0.1
 --weight_decay=0.01
---pool_type="add"
+--pool_type="mean"
 
 --pocket_descriptors
 --pair_descriptors
 --descriptors_head
---no_pair_descriptor_extent
 
+--save_model_in_dynamics
 
 --balanced_batches
 --balanced_proteins

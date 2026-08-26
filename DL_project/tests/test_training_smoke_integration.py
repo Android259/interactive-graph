@@ -902,6 +902,50 @@ def test_pair_descriptor_pocket_shares_split_requires_pocket_shares():
         config.validate()
 
 
+def test_pair_descriptor_pocket_shares_coarse_bands_the_original_two_tokens():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_pocket_shares_coarse = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.pair_descriptor_head
+    assert head.token_count == 8
+    assert head.token_names[-2:] == ("aromatic_share_coarse", "polar_share_coarse")
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in head.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_pair_descriptor_pocket_shares_coarse_requires_pocket_shares():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_pocket_shares = False
+    config.pair_descriptor_pocket_shares_coarse = True
+    with pytest.raises(ValueError, match="pair_descriptor_pocket_shares_coarse"):
+        config.validate()
+
+
+def test_pair_descriptor_pocket_shares_coarse_conflicts_with_split():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_pocket_shares_split = True
+    config.pair_descriptor_pocket_shares_coarse = True
+    with pytest.raises(ValueError, match="pick one"):
+        config.validate()
+
+
 def test_descriptors_head_rejects_the_full_architecture_options():
     config = make_config()
     config.pocket_descriptors = True

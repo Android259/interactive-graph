@@ -229,7 +229,15 @@ def restrict_parts_to_mask(parts, keep):
 
 
 def protein_node_columns(config):
-    """Voronota columns making up the protein node vector for this configuration."""
+    """Voronota columns making up the protein node vector for this configuration.
+
+    --no_protein_geometry drops BASE_NODE_COLUMNS (and EXTRA_NODE_COLUMNS with it,
+    since the latter is meaningless without the former) -- the node vector is then
+    built entirely from --descriptors_in_protein_lipid's broadcast and/or ESM,
+    neither of which this function's caller reads.
+    """
+    if getattr(config, "no_protein_geometry", False):
+        return []
     if getattr(config, "protein_extra_node_features", False):
         return list(BASE_NODE_COLUMNS) + list(EXTRA_NODE_COLUMNS)
     return list(BASE_NODE_COLUMNS)

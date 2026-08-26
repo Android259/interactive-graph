@@ -43,11 +43,14 @@ checked freshly on every load (cheap -- a few dozen stat() calls, not a hash of 
 contents).
 """
 
+import hashlib
 import json
 from pathlib import Path
 
 from rdkit import Chem
 
+import dataloader.pair_descriptors as pair_descriptors
+import dataloader.pocket_lipid_compatibility as pocket_lipid_compatibility
 from dataloader.pair_descriptors import _MEASURES
 from dataloader.pocket_lipid_compatibility import (
     candidates_for_row,
@@ -59,11 +62,30 @@ from dataloader.protein_graph_tensor_cache import _source_record
 
 CACHE_FORMAT_VERSION = 1
 
+# Modules whose source defines what a cache entry MEANS: longest_acyl_chain,
+# _MEASURES' formulas (unsaturation/hbond/heavy_atoms), pocket_extent_by_protein,
+# pocket_rim_core_aromatic_share_by_protein. None of these are files
+# store_is_current()'s size/mtime check watches -- that check guards the DATA
+# a cache was built from (the interaction table, protein structures), not the
+# CODE that turns it into cached numbers, so a formula change here would
+# otherwise leave a still-"current" cache silently serving values computed
+# under the old formula. Folded into the cache filename below instead: a code
+# change is then a different filename outright, never a stale hit.
+_CODE_MODULES = (pair_descriptors, pocket_lipid_compatibility)
+
+
+def _code_fingerprint():
+    """Short hash of every module in _CODE_MODULES' source, in a fixed order."""
+    hasher = hashlib.sha256()
+    for module in _CODE_MODULES:
+        hasher.update(Path(module.__file__).read_bytes())
+    return hasher.hexdigest()[:16]
+
 
 def cache_path(root_dir, isomeric):
     root_dir = Path(root_dir).resolve()
     stem = "isomeric" if isomeric else "deterministic"
-    return root_dir / f"pair_descriptor_cache_{stem}.json"
+    return root_dir / f"pair_descriptor_cache_{stem}_{_code_fingerprint()}.json"
 
 
 def _protein_source_paths(root_dir, protein_names):
@@ -118,6 +140,10 @@ def build_pair_descriptor_cache(root_dir, csv, protein_names, csv_path, isomeric
     ]
     payload = {
         "format_version": CACHE_FORMAT_VERSION,
+        # Belt and suspenders alongside the filename (cache_path already embeds
+        # this): a copy or manual rename could carry the fingerprint-tagged
+        # name to code it no longer matches, and this catches that too.
+        "code_fingerprint": _code_fingerprint(),
         "isomeric": bool(isomeric),
         "sources": [_source_record(path, root_dir) for path in source_paths],
         "raw_to_canonical": raw_to_canonical,
@@ -138,6 +164,8 @@ def store_is_current(root_dir, isomeric):
     try:
         manifest = json.loads(path.read_text())
         if manifest.get("format_version") != CACHE_FORMAT_VERSION:
+            return False
+        if manifest.get("code_fingerprint") != _code_fingerprint():
             return False
         if bool(manifest.get("isomeric")) != bool(isomeric):
             return False

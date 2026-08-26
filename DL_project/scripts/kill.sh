@@ -3,6 +3,7 @@
 #
 #   bash scripts/kill.sh --bigfoot          everything running on bigfoot
 #   bash scripts/kill.sh --kraken           everything running on kraken
+#   bash scripts/kill.sh --kraken_cpu       everything running on kraken-cpu
 #   bash scripts/kill.sh --local            every local grid job on this machine
 #   bash scripts/kill.sh <label>            that label everywhere: both clusters and here
 #   bash scripts/kill.sh --kraken <label>   that label on kraken only
@@ -11,7 +12,8 @@
 # Name a place and you stop everything there. Name a label and you stop that
 # experiment wherever it happens to be running. Name both and you stop the
 # narrower thing. Naming neither is refused -- "stop everything, everywhere"
-# should have to be spelled out, and `--bigfoot --kraken --local` spells it.
+# should have to be spelled out, and `--bigfoot --kraken --kraken_cpu --local`
+# spells it.
 #
 # --clean_logs deletes the log files of the jobs this invocation stopped -- the
 # job-tagged .out, the .log it points at, any .err beside it -- and then the
@@ -56,6 +58,7 @@ while (( $# > 0 )); do
     case "$1" in
         --bigfoot) TARGETS+=("bigfoot"); shift ;;
         --kraken)  TARGETS+=("kraken"); shift ;;
+        --kraken_cpu) TARGETS+=("kraken-cpu"); shift ;;
         --local)   TARGETS+=("local"); shift ;;
         --clean_logs) CLEAN_LOGS=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -77,7 +80,7 @@ if (( ${#TARGETS[@]} == 0 )); then
         exit 2
     fi
     # A label with no place: wherever that experiment is running.
-    TARGETS=("bigfoot" "kraken" "local")
+    TARGETS=("bigfoot" "kraken" "kraken-cpu" "local")
 fi
 
 # Does a variant belong to the requested label? Empty label matches everything,
@@ -157,6 +160,7 @@ kill_cluster() {
     targets=""
     local stdout_file variant
     local killed_out_files=()
+    local killed_names=()
     while IFS=$'\t' read -r job_id name stdout_file; do
         [[ -n "${job_id}" ]] || continue
         variant="$(job_variant "${name}" "${stdout_file}")"
@@ -164,6 +168,7 @@ kill_cluster() {
             targets+="${job_id}"$'\n'
             printf '  %s  %s\n' "${job_id}" "${name:-<unnamed>}"
             [[ -n "${stdout_file}" ]] && killed_out_files+=("${stdout_file}")
+            [[ -n "${name}" ]] && killed_names+=("${name}")
         fi
     done <<< "${jobs}"
     targets="${targets%$'\n'}"
@@ -187,6 +192,28 @@ kill_cluster() {
         printf 'Waiting for %d job(s) to stop.\n' "${still}"
         sleep "${POLL_SECONDS}"
     done
+
+    # oardel stops the job but knows nothing of scripts/cluster/cluster_queue_remote.sh's
+    # own bookkeeping: capture_queue's oarsub() shadow dedupes a future submission
+    # against the EXACT command text already sitting in pending.commands/
+    # submitted.commands, and a killed job's command is still there, still reading as
+    # "already queued" -- so without this, resubmitting the same grid after a kill is
+    # silently skipped, one line per killed job, with no error. Purge by --name, the
+    # one token every stored command line carries that this job's oarstat row also
+    # gives directly.
+    if (( ${#killed_names[@]} > 0 )); then
+        printf 'Clearing these jobs'"'"' commands from the queue on %s (so a resubmit is not skipped as already-queued).\n' "${cluster}"
+        local purge_script="" kname
+        for kname in "${killed_names[@]}"; do
+            purge_script+="name=$(printf '%q' "${kname}"); "
+            purge_script+='for f in '"$(printf '%q' "${CLUSTER_QUEUE_ROOT}/active/pending.commands")"' '"$(printf '%q' "${CLUSTER_QUEUE_ROOT}/active/submitted.commands")"'; do '
+            purge_script+='[ -f "$f" ] || continue; '
+            purge_script+='grep -v -F -- "--name $name " "$f" > "$f.kill_tmp"; mv "$f.kill_tmp" "$f"; '
+            purge_script+='done; '
+        done
+        ssh "${ssh_args[@]}" "${remote}" "${purge_script}" || \
+            printf 'WARNING: could not clear the queue on %s; a resubmit may still be skipped as already-queued.\n' "${cluster}" >&2
+    fi
 
     # Remote first, then the sync, then the copies here: deleting only this side would
     # be undone by the very next rsync, which mirrors the cluster's script_logs into it.

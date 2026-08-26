@@ -7,11 +7,28 @@
 # not apply: this script resolves the args file, builds the group x seed grid,
 # and runs it directly through a bounded local job queue.
 #
-# Usage: bash scripts/run_local.sh [--complete] [--seeds=LIST] [--groups=LIST]
-#                                  [--no_groups=LIST] ARGS_FILE
+# Usage: bash scripts/run_local.sh [--complete] [--graphics] [--summarize]
+#                                  [--seeds=LIST] [--groups=LIST]
+#                                  [--no_groups=LIST] ARGS_FILE [ARGS_FILE ...]
 # Example: bash scripts/run_local.sh scripts/arg_files/standard.md
 # Example: bash scripts/run_local.sh --seeds=0,1,2 nps3mlp_gat_residual
 # Example: bash scripts/run_local.sh --no_groups=GLTP nps3mlp_gat_residual
+# Example: bash scripts/run_local.sh descriptors_path descriptors_no_extent \
+#              descriptors_shares_coarse
+#          All labels' (group, seed) jobs go into ONE combined pool and share
+#          this machine's LOCAL_JOBS slots -- interleaved, not one label's
+#          whole grid finishing before the next starts, so spare capacity a
+#          single label would not use gets filled by another one already
+#          named in the same command. Same --seeds/--groups/--no_groups/
+#          --complete applied to every label. A SECOND, separate invocation
+#          (a different terminal, while this one is still running) still
+#          queues itself behind it instead of joining in -- only several
+#          labels named in the SAME command share one pool.
+# Example: bash scripts/run_local.sh --graphics --summarize label_a label_b
+#          Same pool as above; once EVERY job of EVERY label has finished
+#          (this machine runs them directly, so there is no OAR queue to wait
+#          on the way run_cluster.sh does), writes one report per label under
+#          graphics/<label>/.
 #
 #   --seeds=LIST     Comma/space-separated seeds. Default: 0,1,2,3,4 (same as
 #                     run_cluster.sh).
@@ -96,10 +113,15 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 usage() {
-    printf 'Usage: bash %s [--complete] [--seeds=LIST] [--groups=LIST] [--no_groups=LIST] ARGS_FILE\n' "${0##*/}" >&2
+    printf 'Usage: bash %s [--complete] [--graphics] [--summarize] [--seeds=LIST] [--groups=LIST] [--no_groups=LIST] ARGS_FILE [ARGS_FILE ...]\n' "${0##*/}" >&2
     printf 'Example: bash %s scripts/arg_files/standard.md\n' "${0##*/}" >&2
     printf 'Example: bash %s --seeds=0,1,2 nps3mlp_gat_residual\n' "${0##*/}" >&2
     printf 'Example: bash %s --no_groups=GLTP nps3mlp_gat_residual\n' "${0##*/}" >&2
+    printf 'Example: bash %s label_a label_b label_c   # one shared pool, interleaved\n' "${0##*/}" >&2
+    printf 'Example: bash %s --graphics --summarize label_a label_b\n' "${0##*/}" >&2
+    printf '                 Once every job of every label finishes (this machine runs\n' >&2
+    printf '                 them directly, no queue to wait on), writes one report per\n' >&2
+    printf '                 label under graphics/<label>/.\n' >&2
 }
 
 # -h/--help must short-circuit before self-detach: it does not launch
@@ -197,6 +219,8 @@ if [[ "${CONDA_DEFAULT_ENV:-}" != "Kalinin_project_LP" ]]; then
 fi
 
 POSITIONALS=()
+DO_GRAPHICS=0
+DO_SUMMARIZE=0
 while (( $# > 0 )); do
     case "$1" in
         --complete)
@@ -215,6 +239,14 @@ while (( $# > 0 )); do
             SKIP_GROUPS_ARG="${1#*=}"
             shift
             ;;
+        --graphics)
+            DO_GRAPHICS=1
+            shift
+            ;;
+        --summarize)
+            DO_SUMMARIZE=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -231,134 +263,179 @@ while (( $# > 0 )); do
     esac
 done
 
-if (( ${#POSITIONALS[@]} != 1 )); then
+if (( ${#POSITIONALS[@]} < 1 )); then
     usage
     exit 2
 fi
-
-ARGS_FILE="${POSITIONALS[0]}"
 
 # A path as given, a bare stem under scripts/arg_files, or that stem with .md
 # appended -- the same three spellings every other launcher accepts, from the one
 # implementation in scripts/lib/args_file_lib.sh.
 # shellcheck source=scripts/lib/args_file_lib.sh
 source "${SCRIPT_DIR}/lib/args_file_lib.sh"
-
-if ! ARGS_FILE="$(resolve_args_file "${ARGS_FILE}")"; then
-    printf 'Arguments file not found: %s\n' "${ARGS_FILE}" >&2
-    exit 1
-fi
-
-if args_file_has_flag "${ARGS_FILE}" --cold_split; then
-    printf '%s uses --cold_split, which this script does not implement (it needs\n' "${ARGS_FILE}" >&2
-    printf 'the per-group val/test pairing that launch/submit_grid.sh applies).\n' >&2
-    printf 'Run it on a cluster instead: bash scripts/run_bigfoot.sh %s\n' "${ARGS_FILE}" >&2
-    exit 2
-fi
-
-variant="$(basename "${ARGS_FILE}" .md)"
-args_template="$(args_file_flags "${ARGS_FILE}")"
-
 # shellcheck source=scripts/settings.sh
 source "${SCRIPT_DIR}/settings.sh"
-excl_groups=("${PROTEIN_GROUPS[@]}")
-seeds=("${DEFAULT_SEEDS[@]}")
-
-if [[ -n "${GROUPS_ARG:-}" ]]; then
-    read -r -a excl_groups <<< "${GROUPS_ARG//,/ }"
-fi
-
-# --no_groups is the complement of --groups: drop these from whatever list is
-# active (the 9 canonical groups, or an explicit --groups), which is what a full
-# run minus one group wants -- the whitelist alone forces spelling out the other
-# eight. Names are matched by normalize_group_name (scripts/settings.sh),
-# so the same spellings that work for --excluded_groups work here
-# (case-insensitive, - and _ interchangeable: cral_trio == CRAL-TRIO).
-if [[ -n "${SKIP_GROUPS_ARG:-}" ]]; then
-    read -r -a skip_groups <<< "${SKIP_GROUPS_ARG//,/ }"
-    declare -A skip_matched=()
-    kept_groups=()
-    for group in "${excl_groups[@]}"; do
-        keep=1
-        for skipped in "${skip_groups[@]}"; do
-            if [[ "$(normalize_group_name "${group}")" \
-                  == "$(normalize_group_name "${skipped}")" ]]; then
-                keep=0
-                skip_matched["$(normalize_group_name "${skipped}")"]=1
-            fi
-        done
-        (( keep == 1 )) && kept_groups+=("${group}")
-    done
-    # A name that matches nothing is an error, not a silent no-op: the whole
-    # point of this flag is NOT running a group, so a typo would quietly spend
-    # hours training the very group the caller meant to leave out.
-    for skipped in "${skip_groups[@]}"; do
-        if [[ -z "${skip_matched["$(normalize_group_name "${skipped}")"]:-}" ]]; then
-            printf -- '--no_groups names a group that is not being run: %s\n' "${skipped}" >&2
-            printf 'Groups in this run: %s\n' "${excl_groups[*]}" >&2
-            exit 2
-        fi
-    done
-    if (( ${#kept_groups[@]} == 0 )); then
-        printf -- '--no_groups excluded every group; nothing left to run.\n' >&2
-        exit 2
-    fi
-    excl_groups=("${kept_groups[@]}")
-fi
-
-# --lipid_coldsplit in the args file is the OTHER axis: whole chemical families of
-# lipids leave training while every protein stays. There is no held-out protein group
-# then, so the grid iterates the lipid sets instead -- one run per set, four in all.
-# The bare flag is stripped from the template because the trainer only accepts the
-# named form, which is appended per run below.
-lipid_coldsplit_sets=()
-if args_file_has_flag "${ARGS_FILE}" --lipid_coldsplit; then
-    if [[ -n "${GROUPS_ARG:-}${SKIP_GROUPS_ARG:-}" ]]; then
-        printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
-'--groups/--no_groups do not apply.\n' >&2
-        exit 2
-    fi
-    # Keep in step with LIPID_COLDSPLIT_SETS (dataloader/sampler.py) and
-    # LIPID_COLDSPLIT_NAMES (training/read_configuration.py); a name absent from either
-    # is rejected at parse time, so a drift here fails loudly on the first run.
-    lipid_coldsplit_sets=(sphingolipids phosphorus_free choline anionic)
-    excl_groups=("${lipid_coldsplit_sets[@]}")
-    args_template="$(printf '%s' "${args_template}" \
-        | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
-fi
-
-if [[ -n "${SEEDS_ARG:-}" ]]; then
-    read -r -a seeds <<< "${SEEDS_ARG//,/ }"
-    for _seed in "${seeds[@]}"; do
-        if [[ ! "${_seed}" =~ ^[0-9]+$ ]]; then
-            printf 'Invalid seed (must be a non-negative integer): %s\n' "${_seed}" >&2
-            exit 2
-        fi
-    done
-fi
-
-# Flatten the group x seed grid into two parallel arrays up front, so the
-# launch loop below just indexes a job count instead of nesting the nproc/N
-# split inside two loops. The grid itself, and the skipping of pairs that
-# already have a final test report, come from scripts/lib/grid_lib.sh -- the same
-# ones the cluster submitters use, so --complete means the same thing here.
 # shellcheck source=scripts/lib/grid_lib.sh
 source "${SCRIPT_DIR}/lib/grid_lib.sh"
 
-grid_load_completed "${variant}" "${PROJECT_ROOT}/test_metrics" 0
-
+# Several labels in one command run in the SAME job pool, interleaved under one
+# LOCAL_JOBS cap -- not queued behind each other the way a second, separate
+# manual invocation still is (the "already active" branches above: that is for
+# two genuinely independent calls that happen to overlap in time, e.g. from two
+# terminals, and stays sequential on purpose so a live run is never joined by a
+# second one it did not ask for). Several labels named in ONE command are
+# assumed to be meant to share this machine's spare capacity, not to wait their
+# turn: LABEL_* arrays hold one entry per label below, job_label_index says
+# which label each (group, seed) job in the combined grid belongs to, and
+# LOCAL_JOBS bounds the combined pool exactly as it bounded one label's before.
+LABEL_VARIANT=()
+LABEL_ARGS_FILE=()
+LABEL_ARGS_TEMPLATE=()
+LABEL_OUTPUT_ROOT=()
+LABEL_IS_LIPID_COLDSPLIT=()
+LABEL_SEEDS_CSV=()
+job_label_index=()
 job_groups=()
 job_seeds=()
-while IFS=$'\t' read -r group seed; do
-    [[ -n "${group}" ]] || continue
-    job_groups+=("${group}")
-    job_seeds+=("${seed}")
-done < <(grid_pairs "${excl_groups[*]}" "${seeds[*]}")
+
+for requested in "${POSITIONALS[@]}"; do
+    this_args_file="${requested}"
+    if ! this_args_file="$(resolve_args_file "${this_args_file}")"; then
+        printf 'Arguments file not found: %s\n' "${requested}" >&2
+        exit 1
+    fi
+
+    if args_file_has_flag "${this_args_file}" --cold_split; then
+        printf '%s uses --cold_split, which this script does not implement (it needs\n' "${this_args_file}" >&2
+        printf 'the per-group val/test pairing that launch/submit_grid.sh applies).\n' >&2
+        printf 'Run it on a cluster instead: bash scripts/run_bigfoot.sh %s\n' "${this_args_file}" >&2
+        exit 2
+    fi
+
+    this_variant="$(basename "${this_args_file}" .md)"
+    this_args_template="$(args_file_flags "${this_args_file}")"
+
+    this_excl_groups=("${PROTEIN_GROUPS[@]}")
+    if [[ -n "${GROUPS_ARG:-}" ]]; then
+        read -r -a this_excl_groups <<< "${GROUPS_ARG//,/ }"
+    fi
+
+    # --no_groups is the complement of --groups: drop these from whatever list is
+    # active (the 9 canonical groups, or an explicit --groups), which is what a full
+    # run minus one group wants -- the whitelist alone forces spelling out the other
+    # eight. Names are matched by normalize_group_name (scripts/settings.sh),
+    # so the same spellings that work for --excluded_groups work here
+    # (case-insensitive, - and _ interchangeable: cral_trio == CRAL-TRIO). Applied
+    # identically to every label in this call, same as --seeds below.
+    if [[ -n "${SKIP_GROUPS_ARG:-}" ]]; then
+        read -r -a skip_groups <<< "${SKIP_GROUPS_ARG//,/ }"
+        declare -A skip_matched=()
+        kept_groups=()
+        for group in "${this_excl_groups[@]}"; do
+            keep=1
+            for skipped in "${skip_groups[@]}"; do
+                if [[ "$(normalize_group_name "${group}")" \
+                      == "$(normalize_group_name "${skipped}")" ]]; then
+                    keep=0
+                    skip_matched["$(normalize_group_name "${skipped}")"]=1
+                fi
+            done
+            (( keep == 1 )) && kept_groups+=("${group}")
+        done
+        # A name that matches nothing is an error, not a silent no-op: the whole
+        # point of this flag is NOT running a group, so a typo would quietly spend
+        # hours training the very group the caller meant to leave out.
+        for skipped in "${skip_groups[@]}"; do
+            if [[ -z "${skip_matched["$(normalize_group_name "${skipped}")"]:-}" ]]; then
+                printf -- '--no_groups names a group that is not being run: %s\n' "${skipped}" >&2
+                printf 'Groups in this run: %s\n' "${this_excl_groups[*]}" >&2
+                exit 2
+            fi
+        done
+        if (( ${#kept_groups[@]} == 0 )); then
+            printf -- '--no_groups excluded every group; nothing left to run.\n' >&2
+            exit 2
+        fi
+        this_excl_groups=("${kept_groups[@]}")
+    fi
+
+    # --lipid_coldsplit in the args file is the OTHER axis: whole chemical families of
+    # lipids leave training while every protein stays. There is no held-out protein group
+    # then, so the grid iterates the lipid sets instead -- one run per set, four in all.
+    # The bare flag is stripped from the template because the trainer only accepts the
+    # named form, which is appended per run below.
+    this_is_lipid_coldsplit=0
+    if args_file_has_flag "${this_args_file}" --lipid_coldsplit; then
+        if [[ -n "${GROUPS_ARG:-}${SKIP_GROUPS_ARG:-}" ]]; then
+            printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
+'--groups/--no_groups do not apply (%s).\n' "${this_args_file}" >&2
+            exit 2
+        fi
+        # Keep in step with LIPID_COLDSPLIT_SETS (dataloader/sampler.py) and
+        # LIPID_COLDSPLIT_NAMES (training/read_configuration.py); a name absent from either
+        # is rejected at parse time, so a drift here fails loudly on the first run.
+        this_is_lipid_coldsplit=1
+        this_excl_groups=(sphingolipids phosphorus_free choline anionic)
+        this_args_template="$(printf '%s' "${this_args_template}" \
+            | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
+    fi
+
+    this_seeds=("${DEFAULT_SEEDS[@]}")
+    if [[ -n "${SEEDS_ARG:-}" ]]; then
+        read -r -a this_seeds <<< "${SEEDS_ARG//,/ }"
+        for _seed in "${this_seeds[@]}"; do
+            if [[ ! "${_seed}" =~ ^[0-9]+$ ]]; then
+                printf 'Invalid seed (must be a non-negative integer): %s\n' "${_seed}" >&2
+                exit 2
+            fi
+        done
+    fi
+
+    # Skips pairs that already have a final test report -- same grid_lib.sh the
+    # cluster submitters use, so --complete means the same thing here, per label.
+    grid_load_completed "${this_variant}" "${PROJECT_ROOT}/test_metrics" 0
+
+    label_index=${#LABEL_VARIANT[@]}
+    LABEL_VARIANT+=("${this_variant}")
+    LABEL_ARGS_FILE+=("${this_args_file}")
+    LABEL_ARGS_TEMPLATE+=("${this_args_template}")
+    LABEL_OUTPUT_ROOT+=("script_logs/${this_variant}_seeds$(IFS=; echo "${this_seeds[*]}")")
+    LABEL_IS_LIPID_COLDSPLIT+=("${this_is_lipid_coldsplit}")
+    LABEL_SEEDS_CSV+=("$(IFS=,; printf '%s' "${this_seeds[*]}")")
+
+    while IFS=$'\t' read -r group seed; do
+        [[ -n "${group}" ]] || continue
+        job_label_index+=("${label_index}")
+        job_groups+=("${group}")
+        job_seeds+=("${seed}")
+    done < <(grid_pairs "${this_excl_groups[*]}" "${this_seeds[*]}")
+done
+
 total_jobs=${#job_groups[@]}
 if (( total_jobs == 0 )); then
     printf 'All requested group/seed pairs already have final test_metrics.\n'
     exit 0
 fi
+
+# How many of the combined pool's jobs belong to each label -- report_label_if_done
+# (near reap_finished_jobs below) compares LABEL_FINISHED_JOBS against this to fire
+# a label's own "Ran N jobs" line and --graphics/--summarize report the moment
+# ITS jobs are all done, not when the whole shared pool is, since interleaved
+# labels finish at different times.
+LABEL_TOTAL_JOBS=()
+for label_index in "${!LABEL_VARIANT[@]}"; do
+    count=0
+    for li in "${job_label_index[@]}"; do
+        (( li == label_index )) && count=$((count + 1))
+    done
+    LABEL_TOTAL_JOBS+=("${count}")
+done
+LABEL_FINISHED_JOBS=()
+LABEL_FAILED_JOBS=()
+for label_index in "${!LABEL_VARIANT[@]}"; do
+    LABEL_FINISHED_JOBS+=(0)
+    LABEL_FAILED_JOBS+=(0)
+done
 
 nproc_count="$(nproc)"
 # Derive the desktop reserve from the machine instead of carrying the old
@@ -480,11 +557,20 @@ if (( OMP_THREADS_PER_JOB < 1 )); then OMP_THREADS_PER_JOB=1; fi
 # to 1 (9 / 1 = 9) -- pure wall-clock, no metric moves, since thread count only changes
 # which cores run the same at::parallel_for splits, never the arithmetic itself. An
 # explicit MAX_OMP_THREADS_PER_JOB still wins, same as every override on this page.
+# Thread count is fixed once for the whole combined pool (see the comment on
+# update_job_budget below), so with several labels sharing it, ANY of them
+# being descriptors_head/pair_descriptors_only-sized tips the default to 1 --
+# too few threads for a heavier label in the same run costs it some intra-op
+# parallelism, which is safe; too many for a tiny one is the measured-9x
+# slowdown this default exists to avoid.
 default_max_omp_threads_per_job=4
-if args_file_has_flag "${ARGS_FILE}" --descriptors_head \
-    || args_file_has_flag "${ARGS_FILE}" --pair_descriptors_only; then
-    default_max_omp_threads_per_job=1
-fi
+for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
+    if args_file_has_flag "${_label_args_file}" --descriptors_head \
+        || args_file_has_flag "${_label_args_file}" --pair_descriptors_only; then
+        default_max_omp_threads_per_job=1
+        break
+    fi
+done
 MAX_OMP_THREADS_PER_JOB="${MAX_OMP_THREADS_PER_JOB:-${default_max_omp_threads_per_job}}"
 if (( OMP_THREADS_PER_JOB > MAX_OMP_THREADS_PER_JOB )); then
     OMP_THREADS_PER_JOB="${MAX_OMP_THREADS_PER_JOB}"
@@ -518,8 +604,6 @@ if command -v taskset >/dev/null 2>&1; then
         2>/dev/null | sort -u)
 fi
 
-output_dir_root="script_logs/${variant}_seeds$(IFS=; echo "${seeds[*]}")"
-
 # Tag matching lib/progress_table.sh's LOCAL_JOB_TAG there: bigfoot's OAR
 # .out files carry no tag, kraken's carry "k", this carries "l" -- three
 # disjoint id namespaces (two clusters' OAR job ids, this script's pids) over
@@ -537,12 +621,13 @@ local_queue_file="${PROJECT_ROOT}/script_logs/local_run.queue"
 mkdir -p "${PROJECT_ROOT}/script_logs"
 : > "${local_queue_file}"
 for (( i=0; i<total_jobs; i++ )); do
-    printf '%s\t%s\t%s\n' "${variant}" "${job_groups[i]}" "${job_seeds[i]}" >> "${local_queue_file}"
+    printf '%s\t%s\t%s\n' "${LABEL_VARIANT[job_label_index[i]]}" "${job_groups[i]}" "${job_seeds[i]}" >> "${local_queue_file}"
 done
 trap 'rm -f "${local_queue_file}"' EXIT
 
-printf 'Running %d jobs (%d groups x %d seeds) from %s.\n' \
-    "${total_jobs}" "${#excl_groups[@]}" "${#seeds[@]}" "${variant}"
+all_labels_csv="$(IFS=,; printf '%s' "${LABEL_VARIANT[*]}")"
+printf 'Running %d jobs across %d label(s) (%s), interleaved in one pool.\n' \
+    "${total_jobs}" "${#LABEL_VARIANT[@]}" "${all_labels_csv}"
 printf 'LOCAL_JOBS=%d OMP_THREADS_PER_JOB=%d NUM_WORKERS_PER_JOB=%d\n' \
     "${LOCAL_JOBS}" "${OMP_THREADS_PER_JOB}" "${NUM_WORKERS_PER_JOB}"
 printf '  cores: %d usable of %d (%d reserved for the desktop)\n' \
@@ -571,20 +656,26 @@ fi
 # would race to write the same archive. Never fatal: without the store the jobs read
 # the pickle exactly as before, which is slower and heavier but not wrong. Already
 # current means no work, so relaunching a grid costs nothing.
-if ! python3 "${PROJECT_ROOT}/data/build_lipid_embedding_store.py" \
-    --args_file="${ARGS_FILE}"; then
-    printf 'WARNING: could not build the embedding store; jobs will read the pickle.\n' >&2
-fi
+# Once per label (each may set --lipid_isomers differently, and the store/
+# cache builders read their own args_file to decide which variant is needed).
+for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
+    if ! python3 "${PROJECT_ROOT}/data/build_lipid_embedding_store.py" \
+        --args_file="${_label_args_file}"; then
+        printf 'WARNING: could not build the embedding store for %s; its jobs will read the pickle.\n' \
+            "${_label_args_file}" >&2
+    fi
 
-# Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values (dataloader/
-# pair_descriptor_cache.py): built once here so the grid's N (group, seed) processes
-# share one cache instead of each re-running RDKit over the whole interaction table.
-# Never fatal: without it a job computes these values itself, exactly as before this
-# cache existed -- slower, not wrong.
-if ! python3 "${PROJECT_ROOT}/data/build_pair_descriptor_cache.py" \
-    --args_file="${ARGS_FILE}"; then
-    printf 'WARNING: could not build the pair descriptor cache; jobs will compute it themselves.\n' >&2
-fi
+    # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values (dataloader/
+    # pair_descriptor_cache.py): built once here so the grid's N (group, seed) processes
+    # share one cache instead of each re-running RDKit over the whole interaction table.
+    # Never fatal: without it a job computes these values itself, exactly as before this
+    # cache existed -- slower, not wrong.
+    if ! python3 "${PROJECT_ROOT}/data/build_pair_descriptor_cache.py" \
+        --args_file="${_label_args_file}"; then
+        printf 'WARNING: could not build the pair descriptor cache for %s; its jobs will compute it themselves.\n' \
+            "${_label_args_file}" >&2
+    fi
+done
 
 # --- the memory budget, measured rather than assumed -----------------------------
 #
@@ -677,6 +768,26 @@ update_job_budget() {
     LOCAL_JOBS=${cap}
 }
 
+# Fires the moment ONE label's own jobs are ALL done, not when the whole shared
+# pool is: labels in this run interleave (job_label_index, the combined grid
+# above), so one label finishing early while another is still training is the
+# normal case, not an edge case, and that label's "Ran N jobs" line and
+# --graphics/--summarize report must not wait on jobs that are not its own.
+report_label_if_done() {
+    local label_index="$1" variant
+    (( LABEL_FINISHED_JOBS[label_index] >= LABEL_TOTAL_JOBS[label_index] )) || return 0
+    variant="${LABEL_VARIANT[label_index]}"
+    printf 'Ran %d job(s) for %s.\n' "${LABEL_TOTAL_JOBS[label_index]}" "${variant}"
+    if (( LABEL_FAILED_JOBS[label_index] > 0 )); then
+        printf '%d job(s) exited non-zero for %s; check the logs under %s/.\n' \
+            "${LABEL_FAILED_JOBS[label_index]}" "${variant}" "${LABEL_OUTPUT_ROOT[label_index]}" >&2
+    fi
+    (( DO_GRAPHICS || DO_SUMMARIZE )) || return 0
+
+    bash "${PROJECT_ROOT}/scripts/lib/generate_label_report.sh" \
+        "${variant}" "${LABEL_SEEDS_CSV[label_index]}" "${DO_GRAPHICS}" "${DO_SUMMARIZE}"
+}
+
 # Wait for at least one running job to exit, then reap every job that has, exactly
 # once each.
 #
@@ -690,7 +801,7 @@ update_job_budget() {
 # exited non-zero" when in fact all 18 had. Reaping only pids confirmed dead by
 # kill -0, and each exactly once via `wait "${pid}"` right here, cannot lose one.
 reap_finished_jobs() {
-    local pid
+    local pid label_index
     local still_running=() finished=()
     while :; do
         still_running=()
@@ -706,20 +817,35 @@ reap_finished_jobs() {
         sleep 0.2
     done
     for pid in "${finished[@]}"; do
-        wait "${pid}" || failed=$((failed + 1))
+        label_index="${PID_LABEL_INDEX[${pid}]}"
+        if ! wait "${pid}"; then
+            failed=$((failed + 1))
+            LABEL_FAILED_JOBS[label_index]=$(( LABEL_FAILED_JOBS[label_index] + 1 ))
+        fi
+        LABEL_FINISHED_JOBS[label_index]=$(( LABEL_FINISHED_JOBS[label_index] + 1 ))
+        unset "PID_LABEL_INDEX[${pid}]"
+        report_label_if_done "${label_index}"
     done
     pids=("${still_running[@]}")
 }
 
 pids=()
 failed=0
+# pid -> label_index, so reap_finished_jobs can credit a finished job to its
+# own label's LABEL_FINISHED_JOBS/LABEL_FAILED_JOBS and fire its report at the
+# right moment. Populated right after each launch below, unset once reaped.
+declare -A PID_LABEL_INDEX=()
 # The log of the first job launched, which is what tells the budget when there is
 # something worth measuring.
 first_log_file=""
 for (( job_index=0; job_index<total_jobs; job_index++ )); do
+    label_index="${job_label_index[job_index]}"
+    variant="${LABEL_VARIANT[label_index]}"
+    args_template="${LABEL_ARGS_TEMPLATE[label_index]}"
+    this_args_file="${LABEL_ARGS_FILE[label_index]}"
     group="${job_groups[job_index]}"
     seed="${job_seeds[job_index]}"
-    output_dir="${output_dir_root}/${group}"
+    output_dir="${LABEL_OUTPUT_ROOT[label_index]}/${group}"
     mkdir -p "${output_dir}"
     log_file="${output_dir}/${variant}_seed${seed}_ep150_batch16.log"
 
@@ -735,7 +861,9 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
 
     # Which axis this run holds out. With --lipid_coldsplit the "group" is the name of
     # a lipid-class set, not a protein family, and it goes to a different flag.
-    if (( ${#lipid_coldsplit_sets[@]} > 0 )); then
+    # Per label, not per job: a --lipid_coldsplit label mixed with a protein-group
+    # one in the same command reads its own axis correctly either way.
+    if (( LABEL_IS_LIPID_COLDSPLIT[label_index] )); then
         split_flag=(--lipid_coldsplit="${group}")
     else
         split_flag=(--excluded_groups="${group}")
@@ -743,7 +871,7 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
 
     printf '=== [%d/%d] %s: %s | VARIANT: %s | SEED: %s ===\n' \
         "$(( job_index + 1 ))" "${total_jobs}" \
-        "$( (( ${#lipid_coldsplit_sets[@]} > 0 )) && printf 'LIPID SET' || printf 'GROUP')" \
+        "$( (( LABEL_IS_LIPID_COLDSPLIT[label_index] )) && printf 'LIPID SET' || printf 'GROUP')" \
         "${group}" "${variant}" "${seed}"
 
     # read_configuration.py applies flags in argv order and the last one wins,
@@ -752,7 +880,7 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     # deterministic single-process debugging). Only fill it in when the args
     # file is silent about it.
     num_workers_flag=()
-    if ! args_file_has_flag "${ARGS_FILE}" --num_workers; then
+    if ! args_file_has_flag "${this_args_file}" --num_workers; then
         num_workers_flag=(--num_workers="${NUM_WORKERS_PER_JOB}")
     fi
 
@@ -787,6 +915,7 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
         "${num_workers_flag[@]}" \
         > "${log_file}" 2>&1 &
     pids+=($!)
+    PID_LABEL_INDEX[${pids[-1]}]="${label_index}"
 
     # Job-id-tagged .out, symlinked to the friendlier stable-named .log so
     # scripts/lib/progress_table.sh's local-jobs lookup (print_local_progress,
@@ -819,14 +948,19 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
 
 done
 
-for pid in "${pids[@]}"; do
-    wait "${pid}" || failed=$((failed + 1))
+# Drain through the same reap_finished_jobs the launch loop above used, not a
+# plain `wait` on every remaining pid: that would reap the LAST label's jobs
+# without going through report_label_if_done, so exactly the label most likely
+# to be the last one holding the pool (whichever finishes last) would never
+# get its "Ran N jobs" line or --graphics/--summarize report.
+while (( ${#pids[@]} > 0 )); do
+    reap_finished_jobs
 done
 
-printf 'Ran %d jobs %s across %d groups and %d seeds.\n' \
-    "${total_jobs}" "${variant}" "${#excl_groups[@]}" "${#seeds[@]}"
+printf 'All %d jobs across %d label(s) (%s) finished.\n' \
+    "${total_jobs}" "${#LABEL_VARIANT[@]}" "${all_labels_csv}"
 if (( failed > 0 )); then
-    printf '%d job(s) exited non-zero; check the logs under %s.\n' "${failed}" "${output_dir_root}" >&2
+    printf '%d job(s) total exited non-zero.\n' "${failed}" >&2
 fi
 
 # Chain to the next queued batch, if any -- see the "already active" branches

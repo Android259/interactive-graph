@@ -39,7 +39,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from checkpoint_scores import DEFAULT_EPOCHS, score_checkpoints  # noqa: E402
+from checkpoint_scores import DEFAULT_EPOCHS, arg_lines, score_checkpoints  # noqa: E402
+from read_configuration import read_configuration  # noqa: E402
 from chemistry_null_model import (  # noqa: E402
     DEFAULT_FAMILIES,
     null_model_table,
@@ -48,6 +49,25 @@ from chemistry_null_model import (  # noqa: E402
 from interaction_increment import increment_table, print_increment_report  # noqa: E402
 from dataloader.chemistry_prior import species_similarity  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
+
+
+def label_coldsplit_params(label, families):
+    """coldsplit_share/negatives_per_positive as the label's own args file (plus
+    read_configuration.py's defaults for whatever it leaves unset) actually trained
+    with -- not a hardcoded guess.
+
+    Both null_model_table's split reconstruction and checkpoint_scores' rebuilt split
+    have to agree row for row (chemistry_null_model.py asserts this), and they only do
+    when both use the same share/ratio. checkpoint_scores.py already reads these off
+    the label; this makes full_label_report.py's defaults do the same instead of
+    drifting from read_configuration.py's ModelConfig defaults over time.
+    """
+    argv = ["full_label_report"] + arg_lines(label) + [
+        f"--excluded_groups={families[0]}",
+        "--seed=0",
+    ]
+    conf = read_configuration(argv)
+    return conf.coldsplit_share, conf.negatives_per_positive
 
 
 def run_report(label, epochs, seeds, families, batch, neighbours, share, ratio, splits,
@@ -105,8 +125,14 @@ def main():
     parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
     parser.add_argument("--batch", type=int, default=16, help="only affects the split's sampler")
     parser.add_argument("--neighbours", type=int, default=15, help="k for the null model")
-    parser.add_argument("--share", type=float, default=0.7, help="--coldsplit_share of the run")
-    parser.add_argument("--ratio", type=int, default=2, help="--negatives_per_positive of the run")
+    parser.add_argument(
+        "--share", type=float, default=None,
+        help="--coldsplit_share of the run; default reads it off --label's own args file",
+    )
+    parser.add_argument(
+        "--ratio", type=int, default=None,
+        help="--negatives_per_positive of the run; default reads it off --label's own args file",
+    )
     parser.add_argument("--split", default="valid", choices=("valid", "test", "both"))
     parser.add_argument(
         "--scores", help="skip scoring, read a CSV analysis/checkpoint_scores.py already wrote"
@@ -119,10 +145,16 @@ def main():
     families = [f for f in args.families.split(",") if f]
     splits = ("valid", "test") if args.split == "both" else (args.split,)
 
+    share, ratio = args.share, args.ratio
+    if share is None or ratio is None:
+        label_share, label_ratio = label_coldsplit_params(args.label, families)
+        share = label_share if share is None else share
+        ratio = label_ratio if ratio is None else ratio
+
     scores = pd.read_csv(args.scores) if args.scores else None
     scores, _, _ = run_report(
         args.label, epochs, seeds, families, args.batch, args.neighbours,
-        args.share, args.ratio, splits, scores=scores,
+        share, ratio, splits, scores=scores,
     )
 
     if args.out:

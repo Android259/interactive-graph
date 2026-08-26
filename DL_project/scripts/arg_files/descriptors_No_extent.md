@@ -16,3 +16,5 @@
 --balanced_batches
 --balanced_proteins
 --double_coldsplit
+
+--save_model_in_dynamics

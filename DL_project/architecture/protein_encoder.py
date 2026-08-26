@@ -5,6 +5,7 @@ try:
     from .edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
     from .geometric_transformer import ProteinGeometricTransformerBlock
     from .self_attention import ProteinSelfAttention
+    from .pair_descriptor_head import _APOLAR_SASA_SHARE_INDEX, _AROMATIC_SHARE_INDEX
     from .mlp_utils import (
         make_activation, make_dropout, make_extra_hidden_layer,
         make_optional_projection, make_norm_layer, apply_norm,
@@ -16,6 +17,7 @@ except ImportError:
     from edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
     from geometric_transformer import ProteinGeometricTransformerBlock
     from self_attention import ProteinSelfAttention
+    from pair_descriptor_head import _APOLAR_SASA_SHARE_INDEX, _AROMATIC_SHARE_INDEX
     from mlp_utils import (
         make_activation, make_dropout, make_extra_hidden_layer,
         make_optional_projection, make_norm_layer, apply_norm,
@@ -160,6 +162,17 @@ class Protein_encoder(torch.nn.Module):
                     "pocket_descriptor_std", torch.ones(self.pocket_descriptor_count)
                 )
                 indim += self.pocket_descriptor_count
+            # --descriptors_in_protein_lipid: aromatic_share/polar_share (already
+            # bounded [0,1] shares, read raw like pair_descriptor_head.py does) plus
+            # coarsened extent (already standardised in pair_descriptor_input by the
+            # loader) when --pair_descriptor_extent is on -- see
+            # expand_pair_descriptors below. No normalisation buffers needed here,
+            # unlike pocket_descriptor_count above: nothing in this set is raw/
+            # unstandardised.
+            self.pair_descriptor_broadcast_count = int(
+                getattr(self.config, "protein_pair_descriptor_broadcast_count", 0)
+            )
+            indim += self.pair_descriptor_broadcast_count
             plm_output_dim = self.config.plm_compression_dim
             plm_input_dim = 1536
             frozen_replacement = (
@@ -373,6 +386,34 @@ class Protein_encoder(torch.nn.Module):
         ) / self.pocket_descriptor_std
         return torch.cat((node, scaled[batch]), dim=-1)
 
+    def expand_pair_descriptors(self, node, batch, pocket_descriptor, pair_descriptor_input):
+        """--descriptors_in_protein_lipid: broadcast pair_descriptors' protein-only
+        tokens (aromatic_share, polar_share, coarsened extent) over every node.
+
+        Deliberately not a reuse of expand_pocket_descriptor: that broadcasts the full
+        13-wide POCKET_DESCRIPTOR_NAMES vector, this only the 2-3 tokens
+        architecture/pair_descriptor_head.py's self-attention head itself reads --
+        the two are independent, coexisting mechanisms (see ModelConfig's
+        descriptors_in_protein_lipid docstring). aromatic_share/polar_share are read
+        raw (already-bounded [0,1] shares, no standardisation needed, same as
+        pair_descriptor_head.py); extent is pair_descriptor_input's last column,
+        already standardised by the loader -- no local buffers needed either.
+        """
+        if not getattr(self, "pair_descriptor_broadcast_count", 0):
+            return node
+        if pocket_descriptor is None or pair_descriptor_input is None:
+            raise ValueError(
+                "descriptors_in_protein_lipid requires pocket_descriptor and "
+                "pair_descriptor_input"
+            )
+        aromatic_share = pocket_descriptor[:, _AROMATIC_SHARE_INDEX]
+        polar_share = 1.0 - pocket_descriptor[:, _APOLAR_SASA_SHARE_INDEX]
+        parts = [aromatic_share.unsqueeze(-1), polar_share.unsqueeze(-1)]
+        if self.pair_descriptor_broadcast_count > 2:
+            parts.append(pair_descriptor_input[:, -1:].to(node.dtype))
+        per_protein = torch.cat(parts, dim=-1).to(node.dtype)
+        return torch.cat((node, per_protein[batch]), dim=-1)
+
     def set_rnabang_normalization(self, stats):
         """Install fixed feature statistics computed from train proteins only."""
         if not self.use_rnabang_frozen_node_adapter:
@@ -395,7 +436,7 @@ class Protein_encoder(torch.nn.Module):
         pocket_mask, start=True, fast_layout=None, frame_rotation=None,
         frame_translation=None, geometric_node_attr=None, edge_node_pairs=None,
         edge_node_degree=None, pocket_layout=None, pocket_index=None,
-        pocket_descriptor=None
+        pocket_descriptor=None, pair_descriptor_input=None
     ):
         """Encode protein nodes while preserving graph-node alignment."""
         if self.use_rnabang_frozen_node_adapter:
@@ -512,6 +553,9 @@ class Protein_encoder(torch.nn.Module):
             if self.config.buryon:
                 node = torch.cat((node, bury.unsqueeze(1)), -1)
             node = self.expand_pocket_descriptor(node, batch, pocket_descriptor)
+            node = self.expand_pair_descriptors(
+                node, batch, pocket_descriptor, pair_descriptor_input
+            )
 
         if self.use_geometric_transformer:
             if frame_rotation is None or frame_translation is None:

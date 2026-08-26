@@ -11,6 +11,10 @@ RUN_METRIC_FIELDS = (
     "epochs_completed",
     "checkpoint_epoch",
     "checkpoint_valid_balanced_accuracy",
+    "checkpoint_valid_sensitivity",
+    "checkpoint_valid_specificity",
+    "checkpoint_train_sensitivity",
+    "checkpoint_train_specificity",
     "checkpoint_rolling_valid_balanced_accuracy",
     "max_valid_balanced_accuracy_epoch",
     "max_valid_balanced_accuracy",
@@ -125,6 +129,18 @@ def summarize_training_run(epoch_history, training_duration_sec, run_status="com
             len(epoch_history) - checkpoint_index - 1
         )
         summary["checkpoint_valid_balanced_accuracy"] = checkpoint_value
+        summary["checkpoint_valid_sensitivity"] = epoch_history[checkpoint_index][
+            "valid"
+        ].get("sensitivity")
+        summary["checkpoint_valid_specificity"] = epoch_history[checkpoint_index][
+            "valid"
+        ].get("specificity")
+        summary["checkpoint_train_sensitivity"] = epoch_history[checkpoint_index][
+            "train"
+        ].get("sensitivity")
+        summary["checkpoint_train_specificity"] = epoch_history[checkpoint_index][
+            "train"
+        ].get("specificity")
         if selection_metric == "checkpoint_balanced_accuracy":
             summary["checkpoint_rolling_valid_balanced_accuracy"] = checkpoint_score
 

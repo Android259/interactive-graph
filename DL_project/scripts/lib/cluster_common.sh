@@ -175,18 +175,27 @@ case "${CLUSTER_NAME:-bigfoot}" in
         _default_pack_cpu_per_run=0
         ;;
     kraken-cpu)
-        # 45 covers a full 9-group x 5-seed grid in one pack -- one node's 192
-        # cores hold that many at once for a --descriptors_head-sized model (1
-        # core/run, see PACK_CPU_PER_RUN below), so PACK_SIZE does not have to be
-        # split across several jobs the way Bigfoot's GPU-bundled 8-32 cores force.
-        _default_pack_size=45
-        # 1, not measured-and-confident: unlike Bigfoot/kraken-gpu, the card that
-        # gets handed out is not heterogeneous (a /nodes=1 request always gives
-        # the same 192 cores), so real concurrency here IS knowable in principle
-        # -- but no run has been timed on kraken-cpu yet. 1 sizes the walltime
-        # request generously (depth = PACK_SIZE) rather than assuming the fast
-        # case; override once a config's real per-run time here is measured.
-        _default_pack_walltime_parallel=1
+        # 180, not 192: one node's core count minus headroom for OS/monitoring
+        # overhead alongside 1-core-per-run jobs (PACK_CPU_PER_RUN below). Raised
+        # from 45 (one 9-group x 5-seed grid) once cross-label packing meant
+        # several labels' grids needed to share one pack to land in one OAR job
+        # -- see PACK_WALLTIME_PARALLEL below for why the walltime this implies
+        # is still safe.
+        _default_pack_size=180
+        # Equal to PACK_SIZE (full-parallel, depth=1 for any pack up to it), not
+        # a fraction of it: with PACK_CPU_PER_RUN=1 and 192 cores on the node,
+        # every experiment in a pack of up to 180 gets its own core at the same
+        # time -- there is no sequential wave to size a depth multiplier for.
+        # pack_job_walltime computes depth = ceil(pack_size / this), so any
+        # value below PACK_SIZE invents a wave that does not exist and doubles
+        # (or worse) the requested walltime for no reason -- measured on
+        # kraken-cpu (script_logs/descriptors_no_extent_ckpt_seeds01234/_packs/
+        # descriptors_no_extent_ckpt_pack0_c1468924.pack.out, "PACK finished: 35
+        # experiment(s)"): a 35-experiment pack finished in ~3 minutes wall
+        # clock against a 35-minute-per-run budget -- full concurrency, not the
+        # sequential "one at a time" the old default of 1 assumed (which
+        # requested 26h15m for that same 45-pack).
+        _default_pack_walltime_parallel="${_default_pack_size}"
         # 1 core/run: this project's one measured tiny-model config
         # (--descriptors_head, ~1000 parameters) tops out at 1 OMP thread/run
         # before multithreading synchronisation overhead exceeds its own payoff
@@ -232,10 +241,10 @@ LOCAL_CONDA_ENV="${LOCAL_CONDA_ENV:-rsync-env}"
 # GPU_PROPERTY carries single quotes and parentheses, hence %q rather than
 # manual quoting.
 cluster_remote_env() {
-    printf 'CONDA_SH=%q CONDA_ENV=%q PROJECT=%q GPU_PROPERTY=%q GPU_MODEL_GLOB=%q OAR_RESOURCES=%q CPU_ONLY=%q WALLTIME=%q FAST_ATTENTION_WALLTIME=%q MIN_FREE_GPU_MIB=%q JOB_ID_TAG=%q OARSUB_EXTRA=%q GROUPS_OVERRIDE=%q SEEDS_OVERRIDE=%q PACK_SIZE=%q PACK_PARALLEL=%q GPU_MIB_PER_RUN=%q PACK_GPU_PERCENT=%q PACK_CPU_PER_RUN=%q PACK_MIN_FREE_GPU_MIB=%q PACK_HARDWARE_AUTO=%q PACK_SKIP_DONE=%q COMPLETE_ONLY=%q COMPLETED_EXPERIMENTS=%q PACK_WALLTIME_PARALLEL=%q MAX_WALLTIME=%q' \
+    printf 'CONDA_SH=%q CONDA_ENV=%q PROJECT=%q GPU_PROPERTY=%q GPU_MODEL_GLOB=%q OAR_RESOURCES=%q CPU_ONLY=%q WALLTIME=%q FAST_ATTENTION_WALLTIME=%q DESCRIPTORS_HEAD_WALLTIME=%q MIN_FREE_GPU_MIB=%q JOB_ID_TAG=%q OARSUB_EXTRA=%q GROUPS_OVERRIDE=%q SEEDS_OVERRIDE=%q PACK_SIZE=%q PACK_PARALLEL=%q GPU_MIB_PER_RUN=%q PACK_GPU_PERCENT=%q PACK_CPU_PER_RUN=%q PACK_MIN_FREE_GPU_MIB=%q PACK_HARDWARE_AUTO=%q PACK_SKIP_DONE=%q COMPLETE_ONLY=%q COMPLETED_EXPERIMENTS=%q PACK_WALLTIME_PARALLEL=%q MAX_WALLTIME=%q' \
         "${CONDA_SH}" "${CONDA_ENV}" "${PROJECT}" "${GPU_PROPERTY}" \
         "${GPU_MODEL_GLOB}" "${OAR_RESOURCES}" "${CPU_ONLY}" "${WALLTIME}" \
-        "${FAST_ATTENTION_WALLTIME}" \
+        "${FAST_ATTENTION_WALLTIME}" "${DESCRIPTORS_HEAD_WALLTIME}" \
         "${MIN_FREE_GPU_MIB}" "${JOB_ID_TAG}" "${OARSUB_EXTRA}" \
         "${GROUPS_OVERRIDE}" "${SEEDS_OVERRIDE}" \
         "${PACK_SIZE}" "${PACK_PARALLEL}" "${GPU_MIB_PER_RUN}" \

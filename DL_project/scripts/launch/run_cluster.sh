@@ -37,12 +37,20 @@ DO_GRAPHICS="${DO_GRAPHICS:-0}"
 DO_SUMMARIZE="${DO_SUMMARIZE:-0}"
 
 usage() {
-    printf 'Usage: bash %s [--complete] [--graphics] [--summarize] [--seeds=LIST] [--groups=LIST] [--no_groups=LIST] SUBMIT_SCRIPT_OR_ARGS_FILE\n' "${0##*/}" >&2
+    printf 'Usage: bash %s [--complete] [--graphics] [--summarize] [--seeds=LIST] [--groups=LIST] [--no_groups=LIST] SUBMIT_SCRIPT_OR_ARGS_FILE [SUBMIT_SCRIPT_OR_ARGS_FILE ...]\n' "${0##*/}" >&2
     printf 'Example: bash %s common_attention_all_groups\n' "${0##*/}" >&2
     printf 'Example: bash %s scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
     printf 'Example: bash %s --seeds=0,1,2 scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
     printf 'Example: bash %s --no_groups=GLTP scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
     printf 'Example: bash %s --graphics --summarize scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
+    printf 'Example: bash %s --graphics --summarize labelA labelB labelC\n' "${0##*/}" >&2
+    printf '                 Queues every label'"'"'s whole grid together (one shared OAR\n' >&2
+    printf '                 queue/drain), so they run concurrently across whatever this\n' >&2
+    printf '                 cluster'"'"'s slots allow -- kraken-cpu, one 192-core node per\n' >&2
+    printf '                 job, is the case this is for. --graphics/--summarize wait for\n' >&2
+    printf '                 the whole batch to drain once, then write one report PER label\n' >&2
+    printf '                 under graphics/<label>/ -- args-file labels only, not a\n' >&2
+    printf '                 scripts/submit/*.sh script (which names no single label).\n' >&2
     printf '\n' >&2
     printf '  --seeds=LIST     Comma-separated seeds to run every excluded group on.\n' >&2
     printf '                   --seeds=0,1,2 runs all 9 groups on seeds 0, 1 and 2\n' >&2
@@ -211,69 +219,25 @@ if [[ -n "${GROUPS_ARG:-}" || -n "${SKIP_GROUPS_ARG:-}" ]]; then
     export GROUPS_OVERRIDE="${_groups[*]}"
 fi
 
-if (( ${#POSITIONALS[@]} != 1 )); then
+if (( ${#POSITIONALS[@]} < 1 )); then
     usage
     exit 2
 fi
 
-INPUT_ARG="${POSITIONALS[0]}"
-REMOTE_SCRIPT=""
-REMOTE_INPUT_PATH=""
-
-# A config first (resolve_args_file accepts a path, a bare stem, or a stem with
-# .md -- the same three spellings run_local.sh and test_run.sh accept), and only
-# if that finds nothing, a submitter under scripts/submit/. No name is claimed by
-# both, so the order cannot hide one behind the other.
+# capture (below) queues every requested label's whole grid into the SAME
+# shared pending-jobs file regardless of count, and drain_queue (scripts/
+# cluster/cluster_queue_remote.sh) already submits only as many as
+# MAX_WAITING_JOBS allows, leaving the rest queued for the next drain --
+# including the frontend's own cron-drain (project memory
+# [[cluster-cron-drain]]) -- so "more labels than fit right now" already means
+# "the rest go out as a later request" with no change needed here.
 #
-# The path handed to the cluster must be project-relative: it is rsynced to
-# REMOTE_PROJECT and named again there. resolve_args_file returns a path it was
-# given unchanged, and an absolute one for a stem, so strip the project root off
-# whatever comes back.
-if RESOLVED_ARGS_FILE="$(resolve_args_file "${INPUT_ARG}")"; then
-    if [[ "${RESOLVED_ARGS_FILE}" != *.md ]]; then
-        printf 'Unsupported file type: %s\n' "${INPUT_ARG}" >&2
-        exit 2
-    fi
-    REMOTE_INPUT_PATH="${RESOLVED_ARGS_FILE#"${PROJECT_ROOT}"/}"
-else
-    SCRIPT_NAME="${INPUT_ARG%.sh}"
-    if [[ ! "${SCRIPT_NAME}" =~ ^[A-Za-z0-9_-]+$ ]]; then
-        printf 'Invalid SCRIPT_NAME: %s\n' "${SCRIPT_NAME}" >&2
-        exit 2
-    fi
-    REMOTE_SCRIPT="scripts/submit/${SCRIPT_NAME}.sh"
-fi
-
-if [[ -n "${REMOTE_SCRIPT}" && ! -f "${PROJECT_ROOT}/${REMOTE_SCRIPT}" ]]; then
-    printf 'Remote script not found: %s\n' "${REMOTE_SCRIPT}" >&2
-    exit 2
-fi
-
-# variant is the label graphics/summarize below (and --complete's own
-# already-done scan) key everything on -- only an args-file target has one; the
-# legacy scripts/submit/*.sh path names no single label a report could be for.
-variant=""
-if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
-    variant="$(basename "${REMOTE_INPUT_PATH}" .md)"
-elif (( DO_GRAPHICS || DO_SUMMARIZE )); then
-    printf -- '--graphics/--summarize need an args-file target (which has a label), not a scripts/submit/*.sh script.\n' >&2
-    exit 2
-fi
-
-# Preserve locally completed pairs across the code-only rsync: the cluster's copy
-# of the project has no test_metrics tree of its own to scan, so this scan has to
-# happen here and travel as an environment variable. The remote submitter merges
-# it with reports already present on that cluster (grid_load_completed).
-if [[ "${COMPLETE_ONLY}" == "1" && -n "${REMOTE_INPUT_PATH}" ]]; then
-    cold_series=0
-    if args_file_has_flag "${PROJECT_ROOT}/${REMOTE_INPUT_PATH}" --cold_split; then
-        cold_series=1
-    fi
-    COMPLETED_EXPERIMENTS="$(
-        grid_completed_list "${variant}" "${PROJECT_ROOT}/test_metrics" "${cold_series}"
-    )"
-    export COMPLETE_ONLY COMPLETED_EXPERIMENTS
-fi
+# --graphics/--summarize wait for the WHOLE oar queue for this user on this
+# cluster to drain (existing behaviour, not new -- see the wait loop below),
+# which was already label-agnostic; what is new is looping the per-label
+# report generation itself over every args-file label requested, collected
+# into VARIANTS as the label-resolution loop below runs.
+VARIANTS=()
 
 if ! command -v rsync >/dev/null 2>&1; then
     if [[ -f "${LOCAL_CONDA_SH}" ]]; then
@@ -355,6 +319,94 @@ ssh -S "${SSH_CONTROL_PATH}" "${remote}" "touch '${SESSION_MARKER}'"
 
 REMOTE_QUEUE_DIR="${CLUSTER_QUEUE_ROOT}/active"
 
+# The cluster settings are %q-escaped exactly once (see cluster_remote_env) and
+# then interpreted once by the remote login shell. GPU_PROPERTY carries single
+# quotes and parentheses, so this must not be quoted by hand. Label-independent,
+# computed once rather than once per label in the loop below.
+remote_env="$(cluster_remote_env)"
+
+# Per-label prep (resolve, --complete scan, sync that label's arg file, build
+# its shared caches) still runs once per label below, but capture itself is
+# called ONCE after the loop with every label's REMOTE_INPUT_PATH joined into
+# one shell word -- submit_grid.sh word-splits that back into several args-file
+# targets and packs their combined (label, group, seed) grid together (see its
+# own header comment), which is what actually fills one OAR job with several
+# labels instead of giving each its own. Calling capture once per label here
+# (the earlier version of this loop) would have handed submit_grid.sh exactly
+# one label each time, defeating that -- each label would still get its own
+# pack/job even though submit_grid.sh itself now supports more.
+ALL_REMOTE_INPUT_PATHS=()
+for INPUT_ARG in "${POSITIONALS[@]}"; do
+REMOTE_SCRIPT=""
+REMOTE_INPUT_PATH=""
+
+# A config first (resolve_args_file accepts a path, a bare stem, or a stem with
+# .md -- the same three spellings run_local.sh and test_run.sh accept), and only
+# if that finds nothing, a submitter under scripts/submit/. No name is claimed by
+# both, so the order cannot hide one behind the other.
+#
+# The path handed to the cluster must be project-relative: it is rsynced to
+# REMOTE_PROJECT and named again there. resolve_args_file returns a path it was
+# given unchanged, and an absolute one for a stem, so strip the project root off
+# whatever comes back.
+if RESOLVED_ARGS_FILE="$(resolve_args_file "${INPUT_ARG}")"; then
+    if [[ "${RESOLVED_ARGS_FILE}" != *.md ]]; then
+        printf 'Unsupported file type: %s\n' "${INPUT_ARG}" >&2
+        exit 2
+    fi
+    REMOTE_INPUT_PATH="${RESOLVED_ARGS_FILE#"${PROJECT_ROOT}"/}"
+else
+    SCRIPT_NAME="${INPUT_ARG%.sh}"
+    if [[ ! "${SCRIPT_NAME}" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        printf 'Invalid SCRIPT_NAME: %s\n' "${SCRIPT_NAME}" >&2
+        exit 2
+    fi
+    REMOTE_SCRIPT="scripts/submit/${SCRIPT_NAME}.sh"
+fi
+
+if [[ -n "${REMOTE_SCRIPT}" && ! -f "${PROJECT_ROOT}/${REMOTE_SCRIPT}" ]]; then
+    printf 'Remote script not found: %s\n' "${REMOTE_SCRIPT}" >&2
+    exit 2
+fi
+
+# A legacy scripts/submit/*.sh target names its own submitter, one per capture
+# call; that has nothing in common with several args-file labels sharing one
+# submit_grid.sh invocation, so the two cannot be mixed in one multi-label run.
+if [[ -z "${REMOTE_INPUT_PATH}" && ${#POSITIONALS[@]} -gt 1 ]]; then
+    printf -- 'Several labels at once only works for args-file targets, not a scripts/submit/*.sh script: %s\n' \
+        "${INPUT_ARG}" >&2
+    exit 2
+fi
+
+# variant is the label graphics/summarize below (and --complete's own
+# already-done scan) key everything on -- only an args-file target has one; the
+# legacy scripts/submit/*.sh path names no single label a report could be for.
+# Persists after the loop as this iteration's value, which is exactly right when
+# --graphics/--summarize run (they require exactly one label, checked above).
+variant=""
+if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
+    variant="$(basename "${REMOTE_INPUT_PATH}" .md)"
+    VARIANTS+=("${variant}")
+elif (( DO_GRAPHICS || DO_SUMMARIZE )); then
+    printf -- '--graphics/--summarize need an args-file target (which has a label), not a scripts/submit/*.sh script: %s\n' "${INPUT_ARG}" >&2
+    exit 2
+fi
+
+# Preserve locally completed pairs across the code-only rsync: the cluster's copy
+# of the project has no test_metrics tree of its own to scan, so this scan has to
+# happen here and travel as an environment variable. The remote submitter merges
+# it with reports already present on that cluster (grid_load_completed).
+if [[ "${COMPLETE_ONLY}" == "1" && -n "${REMOTE_INPUT_PATH}" ]]; then
+    cold_series=0
+    if args_file_has_flag "${PROJECT_ROOT}/${REMOTE_INPUT_PATH}" --cold_split; then
+        cold_series=1
+    fi
+    COMPLETED_EXPERIMENTS="$(
+        grid_completed_list "${variant}" "${PROJECT_ROOT}/test_metrics" "${cold_series}"
+    )"
+    export COMPLETE_ONLY COMPLETED_EXPERIMENTS
+fi
+
 if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
     printf 'Preparing to submit arguments file: %s\n' "${REMOTE_INPUT_PATH}"
     rsync -az --quiet -e "ssh -S ${SSH_CONTROL_PATH}" \
@@ -397,12 +449,20 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
     if args_file_has_flag "${PROJECT_ROOT}/${REMOTE_INPUT_PATH}" --cold_split; then
         printf 'Detected --cold_split; the cold validation/test rotation will be used.\n'
     fi
-fi
 
-# The cluster settings are %q-escaped exactly once (see cluster_remote_env) and
-# then interpreted once by the remote login shell. GPU_PROPERTY carries single
-# quotes and parentheses, so this must not be quoted by hand.
-remote_env="$(cluster_remote_env)"
+    ALL_REMOTE_INPUT_PATHS+=("${REMOTE_INPUT_PATH}")
+fi
+done
+
+# Single capture call: every args-file label's path, space-joined into ONE
+# shell word (safe -- arg-file paths never contain whitespace, same assumption
+# submit_grid.sh's own word-split makes), or the one legacy REMOTE_INPUT_PATH
+# (empty) / REMOTE_SCRIPT (the submit/*.sh path) when POSITIONALS had exactly
+# one non-args-file target.
+if (( ${#ALL_REMOTE_INPUT_PATHS[@]} > 0 )); then
+    printf -v REMOTE_INPUT_PATH '%s ' "${ALL_REMOTE_INPUT_PATHS[@]}"
+    REMOTE_INPUT_PATH="${REMOTE_INPUT_PATH% }"
+fi
 
 printf 'Queuing OAR jobs on %s.\n' "${remote}"
 ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
@@ -421,6 +481,32 @@ SESSION_MARKER="$(
 )"
 
 if (( DO_GRAPHICS || DO_SUMMARIZE )); then
+    # Same seed set this invocation actually submitted -- SEEDS_OVERRIDE if
+    # --seeds was given, DEFAULT_SEEDS (scripts/settings.sh) otherwise.
+    if [[ -n "${SEEDS_OVERRIDE:-}" ]]; then
+        read -r -a _report_seeds <<< "${SEEDS_OVERRIDE}"
+    else
+        _report_seeds=("${DEFAULT_SEEDS[@]}")
+    fi
+    seeds_csv="$(IFS=,; printf '%s' "${_report_seeds[*]}")"
+
+    # One marker per label, dropped on the CLUSTER (not this computer) under
+    # its queue dir. This is what lets a completely different machine finish
+    # the job: wait_and_sync.sh's check_pending_reports() reads this same
+    # directory whenever it sees this cluster's queue idle, on whichever
+    # computer happens to be running it -- so if this terminal or this
+    # computer disappears before the wait loop below returns, the report
+    # still gets generated the next time anyone points wait_and_sync.sh at
+    # this cluster, with no state needed here beyond this file.
+    ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+        "mkdir -p '${REMOTE_QUEUE_DIR}/pending_reports'" || true
+    for variant in "${VARIANTS[@]}"; do
+        ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+            "printf 'seeds_csv=%s\ngraphics=%s\nsummarize=%s\n' \
+                $(printf '%q' "${seeds_csv}") $(printf '%q' "${DO_GRAPHICS}") $(printf '%q' "${DO_SUMMARIZE}") \
+                > '${REMOTE_QUEUE_DIR}/pending_reports/${variant}.report'" || true
+    done
+
     # Bounded instead of the indefinite watcher below: poll only THIS cluster's
     # OAR queue for this user until it drains, sync once more, generate what was
     # asked for, exit -- "run this and hand back a report", not "watch forever".
@@ -428,6 +514,11 @@ if (( DO_GRAPHICS || DO_SUMMARIZE )); then
     # scripts/lib/progress_table.sh's own job table already uses; 60s rather
     # than the watcher's 300s default because a --graphics/--summarize caller is
     # explicitly waiting on this, not glancing at a table every so often.
+    #
+    # This loop, and everything after it, is a CONVENIENCE for staying in this
+    # terminal -- if it never runs to completion (closed terminal, dropped
+    # SSH, killed process), the markers written above are still there for
+    # wait_and_sync.sh to pick up later, from here or from another computer.
     what="$( { (( DO_GRAPHICS )) && printf 'graphics'
                 (( DO_GRAPHICS && DO_SUMMARIZE )) && printf ' and '
                 (( DO_SUMMARIZE )) && printf 'the summary'; } )"
@@ -450,51 +541,24 @@ if (( DO_GRAPHICS || DO_SUMMARIZE )); then
     MAX_WAITING_JOBS="${MAX_WAITING_JOBS}" \
         bash "${PROJECT_ROOT}/scripts/wait_and_sync.sh" --once >/dev/null 2>&1 || true
 
-    mkdir -p "${PROJECT_ROOT}/graphics/${variant}"
-
-    if (( DO_GRAPHICS )); then
-        graphics_log="${PROJECT_ROOT}/graphics/${variant}/generate_graphics.log"
-        if bash "${PROJECT_ROOT}/scripts/generate_config_graphics.sh" "${variant}" \
-                > "${graphics_log}" 2>&1; then
-            printf 'Graphics written under graphics/%s/ (log: %s).\n' \
-                "${variant}" "${graphics_log#"${PROJECT_ROOT}"/}"
-        else
-            printf 'generate_config_graphics.sh failed; see %s\n' \
-                "${graphics_log#"${PROJECT_ROOT}"/}" >&2
-        fi
-    fi
-
-    if (( DO_SUMMARIZE )); then
-        # Same seed set this invocation actually submitted -- SEEDS_OVERRIDE if
-        # --seeds was given, DEFAULT_SEEDS (scripts/settings.sh) otherwise.
-        if [[ -n "${SEEDS_OVERRIDE:-}" ]]; then
-            read -r -a _report_seeds <<< "${SEEDS_OVERRIDE}"
-        else
-            _report_seeds=("${DEFAULT_SEEDS[@]}")
-        fi
-        seeds_csv="$(IFS=,; printf '%s' "${_report_seeds[*]}")"
-        summary_path="${PROJECT_ROOT}/graphics/${variant}/${variant}.md"
-        {
-            printf '# %s\n\n' "${variant}"
-            printf '## Summary (analysis/summarize_label.py)\n\n```\n'
-            python3 "${PROJECT_ROOT}/analysis/summarize_label.py" "${variant}" --by-groups 2>&1 \
-                || printf '(summarize_label.py exited non-zero; output above, if any, is what it printed before failing)\n'
-            printf '```\n\n'
-            # AUC against the chemistry null model and the in-sample increment,
-            # from analysis/full_label_report.py -- reads model checkpoints
-            # under models/<label>/. checkpoint_scores.score_checkpoints raises
-            # SystemExit("no checkpoints scored") when the label saved none
-            # (--save_model_in_dynamics was off, as descriptors_path_v2's is);
-            # `|| printf` keeps that from tripping this script's own set -e and
-            # aborting mid-file, so the section just ends with why it is empty.
-            printf '## AUC vs chemistry null model, in-sample increment (analysis/full_label_report.py)\n\n```\n'
-            python3 "${PROJECT_ROOT}/analysis/full_label_report.py" \
-                --label "${variant}" --seeds="${seeds_csv}" 2>&1 \
-                || printf '(full_label_report.py exited non-zero -- most likely no --save_model_in_dynamics checkpoints saved for this label)\n'
-            printf '```\n'
-        } > "${summary_path}"
-        printf 'Summary written to %s.\n' "${summary_path#"${PROJECT_ROOT}"/}"
-    fi
+    # One report per label, all queues having drained together above -- see
+    # VARIANTS, collected in the capture loop above from every args-file label
+    # requested (order of submission). Claim each marker (atomic rename) before
+    # generating: the wait_and_sync.sh --once just above visits this same
+    # cluster and, seeing it idle, may have already claimed and generated some
+    # of these labels itself -- a failed claim here means it (or another
+    # computer's watcher racing against this one) already has it in hand.
+    for variant in "${VARIANTS[@]}"; do
+        marker="${REMOTE_QUEUE_DIR}/pending_reports/${variant}.report"
+        claimed="$(
+            ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+                "mv '${marker}' '${marker}.claimed' 2>/dev/null && echo yes || echo no"
+        )"
+        [[ "${claimed}" == "yes" ]] || continue
+        bash "${PROJECT_ROOT}/scripts/lib/generate_label_report.sh" \
+            "${variant}" "${seeds_csv}" "${DO_GRAPHICS}" "${DO_SUMMARIZE}"
+        ssh -S "${SSH_CONTROL_PATH}" "${remote}" "rm -f '${marker}.claimed'" || true
+    done
 
     exit 0
 fi

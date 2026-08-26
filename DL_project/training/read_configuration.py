@@ -286,6 +286,21 @@ class ModelConfig:
     # ordering matters and chem_adversary must not be applied without it.
     chem_prior: bool = False
     chem_neighbours: int = 15
+    # A loss WEIGHT, not an architectural addition -- unlike chem_prior/chem_adversary
+    # above (which need Final_Layer's fused representation and are explicitly rejected
+    # under --descriptors_head, ModelConfig.validate), this only scales each training
+    # row's loss contribution (dataloader/New_dataloader.py's common_weights_parts,
+    # training/new_train.py) and works under any architecture. Per row:
+    # weight = |label - s_chem| / (mean of that over rows of the same label) -- s_chem
+    # is the same leave-one-out lipid-chemistry score --chem_prior reads
+    # (null_scores_leave_one_row_out, dataloader/chemistry_prior.py), and the
+    # class-mean normalization keeps the mean weight at 1.0 within positives and within
+    # negatives separately, so this reweights WITHIN each class only and leaves the
+    # positive:negative balance --balanced_batches/--balanced_proteins set at the
+    # sampling level untouched. Rows the lipid alone already predicts (label agrees with
+    # s_chem) count for less; rows that contradict the lipid-only prediction count for
+    # more, concentrating the loss on cases that need protein-specific signal.
+    lipid_propensity_weight: bool = False
     # Regression GRL on the FUSED post-cross-attention representation (same hook as
     # dann_family) against s_chem, not the label: it discourages the fused vector from
     # carrying a redundant copy of the chemistry marginal, while leaving room for
@@ -389,6 +404,21 @@ class ModelConfig:
     # whole-pocket average. Requires --pair_descriptor_pocket_shares (see validate()) --
     # nothing to split once the pocket-derived tokens are off.
     pair_descriptor_pocket_shares_split: bool = False
+    # --pair_descriptor_pocket_shares_coarse : bands aromatic_share/polar_share into one
+    # of 3 FIXED (not train-fit) thirds each -- see architecture/pair_descriptor_head.py's
+    # _coarse_band -- instead of feeding them raw or replacing them (that is what
+    # --pair_descriptor_pocket_shares_split does; the two are mutually exclusive, see
+    # validate()). Both dropping the pair (--no_pair_descriptor_pocket_shares) and
+    # replacing it (--pair_descriptor_pocket_shares_split) made
+    # [[descriptors-path-fingerprint-leak]]'s LBP_BPI_CETP gap WIDER, not narrower
+    # (descriptors_no_extent, descriptors_path_v2), so coarsening the original two --
+    # the fix actually used for extent, never tried on this pair -- is the next arm.
+    # Fixed edges rather than train-fit quantiles (coarse_extent's approach) because
+    # these are read from the pocket_descriptor tensor per SAMPLE at forward time, not
+    # precomputed per protein in the dataloader with a train split to fit edges from;
+    # fixed edges need no such split and carry zero data-dependence to leak in the
+    # first place.
+    pair_descriptor_pocket_shares_coarse: bool = False
     # --no_pair_descriptor_extent : drops the coarsened pocket_extent token, the last of
     # DATALOADER_TOKENS' base 6 (architecture/pair_descriptor_head.py) still unexamined --
     # highest family-identity signal of the protein-only entries at full resolution
@@ -439,6 +469,36 @@ class ModelConfig:
     # everything that assumes the full architecture's modules is rejected in
     # combination (see validate()) since Final_Layer would not have built them.
     descriptors_head: bool = False
+    # Feeds the SAME protein-only/lipid-only tokens --pair_descriptors' self-attention
+    # head reads (aromatic_share, polar_share, and coarsened extent when
+    # --pair_descriptor_extent is on, from POCKET_DESCRIPTOR_NAMES for protein; chain,
+    # unsaturation, hbond, heavy from dataloader/pair_descriptors.py for lipid -- NOT
+    # occupancy, which is a pair term belonging to neither side) into the FULL model's
+    # own encoders too: standardised and broadcast onto every protein node
+    # (architecture/protein_encoder.py, mirroring expand_pocket_descriptor's
+    # broadcast-not-reuse pattern) and onto every lipid node
+    # (architecture/lipid_encoder.py, which has no analogous mechanism before this).
+    # Independent of --pair_descriptors -- both may be on at once, one feeding the
+    # encoders early, the other still concatenating into Final_Layer's common_out
+    # (architecture/final_layer.py) as before; this flag changes nothing about that
+    # existing path.
+    descriptors_in_protein_lipid: bool = False
+    # Protein side: turns --plmon off (no ESM3 contribution to protein nodes). Lipid
+    # side: MolFormer is not loaded/used at all, and the lipid graph collapses to ONE
+    # node per lipid (no per-token structure exists without MolFormer to tokenize
+    # against) carrying only the --descriptors_in_protein_lipid broadcast as its
+    # feature vector -- dataloader/New_dataloader.py/architecture/lipid_encoder.py.
+    # Requires --descriptors_in_protein_lipid (validate() below): without it, and
+    # without --no_protein_geometry's base columns either, a protein or lipid node
+    # would have nothing left to be a feature vector at all.
+    no_embeddings: bool = False
+    # Protein side only: drops residue_type/sas_area/volume (and
+    # --protein_extra_node_features' columns, if also on) from every protein node --
+    # dataloader/protein_graph_builder.py's protein_node_columns(). Requires
+    # --descriptors_in_protein_lipid for the same "node would end up empty" reason as
+    # --no_embeddings; the two are independent otherwise (this one says nothing about
+    # ESM or MolFormer).
+    no_protein_geometry: bool = False
     # Give the lipid branch a smaller learning rate than the rest of the model, leaving
     # the forward pass exactly as it was: the lipid stream learns proportionally slower
     # while the protein branch keeps its full step, which is the warm-up remedy for the
@@ -1088,9 +1148,50 @@ class ModelConfig:
         # this number against the descriptor it actually built and names the mismatch,
         # so the two cannot drift silently.
         self.pocket_descriptor_count = POCKET_DESCRIPTOR_COUNT if self.pocket_descriptors else 0
-        self.protein_node_feature_count = 3 + (
-            3 if self.protein_extra_node_features else 0
+        self.protein_node_feature_count = (
+            0 if self.no_protein_geometry
+            else 3 + (3 if self.protein_extra_node_features else 0)
         )
+        # --descriptors_in_protein_lipid: the same protein-only/lipid-only tokens
+        # architecture/pair_descriptor_head.py reads (aromatic_share, polar_share,
+        # coarsened extent when pair_descriptor_extent -- NOT occupancy, a pair term),
+        # broadcast onto every node instead of/in addition to feeding the separate
+        # descriptor self-attention head.
+        self.protein_pair_descriptor_broadcast_count = (
+            (2 + (1 if self.pair_descriptor_extent else 0))
+            if self.descriptors_in_protein_lipid else 0
+        )
+        self.lipid_pair_descriptor_broadcast_count = (
+            4 if self.descriptors_in_protein_lipid else 0
+        )
+        if self.descriptors_in_protein_lipid and not (
+            self.pocket_descriptors and self.pair_descriptors
+        ):
+            raise ValueError(
+                "descriptors_in_protein_lipid broadcasts the same tensors "
+                "--pocket_descriptors/--pair_descriptors already attach "
+                "(pocket_descriptor, pair_descriptor_input) -- both must be on too, "
+                "even if --descriptors_head/the self-attention head's own use of "
+                "them is not wanted"
+            )
+        if self.no_embeddings and not self.descriptors_in_protein_lipid:
+            raise ValueError(
+                "no_embeddings drops ESM from protein nodes and MolFormer entirely "
+                "from lipid nodes -- without descriptors_in_protein_lipid a lipid "
+                "node would have nothing left as a feature vector"
+            )
+        if self.no_protein_geometry and not self.descriptors_in_protein_lipid:
+            raise ValueError(
+                "no_protein_geometry drops residue_type/sas_area/volume from every "
+                "protein node -- without descriptors_in_protein_lipid a protein node "
+                "could end up with no base features at all"
+            )
+        if self.no_embeddings:
+            # ESM's own toggle -- reused rather than duplicated, so every existing
+            # plmon-gated code path (frozen-embedding substitutes, RNA-BAnG adapters,
+            # the compression layer) is already correct under no_embeddings with no
+            # separate check needed there.
+            self.plmon = False
         if self.pocket_attention_sites != "both" and not self.attention_by_pockets:
             raise ValueError(
                 "pocket_attention_sites narrows attention_by_pockets and does "
@@ -1486,6 +1587,18 @@ class ModelConfig:
                 "-- there is nothing to split once the pocket-derived tokens are off "
                 "(--no_pair_descriptor_pocket_shares)"
             )
+        if self.pair_descriptor_pocket_shares_coarse and not self.pair_descriptor_pocket_shares:
+            raise ValueError(
+                "pair_descriptor_pocket_shares_coarse requires pair_descriptor_pocket_shares "
+                "-- there is nothing to band once the pocket-derived tokens are off "
+                "(--no_pair_descriptor_pocket_shares)"
+            )
+        if self.pair_descriptor_pocket_shares_split and self.pair_descriptor_pocket_shares_coarse:
+            raise ValueError(
+                "pair_descriptor_pocket_shares_split and pair_descriptor_pocket_shares_coarse "
+                "are two different fixes for the same aromatic_share/polar_share pair -- pick "
+                "one"
+            )
         if self.pair_descriptors_only and not self.pair_descriptors:
             raise ValueError("pair_descriptors_only requires pair_descriptors")
         if self.pair_descriptors_only and (self.lipid_only or self.protein_only):
@@ -1799,6 +1912,8 @@ SIMPLE_BOOL_FLAGS = {
     "--chem_prior": "chem_prior",
     "chem_adversary": "chem_adversary",
     "--chem_adversary": "chem_adversary",
+    "lipid_propensity_weight": "lipid_propensity_weight",
+    "--lipid_propensity_weight": "lipid_propensity_weight",
     "pocket_compat_prior": "pocket_compat_prior",
     "--pocket_compat_prior": "pocket_compat_prior",
     "compatibility_input": "compatibility_input",
@@ -1813,10 +1928,18 @@ SIMPLE_BOOL_FLAGS = {
     "--pair_descriptors_only": "pair_descriptors_only",
     "descriptors_head": "descriptors_head",
     "--descriptors_head": "descriptors_head",
+    "descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
+    "--descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
+    "no_embeddings": "no_embeddings",
+    "--no_embeddings": "no_embeddings",
+    "no_protein_geometry": "no_protein_geometry",
+    "--no_protein_geometry": "no_protein_geometry",
     "pair_descriptor_pocket_shares": "pair_descriptor_pocket_shares",
     "--pair_descriptor_pocket_shares": "pair_descriptor_pocket_shares",
     "pair_descriptor_pocket_shares_split": "pair_descriptor_pocket_shares_split",
     "--pair_descriptor_pocket_shares_split": "pair_descriptor_pocket_shares_split",
+    "pair_descriptor_pocket_shares_coarse": "pair_descriptor_pocket_shares_coarse",
+    "--pair_descriptor_pocket_shares_coarse": "pair_descriptor_pocket_shares_coarse",
     "pair_descriptor_extent": "pair_descriptor_extent",
     "--pair_descriptor_extent": "pair_descriptor_extent",
     "pair_descriptor_flatten": "pair_descriptor_flatten",

@@ -23,6 +23,24 @@ _AROMATIC_SHARE_INDEX = 10
 _HYDROPATHY_CORE_INDEX = 11
 _HYDROPATHY_RIM_INDEX = 12
 
+# --pair_descriptor_pocket_shares_coarse's band edges for aromatic_share/polar_share.
+# FIXED, not train-fit -- unlike coarse_extent (dataloader/New_dataloader.py, quantile
+# edges cut on TRAIN proteins), these do not depend on any data at all, train or test,
+# so there is nothing here for a held-out split to leak into. Three equal-width bands
+# are the same destroy-per-protein-resolution move coarse_extent already makes for
+# "clash"/occupancy: 35 proteins over 3 bands is ~12 per band, which is what makes a
+# share stop reading as close to a protein id.
+_SHARE_BAND_EDGES = (1.0 / 3, 2.0 / 3)
+_SHARE_BAND_CENTRES = (1.0 / 6, 0.5, 5.0 / 6)
+
+
+def _coarse_band(values):
+    """values (any shape, already in [0, 1]) -> the centre of its fixed-width band."""
+    edges = torch.tensor(_SHARE_BAND_EDGES, device=values.device, dtype=values.dtype)
+    band = torch.bucketize(values.contiguous(), edges)
+    centres = torch.tensor(_SHARE_BAND_CENTRES, device=values.device, dtype=values.dtype)
+    return centres[band]
+
 
 class PairDescriptorHead(torch.nn.Module):
     """Self-attention over a small, fixed set of protein-only, lipid-only and pair
@@ -55,6 +73,14 @@ class PairDescriptorHead(torch.nn.Module):
     leaving 6. --pair_descriptor_pocket_shares_split replaces them instead, with
     aromatic_share_core, aromatic_share_rim, hydropathy_core, hydropathy_rim -- 10
     tokens total; see SPLIT_DATALOADER_TOKENS and set_pocket_descriptor_normalization.
+    --pair_descriptor_pocket_shares_coarse keeps the same two tokens but bands each
+    into one of 3 FIXED (not train-fit) thirds before embedding -- see _coarse_band --
+    the coarsening coarse_extent already gets, which this pair never did (both
+    --split and dropping them outright made project memory
+    [[descriptors-path-fingerprint-leak]]'s LBP_BPI_CETP gap wider, not narrower, so
+    coarsening the ORIGINAL two rather than replacing them is the untried arm).
+    Mutually exclusive with --pair_descriptor_pocket_shares_split (ModelConfig.
+    validate) -- two different fixes for the same two tokens.
     --no_pair_descriptor_extent drops "extent" out of DATALOADER_TOKENS on top of
     either of those (occupancy keeps its own coarse_extent regardless -- only the
     standalone token disappears).
@@ -91,6 +117,13 @@ class PairDescriptorHead(torch.nn.Module):
         self.split_pocket_shares = self.use_pocket_shares and getattr(
             config, "pair_descriptor_pocket_shares_split", False
         )
+        # --pair_descriptor_pocket_shares_coarse (see class docstring): bands the
+        # ORIGINAL aromatic_share/polar_share pair instead of replacing it.
+        # ModelConfig.validate rejects combining this with _split -- both edit the
+        # same two tokens.
+        self.coarse_pocket_shares = self.use_pocket_shares and getattr(
+            config, "pair_descriptor_pocket_shares_coarse", False
+        )
         if self.split_pocket_shares:
             self.token_names = (
                 base_tokens + SPLIT_DATALOADER_TOKENS
@@ -98,6 +131,8 @@ class PairDescriptorHead(torch.nn.Module):
             )
             self.register_buffer("hydropathy_mean", torch.zeros(2))
             self.register_buffer("hydropathy_std", torch.ones(2))
+        elif self.coarse_pocket_shares:
+            self.token_names = base_tokens + ("aromatic_share_coarse", "polar_share_coarse")
         else:
             self.token_names = base_tokens + (
                 ("aromatic_share", "polar_share") if self.use_pocket_shares else ()
@@ -197,6 +232,13 @@ class PairDescriptorHead(torch.nn.Module):
                 - self.hydropathy_mean
             ) / self.hydropathy_std
             scalars = torch.cat([pair_descriptor_input, hydropathy], dim=1)
+        elif self.coarse_pocket_shares:
+            aromatic_share = _coarse_band(pocket_descriptor[:, _AROMATIC_SHARE_INDEX])
+            polar_share = _coarse_band(1.0 - pocket_descriptor[:, _APOLAR_SASA_SHARE_INDEX])
+            scalars = torch.cat(
+                [pair_descriptor_input, aromatic_share.unsqueeze(-1), polar_share.unsqueeze(-1)],
+                dim=1,
+            )
         elif self.use_pocket_shares:
             aromatic_share = pocket_descriptor[:, _AROMATIC_SHARE_INDEX]
             polar_share = 1.0 - pocket_descriptor[:, _APOLAR_SASA_SHARE_INDEX]
