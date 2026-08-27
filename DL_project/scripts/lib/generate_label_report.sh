@@ -23,6 +23,17 @@ do_summarize="$4"
 
 mkdir -p "${PROJECT_ROOT}/graphics/${label}"
 
+# Every caller (run_cluster.sh, wait_and_sync.sh's pending_reports handoff)
+# already branches on this script's exit status to decide whether to leave a
+# label queued for retry -- see their own "leaving its marker queued for
+# retry" handling. That only works if a section failing below actually makes
+# it here instead of being fully absorbed into the .md text: each section
+# below still gets its resilient, human-readable "(failed) ..." text in the
+# report (one broken section, or one broken label, must not cost every OTHER
+# section/label its own report), but `failed` tracks whether that happened so
+# the exit code -- checked, not the report text -- tells the caller the truth.
+failed=0
+
 if (( do_graphics )); then
     # No .log kept: generate_config_graphics.sh's own stdout/stderr is progress
     # narration, not something the summary needs, and its real output is the
@@ -34,16 +45,19 @@ if (( do_graphics )); then
     else
         printf 'generate_config_graphics.sh failed for %s (rerun it directly to see why).\n' \
             "${label}" >&2
+        failed=1
     fi
 fi
 
 if (( do_summarize )); then
     summary_path="${PROJECT_ROOT}/graphics/${label}/${label}.md"
+    summarize_failed=0
+    full_report_failed=0
     {
         printf '# %s\n\n' "${label}"
         printf '## Summary (analysis/summarize_label.py)\n\n```\n'
         "${PROJECT_ROOT}/scripts/env.sh" python3 "${PROJECT_ROOT}/analysis/summarize_label.py" "${label}" --by-groups 2>&1 \
-            || printf '(summarize_label.py exited non-zero; output above, if any, is what it printed before failing)\n'
+            || { printf '(summarize_label.py exited non-zero; output above, if any, is what it printed before failing)\n'; summarize_failed=1; }
         printf '```\n\n'
         # AUC against the chemistry null model and the in-sample increment, from
         # analysis/full_label_report.py -- reads model checkpoints under
@@ -56,42 +70,39 @@ if (( do_summarize )); then
         # cut there instead of embedding it, same "tables, not logs" rule as the
         # summary above.
         #
-        # Run twice, once per --features set (tanimoto: full molecular structure;
-        # chain,unsaturation,hbond,heavy: the 4 lipid-only pair_descriptor tokens) --
-        # --out/--scores chain the two runs so checkpoint scoring (the expensive
-        # part) happens once, not twice. The null model itself is additionally
-        # cached across labels by --features-label (analysis/null_model.py
-        # CACHE_PATH): every label sharing a --features set and coldsplit params gets
-        # the SAME chemistry null model, so only the first label calling
+        # One run, on whatever --label's own args file trains with --
+        # --good_descriptors/--bad_descriptors resolved by analysis/
+        # full_label_report.py's own --features default (falls back to the 4
+        # lipid-only pair_descriptor tokens for a label that sets neither flag).
+        # No separate tanimoto baseline run: the null model this label is judged
+        # against is the one built from the SAME descriptor set the network
+        # itself was trained to see, not a fixed, label-independent guess -- see
+        # analysis/full_label_report.py --features. The null model is cached
+        # across labels by --features-label (analysis/null_model.py CACHE_PATH):
+        # every label sharing a resolved --features set and coldsplit params
+        # gets the SAME chemistry null model, so only the first label calling
         # full_label_report.py for a given (features-label, family, seed, share,
-        # ratio, split) actually recomputes it.
-        scores_tmp="$(mktemp)"
-        trap 'rm -f "${scores_tmp}"' EXIT
+        # ratio, split) actually recomputes it. full_label_report.py's own
+        # output already states which features were resolved and used.
         printf '## AUC vs chemistry null model, in-sample increment\n\n'
-        printf '### features = tanimoto (full molecular structure)\n\n'
         if full_report_out=$("${PROJECT_ROOT}/scripts/env.sh" python3 "${PROJECT_ROOT}/analysis/full_label_report.py" \
-                --label "${label}" --seeds="${seeds_csv}" --features=tanimoto --features-label=tanimoto \
-                --out="${scores_tmp}" 2>&1); then
+                --label "${label}" --seeds="${seeds_csv}" 2>&1); then
             printf '```\n'
             printf '%s\n' "${full_report_out}" | sed -n '/^##########/,$p'
-            printf '```\n\n'
-            printf '### features = lipid4 (chain/unsaturation/hbond/heavy only)\n\n'
-            if full_report_out=$("${PROJECT_ROOT}/scripts/env.sh" python3 "${PROJECT_ROOT}/analysis/full_label_report.py" \
-                    --label "${label}" --seeds="${seeds_csv}" --features=chain,unsaturation,hbond,heavy --features-label=lipid4 \
-                    --scores="${scores_tmp}" 2>&1); then
-                printf '```\n'
-                printf '%s\n' "${full_report_out}" | sed -n '/^##########/,$p'
-                printf '```\n'
-            else
-                printf 'Failed: %s -- rerun for the full output: `python3 analysis/full_label_report.py --label %s --seeds=%s --scores=<checkpoint_scores.py output> --features=chain,unsaturation,hbond,heavy --features-label=lipid4`\n' \
-                    "$(printf '%s\n' "${full_report_out}" | tail -n1)" \
-                    "${label}" "${seeds_csv}"
-            fi
+            printf '```\n'
         else
-            printf 'Failed: %s -- rerun for the full output: `python3 analysis/full_label_report.py --label %s --seeds=%s --features=tanimoto --features-label=tanimoto`\n' \
+            printf 'Failed: %s -- rerun for the full output: `python3 analysis/full_label_report.py --label %s --seeds=%s`\n' \
                 "$(printf '%s\n' "${full_report_out}" | tail -n1)" \
                 "${label}" "${seeds_csv}"
+            full_report_failed=1
         fi
     } > "${summary_path}"
     printf 'Summary written to %s.\n' "${summary_path#"${PROJECT_ROOT}"/}"
+    (( summarize_failed || full_report_failed )) && failed=1
 fi
+
+# Non-zero here does NOT mean nothing was written -- graphics/<label>/ and its
+# .md (with "(failed) ..." text in whichever section broke) are already on
+# disk either way. It means what it has always meant to run_cluster.sh/
+# wait_and_sync.sh's own retry handling: don't treat this label as done.
+exit "${failed}"

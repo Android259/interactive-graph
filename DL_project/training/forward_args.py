@@ -67,6 +67,9 @@ def build_forward_args(config, prot, lipid):
         forward_args["compat_input"] = prot.compat_input
     if getattr(config, "pair_descriptors", False):
         forward_args["pair_descriptor_input"] = prot.pair_descriptor_input
-    if getattr(config, "two_pair_descriptors_paths", False):
+    if getattr(config, "two_pair_descriptors_paths", False) or (
+        getattr(config, "descriptors_head", False)
+        and getattr(config, "descriptor_names", "")
+    ):
         forward_args["descriptor_catalog_input"] = prot.descriptor_catalog_input
     return forward_args

@@ -53,6 +53,7 @@ from read_configuration import read_configuration  # noqa: E402
 from architecture.interaction_classification import InteractionClassification  # noqa: E402
 from dataloader.New_dataloader import PLIDataset  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
+from dataloader.pair_descriptors import resolve_similarity_feature_names  # noqa: E402
 from forward_args import build_forward_args  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 
@@ -71,21 +72,74 @@ DEFAULT_EPOCHS = "1,10,49,51,120"
 
 
 def arg_lines(label):
-    """The sweep's argument file, as the shell would have handed it to python."""
+    """The sweep's argument file, as the shell would have handed it to python.
+
+    A "--flag=value" line whose value continues onto an indented line right after it
+    (scripts/lib/args_file_lib.sh's own multi-line convention, for a
+    --good_descriptors/--bad_descriptors list too long for one line) is joined back
+    onto that flag here, comma-separated, the same way the bash side does --
+    read_configuration would otherwise see the continuation as its own bare, unknown
+    parameter. Any other line -- unindented, or indented with no flag currently open
+    -- is commentary and is dropped, unchanged from before this convention existed.
+    """
     path = os.path.join(PROJECT_ROOT, "scripts", "arg_files", f"{label}.md")
     lines = []
+    pending = None
     for raw in open(path):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        # The launcher passes the file through a shell, which strips the quotes around
-        # --pool_type="gem". Reading the file directly does not, and the configuration
-        # validator then rejects '"gem"' as not being one of its pool types.
-        if "=" in line:
-            key, value = line.split("=", 1)
-            line = key + "=" + value.strip().strip('"').strip("'")
-        lines.append(line)
+        stripped = raw.strip()
+        if stripped.startswith("--"):
+            if pending is not None:
+                lines.append(pending)
+                pending = None
+            # The launcher passes the file through a shell, which strips the quotes
+            # around --pool_type="gem". Reading the file directly does not, and the
+            # configuration validator then rejects '"gem"' as not being one of its
+            # pool types.
+            if "=" in stripped:
+                key, value = stripped.split("=", 1)
+                pending = key + "=" + value.strip().strip('"').strip("'")
+            else:
+                lines.append(stripped)
+        elif stripped and raw[:1] in (" ", "\t") and pending is not None:
+            fragment = stripped.lstrip(",")
+            if fragment:
+                pending = pending.rstrip(",") + "," + fragment
+        else:
+            if pending is not None:
+                lines.append(pending)
+                pending = None
+    if pending is not None:
+        lines.append(pending)
     return lines
+
+
+def label_descriptor_features(label, families):
+    """--good_descriptors/--bad_descriptors/--descriptor_names resolved off `label`'s
+    own args file, as a sorted comma-separated base-name list for null_model.py's
+    --features (see dataloader.pair_descriptors.resolve_similarity_feature_names) --
+    the chemistry null model then runs on exactly the descriptor set the network
+    itself was trained to see, instead of a fixed guess (analysis/full_label_report.py,
+    analysis/build_rand_results_tables.py). Empty string when the label's config sets
+    none of the three (most labels, historically -- no --descriptors_head at all).
+
+    --descriptor_names (ModelConfig docstring) is --descriptors_head's own single-
+    head equivalent of --good_descriptors/--bad_descriptors -- validate() guarantees
+    at most one of the two pairs is ever non-empty for a given label, so passing all
+    three here always resolves to exactly whichever one that label actually set.
+
+    `families[0]` is a dummy --excluded_groups (read_configuration requires one; the
+    result does not vary by family) -- same trick full_label_report.py's
+    label_coldsplit_params uses for --coldsplit_share/--negatives_per_positive.
+    """
+    argv = ["label_descriptor_features"] + arg_lines(label) + [
+        f"--excluded_groups={families[0]}",
+        "--seed=0",
+    ]
+    conf = read_configuration(argv)
+    names = resolve_similarity_feature_names(
+        conf.good_descriptors, conf.bad_descriptors, conf.descriptor_names
+    )
+    return ",".join(names)
 
 
 def score_split(model, conf, dataset, device):

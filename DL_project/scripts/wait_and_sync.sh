@@ -479,10 +479,22 @@ check_pending_reports() {
 
         printf '%s: generating the report for %s (queued elsewhere, picked up here).\n' \
             "${cluster}" "${label}"
-        bash "${LOCAL_PROJECT}/scripts/lib/generate_label_report.sh" \
-            "${label}" "${seeds_csv:-0,1,2,3,4}" "${do_graphics:-1}" "${do_summarize:-1}" || true
-
-        ssh "${ssh_args[@]}" "${remote}" "rm -f '${marker}.claimed'" || true
+        if bash "${LOCAL_PROJECT}/scripts/lib/generate_label_report.sh" \
+            "${label}" "${seeds_csv:-0,1,2,3,4}" "${do_graphics:-1}" "${do_summarize:-1}"; then
+            ssh "${ssh_args[@]}" "${remote}" "rm -f '${marker}.claimed'" || true
+        else
+            # Do NOT delete the claim on failure -- the old unconditional `rm -f`
+            # here (and || true swallowing generate_label_report.sh's own exit
+            # code) silently discarded the label's report forever on ANY failure
+            # (a transient one included), with no error printed and no way for a
+            # later round -- from this computer or another -- to ever retry it.
+            # Restoring the marker (not deleting it) means the next round that
+            # sees this cluster idle tries again instead of losing the report.
+            printf '%s: generate_label_report.sh failed for %s -- leaving its marker queued for retry.\n' \
+                "${cluster}" "${label}" >&2
+            ssh "${ssh_args[@]}" "${remote}" \
+                "mv '${marker}.claimed' '${marker}' 2>/dev/null" || true
+        fi
     done <<< "${markers}"
 }
 

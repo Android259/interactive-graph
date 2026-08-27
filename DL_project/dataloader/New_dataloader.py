@@ -895,6 +895,17 @@ class PLIDataset(
         if not (pair_descriptors_on or two_paths_on):
             return
 
+        # --descriptor_names (ModelConfig docstring): --descriptors_head's own single-
+        # head equivalent of --good_descriptors/--bad_descriptors -- only meaningful
+        # when descriptors_head is actually on (validate() rejects it otherwise), and
+        # shares the SAME arbitrary-name catalog materialisation two_paths_on triggers
+        # below, just off one raw string instead of two.
+        descriptor_names = (
+            getattr(self.config, "descriptor_names", "")
+            if getattr(self.config, "descriptors_head", False) else ""
+        )
+        named_catalog_on = two_paths_on or bool(descriptor_names.strip())
+
         isomeric = getattr(self.config, "lipid_isomers", False)
         # None (no current cache -- never built, or the interaction table/data/graphs
         # changed since it was) falls every lookup below back to computing directly,
@@ -1027,7 +1038,7 @@ class PLIDataset(
         requested_tokens = ()
         raw_values = {}  # base_name -> (values, is_ragged)
         materialised = {}  # canonical token -> (values, is_ragged, mean, spread)
-        if two_paths_on:
+        if named_catalog_on:
             from dataloader.chemistry_prior import protein_descriptor_table
             from dataloader.pair_descriptors import (
                 BOUNDED_SHARE_DESCRIPTOR_NAMES,
@@ -1041,6 +1052,7 @@ class PLIDataset(
             requested_tokens = resolve_requested_tokens(
                 getattr(self.config, "good_descriptors", ""),
                 getattr(self.config, "bad_descriptors", ""),
+                descriptor_names,
             )
             base_names_needed = {
                 parse_descriptor_token(token)[0] for token in requested_tokens
@@ -1165,7 +1177,7 @@ class PLIDataset(
             )
             if not len(rows):
                 out = {f"_pair_desc_{name}": [] for name in names}
-                if two_paths_on:
+                if named_catalog_on:
                     out.update({f"_descpath_{token}": [] for token in requested_tokens})
                 return out
             out = {}
@@ -1200,7 +1212,7 @@ class PLIDataset(
                     )
                     for count, row in zip(counts, rows)
                 ])
-            if two_paths_on:
+            if named_catalog_on:
                 for token in requested_tokens:
                     values, ragged, mean, spread = materialised[token]
                     if ragged:
@@ -1777,13 +1789,26 @@ class PLIDataset(
         # per token dataloader.pair_descriptors.resolve_requested_tokens resolves out
         # of --good_descriptors/--bad_descriptors, in THAT (sorted, deduped) order --
         # architecture/named_descriptor_head.py's NamedDescriptorHead instances call
-        # the SAME function against the SAME two config fields to compute the
-        # identical order independently, so both heads index into this ONE tensor
-        # correctly regardless of how their two name lists overlap.
+        # the SAME function against the SAME config fields to compute the identical
+        # order independently, so both heads index into this ONE tensor correctly
+        # regardless of how their name lists overlap. --descriptors_head's own
+        # --descriptor_names builds the identical tensor off one field instead of two
+        # (ModelConfig.descriptor_names docstring) -- validate() guarantees at most one
+        # of the two triples (good/bad, descriptor_names) is ever non-empty, so passing
+        # all three here always resolves to exactly the active branch's own tokens.
+        descriptor_names = (
+            getattr(self.config, "descriptor_names", "")
+            if getattr(self.config, "descriptors_head", False) else ""
+        )
+        named_catalog_on = (
+            getattr(self.config, "two_pair_descriptors_paths", False)
+            or bool(descriptor_names.strip())
+        )
         requested_tokens = resolve_requested_tokens(
             getattr(self.config, "good_descriptors", ""),
             getattr(self.config, "bad_descriptors", ""),
-        ) if getattr(self.config, "two_pair_descriptors_paths", False) else ()
+            descriptor_names,
+        ) if named_catalog_on else ()
         descriptor_catalog_columns = [
             f"_descpath_{token}" for token in requested_tokens
             if f"_descpath_{token}" in self.csv.columns

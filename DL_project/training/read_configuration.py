@@ -490,6 +490,25 @@ class ModelConfig:
     # everything that assumes the full architecture's modules is rejected in
     # combination (see validate()) since Final_Layer would not have built them.
     descriptors_head: bool = False
+    # --descriptor_names: names an arbitrary, comma-separated subset of the full
+    # descriptor catalog (dataloader/pair_descriptors.py's DESCRIPTOR_CATALOG -- same
+    # names, same <name>_coarse=<spec> syntax, same parse_descriptor_list/
+    # resolve_requested_tokens machinery --good_descriptors/--bad_descriptors already
+    # use below) to REPLACE PairDescriptorHead's fixed DATALOADER_TOKENS set with,
+    # instead of running alongside it. Empty (default) keeps today's behaviour: one
+    # PairDescriptorHead built from the --pair_descriptor_* flags below. Non-empty
+    # builds one NamedDescriptorHead instead (architecture/named_descriptor_head.py --
+    # the same class --two_pair_descriptors_paths' two heads already are), reading
+    # exactly these names -- ONE head, not the good/bad pair, so it is a variant of
+    # --descriptors_head rather than a third sibling of it and --two_pair_descriptors_
+    # paths: still nothing but the descriptor head and a small classifier (validate()'s
+    # descriptors_head unsupported-combination list applies the same either way).
+    #
+    # The --pair_descriptor_* flags below (pocket_shares/pocket_shares_split/
+    # pocket_shares_coarse/extent/occupancy/flatten) only compose PairDescriptorHead's
+    # fixed set, so a non-default value alongside --descriptor_names would be silently
+    # ignored -- validate() rejects that combination instead.
+    descriptor_names: str = ""
     # --two_pair_descriptors_paths: a second sufficiency-test mode, sibling to
     # --descriptors_head rather than a variant of it (mutually exclusive, see
     # validate()). Instead of one fixed token set (PairDescriptorHead's own
@@ -1698,6 +1717,32 @@ class ModelConfig:
             )
         if self.descriptors_head and not self.pair_descriptors:
             raise ValueError("descriptors_head requires pair_descriptors")
+        if self.descriptor_names and not self.descriptors_head:
+            raise ValueError("descriptor_names only takes effect under descriptors_head")
+        if self.descriptors_head and self.descriptor_names:
+            # NamedDescriptorHead reads its token set directly off --descriptor_names
+            # instead of PairDescriptorHead's fixed DATALOADER_TOKENS composed from
+            # these flags -- a non-default value here would otherwise be silently
+            # ignored, same discipline as the unsupported-combination list just below.
+            fixed_token_flags = [
+                name for name, default in (
+                    ("pair_descriptor_pocket_shares", True),
+                    ("pair_descriptor_pocket_shares_split", False),
+                    ("pair_descriptor_pocket_shares_coarse", False),
+                    ("pair_descriptor_extent", True),
+                    ("pair_descriptor_occupancy", True),
+                    ("pair_descriptor_flatten", False),
+                )
+                if getattr(self, name) != default
+            ]
+            if fixed_token_flags:
+                raise ValueError(
+                    "descriptor_names replaces PairDescriptorHead's fixed "
+                    "DATALOADER_TOKENS set with an arbitrary named one (like "
+                    "--good_descriptors/--bad_descriptors), so these flags -- which "
+                    "only compose that fixed set -- have nothing to apply to: "
+                    + ", ".join(fixed_token_flags)
+                )
         if self.descriptors_head:
             # Final_Layer builds only pair_descriptor_head + a small binar under this
             # flag (see its docstring above); none of these have anything to attach to.
@@ -2392,6 +2437,7 @@ VALUE_HANDLERS = {
     "--compat_input_parts=": set_config_field("compat_input_parts"),
     "--good_descriptors=": set_config_field("good_descriptors"),
     "--bad_descriptors=": set_config_field("bad_descriptors"),
+    "--descriptor_names=": set_config_field("descriptor_names"),
     "--dann_class_conditional=": set_config_field("dann_class_conditional", read_bool),
     "--pool_type=": set_config_field("pool_type"),
     "--swe_reference_points=": set_config_field("swe_reference_points", int),

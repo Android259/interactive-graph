@@ -96,5 +96,39 @@ mkdir -p "$(dirname "${log_file}")"
 # round of shell interpretation, exactly as the spliced-string version got from
 # the `bash -c` it was run through.
 eval "set -- ${python_args}"
-PYTHONUNBUFFERED=1 python ./training/new_train.py "$@" 2>&1 | tee "${log_file}"
+
+# By analogy with --descriptors_head's OWN budget elsewhere (run_local.sh's
+# MAX_OMP_THREADS_PER_JOB default, cluster_common.sh's kraken-cpu
+# PACK_CPU_PER_RUN): a --descriptors_head/--pair_descriptors_only run (~1000
+# parameters) tops out at 1 OMP thread before multithreading's own
+# synchronisation cost exceeds its payoff -- an un-pinned run here would
+# instead let PyTorch spread that tiny model's arithmetic across the WHOLE
+# allocated node (kraken-cpu: 192 cores to itself, this being the un-packed,
+# one-experiment-per-job path), pure thread-sync overhead for no gain. A
+# DataLoader worker subprocess has no second core to overlap onto once the run
+# is sized for 1 thread either, so --num_workers=0 keeps loading in the main
+# process instead of paying a queue/IPC cost for parallelism the budget cannot
+# deliver -- same reasoning run_experiment_pack.sh's unconditional CPU_ONLY
+# --num_workers=0 already applies, narrowed here to the config class it was
+# actually measured on.
+descriptors_head_sized=0
+for _flag in "$@"; do
+    case "${_flag}" in
+        --descriptors_head|--descriptors_head=*|--pair_descriptors_only|--pair_descriptors_only=*)
+            descriptors_head_sized=1
+            break
+            ;;
+    esac
+done
+
+if (( CPU_ONLY && descriptors_head_sized )); then
+    printf 'Detected --descriptors_head/--pair_descriptors_only: pinning to 1 OMP thread, num_workers=0.\n'
+    # --num_workers=0 appended last so it wins over anything the args file set
+    # (read_configuration.py applies flags in argv order) -- same rule
+    # run_experiment_pack.sh's own CPU_ONLY branch follows.
+    OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+    PYTHONUNBUFFERED=1 python ./training/new_train.py "$@" --num_workers=0 2>&1 | tee "${log_file}"
+else
+    PYTHONUNBUFFERED=1 python ./training/new_train.py "$@" 2>&1 | tee "${log_file}"
+fi
 exit "${PIPESTATUS[0]}"

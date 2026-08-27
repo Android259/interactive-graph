@@ -784,8 +784,20 @@ report_label_if_done() {
     fi
     (( DO_GRAPHICS || DO_SUMMARIZE )) || return 0
 
-    bash "${PROJECT_ROOT}/scripts/lib/generate_label_report.sh" \
+    # Non-zero here means a section inside failed (see generate_label_report.sh's
+    # own exit-code contract, the same one run_cluster.sh/wait_and_sync.sh branch
+    # on to retry) -- the report is still written either way, just with that
+    # section's failure documented in it, so this warns rather than treats it as
+    # fatal. Bare (unguarded) under set -euo pipefail, a non-zero exit here would
+    # otherwise abort the whole local grid over ONE label's report -- every other
+    # label's jobs (running or already reaped) losing their report too, not just
+    # this one's.
+    if ! bash "${PROJECT_ROOT}/scripts/lib/generate_label_report.sh" \
         "${variant}" "${LABEL_SEEDS_CSV[label_index]}" "${DO_GRAPHICS}" "${DO_SUMMARIZE}"
+    then
+        printf 'generate_label_report.sh failed for %s -- rerun it directly to retry.\n' \
+            "${variant}" >&2
+    fi
 }
 
 # Wait for at least one running job to exit, then reap every job that has, exactly

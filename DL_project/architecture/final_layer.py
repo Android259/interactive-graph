@@ -309,7 +309,21 @@ class Final_Layer(torch.nn.Module):
             # "add_max" doubles it (concat of add+max, same as it doubles
             # pooled_lip_dim/pooled_prot_dim below) and --pair_descriptor_flatten
             # widens it to token_count*hiddim.
-            self.pair_descriptor_head = PairDescriptorHead(config, act_fn)
+            #
+            # --descriptor_names (ModelConfig docstring): swaps the fixed
+            # DATALOADER_TOKENS set for an arbitrary named one, the same
+            # NamedDescriptorHead --two_pair_descriptors_paths' good/bad pair already
+            # builds -- ONE head here, not two, so catalog_order is just this head's
+            # own tokens (nothing else shares the descriptor_catalog_input tensor to
+            # agree on column order with).
+            if config.descriptor_names:
+                catalog_order = resolve_requested_tokens(config.descriptor_names)
+                self.pair_descriptor_head = NamedDescriptorHead(
+                    config, parse_descriptor_list(config.descriptor_names),
+                    catalog_order, act_fn,
+                )
+            else:
+                self.pair_descriptor_head = PairDescriptorHead(config, act_fn)
             head_dim = self.pair_descriptor_head.output_dim
             self.binar = torch.nn.Sequential(
                 torch.nn.Linear(head_dim, config.hiddim),
@@ -612,6 +626,23 @@ class Final_Layer(torch.nn.Module):
     ):
         """Pool both modalities by sample and return binary logits."""
         if self.config.descriptors_head:
+            if self.config.descriptor_names:
+                # NamedDescriptorHead reads the shared descriptor_catalog_input
+                # tensor by name, same as --two_pair_descriptors_paths' two heads --
+                # not pair_descriptor_input/pocket_descriptor, PairDescriptorHead's
+                # own fixed-token inputs.
+                if descriptor_catalog_input is None:
+                    raise ValueError(
+                        "descriptors_head is set with descriptor_names but forward() "
+                        "got no descriptor_catalog_input -- New_dataloader and "
+                        "forward_args only attach it when --descriptor_names was set "
+                        "at data-load time too; check the flags match."
+                    )
+                batch_size = descriptor_catalog_input.shape[0]
+                vec = self.pair_descriptor_head(
+                    descriptor_catalog_input.view(batch_size, -1)
+                )
+                return self.binar(vec)
             if pair_descriptor_input is None or pocket_descriptor is None:
                 raise ValueError(
                     "descriptors_head is set but forward() got no "

@@ -34,9 +34,13 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
-from analysis.checkpoint_scores import DEFAULT_EPOCHS, score_checkpoints  # noqa: E402
-from analysis.null_model import DEFAULT_FAMILIES, species_similarity  # noqa: E402
-from analysis.interaction_increment import increment_table  # noqa: E402
+from analysis.checkpoint_scores import (  # noqa: E402
+    DEFAULT_EPOCHS,
+    label_descriptor_features,
+    score_checkpoints,
+)
+from analysis.null_model import DEFAULT_FAMILIES, TANIMOTO, resolve_similarity  # noqa: E402
+from analysis.interaction_increment import increment_table, print_increment_report  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 
 
@@ -65,21 +69,18 @@ def rows_pos_counts(scores, families, split, epoch=120):
     print()
 
 
-def auc_and_increment_tables(csv, similarity, index, scores, families, seeds, split, epoch=120):
+def auc_and_increment_tables(csv, similarity, index, entity_column, scores, families, seeds,
+                              split, epoch=120):
     table = increment_table(
         csv, similarity, index, scores, families=families, seeds=seeds,
         neighbours=15, share=0.8, ratio=2, split=split, epochs=[epoch],
+        entity_column=entity_column,
     )
-    print(f"=== AUC + increment, {split} block, epoch {epoch}, mean over {len(seeds)} seeds ===")
-    per_family = table.groupby("fam")[
-        ["chem", "net", "chem_prot", "net_prot", "increment", "increment_prot"]
-    ].mean()
-    print(per_family.round(3).to_string())
-    print()
+    print_increment_report(table, split, neighbours=15, entity_column=entity_column)
     return table
 
 
-def select_best_epoch(csv, similarity, index, scores, families, seeds):
+def select_best_epoch(csv, similarity, index, entity_column, scores, families, seeds):
     """The single saved epoch with the best mean in-protein AUC, VALID split only.
 
     "Best" is judged the way the rest of this file already reports: net_prot averaged
@@ -98,6 +99,7 @@ def select_best_epoch(csv, similarity, index, scores, families, seeds):
         table = increment_table(
             csv, similarity, index, scores, families=families, seeds=seeds,
             neighbours=15, share=0.8, ratio=2, split="valid", epochs=[epoch],
+            entity_column=entity_column,
         )
         per_family_mean = table.groupby("fam")["net_prot"].mean()
         scored[epoch] = float(per_family_mean.mean())
@@ -108,14 +110,16 @@ def select_best_epoch(csv, similarity, index, scores, families, seeds):
     return best_epoch
 
 
-def scp2_epoch_trajectory(csv, similarity, index, scores, seeds):
+def scp2_epoch_trajectory(csv, similarity, index, entity_column, scores, seeds):
     table = increment_table(
         csv, similarity, index, scores, families=["scp2"], seeds=seeds,
         neighbours=15, share=0.8, ratio=2, split="valid", epochs=None,
+        entity_column=entity_column,
     )
     table_test = increment_table(
         csv, similarity, index, scores, families=["scp2"], seeds=seeds,
         neighbours=15, share=0.8, ratio=2, split="test", epochs=None,
+        entity_column=entity_column,
     )
     print("=== scp2 net_prot - chem_prot, every saved epoch, every seed (tab:scp2epochs) ===")
     for name, tbl in (("valid", table), ("test", table_test)):
@@ -159,6 +163,19 @@ def main():
         "valid in-protein AUC across every excluded group and seed, instead of the fixed "
         "epoch 120 -- see select_best_epoch. Never looks at test to choose it.",
     )
+    parser.add_argument(
+        "--features", default=None,
+        help=(
+            "Default: --good_descriptors/--bad_descriptors read off --label's own args "
+            "file (see analysis.checkpoint_scores.label_descriptor_features), so the null "
+            f'model runs on exactly the descriptor set the network was trained to see -- '
+            f'falling back to "{TANIMOTO}" (this file\'s original, unconditional default) '
+            "when the label sets neither flag. Pass an explicit comma-separated "
+            "descriptor-name list, or \"tanimoto\", to override -- see null_model.py "
+            "--features."
+        ),
+    )
+    parser.add_argument("--features-label", help="short name for --features, see null_model.py --label")
     args = parser.parse_args()
 
     families = [f for f in args.families.split(",") if f]
@@ -166,8 +183,19 @@ def main():
 
     ba_table(args.metrics_csv, args.label, families, seeds)
 
+    features, features_label = args.features, args.features_label
+    if features is None:
+        features = label_descriptor_features(args.label, families)
+        if features:
+            features_label = features_label or "label_descriptors"
+        else:
+            features = TANIMOTO
+            features_label = features_label or TANIMOTO
+
     csv = pd.read_csv(interaction_csv_path(os.path.join(PROJECT_ROOT, "data") + os.sep))
-    similarity, index = species_similarity(csv, os.path.join(PROJECT_ROOT, "data"))
+    similarity, index, entity_column, _, _ = resolve_similarity(
+        csv, os.path.join(PROJECT_ROOT, "data"), features, features_label,
+    )
 
     if args.scores:
         scores = pd.read_csv(args.scores)
@@ -192,12 +220,16 @@ def main():
 
     epoch = 120
     if args.by_best_checkpoint:
-        epoch = select_best_epoch(csv, similarity, index, scores, families, seeds)
+        epoch = select_best_epoch(csv, similarity, index, entity_column, scores, families, seeds)
 
-    auc_and_increment_tables(csv, similarity, index, scores, families, seeds, "valid", epoch)
-    auc_and_increment_tables(csv, similarity, index, scores, families, seeds, "test", epoch)
+    auc_and_increment_tables(
+        csv, similarity, index, entity_column, scores, families, seeds, "valid", epoch
+    )
+    auc_and_increment_tables(
+        csv, similarity, index, entity_column, scores, families, seeds, "test", epoch
+    )
 
-    scp2_epoch_trajectory(csv, similarity, index, scores, seeds)
+    scp2_epoch_trajectory(csv, similarity, index, entity_column, scores, seeds)
 
 
 if __name__ == "__main__":

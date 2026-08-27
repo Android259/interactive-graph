@@ -555,9 +555,21 @@ if (( DO_GRAPHICS || DO_SUMMARIZE )); then
                 "mv '${marker}' '${marker}.claimed' 2>/dev/null && echo yes || echo no"
         )"
         [[ "${claimed}" == "yes" ]] || continue
-        bash "${PROJECT_ROOT}/scripts/lib/generate_label_report.sh" \
-            "${variant}" "${seeds_csv}" "${DO_GRAPHICS}" "${DO_SUMMARIZE}"
-        ssh -S "${SSH_CONTROL_PATH}" "${remote}" "rm -f '${marker}.claimed'" || true
+        # Explicit if/else, not a bare call: this script runs under set -e, and an
+        # unguarded failure here would abort the WHOLE loop -- silently skipping
+        # every remaining label in VARIANTS, not just this one. On failure the
+        # marker is restored (not deleted), so wait_and_sync.sh (or a later
+        # --graphics/--summarize invocation) retries this label instead of its
+        # report being lost with no trace.
+        if bash "${PROJECT_ROOT}/scripts/lib/generate_label_report.sh" \
+            "${variant}" "${seeds_csv}" "${DO_GRAPHICS}" "${DO_SUMMARIZE}"; then
+            ssh -S "${SSH_CONTROL_PATH}" "${remote}" "rm -f '${marker}.claimed'" || true
+        else
+            printf 'generate_label_report.sh failed for %s -- leaving its marker queued for retry.\n' \
+                "${variant}" >&2
+            ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+                "mv '${marker}.claimed' '${marker}' 2>/dev/null" || true
+        fi
     done
 
     exit 0

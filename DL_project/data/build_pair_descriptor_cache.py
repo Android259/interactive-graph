@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Build the shared cache for --pair_descriptors' per-candidate/per-protein values.
+"""Build the shared cache for --pair_descriptors'/--two_pair_descriptors_paths' shared
+per-candidate/per-protein base values (chain/unsaturation/hbond/heavy/tail_count/extent --
+see needs_cache below).
 
 Every training job otherwise runs RDKit over every candidate SMILES in the interaction
 table and re-parses every protein's pocketness.pdb/coarse_graph_nodes.csv itself --
@@ -17,10 +19,12 @@ Usage:
     python3 data/build_pair_descriptor_cache.py [--args_file=PATH] [--force] [--quiet]
 
     --args_file=PATH  Pick whether a cache is needed, and which isomeric variant, from
-                       that run's flags: no --pair_descriptors means no cache is read at
-                       all, and --lipid_isomers selects the isomeric-SMILES variant.
-                       Without this, --pair_descriptors is assumed and the deterministic
-                       (non-isomeric) variant is built.
+                       that run's flags: neither --pair_descriptors nor
+                       --two_pair_descriptors_paths means no cache is read at all (see
+                       dataloader/New_dataloader.py._compute_pair_descriptors, which
+                       reads the cache under either flag), and --lipid_isomers selects
+                       the isomeric-SMILES variant. Without this, --pair_descriptors is
+                       assumed and the deterministic (non-isomeric) variant is built.
     --force           Rebuild even when the cache is already current.
     --quiet           Print nothing when there was nothing to do.
 """
@@ -53,11 +57,22 @@ def flags_in(args_file):
 
 
 def needs_cache(args_file):
-    """(needed, isomeric), from that run's flags, or (True, False) with no args file."""
+    """(needed, isomeric), from that run's flags, or (True, False) with no args file.
+
+    Needed under --pair_descriptors OR --two_pair_descriptors_paths: New_dataloader.
+    _compute_pair_descriptors reads this cache (chain/unsaturation/hbond/heavy/
+    tail_count) whenever either is on, not just the first -- --two_pair_descriptors_
+    paths' --good_descriptors/--bad_descriptors are built from those same base values
+    (dataloader.pair_descriptors.resolve_requested_tokens), so a run of one without the
+    other still pays the ~12s-of-~13.6s RDKit/pocket-parse cost this cache exists to
+    remove, independently in every job sharing a node, if this only checked the flag
+    named in the cache's own docstring.
+    """
     if args_file is None:
         return True, False
     flags = flags_in(args_file)
-    return "--pair_descriptors" in flags, "--lipid_isomers" in flags
+    needed = "--pair_descriptors" in flags or "--two_pair_descriptors_paths" in flags
+    return needed, "--lipid_isomers" in flags
 
 
 def main(argv):
@@ -79,7 +94,10 @@ def main(argv):
     needed, isomeric = needs_cache(args_file)
     if not needed:
         if not quiet:
-            print("pair descriptor cache: not needed (--pair_descriptors is off)")
+            print(
+                "pair descriptor cache: not needed "
+                "(neither --pair_descriptors nor --two_pair_descriptors_paths is on)"
+            )
         return 0
 
     data_dir = PROJECT_ROOT / "data"

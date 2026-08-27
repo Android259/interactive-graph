@@ -75,15 +75,41 @@ def args_file_flags(path):
     unquoted shell expansion, which word-splits it. There is no such expansion
     here, so the split happens explicitly, on the line as a whole, to reach the
     same argv either way.
+
+    A "--flag=value" line whose value continues onto an indented line right
+    after it (e.g. a long --good_descriptors/--bad_descriptors list) is joined
+    back onto that flag first, comma-separated -- same convention and same
+    reason as args_file_lib.sh's own args_file_flag_lines: without it, the
+    continuation line reads here as its own bare, unknown token.
     """
     flags = []
     pattern = re.compile(r'^(--[^=\s]+=)"?([^"]*)"?$')
-    for line in path.read_text().splitlines():
-        if not line.startswith("--"):
-            continue
+
+    def resolve_and_extend(line):
         match = pattern.match(line)
         resolved = match.group(1) + match.group(2) if match else line
         flags.extend(resolved.split())
+
+    pending = None
+    for line in path.read_text().splitlines():
+        if line.startswith("--"):
+            if pending is not None:
+                resolve_and_extend(pending)
+                pending = None
+            if "=" in line:
+                pending = line
+            else:
+                resolve_and_extend(line)
+        elif line[:1] in (" ", "\t") and line.strip() and pending is not None:
+            fragment = line.strip().lstrip(",")
+            if fragment:
+                pending = pending.rstrip(",") + "," + fragment
+        else:
+            if pending is not None:
+                resolve_and_extend(pending)
+                pending = None
+    if pending is not None:
+        resolve_and_extend(pending)
     return flags
 
 

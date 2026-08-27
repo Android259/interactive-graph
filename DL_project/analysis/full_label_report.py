@@ -39,7 +39,12 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from checkpoint_scores import DEFAULT_EPOCHS, arg_lines, score_checkpoints  # noqa: E402
+from checkpoint_scores import (  # noqa: E402
+    DEFAULT_EPOCHS,
+    arg_lines,
+    label_descriptor_features,
+    score_checkpoints,
+)
 from read_configuration import read_configuration  # noqa: E402
 from null_model import (  # noqa: E402
     DEFAULT_FAMILIES,
@@ -50,6 +55,11 @@ from null_model import (  # noqa: E402
 )
 from interaction_increment import increment_table, print_increment_report  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
+
+# Fallback --features when --label's own arg file sets neither --good_descriptors nor
+# --bad_descriptors (most labels, historically): the four lipid-only tokens, unchanged
+# from this file's old hardcoded default -- see checkpoint_scores.label_descriptor_features.
+LIPID_ONLY_FALLBACK = "chain,unsaturation,hbond,heavy"
 
 
 def label_coldsplit_params(label, families):
@@ -128,7 +138,7 @@ def run_report(label, epochs, seeds, families, batch, neighbours, share, ratio, 
             neighbours=neighbours, share=share, ratio=ratio, split=split, epochs=epochs,
             entity_column=entity_column,
         )
-        print_increment_report(increment, split, neighbours)
+        print_increment_report(increment, split, neighbours, entity_column=entity_column)
         increment_tables[split] = increment
 
     return scores, null_tables, increment_tables
@@ -158,13 +168,16 @@ def main():
     )
     parser.add_argument("--out", help="also write the raw per-row scores here")
     parser.add_argument(
-        "--features", default=TANIMOTO,
+        "--features", default=None,
         help=(
-            f'"{TANIMOTO}" (default): full-structure Morgan-fingerprint similarity, '
-            "the original null model. Otherwise a comma-separated descriptor-name "
-            "list -- lipid-only, protein-only, pair, or any combination -- see "
-            "null_model.py --features/dataloader.chemistry_prior."
-            "feature_similarity."
+            f'Default: --good_descriptors/--bad_descriptors read off --label\'s own '
+            f"args file (see label_descriptor_features), so the null model runs on "
+            f"exactly the descriptor set the network was trained to see -- falling "
+            f"back to \"{LIPID_ONLY_FALLBACK}\" when the label sets neither flag. "
+            f'Pass "{TANIMOTO}" for full-structure Morgan-fingerprint similarity (the '
+            "original null model), or any comma-separated descriptor-name list -- "
+            "lipid-only, protein-only, pair, or any combination -- see null_model.py "
+            "--features/dataloader.chemistry_prior.feature_similarity."
         ),
     )
     parser.add_argument(
@@ -191,11 +204,20 @@ def main():
         share = label_share if share is None else share
         ratio = label_ratio if ratio is None else ratio
 
+    features, features_label = args.features, args.features_label
+    if features is None:
+        features = label_descriptor_features(args.label, families)
+        if features:
+            features_label = features_label or "label_descriptors"
+        else:
+            features = LIPID_ONLY_FALLBACK
+            features_label = features_label or "lipid4"
+
     scores = pd.read_csv(args.scores) if args.scores else None
     scores, _, _ = run_report(
         args.label, epochs, seeds, families, args.batch, args.neighbours,
-        share, ratio, splits, scores=scores, features=args.features,
-        features_label=args.features_label, cache=args.cache, zscore=args.zscore,
+        share, ratio, splits, scores=scores, features=features,
+        features_label=features_label, cache=args.cache, zscore=args.zscore,
     )
 
     if args.out:

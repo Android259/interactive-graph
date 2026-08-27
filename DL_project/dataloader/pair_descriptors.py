@@ -345,15 +345,46 @@ def parse_descriptor_list(value):
     return tuple(tokens)
 
 
-def resolve_requested_tokens(good, bad):
-    """--good_descriptors/--bad_descriptors' two raw strings -> the sorted, deduped
-    union of their canonical tokens -- the SAME deterministic column order
-    dataloader/New_dataloader.py's descriptor_catalog_input tensor is stacked in and
-    architecture/named_descriptor_head.py's NamedDescriptorHead instances index into
-    it by. Both sides call this one function against the SAME two config fields, so
-    they always agree without the ordering itself needing to be passed between them.
+def resolve_requested_tokens(*raw_lists):
+    """Any number of --good_descriptors/--bad_descriptors/--descriptor_names-style raw
+    strings -> the sorted, deduped union of their canonical tokens -- the SAME
+    deterministic column order dataloader/New_dataloader.py's descriptor_catalog_input
+    tensor is stacked in and architecture/named_descriptor_head.py's NamedDescriptorHead
+    instances index into it by. Every caller building the SAME descriptor_catalog_input
+    tensor calls this one function against the SAME raw strings -- two, under
+    --two_pair_descriptors_paths' --good_descriptors/--bad_descriptors pair; one, under
+    --descriptors_head's --descriptor_names -- so they always agree without the
+    ordering itself needing to be passed between them.
     """
-    return tuple(sorted(set(parse_descriptor_list(good)) | set(parse_descriptor_list(bad))))
+    union = set()
+    for raw in raw_lists:
+        union |= set(parse_descriptor_list(raw))
+    return tuple(sorted(union))
+
+
+def resolve_similarity_feature_names(*raw_lists):
+    """Any number of --good_descriptors/--bad_descriptors/--descriptor_names-style raw
+    strings -> the sorted, deduped union of their BASE names, with any coarse-
+    bucketing spec dropped.
+
+    A different projection of the same raw strings resolve_requested_tokens reads:
+    that one keeps the coarse spec (canonical_descriptor_token) because it names the
+    column NamedDescriptorHead indexes into. This one exists for analysis/
+    null_model.py's --features / dataloader.chemistry_prior.feature_similarity,
+    which knows only DESCRIPTOR_CATALOG's plain names -- the kNN null model has no
+    notion of the head's own bucketing -- so a config's trained descriptor set can be
+    handed to the null model as its --features without translating the coarse suffix
+    by hand.
+    """
+    names = set()
+    for value in raw_lists:
+        for raw in value.split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            name, _ = parse_descriptor_token(raw)
+            names.add(name)
+    return tuple(sorted(names))
 
 
 def coarse_share(value):

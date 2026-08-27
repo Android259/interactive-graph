@@ -34,9 +34,12 @@ resolve_args_file() {
     return 1
 }
 
-# The "--" lines of a config, one per line. Everything else in the file is
-# commentary and is ignored, which is what lets a config carry its own rationale
-# above the flags.
+# The "--" lines of a config, one per line, with a long value allowed to wrap:
+# a line indented with leading whitespace right after a "--flag=value" line is
+# joined onto it (comma-separated, so a --x=a,b, / c,d pair of lines becomes
+# --x=a,b,c,d whether or not the break itself carries a comma). Any other line
+# -- unindented, or indented with no flag currently open -- is commentary and is
+# ignored, which is what lets a config carry its own rationale above the flags.
 #
 # Quotes around a value are stripped. Bash does not re-interpret quote characters
 # that come out of a variable, so --pool_type="gem" would otherwise reach
@@ -47,7 +50,38 @@ resolve_args_file() {
 # two. The one case this could not survive is a quoted value containing a space,
 # and no config has one.
 args_file_flag_lines() {
-    grep '^--' "$1" | sed -E 's/^(--[^=]+=)"?([^"]*)"?$/\1\2/'
+    awk '
+        function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+        {
+            line = $0
+            if (line ~ /^--/) {
+                if (havePending) { print pending }
+                eq = index(line, "=")
+                if (eq > 0) {
+                    name = substr(line, 1, eq)
+                    val = substr(line, eq + 1)
+                    sub(/^"/, "", val)
+                    sub(/"$/, "", val)
+                    pending = name val
+                    havePending = 1
+                } else {
+                    print line
+                    havePending = 0
+                }
+            } else if (havePending && line ~ /^[ \t]+[^ \t]/) {
+                frag = trim(line)
+                if (frag != "") {
+                    sub(/,+$/, "", pending)
+                    sub(/^,+/, "", frag)
+                    pending = pending "," frag
+                }
+            } else {
+                if (havePending) { print pending }
+                havePending = 0
+            }
+        }
+        END { if (havePending) print pending }
+    ' "$1"
 }
 
 # The same flags as one line, ready to be word-split into python's argv.
