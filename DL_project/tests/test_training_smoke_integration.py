@@ -114,6 +114,13 @@ def synthetic_forward_args(config):
             and getattr(config, "pair_descriptor_pocket_shares", True)
         )
         args["pair_descriptor_input"] = torch.randn(2, base_width + (2 if split else 0))
+    if getattr(config, "two_pair_descriptors_paths", False):
+        from dataloader.pair_descriptors import resolve_requested_tokens
+
+        width = len(
+            resolve_requested_tokens(config.good_descriptors, config.bad_descriptors)
+        )
+        args["descriptor_catalog_input"] = torch.randn(2, width)
 
     return args
 
@@ -205,6 +212,54 @@ def test_fast_attention_builds_two_reused_layouts_and_skips_global_masks(monkeyp
 
     assert len(layouts) == 2
     assert all(mask is None for mask in seen_masks.values())
+    assert any(parameter.grad is not None for parameter in model.parameters())
+
+
+def test_fast_attention_with_mlp_in_place_of_sa_builds_no_layouts_and_real_masks(
+    monkeypatch,
+):
+    # --mlp_in_place_of_sa forces can_use_grouped_attention False everywhere (its
+    # substitute has no in_proj_weight/out_proj for the grouped path to reach into),
+    # so under --fast_attention too, interaction_classification.py must fall back to
+    # building real -inf masks (not None, unlike the plain --fast_attention test just
+    # above) -- ProteinSelfAttention/SelfAttention's fallback branch needs one, even
+    # though the substitute itself ignores it.
+    config = make_config(lipid_self_attention=True)
+    config.fast_attention = True
+    config.mlp_in_place_of_sa = True
+    config.cross_attention = True
+    config.validate()
+    model = InteractionClassification(config)
+    args = synthetic_forward_args(config)
+
+    import architecture.interaction_classification as interaction_module
+
+    layouts = []
+    original_make_layout = interaction_module.make_grouped_attention_layout
+
+    def record_layout(batch, num_graphs=None):
+        layout = original_make_layout(batch, num_graphs)
+        layouts.append(layout)
+        return layout
+
+    monkeypatch.setattr(
+        interaction_module, "make_grouped_attention_layout", record_layout
+    )
+
+    seen_masks = {}
+    original_protein_forward = model.protein1.forward
+
+    def protein_forward(*call_args, **kwargs):
+        seen_masks["protein_self"] = call_args[7]
+        return original_protein_forward(*call_args, **kwargs)
+
+    monkeypatch.setattr(model.protein1, "forward", protein_forward)
+
+    output = model(**args)
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+
+    assert len(layouts) == 0
+    assert seen_masks["protein_self"] is not None
     assert any(parameter.grad is not None for parameter in model.parameters())
 
 
@@ -764,6 +819,175 @@ def test_descriptors_head_builds_no_encoder_or_cross_attention_modules():
         if parameter.requires_grad and parameter.grad is None
     ]
     assert unused == []
+
+
+def test_two_pair_descriptors_paths_builds_no_encoder_or_cross_attention_modules():
+    config = make_config()
+    config.two_pair_descriptors_paths = True
+    config.good_descriptors = "chain,extent,polar_share"
+    config.bad_descriptors = "pocket_extent,heavy"
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert not hasattr(model, "lipid1")
+    assert not hasattr(model, "protein1")
+    assert not hasattr(model, "cross_attention1")
+    assert hasattr(model.final_layer, "good_descriptor_head")
+    assert hasattr(model.final_layer, "bad_descriptor_head")
+    assert model.final_layer.good_descriptor_head.token_names == ("chain", "extent", "polar_share")
+    assert model.final_layer.bad_descriptor_head.token_names == ("pocket_extent", "heavy")
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in model.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_two_pair_descriptors_paths_wires_coarse_tokens_correctly():
+    # good/bad_descriptors' <name>_coarse=<spec> tokens (dataloader.pair_descriptors.
+    # parse_descriptor_token) must reach NamedDescriptorHead as CANONICAL tokens and
+    # index into the SAME shared column order on both sides -- this pins that wiring
+    # (not the coarsening arithmetic itself, which dataloader/New_dataloader.py owns
+    # and this synthetic-tensor harness bypasses; that path is exercised separately
+    # against real data).
+    config = make_config()
+    config.two_pair_descriptors_paths = True
+    config.good_descriptors = "chain,aromatic_share_coarse=5"
+    config.bad_descriptors = "pocket_extent_coarse=quantiles,heavy_coarse=quantiles:3"
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert model.final_layer.good_descriptor_head.token_names == (
+        "chain", "aromatic_share_coarse=5",
+    )
+    # heavy_coarse=quantiles:3 canonicalises identically to pocket_extent_coarse=
+    # quantiles (both default to DEFAULT_QUANTILE_BINS=3) -- pinning the exact
+    # string confirms the two heads and the shared catalog_order all agree on it.
+    assert model.final_layer.bad_descriptor_head.token_names == (
+        "pocket_extent_coarse=quantiles:3", "heavy_coarse=quantiles:3",
+    )
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in model.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+@pytest.mark.parametrize("pool_type", ["mean", "max", "add_max", "gem"])
+def test_two_pair_descriptors_paths_trains_under_every_pool_type(pool_type):
+    config = make_config()
+    config.pool_type = pool_type
+    config.two_pair_descriptors_paths = True
+    config.good_descriptors = "chain,extent"
+    config.bad_descriptors = "pocket_extent,heavy"
+    config.validate()
+
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in model.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_two_pair_descriptors_paths_rejects_unknown_descriptor_name():
+    config = make_config()
+    config.two_pair_descriptors_paths = True
+    config.good_descriptors = "not_a_real_descriptor"
+    config.bad_descriptors = "heavy"
+    with pytest.raises(ValueError, match="Unknown descriptor"):
+        InteractionClassification(config)
+
+
+def test_two_pair_descriptors_paths_requires_both_lists():
+    config = make_config()
+    config.two_pair_descriptors_paths = True
+    config.good_descriptors = "chain"
+    with pytest.raises(ValueError, match="good_descriptors"):
+        config.validate()
+
+
+def test_two_pair_descriptors_paths_conflicts_with_descriptors_head():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.descriptors_head = True
+    config.two_pair_descriptors_paths = True
+    config.good_descriptors = "chain"
+    config.bad_descriptors = "heavy"
+    with pytest.raises(ValueError, match="two_pair_descriptors_paths and descriptors_head"):
+        config.validate()
+
+
+def test_mlp_in_place_of_sa_replaces_self_attention_and_still_trains():
+    config = make_config(lipid_self_attention=True)
+    config.mlp_in_place_of_sa = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert not isinstance(
+        model.protein1.attention.self_attention, torch.nn.MultiheadAttention
+    )
+    assert not isinstance(
+        model.lipid1.attention.self_attention, torch.nn.MultiheadAttention
+    )
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_mlp_in_place_of_sa_does_not_leave_pocket_attention_bias_ungradiented():
+    # Regression test: prot_attention_pos_bias defaults True, so pocket_attention_bias
+    # (architecture/self_attention.py) is built by default -- but AttentionMLPSubstitute
+    # never reads the attn_mask it would be folded into, so building it under
+    # --mlp_in_place_of_sa left it permanently without a gradient (the exact failure
+    # test_active_configuration_has_no_parameters_without_gradients exists to catch,
+    # just never parametrized with this flag).
+    config = make_config()
+    config.mlp_in_place_of_sa = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert not hasattr(model.protein1.attention, "pocket_attention_bias")
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in model.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_mlp_in_place_of_sa_replaces_descriptor_head_attention():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.descriptors_head = True
+    config.mlp_in_place_of_sa = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert not isinstance(
+        model.final_layer.pair_descriptor_head.attention, torch.nn.MultiheadAttention
+    )
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
 
 
 def test_pair_descriptor_pocket_shares_can_be_dropped():

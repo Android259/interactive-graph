@@ -222,5 +222,14 @@ def can_use_grouped_attention(config, batch):
     ``lipid_fragments_mask`` narrows attention to a fragment rather than a whole graph,
     so its blocks are not the ``batch`` partition this path pads by; those call sites
     keep the default path.
+
+    --mlp_in_place_of_sa also keeps the default path: this fast path reaches directly
+    into the caller's nn.MultiheadAttention (in_proj_weight/out_proj -- see this
+    module's own docstring), which mlp_utils.AttentionMLPSubstitute does not have,
+    so it must go through the ordinary (query, key, value)-call fallback instead.
     """
-    return getattr(config, "fast_attention", False) and batch is not None
+    return (
+        getattr(config, "fast_attention", False)
+        and batch is not None
+        and not getattr(config, "mlp_in_place_of_sa", False)
+    )

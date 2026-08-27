@@ -118,7 +118,7 @@ AUC отложенного блока — это доля пар «одна по
 
 ### 3.3 Что показало измерение: гипотеза опровергнута
 
-`per_protein_auc` в [chemistry_null_model.py](../analysis/chemistry_null_model.py) считает
+`per_protein_auc` в [null_model.py](../analysis/null_model.py) считает
 обе величины на **тех же самых строках** — скрипт сверяет совпадение `pair_id` со строками,
 которые оценивала сеть, и падает, если они разошлись. Базовый прогон, эпоха 120, валидация,
 k = 15, 155 белко-блоков на 14 разрезах:
@@ -408,7 +408,7 @@ family-DANN в этом проекте: адверсарий доказывае�
 уже отменил часть плана — это норма, а не сбой.
 
 **6.1 Внутрибелковый AUC нуль-модели. ✅ Сделано в этой сессии.** `per_protein_auc` добавлен
-в [chemistry_null_model.py](../analysis/chemistry_null_model.py), считается на строках,
+в [null_model.py](../analysis/null_model.py), считается на строках,
 сверенных по `pair_id`. Результат в 3.3: гипотеза опровергнута, и заодно выяснилось, что
 из трёх «работающих» семейств взаимодействие показывает одно. **Отменяет** ожидание, что
 4.2 сам по себе что-то поднимет: оптимизировать внутрибелковый порядок можно, но сеть и
@@ -445,11 +445,11 @@ train. Нужен новый хук (сейчас адверсарий чита�
 
 ```bash
 # AUC чекпойнтов rank/swe на тех же строках, что видит модель, плюс приращение над химией
-# -- три команды (checkpoint_scores, chemistry_null_model, interaction_increment) одним запуском
+# -- три команды (checkpoint_scores, null_model, interaction_increment) одним запуском
 scripts/env.sh python3 analysis/full_label_report.py --label <label> --split valid
 # по отдельности, если нужен только один из трёх шагов:
 scripts/env.sh python3 analysis/checkpoint_scores.py --label <label> --epochs=120 --out scores.csv
-scripts/env.sh python3 analysis/chemistry_null_model.py --scores scores.csv --epoch 120 --split valid
+scripts/env.sh python3 analysis/null_model.py --scores scores.csv --epoch 120 --split valid
 
 # потолок белковой оси и сравнение представлений
 scripts/env.sh python3 preprocessing/protein_representation_identity_check.py

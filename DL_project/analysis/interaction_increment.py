@@ -39,7 +39,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
-from analysis.chemistry_null_model import (  # noqa: E402
+from analysis.null_model import (  # noqa: E402
     DEFAULT_FAMILIES,
     WORKING,
     auc,
@@ -82,15 +82,18 @@ def logistic_auc(design, labels, groups=None, steps=400, learning_rate=0.5):
 
 
 def increment_table(csv, similarity, index, network, families, seeds, neighbours,
-                     share=0.7, ratio=2, split="valid", epochs=None):
+                     share=0.7, ratio=2, split="valid", epochs=None,
+                     entity_column="FullIdentityOfLipid"):
     """One row per (family, seed, epoch): the increment measurement.
 
     `network` is the RAW (unfiltered) scores DataFrame from
     analysis/checkpoint_scores.py; filtered here by `split`, matching
-    null_model_table's contract in analysis/chemistry_null_model.py. `epochs=None`
-    means every epoch present in `network`. Returns the table main() used to print --
-    factored out so analysis/full_label_report.py can build it without a --scores
-    CSV round-trip.
+    null_model_table's contract in analysis/null_model.py. `epochs=None`
+    means every epoch present in `network`. `entity_column` must match whatever
+    `similarity`/`index` are keyed by -- see
+    dataloader.chemistry_prior.feature_similarity/null_model.
+    resolve_similarity. Returns the table main() used to print -- factored out so
+    analysis/full_label_report.py can build it without a --scores CSV round-trip.
     """
     network = network[network["split"] == split]
     if epochs is None:
@@ -104,7 +107,7 @@ def increment_table(csv, similarity, index, network, families, seeds, neighbours
             train, valid, test = split_func(csvt, family, seed, held_classes, double=True)
             block = valid if split == "valid" else test
             chemistry = null_scores(
-                train, block["FullIdentityOfLipid"], similarity, index, neighbours
+                train, block[entity_column], similarity, index, neighbours, entity_column
             )
             for epoch in epochs:
                 mine = network[
@@ -191,7 +194,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scores", required=True, help="CSV from analysis/checkpoint_scores.py")
     parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
-    parser.add_argument("--seeds", default="0,1")
+    parser.add_argument("--seeds", default="0,1,2,3,4")
     parser.add_argument("--neighbours", type=int, default=15)
     parser.add_argument("--share", type=float, default=0.7)
     parser.add_argument("--ratio", type=int, default=2)

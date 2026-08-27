@@ -74,55 +74,6 @@ def candidates_for_row(row):
     return []
 
 
-def longest_acyl_chain(smiles):
-    """Carbons in the longest unbranched aliphatic run of a molecule.
-
-    The lipid's tail is what a cavity has to accommodate lengthwise, so the measure is
-    the longest path through non-aromatic, non-ring carbons -- head groups, rings and
-    sugars drop out by construction. Returns None for anything RDKit cannot parse.
-    """
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    carbons = [
-        atom.GetIdx() for atom in mol.GetAtoms()
-        if atom.GetSymbol() == "C" and not atom.GetIsAromatic() and not atom.IsInRing()
-    ]
-    if not carbons:
-        return None
-    index = {atom: position for position, atom in enumerate(carbons)}
-    neighbours = {position: [] for position in index.values()}
-    for bond in mol.GetBonds():
-        a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-        if a in index and b in index:
-            neighbours[index[a]].append(index[b])
-            neighbours[index[b]].append(index[a])
-
-    # Longest shortest-path in each connected component: on a chain that is its length,
-    # and a double breadth-first search finds it without enumerating paths.
-    def farthest(start):
-        seen = {start: 0}
-        queue = [start]
-        while queue:
-            node = queue.pop(0)
-            for neighbour in neighbours[node]:
-                if neighbour not in seen:
-                    seen[neighbour] = seen[node] + 1
-                    queue.append(neighbour)
-        end = max(seen, key=seen.get)
-        return end, seen[end], set(seen)
-
-    longest = 0
-    unvisited = set(neighbours)
-    while unvisited:
-        start = next(iter(unvisited))
-        end, _, component = farthest(start)
-        _, distance, _ = farthest(end)
-        longest = max(longest, distance + 1)
-        unvisited -= component
-    return longest
-
-
 def chain_lengths_by_species(csv):
     """Longest acyl chain of EVERY candidate structure, per FullIdentityOfLipid.
 
@@ -141,6 +92,13 @@ def chain_lengths_by_species(csv):
     carbon at all, and a species with no usable candidate gets a single NaN -- the caller
     decides how to fill that in (see raw_compatibility_matrix).
     """
+    # Local import: dataloader/pair_descriptors.py (longest_acyl_chain's home, see
+    # that module's LIPID_DESCRIPTOR_NAMES) imports candidates_for_row from THIS
+    # module at its own top level, so importing pair_descriptors here at module load
+    # time would cycle -- deferred to call time, by when both modules are already
+    # fully loaded either way round.
+    from dataloader.pair_descriptors import longest_acyl_chain
+
     lengths = {}
     for species, rows in csv.groupby("FullIdentityOfLipid"):
         candidates = []
@@ -200,6 +158,8 @@ def chain_lengths_by_row(csv, isomeric=False, cache=None):
     candidate or it has no qualifying carbon, and a row with no usable candidate gets
     [None].
     """
+    from dataloader.pair_descriptors import longest_acyl_chain  # see chain_lengths_by_species
+
     raw_to_canonical = cache["raw_to_canonical"] if cache else {}
     cached_values = cache["values"] if cache else {}
     by_field = {}
@@ -411,9 +371,21 @@ def coarsen_to_levels(values, edges):
         0.5 * (edges[i] + edges[i + 1]) for i in range(len(edges) - 1)
     ])
     # The outer bands are half-open, so their midpoints would be infinite; the nearest
-    # finite cut is the honest stand-in and keeps the levels monotone.
-    centres[0] = edges[1]
-    centres[-1] = edges[-2]
+    # finite cut is the honest stand-in and keeps the levels monotone. With exactly 2
+    # bands (3 edges) that "nearest finite cut" is the SAME single interior edge for
+    # both bands -- centres[0] and centres[-1] would collapse onto one number, making
+    # the two bands indistinguishable as a feature (verified directly: a 2-band call
+    # returned one repeated value for every input). Falling back to the values' own
+    # spread keeps the two bands apart without touching the >= 3-band case at all,
+    # where centres[0] != centres[-1] already.
+    if len(edges) == 3:
+        spread = float(numpy.std(values)) if len(values) else 1.0
+        spread = spread if spread > 1e-9 else 1.0
+        centres[0] = edges[1] - 0.5 * spread
+        centres[-1] = edges[1] + 0.5 * spread
+    else:
+        centres[0] = edges[1]
+        centres[-1] = edges[-2]
     return centres[which]
 
 

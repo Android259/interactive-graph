@@ -237,7 +237,7 @@ have their lipid in train`. Лазейка раздела 2 закрыта.
 (Morgan-фингерпринты, те же артефакты `data/Tanimoto_compact_isomeric_*`, что использует
 `--tanimoto_weight`) с любым липидом, который положителен где-нибудь в train, и это
 усредняется по блоку. Считает
-[analysis/chemistry_null_model.py](../analysis/chemistry_null_model.py) на тех же самых
+[analysis/null_model.py](../analysis/null_model.py) на тех же самых
 строках, которые видит модель — на прореженном и сбалансированном пуле, а не на полной
 таблице.
 
@@ -339,7 +339,7 @@ AUC валидационного блока, последняя эпоха (120)
 разными белками на порядок больше, чем внутри одного, поэтому пулированный AUC отвечает
 в основном на первый вопрос. Честная проверка — тот же AUC, посчитанный **внутри каждого
 белка** и усреднённый по белкам (`per_protein_auc` в
-[chemistry_null_model.py](../analysis/chemistry_null_model.py), 155 белко-блоков на 14
+[null_model.py](../analysis/null_model.py), 155 белко-блоков на 14
 разрезах, те же строки, сверенные по `pair_id`):
 
 | | сеть, пул | сеть, внутри белка | химия, пул | химия, внутри белка |
@@ -476,7 +476,7 @@ python3 preprocessing/lipid_class_holdout.py
 python3 analysis/checkpoint_scores.py --label <label> --out /tmp/scores.csv
 
 # химическая нуль-модель, и AUC сети на тех же строках рядом с ней (пул И внутри белка)
-python3 analysis/chemistry_null_model.py --scores /tmp/scores.csv --epoch 120 --split valid
+python3 analysis/null_model.py --scores /tmp/scores.csv --epoch 120 --split valid
 
 # приращение сети над химией, верхняя граница по внутриблочной подгонке (раздел 8.3)
 python3 analysis/interaction_increment.py --scores /tmp/scores.csv --split valid
@@ -491,7 +491,7 @@ python3 analysis/full_label_report.py --label <label> --split valid
 | он же по всем семействам и сэмплерам | [preprocessing/lipid_marginal_baseline.py](../preprocessing/lipid_marginal_baseline.py) |
 | подбор классов для двустороннего разреза | [preprocessing/lipid_class_holdout.py](../preprocessing/lipid_class_holdout.py) |
 | построчные оценки чекпойнтов | [analysis/checkpoint_scores.py](../analysis/checkpoint_scores.py) |
-| химическая близость, нуль-модель, AUC пул и внутри белка | [analysis/chemistry_null_model.py](../analysis/chemistry_null_model.py) |
+| химическая близость, нуль-модель, AUC пул и внутри белка | [analysis/null_model.py](../analysis/null_model.py) |
 | приращение сети над химией (раздел 8.3) | [analysis/interaction_increment.py](../analysis/interaction_increment.py) |
 | все три пункта выше на одном label, один запуск | [analysis/full_label_report.py](../analysis/full_label_report.py) |
 | динамика по эпохам, абляции ветвей | `--save_dynamics` в [training/new_train.py](../training/new_train.py) |
@@ -528,7 +528,7 @@ Ranking, Rendle et al. 2009), и **AUC — это ровно доля таких
 то есть потеря оптимизирует ту же метрику, которую раздел 8 использует для сравнения с
 нуль-моделью. Пары берутся внутри батча независимо от белка (`protein_id` не тянется в
 обучающий батч, см. `New_dataloader.__iter__`), поэтому оптимизируется пул-версия AUC —
-та же, что считает [analysis/chemistry_null_model.py](../analysis/chemistry_null_model.py).
+та же, что считает [analysis/null_model.py](../analysis/null_model.py).
 Побочный эффект: дисбаланс классов перестаёт быть проблемой — в каждой паре ровно один
 положительный и один отрицательный, так что `--class_weights`, `--focal_loss` и
 `--logit_adjustment` этим путём не читаются вовсе.

@@ -56,7 +56,7 @@ sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
-from analysis.chemistry_null_model import (  # noqa: E402
+from analysis.null_model import (  # noqa: E402
     DEFAULT_FAMILIES,
     WORKING,
     auc,

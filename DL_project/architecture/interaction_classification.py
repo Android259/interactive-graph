@@ -26,11 +26,12 @@ class InteractionClassification(torch.nn.Module):
         config.validate()
         self.config = config
 
-        if not self.config.descriptors_head:
-            # --descriptors_head (training/read_configuration.py) is a sufficiency
-            # test for --pair_descriptors alone: none of the usual encoder/attention
-            # modules are built, and forward() below never reaches the code that would
-            # use them.
+        if not (self.config.descriptors_head or self.config.two_pair_descriptors_paths):
+            # --descriptors_head and --two_pair_descriptors_paths (training/
+            # read_configuration.py) are both sufficiency tests -- one for
+            # --pair_descriptors alone, one for --good_descriptors/--bad_descriptors --
+            # so neither builds the usual encoder/attention modules, and forward()
+            # below never reaches the code that would use them.
             self.lipid1 = Lipid_encoder(self.config)
             self.protein1 = Protein_encoder(self.config)
             if self.config.cross_attention:
@@ -260,17 +261,19 @@ class InteractionClassification(torch.nn.Module):
         pocket_descriptor=None,
         frozen_prior=None,
         compat_input=None,
-        pair_descriptor_input=None):
+        pair_descriptor_input=None,
+        descriptor_catalog_input=None):
         """Encode a batched protein-lipid input and return binary logits."""
 
-        if config.descriptors_head:
-            # No protein1/lipid1/cross_attention1 exist under this flag (__init__
+        if config.descriptors_head or config.two_pair_descriptors_paths:
+            # No protein1/lipid1/cross_attention1 exist under either flag (__init__
             # above); every other argument here is ignored. Final_Layer.forward()
-            # short-circuits the same way, reading only these two.
+            # short-circuits the same way, reading only what its own branch needs.
             return self.final_layer(
                 None, None, None, None, None,
                 pocket_descriptor=pocket_descriptor,
                 pair_descriptor_input=pair_descriptor_input,
+                descriptor_catalog_input=descriptor_catalog_input,
             )
 
         if config.lipid_fragments_mask:
@@ -280,7 +283,14 @@ class InteractionClassification(torch.nn.Module):
         if self._restricts_any_site():
             self._check_pocket_coverage(prot_batch, pocket_mask)
 
-        if config.fast_attention:
+        # --mlp_in_place_of_sa also forces the ordinary -inf-mask path everywhere
+        # fast_attention would otherwise skip it: can_use_grouped_attention
+        # (architecture/fast_attention.py) never takes the grouped/layout path under
+        # that flag (its substitute has no in_proj_weight/out_proj for it to reach
+        # into), so building layouts and leaving the masks None here -- correct when
+        # the grouped path really runs -- would leave ProteinSelfAttention/
+        # SelfAttention's fallback branch with no mask to build attn_bias from.
+        if config.fast_attention and not getattr(config, "mlp_in_place_of_sa", False):
             num_graphs = int(max(int(prot_batch.max()), int(lip_batch.max()))) + 1
             prot_layout = make_grouped_attention_layout(prot_batch, num_graphs)
             lip_layout = make_grouped_attention_layout(lip_batch, num_graphs)

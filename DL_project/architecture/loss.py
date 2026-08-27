@@ -255,7 +255,7 @@ def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None, protein
     between rows sharing a protein. Then the marginal cannot help: inside one protein
     every row has the same partner, so the only thing left to rank by is the pair. This
     is the quantity files/interaction_signal_plan.md 3 argues the project should be
-    optimising, and analysis/chemistry_null_model.py reports it as `net_AUC_prot`.
+    optimising, and analysis/null_model.py reports it as `net_AUC_prot`.
 
     The cost is pair count. Batches are drawn across proteins, so most of the pair
     matrix is discarded and a batch may contribute very few pairs, or none. Rather than

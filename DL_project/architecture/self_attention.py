@@ -4,14 +4,14 @@ try:
     from .mlp_utils import (
         make_activation, make_dropout, make_extra_hidden_layer, insert_hidden_gate,
         insert_ffn_unit_gate, insert_input_gate, insert_output_gate, mlp_hidden_dims,
-        link_concrete_dropouts,
+        link_concrete_dropouts, make_self_attention,
     )
     from .fast_attention import grouped_attention, can_use_grouped_attention
 except ImportError:
     from mlp_utils import (
         make_activation, make_dropout, make_extra_hidden_layer, insert_hidden_gate,
         insert_ffn_unit_gate, insert_input_gate, insert_output_gate, mlp_hidden_dims,
-        link_concrete_dropouts,
+        link_concrete_dropouts, make_self_attention,
     )
     from fast_attention import grouped_attention, can_use_grouped_attention
 
@@ -22,7 +22,7 @@ class SelfAttention(torch.nn.Module):
         super(SelfAttention, self).__init__()
         self.dim = dim
         self.config = config
-        self.self_attention = torch.nn.MultiheadAttention(dim, self.config.HEADS)
+        self.self_attention = make_self_attention(dim, self.config.HEADS, self.config, act_fn)
         if getattr(self.config, "attention_residual_gates", False):
             self.attn_gate = torch.nn.Parameter(torch.zeros(1))
             self.ffn_gate = torch.nn.Parameter(torch.zeros(1))
@@ -107,7 +107,7 @@ class ProteinSelfAttention(torch.nn.Module):
         super(ProteinSelfAttention, self).__init__()
         self.dim = dim
         self.config = config
-        self.self_attention = torch.nn.MultiheadAttention(dim, self.config.HEADS)
+        self.self_attention = make_self_attention(dim, self.config.HEADS, self.config, act_fn)
         self.attention_by_pockets = bool(
             getattr(self.config, "pocket_attention_self", False)
         )
@@ -115,7 +115,15 @@ class ProteinSelfAttention(torch.nn.Module):
         # on them is a constant shift that softmax cancels. Building it anyway would add
         # a parameter that never receives gradient, which inflates number_of_parameters
         # and breaks test_active_configuration_has_no_parameters_without_gradients.
-        if not self.attention_by_pockets and (
+        # Same reasoning under --mlp_in_place_of_sa: self.self_attention is then
+        # mlp_utils.AttentionMLPSubstitute, which never reads its attn_mask argument at
+        # all (there are no attention weights left to bias) -- make_attention_bias/
+        # make_key_bias below check hasattr(self, "pocket_attention_bias") and skip the
+        # (otherwise-discarded) bias term the same way they skip it when pocket_mask
+        # is None.
+        if not self.attention_by_pockets and not getattr(
+            self.config, "mlp_in_place_of_sa", False
+        ) and (
             self.config.prot_attention_pos_bias or self.config.prot_pooling_by_pockets
         ):
             bias_shape = (
@@ -170,7 +178,14 @@ class ProteinSelfAttention(torch.nn.Module):
         pocket_key_mask = pocket_mask.unsqueeze(0).expand_as(attn_mask)
         if self.attention_by_pockets:
             # Forbid every non-pocket key outright instead of preferring pocket ones.
+            # Never reads pocket_attention_bias, so this branch is unaffected by
+            # whether it was built.
             return attention_bias.masked_fill(~pocket_key_mask, float("-inf"))
+        if not hasattr(self, "pocket_attention_bias"):
+            # --mlp_in_place_of_sa: __init__ never builds this parameter (self.
+            # self_attention then ignores this whole bias tensor, so the term below
+            # would never receive a gradient) -- skip it, not just its Parameter.
+            return attention_bias
         pocket_term = (same_batch & pocket_key_mask).to(x.dtype)
         if getattr(self.config, "prot_pos_bias_per_head", False):
             per_head_bias = self.pocket_attention_bias.view(-1, 1, 1)

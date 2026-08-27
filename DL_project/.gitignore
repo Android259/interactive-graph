@@ -38,6 +38,11 @@ data/esm3_checkpoint/
 # demand, meaningless outside the moment it is held.
 *.lock
 
+# analysis/chemistry_null_model.py's persisted null-model results (--label), rebuilt
+# on demand from data/ -- not source, and would otherwise look like an uncommitted
+# change on every run that adds a new (label, family, seed) entry.
+analysis/.null_model_cache.json
+
 # Generated stores above GitHub's 100 MB per-file limit: pushing them is rejected
 # outright, so they stay local. All are rebuildable from source -- the Tanimoto
 # matrix from preprocessing/build_tanimoto_matrix.py (a compact form is tracked as

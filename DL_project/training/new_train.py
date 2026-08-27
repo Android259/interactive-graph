@@ -786,6 +786,8 @@ def _build_forward_args(prot, lipid):
         forward_args["compat_input"] = prot.compat_input
     if getattr(conf, "pair_descriptors", False):
         forward_args["pair_descriptor_input"] = prot.pair_descriptor_input
+    if getattr(conf, "two_pair_descriptors_paths", False):
+        forward_args["descriptor_catalog_input"] = prot.descriptor_catalog_input
     return forward_args
 
 

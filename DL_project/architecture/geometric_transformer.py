@@ -3,6 +3,11 @@ import math
 import torch
 import torch.nn.functional as F
 
+try:
+    from .mlp_utils import NodeMLPSubstitute
+except ImportError:
+    from mlp_utils import NodeMLPSubstitute
+
 
 class RMSNorm(torch.nn.Module):
     def __init__(self, dim, eps=1e-8):
@@ -230,9 +235,15 @@ class InvariantPointAttention(torch.nn.Module):
 
 
 class ProteinGeometricTransformerBlock(torch.nn.Module):
-    def __init__(self, dim, heads, expansion=2):
+    def __init__(self, dim, heads, expansion=2, config=None, act_fn=None):
         super().__init__()
-        self.self_attention = RoPESelfAttention(dim, heads)
+        # --mlp_in_place_of_sa: config is optional (defaults to the real
+        # RoPESelfAttention) so existing callers that never pass it are unaffected.
+        self.self_attention = (
+            NodeMLPSubstitute(dim, config, act_fn)
+            if config is not None and getattr(config, "mlp_in_place_of_sa", False)
+            else RoPESelfAttention(dim, heads)
+        )
         self.geometric_attention = InvariantPointAttention(dim, heads)
         self.feed_forward = torch.nn.Sequential(
             torch.nn.Linear(dim, expansion * dim),

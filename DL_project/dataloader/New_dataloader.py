@@ -28,7 +28,12 @@ from dataloader.pocket_lipid_compatibility import (
     raw_compatibility,
     raw_compatibility_parts,
 )
-from dataloader.pair_descriptors import as_arrays, descriptor_values_by_row
+from dataloader.pair_descriptors import (
+    as_arrays,
+    chain_length_angstrom,
+    descriptor_values_by_row,
+    resolve_requested_tokens,
+)
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.grab_dataset_graph import GrabDatasetGraphMixin
 from dataloader.lipid_embedding_store import load_lipid_embedding_store
@@ -862,8 +867,32 @@ class PLIDataset(
         Standardised on TRAIN candidates only, same discipline as
         _compute_compatibility_input; missing (RDKit-unparseable) values are filled
         with the train mean, same as _raw_frozen_prior_columns.
+
+        --two_pair_descriptors_paths (training/read_configuration.py, architecture/
+        named_descriptor_head.py) additionally attaches `_descpath_<token>` for every
+        token dataloader.pair_descriptors.resolve_requested_tokens resolves out of
+        --good_descriptors/--bad_descriptors -- NOT the full DESCRIPTOR_CATALOG
+        unconditionally, only whatever those two flags actually name, bare (e.g.
+        "pocket_extent") or coarsened (e.g. "hydropathy_core_coarse=quantiles:5" --
+        see dataloader.pair_descriptors.parse_descriptor_token for the full <name>_
+        coarse=<spec> grammar: N fixed equal-width bins, or N train-fit quantile
+        bins, generalising the "extent" token's own train-fit-quantile coarsening
+        below -- coarsen_to_levels -- to any base name and any bin count). Every
+        base name is its RAW pocket_descriptor()/dataloader.pair_descriptors value
+        unless a request coarsens it -- --good_descriptors/--bad_descriptors decide
+        per name which of raw or coarse (and how coarse) an experiment reads; see
+        ModelConfig.two_pair_descriptors_paths for the leak-safety reasoning. Pair-
+        formula names are computed with dataloader.pair_descriptors.
+        pair_descriptor_value, the identical function analysis/null_model.py's
+        chemistry null model uses, so a name means the same number in both places.
+        Independent of --pair_descriptors (ModelConfig.validate rejects combining
+        the two -- they build different Final_Layer branches), so this runs the
+        shared lipid/extent computation below even when --pair_descriptors itself
+        is off.
         """
-        if not getattr(self.config, "pair_descriptors", False):
+        pair_descriptors_on = getattr(self.config, "pair_descriptors", False)
+        two_paths_on = getattr(self.config, "two_pair_descriptors_paths", False)
+        if not (pair_descriptors_on or two_paths_on):
             return
 
         isomeric = getattr(self.config, "lipid_isomers", False)
@@ -890,10 +919,14 @@ class PLIDataset(
         # --no_pair_descriptor_extent drops only the standalone extent TOKEN below;
         # coarse_extent (right after) still feeds occupancy either way, since occupancy
         # is a pair term (heavy_atom_count vs extent) regardless of whether extent is
-        # also exposed on its own.
-        include_extent = getattr(self.config, "pair_descriptor_extent", True)
+        # also exposed on its own. two_paths_on always wants "extent" available (its
+        # own catalog has no separate on/off flag for one name -- --good_descriptors/
+        # --bad_descriptors simply do or don't name it).
+        include_extent = (
+            pair_descriptors_on and getattr(self.config, "pair_descriptor_extent", True)
+        ) or two_paths_on
 
-        split_pocket_shares = getattr(
+        split_pocket_shares = pair_descriptors_on and getattr(
             self.config, "pair_descriptor_pocket_shares_split", False
         ) and getattr(self.config, "pair_descriptor_pocket_shares", True)
         if split_pocket_shares:
@@ -936,9 +969,18 @@ class PLIDataset(
             edges[0], edges[-1] = -np.inf, np.inf
             edges = np.unique(edges)
         coarse_extent = coarsen_to_levels(extent, edges) if edges is not None else extent
+        # chain_length_angstrom(chain), not cbrt(heavy_atom_count): the latter is a
+        # UNITLESS ~2.6-4.6 number on this project's data, next to coarse_extent's
+        # ~13.6-32.0 angstrom range -- coarse_extent always won, and relu clipped
+        # occupancy to exactly 0.0 on every row (verified directly), a dead token in
+        # every --pair_descriptors run to date. chain_length_angstrom converts the
+        # chain's own carbon count to an estimated angstrom length (Tanford's
+        # extended-chain formula, see dataloader/pair_descriptors.py) so both sides
+        # of the comparison are the same unit. Same fix as dataloader/pair_
+        # descriptors.py's pair_descriptor_value("occupancy") -- kept in sync there.
         occupancy = [
-            np.maximum(np.cbrt(np.maximum(heavy_row, 0.0)) - coarse_extent[position], 0.0)
-            for position, heavy_row in enumerate(heavy)
+            np.maximum(chain_length_angstrom(chain_row) - coarse_extent[position], 0.0)
+            for position, chain_row in enumerate(chain)
         ]
 
         raw = {
@@ -975,12 +1017,157 @@ class PLIDataset(
                 aromatic_share_rim
             )
 
+        # --two_pair_descriptors_paths: resolve exactly the tokens --good_descriptors/
+        # --bad_descriptors actually request (bare base names AND <name>_coarse=<spec>
+        # ones -- dataloader.pair_descriptors.resolve_requested_tokens/
+        # parse_descriptor_token), build raw values only for the BASE names those
+        # tokens reference (not the full catalog unconditionally), then materialise
+        # -- coarsen if requested, then standardise train-only, same discipline as
+        # everywhere else in this function -- exactly those tokens.
+        requested_tokens = ()
+        raw_values = {}  # base_name -> (values, is_ragged)
+        materialised = {}  # canonical token -> (values, is_ragged, mean, spread)
+        if two_paths_on:
+            from dataloader.chemistry_prior import protein_descriptor_table
+            from dataloader.pair_descriptors import (
+                BOUNDED_SHARE_DESCRIPTOR_NAMES,
+                PAIR_DESCRIPTOR_NAMES as _CATALOG_PAIR_NAMES,
+                PROTEIN_DESCRIPTOR_NAMES as _CATALOG_PROTEIN_NAMES,
+                pair_descriptor_value,
+                parse_descriptor_token,
+                resolve_requested_tokens,
+            )
+
+            requested_tokens = resolve_requested_tokens(
+                getattr(self.config, "good_descriptors", ""),
+                getattr(self.config, "bad_descriptors", ""),
+            )
+            base_names_needed = {
+                parse_descriptor_token(token)[0] for token in requested_tokens
+            }
+
+            raw_values["chain"] = (chain, True)
+            raw_values["unsaturation"] = (unsaturation, True)
+            raw_values["hbond"] = (hbond, True)
+            raw_values["heavy"] = (heavy, True)
+            raw_values["extent"] = (coarse_extent, False)
+
+            protein_names_needed = base_names_needed & (
+                set(_CATALOG_PROTEIN_NAMES) | {"polar_share"}
+            )
+            pair_names_needed = base_names_needed & set(_CATALOG_PAIR_NAMES)
+            # tail_count is needed whenever it is named directly OR a pair formula
+            # reads it (tail_elongation_fit) -- pair_descriptor_value's lipid dict
+            # below must carry it unconditionally in that second case even though
+            # nobody asked for the bare "tail_count" token itself.
+            if "tail_count" in base_names_needed or pair_names_needed:
+                tail_count = fill_train_mean(
+                    as_arrays(
+                        descriptor_values_by_row(
+                            csv, "tail_count", isomeric, cache=pair_cache
+                        )
+                    ),
+                    "tail-count",
+                )
+                raw_values["tail_count"] = (tail_count, True)
+
+            if protein_names_needed or pair_names_needed:
+                protein_raw = protein_descriptor_table(self.ROOT_DIR)
+                protein_column = csv["LTPProtein"].to_numpy()
+                for name in protein_names_needed:
+                    raw_values[name] = (
+                        np.array(
+                            [protein_raw[protein][name] for protein in protein_column],
+                            dtype=float,
+                        ),
+                        False,
+                    )
+                for name in pair_names_needed:
+                    values = [
+                        np.array(
+                            [
+                                pair_descriptor_value(
+                                    name,
+                                    {
+                                        "chain": chain_row[candidate],
+                                        "unsaturation": unsaturation[row_position][candidate],
+                                        "hbond": hbond[row_position][candidate],
+                                        "heavy": heavy[row_position][candidate],
+                                        "tail_count": tail_count[row_position][candidate],
+                                    },
+                                    protein_raw[protein_column[row_position]],
+                                )
+                                for candidate in range(len(chain_row))
+                            ],
+                            dtype=float,
+                        )
+                        for row_position, chain_row in enumerate(chain)
+                    ]
+                    raw_values[name] = (values, True)
+
+            def train_flat(values, ragged):
+                if not len(train_rows):
+                    return np.array([0.0])
+                return (
+                    np.concatenate(ragged_rows(values, train_rows)) if ragged
+                    else values[train_rows]
+                )
+
+            def fit_coarse_edges(values, ragged, spec, bounded):
+                flat = train_flat(values, ragged)
+                if spec.mode == "fixed":
+                    if bounded:
+                        lo, hi = 0.0, 1.0
+                    elif len(flat):
+                        lo, hi = float(flat.min()), float(flat.max())
+                    else:
+                        lo, hi = 0.0, 1.0
+                    if hi <= lo:
+                        # Degenerate train spread (e.g. a constant column) -- mirrors
+                        # the spread-floor every stats dict in this function already
+                        # applies, so a single-value column still gets a well-defined,
+                        # if uninformative, set of edges instead of a numpy error.
+                        hi = lo + 1.0
+                    edges = np.linspace(lo, hi, spec.bins + 1)
+                else:
+                    edges = (
+                        np.quantile(flat, np.linspace(0, 1, spec.bins + 1)) if len(flat)
+                        else np.linspace(0.0, 1.0, spec.bins + 1)
+                    )
+                edges = edges.astype(float)
+                edges[0], edges[-1] = -np.inf, np.inf
+                # Ties collapse bands, same as _compute_compatibility_input's own
+                # edges -- compat_extent_bins is an upper bound on levels, not a
+                # promise, for the identical reason.
+                return np.unique(edges)
+
+            for token in requested_tokens:
+                name, spec = parse_descriptor_token(token)
+                values, ragged = raw_values[name]
+                if spec is not None:
+                    edges = fit_coarse_edges(
+                        values, ragged, spec, name in BOUNDED_SHARE_DESCRIPTOR_NAMES
+                    )
+                    values = (
+                        [coarsen_to_levels(row, edges) for row in values] if ragged
+                        else coarsen_to_levels(values, edges)
+                    )
+                flat = train_flat(values, ragged)
+                mean = flat.mean() if len(flat) else 0.0
+                spread = flat.std() if len(flat) else 1.0
+                materialised[token] = (
+                    values, ragged, mean, spread if spread > 1e-12 else 1.0
+                )
+
         def columns(rows):
             names = list(raw) + (["extent"] if include_extent else []) + (
                 ["aromatic_share_core", "aromatic_share_rim"] if split_pocket_shares else []
             )
             if not len(rows):
-                return {f"_pair_desc_{name}": [] for name in names}
+                out = {f"_pair_desc_{name}": [] for name in names}
+                if two_paths_on:
+                    out.update({f"_descpath_{token}": [] for token in requested_tokens})
+                return out
             out = {}
             for name, values in raw.items():
                 mean, spread = stats[name]
@@ -1013,6 +1200,18 @@ class PLIDataset(
                     )
                     for count, row in zip(counts, rows)
                 ])
+            if two_paths_on:
+                for token in requested_tokens:
+                    values, ragged, mean, spread = materialised[token]
+                    if ragged:
+                        out[f"_descpath_{token}"] = candidate_column(
+                            [(row - mean) / spread for row in ragged_rows(values, rows)]
+                        )
+                    else:
+                        out[f"_descpath_{token}"] = candidate_column([
+                            np.full(count, (values[row] - mean) / spread)
+                            for count, row in zip(counts, rows)
+                        ])
             return out
 
         self.csvtrain = self.csvtrain.assign(**columns(train_rows))
@@ -1574,6 +1773,25 @@ class PLIDataset(
             [self.csv[name] for name in pair_descriptor_columns]
             if pair_descriptor_columns else None
         )
+        # --two_pair_descriptors_paths: the wider, arbitrary-name catalog, one column
+        # per token dataloader.pair_descriptors.resolve_requested_tokens resolves out
+        # of --good_descriptors/--bad_descriptors, in THAT (sorted, deduped) order --
+        # architecture/named_descriptor_head.py's NamedDescriptorHead instances call
+        # the SAME function against the SAME two config fields to compute the
+        # identical order independently, so both heads index into this ONE tensor
+        # correctly regardless of how their two name lists overlap.
+        requested_tokens = resolve_requested_tokens(
+            getattr(self.config, "good_descriptors", ""),
+            getattr(self.config, "bad_descriptors", ""),
+        ) if getattr(self.config, "two_pair_descriptors_paths", False) else ()
+        descriptor_catalog_columns = [
+            f"_descpath_{token}" for token in requested_tokens
+            if f"_descpath_{token}" in self.csv.columns
+        ]
+        self._descriptor_catalog_tensor, self._descriptor_catalog_offsets = _ragged_tensor(
+            [self.csv[name] for name in descriptor_catalog_columns]
+            if descriptor_catalog_columns else None
+        )
 
     def _expand_candidate_rows(self, frame):
         """One row per candidate structure, so evaluation can average over the set.
@@ -1833,6 +2051,13 @@ class PLIDataset(
             )
             protein_graph.pair_descriptor_input = (
                 self._pair_descriptor_tensor[position].view(1, -1)
+            )
+        if self._descriptor_catalog_tensor is not None:
+            position = _candidate_position(
+                self._descriptor_catalog_offsets, idx, candidate_index
+            )
+            protein_graph.descriptor_catalog_input = (
+                self._descriptor_catalog_tensor[position].view(1, -1)
             )
         if getattr(self.config, "lipid_graph_isomers", False):
             lipid_graph = self.make_graph_lipid(

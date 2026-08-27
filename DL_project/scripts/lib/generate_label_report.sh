@@ -55,14 +55,40 @@ if (( do_summarize )); then
         # run_report). Everything before the first such line is the narration --
         # cut there instead of embedding it, same "tables, not logs" rule as the
         # summary above.
+        #
+        # Run twice, once per --features set (tanimoto: full molecular structure;
+        # chain,unsaturation,hbond,heavy: the 4 lipid-only pair_descriptor tokens) --
+        # --out/--scores chain the two runs so checkpoint scoring (the expensive
+        # part) happens once, not twice. The null model itself is additionally
+        # cached across labels by --features-label (analysis/null_model.py
+        # CACHE_PATH): every label sharing a --features set and coldsplit params gets
+        # the SAME chemistry null model, so only the first label calling
+        # full_label_report.py for a given (features-label, family, seed, share,
+        # ratio, split) actually recomputes it.
+        scores_tmp="$(mktemp)"
+        trap 'rm -f "${scores_tmp}"' EXIT
         printf '## AUC vs chemistry null model, in-sample increment\n\n'
+        printf '### features = tanimoto (full molecular structure)\n\n'
         if full_report_out=$("${PROJECT_ROOT}/scripts/env.sh" python3 "${PROJECT_ROOT}/analysis/full_label_report.py" \
-                --label "${label}" --seeds="${seeds_csv}" 2>&1); then
+                --label "${label}" --seeds="${seeds_csv}" --features=tanimoto --features-label=tanimoto \
+                --out="${scores_tmp}" 2>&1); then
             printf '```\n'
             printf '%s\n' "${full_report_out}" | sed -n '/^##########/,$p'
-            printf '```\n'
+            printf '```\n\n'
+            printf '### features = lipid4 (chain/unsaturation/hbond/heavy only)\n\n'
+            if full_report_out=$("${PROJECT_ROOT}/scripts/env.sh" python3 "${PROJECT_ROOT}/analysis/full_label_report.py" \
+                    --label "${label}" --seeds="${seeds_csv}" --features=chain,unsaturation,hbond,heavy --features-label=lipid4 \
+                    --scores="${scores_tmp}" 2>&1); then
+                printf '```\n'
+                printf '%s\n' "${full_report_out}" | sed -n '/^##########/,$p'
+                printf '```\n'
+            else
+                printf 'Failed: %s -- rerun for the full output: `python3 analysis/full_label_report.py --label %s --seeds=%s --scores=<checkpoint_scores.py output> --features=chain,unsaturation,hbond,heavy --features-label=lipid4`\n' \
+                    "$(printf '%s\n' "${full_report_out}" | tail -n1)" \
+                    "${label}" "${seeds_csv}"
+            fi
         else
-            printf 'Failed: %s -- rerun for the full output: `python3 analysis/full_label_report.py --label %s --seeds=%s`\n' \
+            printf 'Failed: %s -- rerun for the full output: `python3 analysis/full_label_report.py --label %s --seeds=%s --features=tanimoto --features-label=tanimoto`\n' \
                 "$(printf '%s\n' "${full_report_out}" | tail -n1)" \
                 "${label}" "${seeds_csv}"
         fi

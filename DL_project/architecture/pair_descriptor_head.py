@@ -1,5 +1,10 @@
 import torch
 
+try:
+    from .mlp_utils import make_self_attention
+except ImportError:
+    from mlp_utils import make_self_attention
+
 # Fixed token order: 6 of dataloader/New_dataloader.py's _compute_pair_descriptors
 # columns (chain, unsaturation, hbond, heavy, occupancy, extent -- 5 under
 # --no_pair_descriptor_extent, which drops "extent" alone; occupancy still reads
@@ -49,7 +54,7 @@ class PairDescriptorHead(torch.nn.Module):
     representation.
 
     Token composition -- all three kinds, not lipid chemistry alone (a protein-blind
-    token set here would repeat the exact leak analysis/chemistry_null_model.py
+    token set here would repeat the exact leak analysis/null_model.py
     measures on the main branch, see [[working-triple-explains-protein-wins]] in
     project memory):
 
@@ -103,6 +108,14 @@ class PairDescriptorHead(torch.nn.Module):
         base_tokens = DATALOADER_TOKENS if getattr(
             config, "pair_descriptor_extent", True
         ) else tuple(name for name in DATALOADER_TOKENS if name != "extent")
+        # --no_pair_descriptor_occupancy: drops the one token that is neither
+        # lipid-only nor protein-only. occupancy is always raw column 4 of
+        # pair_descriptor_input regardless of pair_descriptor_extent (chain,
+        # unsaturation, hbond, heavy, occupancy[, extent]) -- forward() below drops
+        # it there by fixed position.
+        self.use_occupancy = getattr(config, "pair_descriptor_occupancy", True)
+        if not self.use_occupancy:
+            base_tokens = tuple(name for name in base_tokens if name != "occupancy")
         # --no_pair_descriptor_pocket_shares (training/read_configuration.py): drops
         # the two pocket_descriptor-derived tokens to test whether they -- rather than
         # real pair signal -- are what LBP_BPI_CETP's above-null-model AUC came from
@@ -142,8 +155,8 @@ class PairDescriptorHead(torch.nn.Module):
         self.token_identity = torch.nn.Parameter(
             torch.randn(self.token_count, self.dim) * (self.dim ** -0.5)
         )
-        self.attention = torch.nn.MultiheadAttention(
-            self.dim, config.HEADS, batch_first=True
+        self.attention = make_self_attention(
+            self.dim, config.HEADS, config, act_fn, batch_first=True
         )
         self.ln1 = torch.nn.LayerNorm(self.dim)
         self.ln2 = torch.nn.LayerNorm(self.dim)
@@ -226,6 +239,10 @@ class PairDescriptorHead(torch.nn.Module):
         Returns [batch, self.output_dim] (hiddim, unless --pair_descriptor_flatten or
         pool_type=="add_max" widen it -- see __init__), one vector per sample.
         """
+        if not self.use_occupancy:
+            pair_descriptor_input = torch.cat(
+                [pair_descriptor_input[:, :4], pair_descriptor_input[:, 5:]], dim=1
+            )
         if self.split_pocket_shares:
             hydropathy = (
                 pocket_descriptor[:, [_HYDROPATHY_CORE_INDEX, _HYDROPATHY_RIM_INDEX]]

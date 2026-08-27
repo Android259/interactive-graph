@@ -35,7 +35,7 @@ sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
 from analysis.checkpoint_scores import DEFAULT_EPOCHS, score_checkpoints  # noqa: E402
-from analysis.chemistry_null_model import DEFAULT_FAMILIES, species_similarity  # noqa: E402
+from analysis.null_model import DEFAULT_FAMILIES, species_similarity  # noqa: E402
 from analysis.interaction_increment import increment_table  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 

@@ -9,6 +9,8 @@ import pandas
 import torch
 from torch_geometric.data import Data
 
+from dataloader.pair_descriptors import PROTEIN_DESCRIPTOR_NAMES as POCKET_DESCRIPTOR_NAMES
+
 MAX_INCIDENT_EDGES = 21
 EDGE_QUANTILES = (0, 10, 25, 50, 75, 90, 100)
 
@@ -32,50 +34,11 @@ KYTE_DOOLITTLE = (
 )
 
 
-# One descriptor of the binding cavity per protein, in this order. Aggregated over the
-# pocket residues of coarse_graph_nodes.csv plus the pocket atom coordinates of
-# pocketness.pdb; ModelConfig.pocket_descriptor_count must equal
-# len(POCKET_DESCRIPTOR_NAMES). Documented in files/pocket_shape_descriptors.md, which
-# is to be updated in the same commit as any change here.
-#
-# The previous set was 13 sums or means over pocket residues and one maximum, which
-# cannot express shape at all: a long narrow channel and a round bowl with the same
-# total surface and the same mean burial produced identical numbers, though they hold
-# different lipids. Three of its entries were also measuring nothing of their own --
-# pocket "volume" is the summed Voronoi cell volume of the LINING RESIDUES, not the
-# cavity, and since a residue's cell varies by only 21% around 198 A^3 the sum tracks
-# the residue count at rho = 0.993; ev56 and the upper half of ev28 saturate at 2.0 for
-# nearly every residue of every protein, so as features they had no variance to give.
-# Measured on 35 proteins against the mean acyl chain length their positives carry,
-# controlling for protein size: volume +0.168 and residue count +0.161 (indistinguishable
-# from each other, as duplicates should be), against pocket_volume_per_sasa -0.475 and
-# pocket_gyration +0.443 from the shape entries below. No run had ever set
-# --pocket_descriptors, so replacing the set costs no comparability.
-POCKET_DESCRIPTOR_NAMES = (
-    # Scale-free size. The raw sizes are deliberately gone: on a cold-family split
-    # protein size stands in for fold, which is the shortcut the split withholds.
-    "pocket_residue_share",
-    "pocket_sasa_share",
-    # Shape. Lining volume over open surface is the closest thing to "how narrow is
-    # it" these columns can express; the rest come from the cavity's own axes.
-    "pocket_volume_per_sasa",
-    "pocket_extent",           # how far the cavity runs, A -- an acyl chain's limit
-    "pocket_elongation",       # tube vs bowl
-    "pocket_flatness",         # slit vs tube
-    # Enclosure and depth as medians rather than means, and the shallow decile of
-    # depth, which measured stronger than either mean it replaces.
-    "ev14_q50",
-    "buriedness_q50",
-    "depth_q10",
-    # Chemistry, split where the two questions differ: head-group recognition happens
-    # at the mouth, chain packing in the depth, and one average of both answers
-    # neither. Aromatics are counted separately because Kyte-Doolittle cannot express
-    # them -- it scores Phe with the aliphatics and Trp near zero.
-    "apolar_sasa_share",
-    "aromatic_share",
-    "hydropathy_core",
-    "hydropathy_rim",
-)
+# POCKET_DESCRIPTOR_NAMES itself now lives in dataloader/pair_descriptors.py
+# (PROTEIN_DESCRIPTOR_NAMES, imported above) so the whole descriptor catalog --
+# lipid, protein, pair -- is named in one file; the VALUES are still computed here,
+# by pocket_descriptor() below, from coarse_graph_nodes.csv plus pocketness.pdb --
+# ModelConfig.pocket_descriptor_count must equal len(POCKET_DESCRIPTOR_NAMES).
 
 # --pocket_descriptors_family_neutral (training/read_configuration.py): the seven
 # POCKET_DESCRIPTOR_NAMES entries whose eta^2 against the 9-family split sits at or
@@ -130,11 +93,18 @@ def pocket_atom_coordinates(pocketness_path):
 def pocket_shape(coordinates):
     """Extent, elongation and flatness of the cavity's atom cloud.
 
-    The three axes are the principal components of the coordinates. What is reported
-    along each is the 5th-to-95th percentile span of the projections rather than
-    min-to-max, so one stray atom at the rim cannot set the length of the cavity, and
-    the ratios are taken between axis LENGTHS (square roots of the eigenvalues) so that
-    "twice as long" reads as 2 rather than 4.
+    The three axes are the principal components of the coordinates (PCA via the
+    covariance matrix's eigenvectors -- only the DIRECTIONS are taken from it).
+    Each axis' own LENGTH is the 5th-to-95th percentile span of the coordinates'
+    projection onto it, not the axis' eigenvalue (or its square root) -- covariance
+    is not robust, so a single stray atom at the cavity's rim can inflate the
+    variance along its own direction by an amount ordinary PCA has no defence
+    against. Percentile-trimming every axis this way, not just the first, closes
+    that: an earlier version measured extent (axis 0's own span) exactly this way
+    already, but took elongation/flatness straight from the eigenvalues, so the same
+    stray atom that could not move extent could still distort the two ratios --
+    verified: the ratio is between LENGTHS, not raw spread, so "twice as long" reads
+    as 2 rather than 4, matching the earlier eigenvalue-ratio's own intent.
 
     Four atoms are the minimum for a covariance worth taking; below that the cavity is
     described by its residue-level entries alone and the shape entries are zeros, which
@@ -145,14 +115,14 @@ def pocket_shape(coordinates):
     centered = coordinates - coordinates.mean(axis=0)
     eigenvalues, eigenvectors = numpy.linalg.eigh(numpy.cov(centered, rowvar=False))
     order = numpy.argsort(eigenvalues)[::-1]
-    eigenvalues = numpy.clip(eigenvalues[order], 1e-9, None)
     eigenvectors = eigenvectors[:, order]
-    projection = centered @ eigenvectors[:, 0]
-    extent = float(
+    spans = numpy.array([
         numpy.percentile(projection, 95) - numpy.percentile(projection, 5)
-    )
-    lengths = numpy.sqrt(eigenvalues)
-    return extent, float(lengths[0] / lengths[1]), float(lengths[1] / lengths[2])
+        for projection in (centered @ eigenvectors).T
+    ])
+    spans = numpy.clip(spans, 1e-9, None)
+    extent = float(spans[0])
+    return extent, float(spans[0] / spans[1]), float(spans[1] / spans[2])
 
 
 def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):

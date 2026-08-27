@@ -205,8 +205,26 @@ run_experiment() {
                     # not left at PyTorch's default (all visible cores): with
                     # `slots` runs sharing the node, an unset thread count would
                     # have every one of them try to use the whole node at once.
+                    #
+                    # --num_workers=0, appended last so it wins over anything an
+                    # arg-file set (read_configuration.py applies flags in order):
+                    # ModelConfig's own default is 4 DataLoader subprocess workers,
+                    # which nothing here overrode before -- fine for one job per
+                    # node, but `slots` runs sharing 192 cores multiplies that by
+                    # PACK_SIZE (up to hundreds of worker processes at once), and
+                    # every one of them competes for the SAME node-wide /dev/shm.
+                    # Measured directly: a 180-size pack hit "DataLoader worker
+                    # killed by signal: Bus error... out of shared memory" and a
+                    # 45-size pack hit "Cannot allocate memory" (system RAM, same
+                    # oversubscription, different resource) this way -- both from
+                    # the default 4. 0 removes the worker subprocesses entirely
+                    # (loading happens in the main process, fully serial) --
+                    # PACK_SIZE runs sharing the node then spawn no extra
+                    # processes at all instead of PACK_SIZE * N, which is the
+                    # only value that guarantees this class of oversubscription
+                    # crash can't recur regardless of PACK_SIZE.
                     OMP_NUM_THREADS="${omp_threads_per_run}" MKL_NUM_THREADS="${omp_threads_per_run}" \
-                    PYTHONUNBUFFERED=1 python ./training/new_train.py "$@" 2>&1 |
+                    PYTHONUNBUFFERED=1 python ./training/new_train.py "$@" --num_workers=0 2>&1 |
                         tee -a "${out_file}" |
                         tee "${log_file}"
                 else

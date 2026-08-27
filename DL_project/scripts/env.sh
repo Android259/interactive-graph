@@ -11,7 +11,7 @@
 #
 # Three ways to use it:
 #
-#     scripts/env.sh python3 analysis/chemistry_null_model.py --split valid
+#     scripts/env.sh python3 analysis/null_model.py --split valid
 #         run one command in the env and exit with its status
 #
 #     source scripts/env.sh

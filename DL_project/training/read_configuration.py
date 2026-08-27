@@ -441,6 +441,19 @@ class ModelConfig:
     # first flagged -- still has no identified channel; lipocalin's is a live
     # candidate. A real run with this flag on is the next measurement either way.
     pair_descriptor_extent: bool = True
+    # --no_pair_descriptor_occupancy: drops "occupancy" (relu(cbrt(heavy_atom_count) -
+    # coarse_extent)) -- the one DATALOADER_TOKENS entry that is neither lipid-only nor
+    # protein-only (it combines both), and the one --no_pair_descriptor_extent's own
+    # docstring notes it does NOT remove ("occupancy is a pair term either way"). With
+    # this flag AND --no_pair_descriptor_extent AND --no_pair_descriptor_pocket_shares
+    # all on, the self-attention head reads exactly the 4 lipid-only tokens (chain,
+    # unsaturation, hbond, heavy) and nothing that depends on the protein at all --
+    # the token-level equivalent of the chemistry-null model's own inputs, letting a
+    # --descriptors_head run be compared against it on genuinely matched information.
+    # occupancy is always raw column 4 of pair_descriptor_input (chain, unsaturation,
+    # hbond, heavy, occupancy[, extent]) regardless of pair_descriptor_extent, so
+    # forward() drops it by fixed position, not by name lookup.
+    pair_descriptor_occupancy: bool = True
     # PairDescriptorHead's own end-of-attention reduction (architecture/
     # pair_descriptor_head.py) is tied to pool_type below, the SAME flag the rest of
     # the model already answers "how to reduce many vectors to one" with -- under
@@ -477,6 +490,45 @@ class ModelConfig:
     # everything that assumes the full architecture's modules is rejected in
     # combination (see validate()) since Final_Layer would not have built them.
     descriptors_head: bool = False
+    # --two_pair_descriptors_paths: a second sufficiency-test mode, sibling to
+    # --descriptors_head rather than a variant of it (mutually exclusive, see
+    # validate()). Instead of one fixed token set (PairDescriptorHead's own
+    # DATALOADER_TOKENS), --good_descriptors and --bad_descriptors each name an
+    # arbitrary, independent, comma-separated subset of the full descriptor catalog
+    # (dataloader/pair_descriptors.py's DESCRIPTOR_CATALOG -- every
+    # pair_descriptors.py name: LIPID_DESCRIPTOR_NAMES, PROTEIN_DESCRIPTOR_NAMES,
+    # PROTEIN_DERIVED_DESCRIPTOR_NAMES, PAIR_DESCRIPTOR_NAMES -- plus "extent",
+    # PairDescriptorHead's own train-fit-coarsened, leak-safe pocket_extent). Each
+    # list builds its OWN NamedDescriptorHead: its own token embeddings, its own
+    # self-attention block, its own pool_type reduction to one vector -- the same
+    # mechanism PairDescriptorHead already uses, just parameterised by name instead of
+    # derived from a fixed set of CLI flags. The two heads' pooled vectors are then
+    # reduced to ONE final vector the same way again (pool_type, over the 2-vector
+    # axis -- see NamedDescriptorHead.forward/_pool_descriptor_heads), before
+    # Final_Layer's small classifier, exactly as under --descriptors_head (no pooling,
+    # bilinear, adversary, DANN or chem-prior machinery -- see validate()).
+    #
+    # Deliberately allows naming RAW, uncoarsened protein pocket-shape scalars
+    # (pocket_extent, pocket_elongation, pocket_flatness, buriedness_q50, depth_q10,
+    # pocket_volume_per_sasa, ev14_q50, hydropathy_core, hydropathy_rim) alongside the
+    # leak-safe "extent" token PairDescriptorHead already uses. Unlike pocket_extent
+    # (whose raw form re-identifies the held-out protein, eta^2 0.78, files/
+    # compat_input_audit.md -- exactly why "extent" is coarsened in the first place),
+    # none of the OTHER raw protein scalars has ever been checked for the same risk,
+    # so naming one is an explicit, opt-in probe of it, not a vetted-safe default --
+    # see project memory [[descriptors-path-fingerprint-leak]]. Nothing here enforces
+    # which name goes in --good_descriptors vs --bad_descriptors; the split is by
+    # convention (which list an experiment puts a name in), not by validation --
+    # --good_descriptors is meant for the leak-audited names ("extent" rather than
+    # "pocket_extent", etc.), so the two heads can be compared head to head.
+    #
+    # An ESM3 (or other PLM) pooled-vector token is not yet supported here -- every
+    # catalog name is a scalar (Linear(1, hiddim)); a PLM embedding is already a
+    # ~1536-d vector and would need its own Linear(plm_dim, hiddim) embedding path,
+    # deliberately left for a later pass.
+    two_pair_descriptors_paths: bool = False
+    good_descriptors: str = ""
+    bad_descriptors: str = ""
     # Feeds the SAME protein-only/lipid-only tokens --pair_descriptors' self-attention
     # head reads (aromatic_share, polar_share, and coarsened extent when
     # --pair_descriptor_extent is on, from POCKET_DESCRIPTOR_NAMES for protein; chain,
@@ -581,6 +633,21 @@ class ModelConfig:
     fast_attention: bool = False
     protein_self_attention: bool = True
     lipid_self_attention: bool = True
+    # Ablation: swap every configurable self-attention block in the project for a
+    # per-token MLP of the same parameter budget (mlp_utils.AttentionMLPSubstitute/
+    # NodeMLPSubstitute -- the same 4*dim^2 Q/K/V/O budget, via hidden_dim=2*dim,
+    # ResidualAdversary in final_layer.py already uses for the same reason). Covers
+    # ProteinSelfAttention (protein_self_attention), SelfAttention (lipid_self_attention),
+    # PairDescriptorHead/NamedDescriptorHead's own attention (pair_descriptors,
+    # two_pair_descriptors_paths), and RoPESelfAttention (geometric_transformer) --
+    # every SITE still has to be individually enabled by its own flag; this only
+    # decides what runs there once it is. CrossAttention is not covered: it reads the
+    # OTHER partner (query != key/value), so "self-attention" does not describe it and
+    # an MLP has no well-defined substitute for a two-input block. Sets fast_attention's
+    # grouped path aside too (architecture/fast_attention.can_use_grouped_attention) --
+    # that path reaches into nn.MultiheadAttention's own projection weights directly,
+    # which the substitute does not have.
+    mlp_in_place_of_sa: bool = False
     double_attention: bool = False
     single_gat_layer: bool = True
     geometric_transformer: bool = False
@@ -1651,6 +1718,45 @@ class ModelConfig:
                     "final_layer's usual modules are never built, so these options "
                     "have nothing to attach to: " + ", ".join(unsupported)
                 )
+        if self.two_pair_descriptors_paths and self.descriptors_head:
+            raise ValueError(
+                "two_pair_descriptors_paths and descriptors_head are two different "
+                "sufficiency-test branches Final_Layer can build -- pick one"
+            )
+        if self.two_pair_descriptors_paths and not (
+            self.good_descriptors.strip() and self.bad_descriptors.strip()
+        ):
+            raise ValueError(
+                "two_pair_descriptors_paths requires both --good_descriptors and "
+                "--bad_descriptors to name at least one descriptor each"
+            )
+        if (self.good_descriptors or self.bad_descriptors) and not self.two_pair_descriptors_paths:
+            raise ValueError(
+                "good_descriptors/bad_descriptors only take effect under "
+                "two_pair_descriptors_paths"
+            )
+        if self.two_pair_descriptors_paths:
+            # Same reasoning as descriptors_head just above: Final_Layer builds only
+            # the two named descriptor heads + a small binar under this flag, so
+            # nothing else has a pooled representation to attach to.
+            unsupported = [
+                name for name in (
+                    "bilinear_fusion", "adversarial_grl", "dann_family", "chem_prior",
+                    "chem_adversary", "pocket_compat_prior", "compatibility_input",
+                    "compatibility_split_input", "attention_pooling", "swe_pooling",
+                    "lipid_only", "protein_only", "pair_descriptors_only",
+                    "lipid_path_handicap", "double_attention", "pair_descriptors",
+                )
+                if getattr(self, name)
+            ]
+            if unsupported:
+                raise ValueError(
+                    "two_pair_descriptors_paths builds only the two named descriptor "
+                    "self-attention heads and a small classifier -- protein1/lipid1/"
+                    "cross_attention1/final_layer's usual modules (and PairDescriptorHead "
+                    "itself, --pair_descriptors) are never built, so these options have "
+                    "nothing to attach to: " + ", ".join(unsupported)
+                )
         if self.compatibility_split_input:
             named = [n.strip() for n in self.compat_input_parts.split(",") if n.strip()]
             unknown = [n for n in named if n not in ("chain", "clash")]
@@ -1950,6 +2056,8 @@ SIMPLE_BOOL_FLAGS = {
     "--pair_descriptors_only": "pair_descriptors_only",
     "descriptors_head": "descriptors_head",
     "--descriptors_head": "descriptors_head",
+    "two_pair_descriptors_paths": "two_pair_descriptors_paths",
+    "--two_pair_descriptors_paths": "two_pair_descriptors_paths",
     "descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
     "--descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
     "no_embeddings": "no_embeddings",
@@ -2016,6 +2124,8 @@ SIMPLE_BOOL_FLAGS = {
     "--protein_self_attention": "protein_self_attention",
     "lipid_self_attention": "lipid_self_attention",
     "--lipid_self_attention": "lipid_self_attention",
+    "mlp_in_place_of_sa": "mlp_in_place_of_sa",
+    "--mlp_in_place_of_sa": "mlp_in_place_of_sa",
     "double_attention": "double_attention",
     "--double_attention": "double_attention",
     "single_gat_layer": "single_gat_layer",
@@ -2186,6 +2296,8 @@ FLAG_HANDLERS = {
     ),
     "no_pair_descriptor_extent": set_config_flag("pair_descriptor_extent", False),
     "--no_pair_descriptor_extent": set_config_flag("pair_descriptor_extent", False),
+    "no_pair_descriptor_occupancy": set_config_flag("pair_descriptor_occupancy", False),
+    "--no_pair_descriptor_occupancy": set_config_flag("pair_descriptor_occupancy", False),
     "no_lipid_first_fragment_only": set_config_flag(
         "lipid_first_fragment_only", False
     ),
@@ -2278,6 +2390,8 @@ VALUE_HANDLERS = {
     "--chem_neighbours=": set_config_field("chem_neighbours", int),
     "--compat_extent_bins=": set_config_field("compat_extent_bins", int),
     "--compat_input_parts=": set_config_field("compat_input_parts"),
+    "--good_descriptors=": set_config_field("good_descriptors"),
+    "--bad_descriptors=": set_config_field("bad_descriptors"),
     "--dann_class_conditional=": set_config_field("dann_class_conditional", read_bool),
     "--pool_type=": set_config_field("pool_type"),
     "--swe_reference_points=": set_config_field("swe_reference_points", int),

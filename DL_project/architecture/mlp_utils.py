@@ -528,6 +528,62 @@ def build_ffn_with_residual(dim, config, act_fn=None, use_final_dropout=False, h
     return torch.nn.Sequential(*layers)
 
 
+class AttentionMLPSubstitute(torch.nn.Module):
+    """torch.nn.MultiheadAttention(dim, heads)'s own call contract --
+    forward(query, key, value, attn_mask=None, need_weights=True,
+    key_padding_mask=None) -> (output, None) -- swapped in wherever
+    --mlp_in_place_of_sa is set (see make_self_attention below).
+
+    Reads only `query`: every self-attention call site in this project already
+    passes query is key is value, so there is nothing a second/third argument would
+    add. Applies a per-token MLP instead of cross-token attention -- there is no
+    mixing across the token/node axis at all, which is the point: this ablates
+    whether a site needs cross-token attention in the first place, not a cheaper
+    approximation of it. Sized to the SAME parameter budget MultiheadAttention(dim,
+    heads) spends on its Q/K/V/O projections (4*dim^2, via hidden_dim=2*dim) --
+    ResidualAdversary (architecture/final_layer.py) already uses this exact
+    budget-matching discipline, for the same reason (a fair substitute, not a
+    smaller one).
+    """
+
+    def __init__(self, dim, config, act_fn=None):
+        super().__init__()
+        self.mlp = build_ffn_with_residual(dim, config, act_fn, hidden_dim=2 * dim)
+
+    def forward(self, query, key=None, value=None, attn_mask=None, need_weights=True,
+                key_padding_mask=None, **kwargs):
+        return self.mlp(query), None
+
+
+class NodeMLPSubstitute(torch.nn.Module):
+    """--mlp_in_place_of_sa's substitute for architecture.geometric_transformer.
+    RoPESelfAttention, whose own call contract is forward(x, batch, layout=None) ->
+    [nodes, dim] rather than MultiheadAttention's (query, key, value) -- a separate
+    class from AttentionMLPSubstitute only because the shape of the call differs;
+    the substitute itself is identical (same budget-matched per-token MLP, `batch`/
+    `layout` unused since an MLP has no node axis to pad or mask).
+    """
+
+    def __init__(self, dim, config, act_fn=None):
+        super().__init__()
+        self.mlp = build_ffn_with_residual(dim, config, act_fn, hidden_dim=2 * dim)
+
+    def forward(self, x, batch=None, layout=None):
+        return self.mlp(x)
+
+
+def make_self_attention(dim, heads, config, act_fn=None, batch_first=False):
+    """torch.nn.MultiheadAttention(dim, heads[, batch_first]), or -- under
+    --mlp_in_place_of_sa -- AttentionMLPSubstitute(dim, config, act_fn), same call
+    contract either way. One factory for every site in this project that builds a
+    plain (non-RoPE) self-attention module, so --mlp_in_place_of_sa covers a new one
+    automatically instead of needing its own if/else.
+    """
+    if getattr(config, "mlp_in_place_of_sa", False):
+        return AttentionMLPSubstitute(dim, config, act_fn)
+    return torch.nn.MultiheadAttention(dim, heads, batch_first=batch_first)
+
+
 def make_optional_projection(in_dim, out_dim):
     """Return Identity if dims match, else Linear projection."""
     if in_dim == out_dim:

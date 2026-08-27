@@ -221,7 +221,7 @@ class Protein_encoder(torch.nn.Module):
             # area sum and solvent-boundary/contact-area ratio are appended below.
             self.geometric_input = torch.nn.Linear(indim + 2, hiddim)
             self.geometric_block = ProteinGeometricTransformerBlock(
-                hiddim, self.config.HEADS
+                hiddim, self.config.HEADS, config=self.config, act_fn=act_fn
             )
             return
 

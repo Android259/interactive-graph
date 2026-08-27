@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch_geometric
 
+from dataloader.pair_descriptors import parse_descriptor_list, resolve_requested_tokens
 from dataloader.pocket_lipid_compatibility import compat_input_width
 from torch_geometric.utils import softmax as scatter_softmax
 from torch_geometric.utils import to_dense_batch
@@ -13,6 +14,7 @@ try:
         mlp_hidden_dims, link_concrete_dropouts, build_ffn_with_residual,
     )
     from .pair_descriptor_head import PairDescriptorHead
+    from .named_descriptor_head import NamedDescriptorHead, pool_descriptor_head_outputs
 except ImportError:
     from mlp_utils import (
         make_activation, make_final_dropout, make_extra_hidden_layer,
@@ -20,6 +22,7 @@ except ImportError:
         mlp_hidden_dims, link_concrete_dropouts, build_ffn_with_residual,
     )
     from pair_descriptor_head import PairDescriptorHead
+    from named_descriptor_head import NamedDescriptorHead, pool_descriptor_head_outputs
 
 
 class _GradientReversal(torch.autograd.Function):
@@ -320,6 +323,55 @@ class Final_Layer(torch.nn.Module):
             self._chem_features = None
             return
 
+        if config.two_pair_descriptors_paths:
+            # Second sufficiency-test branch, sibling to descriptors_head just above
+            # (mutually exclusive, ModelConfig.validate): --good_descriptors and
+            # --bad_descriptors each build their OWN NamedDescriptorHead (arbitrary
+            # named token subset instead of PairDescriptorHead's fixed set), and the
+            # two heads' pooled vectors are reduced to one with pool_descriptor_head_
+            # outputs -- the same pool_type reduction each head already uses
+            # internally on its own tokens, just applied again over the 2-vector axis.
+            # The FULL, shared column order dataloader/New_dataloader.py's
+            # descriptor_catalog_input tensor is stacked in for this config -- both
+            # heads are built against this SAME order (not each recomputing its own
+            # union) so they agree on where their tokens live in the one tensor both
+            # read from.
+            catalog_order = resolve_requested_tokens(
+                config.good_descriptors, config.bad_descriptors
+            )
+            self.good_descriptor_head = NamedDescriptorHead(
+                config, parse_descriptor_list(config.good_descriptors), catalog_order, act_fn
+            )
+            self.bad_descriptor_head = NamedDescriptorHead(
+                config, parse_descriptor_list(config.bad_descriptors), catalog_order, act_fn
+            )
+            # Both heads share config, so both have the same output_dim; the combine
+            # step below only makes sense stacking equal-width vectors.
+            head_dim = self.good_descriptor_head.output_dim
+            self.descriptor_combine_pool_type = getattr(config, "pool_type", "mean")
+            if self.descriptor_combine_pool_type == "gem":
+                self.descriptor_combine_gem_pool = GeMPool()
+            # add_max concatenates add-pool and max-pool over the 2-vector axis, so it
+            # doubles combined_dim on TOP of whatever head_dim already is (head_dim
+            # itself is already doubled by add_max if that is how EACH head reduced
+            # its own tokens -- the two doublings are independent, one per pooling
+            # step, same as pooled_lip_dim/pooled_prot_dim vs classifier_input_dim
+            # elsewhere in this class).
+            combined_dim = (
+                2 * head_dim if self.descriptor_combine_pool_type == "add_max" else head_dim
+            )
+            self.binar = torch.nn.Sequential(
+                torch.nn.Linear(combined_dim, config.hiddim),
+                make_activation(config, act_fn),
+                *make_final_dropout(config, config.hiddim),
+                torch.nn.Linear(config.hiddim, 2),
+            )
+            self._adv = None
+            self._pooled_partners = None
+            self._dann_features = None
+            self._chem_features = None
+            return
+
         middim = config.hiddim
         lip_dim = config.hiddim
         prot_dim = config.hiddim
@@ -556,7 +608,7 @@ class Final_Layer(torch.nn.Module):
     def forward(
         self, lip, prot, lip_batch, prot_batch, pool, prot_pocket=None,
         frozen_prior=None, compat_input=None, pocket_descriptor=None,
-        pair_descriptor_input=None,
+        pair_descriptor_input=None, descriptor_catalog_input=None,
     ):
         """Pool both modalities by sample and return binary logits."""
         if self.config.descriptors_head:
@@ -573,6 +625,26 @@ class Final_Layer(torch.nn.Module):
                 pair_descriptor_input.view(batch_size, -1), pocket_descriptor
             )
             return self.binar(vec)
+
+        if self.config.two_pair_descriptors_paths:
+            if descriptor_catalog_input is None:
+                raise ValueError(
+                    "two_pair_descriptors_paths is set but forward() got no "
+                    "descriptor_catalog_input -- New_dataloader and forward_args only "
+                    "attach it when --two_pair_descriptors_paths was set at data-load "
+                    "time too; check the flags match."
+                )
+            batch_size = descriptor_catalog_input.shape[0]
+            descriptor_catalog_input = descriptor_catalog_input.view(batch_size, -1)
+            good_vec = self.good_descriptor_head(descriptor_catalog_input)
+            bad_vec = self.bad_descriptor_head(descriptor_catalog_input)
+            combined = pool_descriptor_head_outputs(
+                [good_vec, bad_vec],
+                self.descriptor_combine_pool_type,
+                self.config.pool,
+                gem_pool=getattr(self, "descriptor_combine_gem_pool", None),
+            )
+            return self.binar(combined)
 
         lip_outs, prot_outs = self._pool_partners(lip, prot, lip_batch, prot_batch, pool, prot_pocket)
 

@@ -460,7 +460,7 @@ answers negative to everything; the threshold has nothing behind it to move.
 
 Proximity explains whether the model calls anything positive; it does not say how well it *ranks*.
 For ranking the reference is an explicit null model
-([analysis/chemistry_null_model.py](../analysis/chemistry_null_model.py)):
+([analysis/null_model.py](../analysis/null_model.py)):
 
 > For a row (protein *p*, lipid *l*) it **ignores *p* entirely** and scores *l* by the
 > similarity-weighted training positive rate of its *k* nearest training lipids, nearest by Morgan
@@ -1058,7 +1058,7 @@ Recorded here rather than answered, because the pipeline does not answer them:
 | prior baseline across families, samplers and splits | [preprocessing/lipid_marginal_baseline.py](../preprocessing/lipid_marginal_baseline.py) |
 | which classes a double cold split holds out, and its cost | [preprocessing/lipid_class_holdout.py](../preprocessing/lipid_class_holdout.py) |
 | per-row scores of saved checkpoints | [analysis/checkpoint_scores.py](../analysis/checkpoint_scores.py) |
-| chemical proximity, null model, AUC pooled and within protein | [analysis/chemistry_null_model.py](../analysis/chemistry_null_model.py) |
+| chemical proximity, null model, AUC pooled and within protein | [analysis/null_model.py](../analysis/null_model.py) |
 | increment of the network over chemistry | [analysis/interaction_increment.py](../analysis/interaction_increment.py) |
 | all three of the above for one label, in one run | [analysis/full_label_report.py](../analysis/full_label_report.py) |
 | pocket-shape similarity of §5.2 | [analysis/pocket_shape_similarity.py](../analysis/pocket_shape_similarity.py) |

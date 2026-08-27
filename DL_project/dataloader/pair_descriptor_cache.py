@@ -51,10 +51,9 @@ from rdkit import Chem
 
 import dataloader.pair_descriptors as pair_descriptors
 import dataloader.pocket_lipid_compatibility as pocket_lipid_compatibility
-from dataloader.pair_descriptors import _MEASURES
+from dataloader.pair_descriptors import _MEASURES, longest_acyl_chain
 from dataloader.pocket_lipid_compatibility import (
     candidates_for_row,
-    longest_acyl_chain,
     pocket_extent_by_protein,
     pocket_rim_core_aromatic_share_by_protein,
 )
