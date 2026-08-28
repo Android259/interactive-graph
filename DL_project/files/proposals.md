@@ -474,7 +474,7 @@ double ≈ single, приор класса не работал; если double 
 | `dann_class_conditional` (**дефолт True**) | там же | отдельная голова на класс; выравнивает `P(features\|Y,family)`. Это и есть фикс label shift |
 | `dann_weight`, `dann_lambda`, `dann_lambda_ramp` | `ramped_dann_lambda` | вес CE, сила реверса, линейная рампа по эпохам |
 | `dann_lambda_ramp_by_fit` | там же + `adv_fit_progress` | та же линейная рампа, но по `(train_BA−0.5)/0.5` вместо счётчика эпох; общий ратчет `fit_progress` с adversary-рампой. Имеет приоритет над эпохальной |
-| `balanced_lipid_classes` | [`dataloader/New_dataloader.py`](dataloader/New_dataloader.py) `sample_lipid_class_balanced_negatives` | 1:1 негативы внутри каждой ячейки (семейство × класс липида). Имеет приоритет над `balanced_proteins` |
+| `balanced_lipid_classes` | [`dataloader/Dataloader.py`](dataloader/Dataloader.py) `sample_lipid_class_balanced_negatives` | 1:1 негативы внутри каждой ячейки (семейство × класс липида). Имеет приоритет над `balanced_proteins` |
 | `hidden_dim=` у `build_ffn_with_residual` | [`architecture/mlp_utils.py`](architecture/mlp_utils.py) | опциональная ширина, чтобы блок можно было собрать под бюджет параметров, а не под `m` |
 
 `prot.family` (9-мерный one-hot) уже приходил из даталоадера — нового плуминга не

@@ -21,7 +21,7 @@ Usage:
     --args_file=PATH  Pick whether a cache is needed, and which isomeric variant, from
                        that run's flags: neither --pair_descriptors nor
                        --two_pair_descriptors_paths means no cache is read at all (see
-                       dataloader/New_dataloader.py._compute_pair_descriptors, which
+                       dataloader/Dataloader.py._compute_pair_descriptors, which
                        reads the cache under either flag), and --lipid_isomers selects
                        the isomeric-SMILES variant. Without this, --pair_descriptors is
                        assumed and the deterministic (non-isomeric) variant is built.
@@ -59,7 +59,7 @@ def flags_in(args_file):
 def needs_cache(args_file):
     """(needed, isomeric), from that run's flags, or (True, False) with no args file.
 
-    Needed under --pair_descriptors OR --two_pair_descriptors_paths: New_dataloader.
+    Needed under --pair_descriptors OR --two_pair_descriptors_paths: Dataloader.
     _compute_pair_descriptors reads this cache (chain/unsaturation/hbond/heavy/
     tail_count) whenever either is on, not just the first -- --two_pair_descriptors_
     paths' --good_descriptors/--bad_descriptors are built from those same base values

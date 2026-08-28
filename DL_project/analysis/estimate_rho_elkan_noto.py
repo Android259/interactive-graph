@@ -76,7 +76,7 @@ from read_configuration import read_configuration  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 from architecture.interaction_classification import InteractionClassification  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.New_dataloader import PLIDataset  # noqa: E402
+from dataloader.Dataloader import PLIDataset  # noqa: E402
 
 
 # --- Estimation-specific flags (stripped before building the training config) ---

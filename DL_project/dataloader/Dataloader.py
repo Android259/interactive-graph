@@ -49,6 +49,7 @@ from dataloader.protein_graph_builder import (
     restrict_parts_to_mask,
 )
 from dataloader.protein_graph_tensor_cache import load_protein_graph_tensor_cache
+from dataloader.lipid_graph_tensor_cache import load_lipid_graph_tensor_cache
 from dataloader.tanimoto_compact import load_compact
 from dataloader.sampler import (
     COLDSPLIT_MINIMUM_TEST_POSITIVES,
@@ -302,6 +303,12 @@ class PLIDataset(
         self._protein_tensor_cache = load_protein_graph_tensor_cache(
             self.ROOT_DIR, protein_node_columns(config)
         )
+        # Same idea for --lipid_graph_isomers' per-graph_id tensors (dataloader/
+        # lipid_graph_tensor_cache.py, built by data/build_lipid_graph_tensor_cache.py):
+        # {} when no cache has been built or data/lipid_graphs/ changed since, which
+        # LipidIsomerGraphBuilder._one_lipid_graph_parts falls back on exactly as
+        # before this cache existed.
+        self._lipid_graph_tensor_cache = load_lipid_graph_tensor_cache(self.ROOT_DIR)
         self._lipid_encoding_cache = {}
         # lipid_random_choice fills this one instead: the drawn encoding must not be
         # cached (that would freeze the draw for the whole run), only the canonical
@@ -922,6 +929,14 @@ class PLIDataset(
         heavy = as_arrays(
             descriptor_values_by_row(csv, "heavy_atoms", isomeric, cache=pair_cache)
         )
+        lipid_shape_on = getattr(self.config, "pair_descriptor_lipid_shape", False)
+        lipid_shape = {}
+        if lipid_shape_on:
+            from dataloader.pair_descriptors import LIPID_SHAPE_DESCRIPTOR_NAMES
+            for name in LIPID_SHAPE_DESCRIPTOR_NAMES:
+                lipid_shape[name] = as_arrays(
+                    descriptor_values_by_row(csv, name, isomeric, cache=pair_cache)
+                )
         extents = pocket_extent_by_protein(
             self.ROOT_DIR, self.protein_names, cache=protein_cache
         )
@@ -971,6 +986,11 @@ class PLIDataset(
         unsaturation = fill_train_mean(unsaturation, "unsaturation")
         hbond = fill_train_mean(hbond, "H-bond-capacity")
         heavy = fill_train_mean(heavy, "heavy-atom")
+        if lipid_shape_on:
+            lipid_shape = {
+                name: fill_train_mean(values, name)
+                for name, values in lipid_shape.items()
+            }
 
         bins = max(int(getattr(self.config, "compat_extent_bins", 4) or 0), 1)
         edges = None
@@ -998,6 +1018,9 @@ class PLIDataset(
             "chain": chain, "unsaturation": unsaturation, "hbond": hbond,
             "heavy": heavy, "occupancy": occupancy,
         }
+        # Appended after occupancy, before "extent" (added below by `columns()`) --
+        # architecture/pair_descriptor_head.py's base_tokens builds the identical order.
+        raw.update(lipid_shape)
         stats = {}
         for name, values in raw.items():
             train_values = (
@@ -1636,6 +1659,21 @@ class PLIDataset(
             self._protein_tensor_cache = {}
             released.append("protein_tensor_cache")
 
+        # Unlike the protein cache, the isomer-graph drawing split (lipid_graph_isomers
+        # + lipid_random_choice) never gets a chance to warm every combination it will
+        # need up front -- warm_caches() explicitly skips it (see its docstring) because
+        # the draw happens inside make_graph_lipid on every access. Releasing the raw
+        # per-graph_id tensor cache there would force every later draw back onto reading
+        # CSVs directly; every other config warms every SMILES it needs during
+        # warm_caches(), so this source cache is safe to drop once initialization ends.
+        can_release_lipid_tensor_cache = not (
+            getattr(self.config, "lipid_graph_isomers", False)
+            and self._draw_lipid_candidate
+        )
+        if can_release_lipid_tensor_cache and getattr(self, "_lipid_graph_tensor_cache", None):
+            self._lipid_graph_tensor_cache = {}
+            released.append("lipid_graph_tensor_cache")
+
         can_release_embeddings = (
             self.smiles_encoding is not None
             and not self.config.lipid_random_choice
@@ -1767,10 +1805,15 @@ class PLIDataset(
         # standardised tokens, in a fixed order architecture/pair_descriptor_head.py
         # relies on (chain, unsaturation, hbond, heavy, occupancy, extent) -- 5 under
         # --no_pair_descriptor_extent, which _compute_pair_descriptors never creates
-        # the extent column for -- plus, under --pair_descriptor_pocket_shares_split,
+        # the extent column for -- plus, under --pair_descriptor_lipid_shape,
+        # LIPID_SHAPE_DESCRIPTOR_NAMES (dataloader/pair_descriptors.py) inserted between
+        # occupancy and extent, plus, under --pair_descriptor_pocket_shares_split,
         # aromatic_share_core and aromatic_share_rim, in the same fixed order
         # PairDescriptorHead.DATALOADER_TOKENS + SPLIT_DATALOADER_TOKENS relies on.
         pair_descriptor_names = ["chain", "unsaturation", "hbond", "heavy", "occupancy"]
+        if getattr(self.config, "pair_descriptor_lipid_shape", False):
+            from dataloader.pair_descriptors import LIPID_SHAPE_DESCRIPTOR_NAMES
+            pair_descriptor_names += list(LIPID_SHAPE_DESCRIPTOR_NAMES)
         if getattr(self.config, "pair_descriptor_extent", True):
             pair_descriptor_names.append("extent")
         if getattr(

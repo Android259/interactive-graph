@@ -63,7 +63,7 @@ def test_isomer_graph_lipid_encoder_forward_shape():
     encoder = Lipid_encoder(config)
     x = torch.randn(3, 11)
     edge_index = torch.tensor([[0, 1, 1, 2], [1, 0, 2, 1]], dtype=torch.long)
-    edge_attr = torch.randn(4, 6)
+    edge_attr = torch.randn(4, 22)
     attn_mask = torch.zeros((3, 3), dtype=torch.bool)
 
     out = encoder(x, None, attn_mask, edge_index=edge_index, edge_attr=edge_attr)
@@ -86,7 +86,7 @@ def test_second_isomer_graph_lipid_encoder_uses_edges():
     encoder = Lipid_encoder(config, start=False)
     x = torch.randn(3, config.hiddim)
     edge_index = torch.tensor([[0, 1, 1, 2], [1, 0, 2, 1]], dtype=torch.long)
-    edge_attr = torch.randn(4, 6)
+    edge_attr = torch.randn(4, 22)
     attn_mask = torch.zeros((3, 3), dtype=torch.bool)
 
     out = encoder(
@@ -110,7 +110,7 @@ def test_isomer_graph_lipid_encoder_uses_fragment_mask_with_self_attention():
     encoder = Lipid_encoder(config)
     x = torch.randn(4, 11)
     edge_index = torch.tensor([[0, 1, 2, 3], [1, 0, 3, 2]], dtype=torch.long)
-    edge_attr = torch.randn(4, 6)
+    edge_attr = torch.randn(4, 22)
     attn_mask = torch.zeros((4, 4), dtype=torch.bool)
     fragment_ids = torch.tensor([0, 0, 1, 1])
     mult_mask = fragment_ids.unsqueeze(0) == fragment_ids.unsqueeze(1)

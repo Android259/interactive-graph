@@ -26,7 +26,7 @@ architecture/pair_descriptor_head.py combines these with the pocket's own aromat
 and (1 - apolar_sasa_share) (POCKET_DESCRIPTOR_NAMES, already scale-free) as multiplicative
 pair terms -- proxies for "aromatic residues near double bonds" and "polar pocket surface
 meets an H-bonding headgroup" that need no pose because they use pocket-wide chemistry
-shares instead of a specific residue-double-bond contact. New_dataloader.py separately
+shares instead of a specific residue-double-bond contact. Dataloader.py separately
 builds the occupancy term (heavy_atom_count vs the SAME coarsened pocket_extent
 --compatibility_split_input's "clash" term uses) with pocket_lipid_compatibility's own
 coarsen_to_levels, so a held-out protein's raw cavity size still cannot leak through it
@@ -35,7 +35,7 @@ coarsen_to_levels, so a held-out protein's raw cavity size still cannot leak thr
 import numpy
 
 from rdkit import Chem
-from rdkit.Chem import Descriptors
+from rdkit.Chem import AllChem, Descriptors, rdMolDescriptors
 
 # candidates_for_row: imported lazily, inside descriptor_values_by_row, not here --
 # dataloader/pocket_lipid_compatibility.py eagerly imports names FROM
@@ -157,7 +157,7 @@ _SHARE_BAND_CENTRES = (1.0 / 6, 0.5, 5.0 / 6)
 # read_configuration.py, architecture/named_descriptor_head.py): every BASE name a
 # live NamedDescriptorHead can be built from -- either bare, or coarsened via the
 # <name>_coarse=<spec> syntax below (parse_descriptor_token). "extent" is
-# New_dataloader's own train-fit-coarsened, leak-safe pocket_extent (the same value
+# Dataloader's own train-fit-coarsened, leak-safe pocket_extent (the same value
 # PairDescriptorHead's DATALOADER_TOKENS "extent" already reads); "tail_count" is
 # acyl_chain_count. Everything else named here is its RAW dataloader/pair_
 # descriptors.py or pocket_descriptor() value -- in particular "pocket_extent"
@@ -203,7 +203,7 @@ class CoarseSpec:
     BOUNDED_SHARE_DESCRIPTOR_NAMES entry, else the train-observed [min, max]) or
     train-fit QUANTILES (`mode="quantiles"`: dataloader.pocket_lipid_compatibility.
     coarsen_to_levels on numpy.quantile edges, the same mechanism "extent"
-    -- New_dataloader.py's own coarse_extent -- already uses for pocket_extent,
+    -- Dataloader.py's own coarse_extent -- already uses for pocket_extent,
     generalised to any base name and any bin count).
     """
 
@@ -348,7 +348,7 @@ def parse_descriptor_list(value):
 def resolve_requested_tokens(*raw_lists):
     """Any number of --good_descriptors/--bad_descriptors/--descriptor_names-style raw
     strings -> the sorted, deduped union of their canonical tokens -- the SAME
-    deterministic column order dataloader/New_dataloader.py's descriptor_catalog_input
+    deterministic column order dataloader/Dataloader.py's descriptor_catalog_input
     tensor is stacked in and architecture/named_descriptor_head.py's NamedDescriptorHead
     instances index into it by. Every caller building the SAME descriptor_catalog_input
     tensor calls this one function against the SAME raw strings -- two, under
@@ -516,11 +516,107 @@ def heavy_atom_count(smiles):
     return float(mol.GetNumHeavyAtoms())
 
 
+# --pair_descriptor_lipid_shape (LIPID_SHAPE_DESCRIPTOR_NAMES below): the one deliberate
+# exception to this module's own "no 3D embedding" rule stated in its docstring above --
+# ETKDG is indeed slow and fails unpredictably per-molecule, which is why it is opt-in,
+# ensemble-averaged (not a single arbitrary conformer -- a flexible acyl tail has many
+# near-isoenergetic shapes; one draw would teach the model the generator's seed, not the
+# molecule), and wrapped in the same random-coords retry data/build_lipid_isomer_graphs.py
+# uses for its own bond-length feature (which reuses generate_conformer_ensemble below,
+# rather than duplicating this embed+optimize logic a second time).
+CONFORMER_COUNT = 10
+CONFORMER_SEED = 0xF00D
+
+
+def generate_conformer_ensemble(mol, n_confs=CONFORMER_COUNT, seed=CONFORMER_SEED):
+    """Explicit-H copy of `mol` with `n_confs` ETKDG+MMFF conformers.
+
+    Returns (mol_h, conf_ids); mol_h's heavy-atom indices match `mol`'s (Chem.AddHs
+    appends new atoms after the existing ones). Raises ValueError if ETKDG embedding
+    fails even after a useRandomCoords retry -- callers should let that propagate
+    rather than silently write a placeholder into the data.
+    """
+    mol_h = Chem.AddHs(mol)
+    params = AllChem.ETKDGv3()
+    params.randomSeed = seed
+    conf_ids = list(AllChem.EmbedMultipleConfs(mol_h, numConfs=n_confs, params=params))
+    if not conf_ids:
+        params.useRandomCoords = True
+        conf_ids = list(
+            AllChem.EmbedMultipleConfs(mol_h, numConfs=n_confs, params=params)
+        )
+    if not conf_ids:
+        raise ValueError(
+            f"ETKDG conformer embedding failed for {Chem.MolToSmiles(mol)}"
+        )
+    try:
+        AllChem.MMFFOptimizeMoleculeConfs(mol_h, maxIters=500)
+    except Exception:
+        pass  # MMFF parameters missing for some atom types -- keep raw ETKDG geometry
+    return mol_h, conf_ids
+
+
+def _mean_over_conformers(smiles, per_conformer_fn):
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    mol_h, conf_ids = generate_conformer_ensemble(mol)
+    values = [per_conformer_fn(mol_h, conf_id) for conf_id in conf_ids]
+    return float(sum(values) / len(values))
+
+
+def radius_of_gyration(smiles):
+    """Ensemble-mean radius of gyration (Angstrom) -- overall size/compactness."""
+    return _mean_over_conformers(
+        smiles,
+        lambda mol_h, conf_id: rdMolDescriptors.CalcRadiusOfGyration(
+            mol_h, confId=conf_id
+        ),
+    )
+
+
+def asphericity(smiles):
+    """Ensemble-mean asphericity (unitless, 0=spherical) -- elongated vs globular."""
+    return _mean_over_conformers(
+        smiles,
+        lambda mol_h, conf_id: rdMolDescriptors.CalcAsphericity(mol_h, confId=conf_id),
+    )
+
+
+def molecular_volume(smiles):
+    """Ensemble-mean van-der-Waals volume (Angstrom^3) -- real size, not a heavy-atom proxy."""
+    return _mean_over_conformers(
+        smiles,
+        lambda mol_h, conf_id: AllChem.ComputeMolVolume(mol_h, confId=conf_id),
+    )
+
+
+def rotatable_fraction(smiles):
+    """Rotatable bonds / total bonds -- conformational flexibility, purely topological
+    (does not need a conformer, unlike the three functions above)."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    total_bonds = mol.GetNumBonds()
+    if total_bonds == 0:
+        return 0.0
+    return float(rdMolDescriptors.CalcNumRotatableBonds(mol)) / total_bonds
+
+
+LIPID_SHAPE_DESCRIPTOR_NAMES = (
+    "radius_of_gyration", "asphericity", "molecular_volume", "rotatable_fraction",
+)
+
+
 _MEASURES = {
     "unsaturation": unsaturation_count,
     "hbond": hbond_capacity,
     "heavy_atoms": heavy_atom_count,
     "tail_count": acyl_chain_count,
+    "radius_of_gyration": radius_of_gyration,
+    "asphericity": asphericity,
+    "molecular_volume": molecular_volume,
+    "rotatable_fraction": rotatable_fraction,
 }
 
 
@@ -533,7 +629,7 @@ def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
     `isomeric` MUST match chain_lengths_by_row's own -- it controls which candidates
     within a row collapse into one canonical-SMILES entry, so a mismatch would make
     this function's per-row list a different length than chain's, and
-    New_dataloader._ragged_tensor stacks columns on the assumption they agree.
+    Dataloader._ragged_tensor stacks columns on the assumption they agree.
 
     `cache`, when given, is a dataloader/pair_descriptor_cache.py load result: a raw
     candidate present in its "raw_to_canonical" skips the canonicalising parse, and a
@@ -606,7 +702,7 @@ def as_arrays(per_row):
 # ~13.6-32.0 range) meant pocket_extent always won by a wide margin, occupancy's
 # relu clipped every single row to exactly 0.0 (verified directly on this project's
 # data: 100% of rows), and it silently carried zero information in every null-model
-# run AND every trained --pair_descriptors run (dataloader/New_dataloader.py uses
+# run AND every trained --pair_descriptors run (dataloader/Dataloader.py uses
 # the identical formula for the live training path -- fixed there too, in the same
 # commit as this).
 _CHAIN_BOND_PROJECTION_A = 1.265
@@ -653,7 +749,7 @@ def pair_descriptor_value(name, lipid_values, protein_values):
                              pocket_extent always won and relu clipped every single
                              row on this project's data to exactly 0.0, carrying
                              zero information (verified directly; see project memory
-                             or dataloader/New_dataloader.py's matching fix).
+                             or dataloader/Dataloader.py's matching fix).
         chain_extent_gap   : pocket_extent - chain_length_angstrom(chain), signed (no
                               relu), same angstrom-length conversion as occupancy --
                               positive when the cavity runs longer than the chain,

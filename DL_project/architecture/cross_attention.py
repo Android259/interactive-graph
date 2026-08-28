@@ -1,19 +1,11 @@
 import torch
 
-try:
-    from .mlp_utils import (
-        make_activation, make_dropout, make_extra_hidden_layer, make_gate,
-        insert_hidden_gate, insert_ffn_unit_gate, insert_input_gate, insert_output_gate,
-        mlp_hidden_dims, link_concrete_dropouts,
-    )
-    from .fast_attention import grouped_attention, can_use_grouped_attention
-except ImportError:
-    from mlp_utils import (
-        make_activation, make_dropout, make_extra_hidden_layer, make_gate,
-        insert_hidden_gate, insert_ffn_unit_gate, insert_input_gate, insert_output_gate,
-        mlp_hidden_dims, link_concrete_dropouts,
-    )
-    from fast_attention import grouped_attention, can_use_grouped_attention
+from .mlp_utils import (
+    make_activation, make_dropout, make_extra_hidden_layer, make_gate,
+    insert_hidden_gate, insert_ffn_unit_gate, insert_input_gate, insert_output_gate,
+    mlp_hidden_dims, link_concrete_dropouts,
+)
+from .fast_attention import grouped_attention, can_use_grouped_attention
 
 
 class CrossAttention(torch.nn.Module):
@@ -41,6 +33,22 @@ class CrossAttention(torch.nn.Module):
                 else ()
             )
             self.pocket_attention_bias = torch.nn.Parameter(torch.ones(bias_shape))
+        # cross_attention_bury_bias/cross_attention_chain_bias: extra, INDEPENDENT
+        # additive key-bias terms (bury for lipid-query/protein-key, chain_rank for
+        # protein-query/lipid-key -- the latter direction had no bias mechanism at all
+        # before this). Kept separate from pocket_attention_bias above rather than
+        # folded into it, so this cannot change that flag's existing behaviour for any
+        # run that doesn't opt into the new ones. softplus keeps each scale >= 0, so
+        # a larger bury/chain_rank value always contributes MORE in the same direction
+        # -- never silently inverts sign the way an unconstrained scale could.
+        per_head = getattr(self.config, "prot_pos_bias_per_head", False)
+        bias_shape = (self.config.HEADS,) if per_head else ()
+        self.bury_bias_on = bool(getattr(self.config, "cross_attention_bury_bias", False))
+        if self.bury_bias_on:
+            self.bury_bias_scale = torch.nn.Parameter(torch.ones(bias_shape))
+        self.chain_bias_on = bool(getattr(self.config, "cross_attention_chain_bias", False))
+        if self.chain_bias_on:
+            self.chain_bias_scale = torch.nn.Parameter(torch.ones(bias_shape))
         if getattr(self.config, "attention_residual_gates", False):
             self.lip_attn_gate = torch.nn.Parameter(torch.zeros(1))
             self.prot_attn_gate = torch.nn.Parameter(torch.zeros(1))
@@ -110,7 +118,7 @@ class CrossAttention(torch.nn.Module):
         ):
             self.cross_block_gate = make_gate(1, self.config)
 
-    def make_lip_attention_bias(self, lip_mask, pocket_mask, lip):
+    def make_lip_attention_bias(self, lip_mask, pocket_mask, lip, bury=None):
         if pocket_mask is None:
             return lip_mask
 
@@ -127,11 +135,19 @@ class CrossAttention(torch.nn.Module):
             # The lipid may only look at binding-site residues.
             return attention_bias.masked_fill(~pocket_key_mask, float("-inf"))
         pocket_term = (same_batch & pocket_key_mask).to(lip.dtype)
-        if getattr(self.config, "prot_pos_bias_per_head", False):
+        per_head = getattr(self.config, "prot_pos_bias_per_head", False)
+        if per_head:
             per_head_bias = self.pocket_attention_bias.view(-1, 1, 1)
             attention_bias = attention_bias + pocket_term.unsqueeze(0) * per_head_bias
         else:
             attention_bias = attention_bias + pocket_term * self.pocket_attention_bias
+        if self.bury_bias_on and bury is not None:
+            bury_term = pocket_term * bury.unsqueeze(0).expand_as(lip_mask)
+            bury_weight = torch.nn.functional.softplus(self.bury_bias_scale)
+            if per_head:
+                attention_bias = attention_bias + bury_term.unsqueeze(0) * bury_weight.view(-1, 1, 1)
+            else:
+                attention_bias = attention_bias + bury_term * bury_weight
         return attention_bias
 
     def make_lip_key_bias(self, pocket_mask, lip):
@@ -149,9 +165,69 @@ class CrossAttention(torch.nn.Module):
             return pocket_term.unsqueeze(0) * self.pocket_attention_bias.view(-1, 1)
         return pocket_term * self.pocket_attention_bias
 
+    def _scaled(self, scale, term):
+        """term (per-key vector, matching make_lip_key_bias's own convention),
+        weighted by softplus(scale) -- see __init__ for why softplus."""
+        weight = torch.nn.functional.softplus(scale)
+        if getattr(self.config, "prot_pos_bias_per_head", False):
+            return term.unsqueeze(0) * weight.view(-1, 1)
+        return term * weight
+
+    def make_bury_key_bias(self, pocket_mask, bury):
+        """Extra per-key vector for lipid-query/protein-key attention: bury, restricted
+        to pocket residues same as make_lip_key_bias's own pocket_term (so this adds a
+        continuous within-pocket preference on top of that binary one, not a second,
+        independent channel that could also fire on non-pocket keys). Added to, not
+        blended into, make_lip_key_bias's output -- see __init__.
+        """
+        if not self.bury_bias_on or bury is None or pocket_mask is None:
+            return None
+        return self._scaled(self.bury_bias_scale, bury * pocket_mask.to(bury.dtype))
+
+    def make_chain_key_bias(self, chain_rank):
+        """Per-key vector for protein-query/lipid-key attention -- the direction that,
+        before cross_attention_chain_bias, had no bias mechanism at all (only a mask).
+        Unrestricted by any pocket-style gate: every lipid atom is a legitimate key
+        here, gated only by lip_mask/same-sample membership like the rest of that
+        attention already is.
+        """
+        if not self.chain_bias_on or chain_rank is None:
+            return None
+        return self._scaled(self.chain_bias_scale, chain_rank)
+
+    def _combine_key_bias(self, *terms):
+        terms = [term for term in terms if term is not None]
+        if not terms:
+            return None
+        combined = terms[0]
+        for term in terms[1:]:
+            combined = combined + term
+        return combined
+
+    def make_prot_attention_bias(self, prot_mask, chain_rank, prot):
+        """Dense-matrix counterpart of make_chain_key_bias, for the non-fast_attention
+        path -- mirrors make_lip_attention_bias's own structure. prot_mask is
+        [N_protein(query), N_lipid(key)] (see architecture/AGENTS.md's Attention And
+        Pooling Contracts), so chain_rank broadcasts along the LAST axis.
+        """
+        if not self.chain_bias_on or chain_rank is None:
+            return prot_mask
+        same_batch = ~prot_mask
+        attention_bias = torch.zeros(
+            prot_mask.shape, dtype=prot.dtype, device=prot.device
+        )
+        attention_bias = attention_bias.masked_fill(prot_mask, float("-inf"))
+        chain_term = same_batch.to(prot.dtype) * chain_rank.unsqueeze(0).expand_as(prot_mask)
+        weight = torch.nn.functional.softplus(self.chain_bias_scale)
+        if getattr(self.config, "prot_pos_bias_per_head", False):
+            attention_bias = attention_bias + chain_term.unsqueeze(0) * weight.view(-1, 1, 1)
+        else:
+            attention_bias = attention_bias + chain_term * weight
+        return attention_bias
+
     def forward(self, lip, prot, lip_mask, prot_mask, pocket_mask=None,
                 lip_batch=None, prot_batch=None, lip_layout=None, prot_layout=None,
-                pocket_layout=None, pocket_index=None):
+                pocket_layout=None, pocket_index=None, bury=None, chain_rank=None):
         # Current compact variant:
         # lipid_query = lip.unsqueeze(1)
         # lipid_key = prot.unsqueeze(1)
@@ -213,12 +289,16 @@ class CrossAttention(torch.nn.Module):
                 lip_outs = grouped_attention(
                     self.lip_cross_attention, lip, lip_batch, prot, prot_batch,
                     num_graphs,
-                    key_bias=self.make_lip_key_bias(pocket_mask, lip),
+                    key_bias=self._combine_key_bias(
+                        self.make_lip_key_bias(pocket_mask, lip),
+                        self.make_bury_key_bias(pocket_mask, bury),
+                    ),
                     q_layout=lip_layout, kv_layout=prot_layout,
                     q_dense=lip_dense, kv_dense=prot_dense,
                 )
             prot_outs = grouped_attention(
                 self.prot_cross_attention, prot, prot_batch, lip, lip_batch, num_graphs,
+                key_bias=self.make_chain_key_bias(chain_rank),
                 q_layout=prot_layout, kv_layout=lip_layout,
                 q_dense=prot_dense, kv_dense=lip_dense,
             )
@@ -234,7 +314,8 @@ class CrossAttention(torch.nn.Module):
         prot_key = lipid_query
         prot_value = lipid_query
 
-        lip_attn_mask = self.make_lip_attention_bias(lip_mask, pocket_mask, lip)
+        lip_attn_mask = self.make_lip_attention_bias(lip_mask, pocket_mask, lip, bury)
+        prot_attn_mask = self.make_prot_attention_bias(prot_mask, chain_rank, prot)
 
         # need_weights=False: neither returned weight tensor is used below (both
         # discarded as `_`), and skipping them lets MultiheadAttention take the fused
@@ -244,7 +325,7 @@ class CrossAttention(torch.nn.Module):
             lipid_query, lipid_key, lipid_value, attn_mask=lip_attn_mask, need_weights=False
         )
         prot_outs, _ = self.prot_cross_attention(
-            prot_query, prot_key, prot_value, attn_mask=prot_mask, need_weights=False
+            prot_query, prot_key, prot_value, attn_mask=prot_attn_mask, need_weights=False
         )
 
         return self.finish(

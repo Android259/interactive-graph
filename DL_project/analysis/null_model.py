@@ -156,7 +156,7 @@ def working_set(csv, seed, ratio, lipid_classes):
     `lipid_marginal_baseline.working_set` builds the same rows in the same order but
     renumbers them 0..N-1 and keeps no trace of where they came from, and `pair_id` --
     the original row of the interaction table -- is assigned by
-    `New_dataloader.__init__` *before* that renumbering. Matching rows against the
+    `Dataloader.__init__` *before* that renumbering. Matching rows against the
     scores `analysis/checkpoint_scores.py` writes needs that id, so the two lines are
     reproduced here rather than in the baseline, whose own numbers do not use it.
     """

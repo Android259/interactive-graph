@@ -1,16 +1,20 @@
 import torch
 
-try:
-    from .mlp_utils import make_self_attention
-except ImportError:
-    from mlp_utils import make_self_attention
+from .mlp_utils import make_self_attention
 
-# Fixed token order: 6 of dataloader/New_dataloader.py's _compute_pair_descriptors
+# Fixed token order: 6 of dataloader/Dataloader.py's _compute_pair_descriptors
 # columns (chain, unsaturation, hbond, heavy, occupancy, extent -- 5 under
 # --no_pair_descriptor_extent, which drops "extent" alone; occupancy still reads
 # coarse_extent internally either way, see PairDescriptorHead/_compute_pair_
 # descriptors), plus 2 read directly off the pocket descriptor tensor.
 DATALOADER_TOKENS = ("chain", "unsaturation", "hbond", "heavy", "occupancy", "extent")
+# --pair_descriptor_lipid_shape's 4 extra dataloader-computed columns (Dataloader.py.
+# _compute_pair_descriptors, dataloader/pair_descriptors.py.LIPID_SHAPE_DESCRIPTOR_NAMES),
+# inserted between "occupancy" and "extent" in pair_descriptor_input's column order --
+# Dataloader.py's pair_descriptor_names list builds the identical order.
+LIPID_SHAPE_TOKENS = (
+    "radius_of_gyration", "asphericity", "molecular_volume", "rotatable_fraction",
+)
 # --pair_descriptor_pocket_shares_split's 2 extra dataloader-computed columns (New_
 # dataloader.py._compute_pair_descriptors), appended after DATALOADER_TOKENS in the same
 # fixed-order convention. No split of aromatic_share exists in POCKET_DESCRIPTOR_NAMES
@@ -29,7 +33,7 @@ _HYDROPATHY_CORE_INDEX = 11
 _HYDROPATHY_RIM_INDEX = 12
 
 # --pair_descriptor_pocket_shares_coarse's band edges for aromatic_share/polar_share.
-# FIXED, not train-fit -- unlike coarse_extent (dataloader/New_dataloader.py, quantile
+# FIXED, not train-fit -- unlike coarse_extent (dataloader/Dataloader.py, quantile
 # edges cut on TRAIN proteins), these do not depend on any data at all, train or test,
 # so there is nothing here for a held-out split to leak into. Three equal-width bands
 # are the same destroy-per-protein-resolution move coarse_extent already makes for
@@ -60,7 +64,7 @@ class PairDescriptorHead(torch.nn.Module):
 
       lipid-only   : chain length, unsaturation count, H-bond capacity, heavy-atom
                      count (dataloader/pair_descriptors.py).
-      protein-only : coarsened pocket extent (dataloader/New_dataloader.py --
+      protein-only : coarsened pocket extent (dataloader/Dataloader.py --
                      coarsened the same way --compatibility_split_input's "clash"
                      term is, so raw cavity size cannot re-identify the held-out
                      protein), aromatic_share and polar_share (1 - apolar_sasa_share),
@@ -105,9 +109,11 @@ class PairDescriptorHead(torch.nn.Module):
         # --pair_descriptor_pocket_shares_split, and the one with the highest raw
         # family-identity signal of the three protein-only entries (eta^2 0.78,
         # files/compat_input_audit.md), even after coarsening.
-        base_tokens = DATALOADER_TOKENS if getattr(
-            config, "pair_descriptor_extent", True
-        ) else tuple(name for name in DATALOADER_TOKENS if name != "extent")
+        base_tokens = ("chain", "unsaturation", "hbond", "heavy", "occupancy")
+        if getattr(config, "pair_descriptor_lipid_shape", False):
+            base_tokens = base_tokens + LIPID_SHAPE_TOKENS
+        if getattr(config, "pair_descriptor_extent", True):
+            base_tokens = base_tokens + ("extent",)
         # --no_pair_descriptor_occupancy: drops the one token that is neither
         # lipid-only nor protein-only. occupancy is always raw column 4 of
         # pair_descriptor_input regardless of pair_descriptor_extent (chain,
@@ -122,7 +128,7 @@ class PairDescriptorHead(torch.nn.Module):
         # (project memory [[descriptors-path-fingerprint-leak]]).
         self.use_pocket_shares = getattr(config, "pair_descriptor_pocket_shares", True)
         # --pair_descriptor_pocket_shares_split: aromatic_share_core/rim (already
-        # standardised in pair_descriptor_input, dataloader/New_dataloader.py) plus
+        # standardised in pair_descriptor_input, dataloader/Dataloader.py) plus
         # hydropathy_core/rim, read raw from pocket_descriptor like aromatic_share/
         # polar_share were -- but unlike those two this pair is not a bounded [0, 1]
         # share, so it needs its own standardisation (see set_pocket_descriptor_

@@ -14,7 +14,7 @@ literally "does the cavity reach as far as the tail is long". Documented in
 files/pocket_lipid_compatibility.md, which also carries the measurement of whether it
 adds anything over files/interaction_signal_plan.md's chemistry prior.
 
-Two independent consumers of the raw value, wired in New_dataloader:
+Two independent consumers of the raw value, wired in Dataloader:
   --pocket_compat_prior : frozen, calibrated, added to the logit outside the network
                           (same mechanism as --chem_prior, and jointly calibrated with
                           it when both are on -- see dataloader/chemistry_prior.py).
@@ -310,7 +310,7 @@ def compat_input_parts(config):
 def compat_input_width(config):
     """How many columns --compatibility_input / --compatibility_split_input attach.
 
-    Read by Final_Layer to size `classifier_input_dim` and by New_dataloader to build
+    Read by Final_Layer to size `classifier_input_dim` and by Dataloader to build
     the tensor, so the two cannot disagree about the width -- which is exactly the kind
     of mismatch that surfaces as a shape error deep inside the classifier, several
     hundred epochs of wall clock after the flag was set.
@@ -338,7 +338,7 @@ def raw_compatibility_parts(csv, root_dir, isomeric=False):
 
     Returned raw and uncoarsened: whether `extent` should be rounded to a few levels,
     and where those levels are cut, is a train-only decision, and this function has no
-    notion of train. `_compute_compatibility_input` in dataloader/New_dataloader.py
+    notion of train. `_compute_compatibility_input` in dataloader/Dataloader.py
     makes it, next to the standardisation that is train-only for the same reason.
 
     Neither half reads Interaction, so nothing here can leak a label.
@@ -399,7 +399,7 @@ def raw_compatibility(csv, root_dir, isomeric=False):
     Both are one array per row, as long as that row's candidate list: the lipid half of
     the term depends on which candidate structure the sample is encoded as, so the
     difference does too, and which entry a sample reads is chosen where that structure is
-    chosen (New_dataloader.get). Entry 0 is the row's first candidate, which is what a
+    chosen (Dataloader.get). Entry 0 is the row's first candidate, which is what a
     run that never draws sees.
 
     Returns (values, missing_chain_mask): a lipid whose SMILES RDKit cannot parse, or

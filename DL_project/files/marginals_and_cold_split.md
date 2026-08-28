@@ -214,7 +214,7 @@ ML и OSBP пропускаются: у них 10 и 8 положительны�
 
 Бейзлайн «доля положительных у этого липида в train больше 0.5» печатается в лог при
 загрузке (`_report_lipid_prior_baseline` в
-[dataloader/New_dataloader.py](../dataloader/New_dataloader.py)). По семи семействам:
+[dataloader/Dataloader.py](../dataloader/Dataloader.py)). По семи семействам:
 
 | разрез | бейзлайн test | липидов test, виденных в train |
 |---|---|---|
@@ -487,7 +487,7 @@ python3 analysis/full_label_report.py --label <label> --split valid
 
 | что | чем |
 |---|---|
-| бейзлайн приора в логе каждого запуска | `_report_lipid_prior_baseline` в [New_dataloader.py](../dataloader/New_dataloader.py) |
+| бейзлайн приора в логе каждого запуска | `_report_lipid_prior_baseline` в [Dataloader.py](../dataloader/Dataloader.py) |
 | он же по всем семействам и сэмплерам | [preprocessing/lipid_marginal_baseline.py](../preprocessing/lipid_marginal_baseline.py) |
 | подбор классов для двустороннего разреза | [preprocessing/lipid_class_holdout.py](../preprocessing/lipid_class_holdout.py) |
 | построчные оценки чекпойнтов | [analysis/checkpoint_scores.py](../analysis/checkpoint_scores.py) |
@@ -527,7 +527,7 @@ loss = mean over (i positive, j negative) of  softplus(-(s_i - s_j))     s = log
 Ranking, Rendle et al. 2009), и **AUC — это ровно доля таких пар, упорядоченных верно**,
 то есть потеря оптимизирует ту же метрику, которую раздел 8 использует для сравнения с
 нуль-моделью. Пары берутся внутри батча независимо от белка (`protein_id` не тянется в
-обучающий батч, см. `New_dataloader.__iter__`), поэтому оптимизируется пул-версия AUC —
+обучающий батч, см. `Dataloader.__iter__`), поэтому оптимизируется пул-версия AUC —
 та же, что считает [analysis/null_model.py](../analysis/null_model.py).
 Побочный эффект: дисбаланс классов перестаёт быть проблемой — в каждой паре ровно один
 положительный и один отрицательный, так что `--class_weights`, `--focal_loss` и
@@ -738,7 +738,7 @@ DeeplyTough) не имеет смысла начинать без прежде �
 
 Обе копии ячейки несут один белок и один липид, значит попадают в один и тот же
 отложенный блок. Блок делится на валидацию и тест построчно (`sample(frac=0.5)` в
-`New_dataloader`), поэтому копии одной пары могли разойтись: одна в валидацию, другая в
+`Dataloader`), поэтому копии одной пары могли разойтись: одна в валидацию, другая в
 тест. Обучающие метки при этом не утекают — утекает выбор чекпойнта: он делался на
 валидации, содержавшей буквальные дубликаты тестовых строк. На START и CRAL-TRIO, где
 дубликатов 42 и 35, это заметная доля блока.

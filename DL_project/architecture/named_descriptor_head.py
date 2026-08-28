@@ -1,9 +1,6 @@
 import torch
 
-try:
-    from .mlp_utils import make_self_attention
-except ImportError:
-    from mlp_utils import make_self_attention
+from .mlp_utils import make_self_attention
 
 from dataloader.pair_descriptors import parse_descriptor_list, resolve_requested_tokens
 
@@ -28,7 +25,7 @@ class NamedDescriptorHead(torch.nn.Module):
     def __init__(self, config, token_names, catalog_order, act_fn=None):
         """`token_names`: this head's OWN tokens (already-canonical, e.g. from
         dataloader.pair_descriptors.parse_descriptor_list(config.good_descriptors)).
-        `catalog_order`: the FULL, shared column order dataloader/New_dataloader.py's
+        `catalog_order`: the FULL, shared column order dataloader/Dataloader.py's
         descriptor_catalog_input tensor is stacked in for THIS config -- resolve_
         requested_tokens(config.good_descriptors, config.bad_descriptors), computed
         once by architecture.final_layer.Final_Layer.__init__ and passed to both the
@@ -50,7 +47,7 @@ class NamedDescriptorHead(torch.nn.Module):
         self.dim = config.hiddim
         self.token_names = tuple(token_names)
         self.token_count = len(self.token_names)
-        # Column indices into descriptor_catalog_input (dataloader/New_dataloader.py),
+        # Column indices into descriptor_catalog_input (dataloader/Dataloader.py),
         # so forward() can select exactly this head's own tokens out of the one shared
         # tensor both the good and the bad head read from.
         self.register_buffer(

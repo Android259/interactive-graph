@@ -9,6 +9,9 @@ import torch_geometric
 from architecture.interaction_classification import InteractionClassification
 from architecture.loss import GRAB_loss, Non_Negative_Positive_Unlabeled_loss
 from architecture.mlp_utils import export_surviving_structure
+from architecture.protein_edge_geometry import (
+    STRUCTURED_EDGE_DIM, rbf, structured_edge_features,
+)
 from training.read_configuration import ModelConfig
 
 
@@ -73,7 +76,11 @@ def synthetic_forward_args(config):
         # sample with none.
         "pocket_mask": torch.tensor([True, False, True, False]),
     }
-    if getattr(config, "geometric_transformer", False):
+    if (
+        getattr(config, "geometric_transformer", False)
+        or getattr(config, "protein_edge_attention", False)
+        or getattr(config, "protein_edge_mlp", False)
+    ):
         args["prot_frame_rotation"] = torch.eye(3).repeat(4, 1, 1)
         args["prot_frame_translation"] = torch.randn(4, 3)
     if (
@@ -98,7 +105,9 @@ def synthetic_forward_args(config):
             [[0, 1, 2, 3], [1, 0, 3, 2]],
             dtype=torch.long,
         )
-        args["lip_e_attr"] = torch.randn(4, 6)
+        args["lip_e_attr"] = torch.randn(4, 22)
+        if getattr(config, "cross_attention_chain_bias", False):
+            args["chain_rank"] = torch.rand(4)
     else:
         args["lip"] = torch.randn(4, 768)
 
@@ -108,7 +117,8 @@ def synthetic_forward_args(config):
     if getattr(config, "pocket_descriptors", False):
         args["pocket_descriptor"] = torch.rand(2, config.pocket_descriptor_count)
     if getattr(config, "pair_descriptors", False):
-        base_width = 6 if getattr(config, "pair_descriptor_extent", True) else 5
+        base_width = 5 + (4 if getattr(config, "pair_descriptor_lipid_shape", False) else 0)
+        base_width += 1 if getattr(config, "pair_descriptor_extent", True) else 0
         split = (
             getattr(config, "pair_descriptor_pocket_shares_split", False)
             and getattr(config, "pair_descriptor_pocket_shares", True)
@@ -604,6 +614,163 @@ def test_protein_pre_sa_mlp_can_be_disabled_with_gine_conv():
     )
 
 
+def _random_rotations(n):
+    matrices = torch.linalg.qr(torch.randn(n, 3, 3)).Q
+    matrices[:, :, 0] *= torch.sign(torch.det(matrices)).unsqueeze(-1)
+    return matrices
+
+
+def test_rbf_shape_and_peak_bin():
+    distance = torch.tensor([2.0, 12.0, 22.0])
+    values = rbf(distance)
+    assert values.shape == (3, 16)
+    # bin 0 is centered at d_min=2, bin 15 at d_max=22 -- each endpoint distance
+    # should peak its own nearest-center bin.
+    assert values[0].argmax().item() == 0
+    assert values[2].argmax().item() == 15
+
+
+def test_structured_edge_features_shape_and_bidirectional_orientation():
+    torch.manual_seed(0)
+    frame_rotation = _random_rotations(3)
+    frame_translation = torch.randn(3, 3) * 5
+    edge_index = torch.tensor([[0, 1], [1, 2]])
+    edge_attr = torch.tensor([[7.0, 3.0, 1.0], [8.0, 4.0, 2.0]])
+
+    bidi_index, bidi_attr = structured_edge_features(
+        edge_index, frame_rotation, frame_translation, edge_attr
+    )
+    assert bidi_index.shape == (2, 4)
+    assert bidi_attr.shape == (4, STRUCTURED_EDGE_DIM)
+
+    # Forward edge 0 (0->1) and its native reverse (1->0, at index 2) must carry
+    # the same quaternion real part and negated vector part (conjugate), not a
+    # naive copy -- copying would break under the direction-dependent formula.
+    forward_quat = bidi_attr[0, 19:23]
+    backward_quat = bidi_attr[2, 19:23]
+    assert torch.allclose(forward_quat[0], backward_quat[0], atol=1e-5)
+    assert torch.allclose(forward_quat[1:], -backward_quat[1:], atol=1e-5)
+
+
+def test_protein_edge_attention_forward_backward():
+    config = make_config()
+    config.protein_edge_attention = True
+    config.single_gat_layer = False
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+
+    assert model.protein1.encodin1.__class__.__name__ == "EdgeAttentionConv"
+    assert model.protein1.encodin2.__class__.__name__ == "EdgeAttentionConv"
+    assert any(
+        parameter.grad is not None
+        for parameter in model.protein1.encodin1.parameters()
+    )
+    assert any(
+        parameter.grad is not None
+        for parameter in model.protein1.encodin2.parameters()
+    )
+
+
+def test_protein_edge_mlp_forward_backward():
+    config = make_config()
+    config.protein_edge_mlp = True
+    config.single_gat_layer = False
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+
+    assert model.protein1.encodin1.__class__.__name__ == "EdgeMLPConv"
+    assert model.protein1.encodin2.__class__.__name__ == "EdgeMLPConv"
+    assert any(
+        parameter.grad is not None
+        for parameter in model.protein1.encodin1.parameters()
+    )
+    assert any(
+        parameter.grad is not None
+        for parameter in model.protein1.encodin2.parameters()
+    )
+
+
+def test_lipid_edge_attention_forward_backward():
+    config = make_config(lipid_graph_isomers=True, lipid_mode="concat")
+    config.protein_edge_attention = True
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+
+    assert model.lipid1.encodin1.__class__.__name__ == "EdgeAttentionConv"
+    assert any(
+        parameter.grad is not None
+        for parameter in model.lipid1.encodin1.parameters()
+    )
+
+
+def test_lipid_edge_mlp_forward_backward():
+    config = make_config(lipid_graph_isomers=True, lipid_mode="concat")
+    config.protein_edge_mlp = True
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+
+    assert model.lipid1.encodin1.__class__.__name__ == "EdgeMLPConv"
+    assert any(
+        parameter.grad is not None
+        for parameter in model.lipid1.encodin1.parameters()
+    )
+
+
+@pytest.mark.parametrize("fast", [True, False])
+def test_cross_attention_bury_bias_trains(fast):
+    config = make_config()
+    config.cross_attention_bury_bias = True
+    config.fast_attention = fast
+    config.validate()
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    loss = F.cross_entropy(output, torch.tensor([0, 1]))
+    assert loss == loss
+    loss.backward()
+    assert model.cross_attention1.bury_bias_scale.grad is not None
+
+
+@pytest.mark.parametrize("fast", [True, False])
+def test_cross_attention_chain_bias_trains(fast):
+    config = make_config(lipid_graph_isomers=True, lipid_mode="concat")
+    config.cross_attention_chain_bias = True
+    config.fast_attention = fast
+    config.validate()
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    loss = F.cross_entropy(output, torch.tensor([0, 1]))
+    assert loss == loss
+    loss.backward()
+    assert model.cross_attention1.chain_bias_scale.grad is not None
+
+
+def test_cross_attention_chain_bias_requires_lipid_graph_isomers():
+    config = make_config()
+    config.cross_attention_chain_bias = True
+    with pytest.raises(ValueError, match="lipid_graph_isomers"):
+        config.validate()
+
+
+def test_protein_edge_modes_reject_bidirectional_edges():
+    config = make_config()
+    config.protein_edge_attention = True
+    config.bidirectional_edges = True
+    with pytest.raises(ValueError, match="bidirectional_edges"):
+        config.validate()
+
+
+def test_protein_edge_modes_are_mutually_exclusive_with_other_convs():
+    config = make_config()
+    config.protein_edge_mlp = True
+    config.gine_conv = True
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        config.validate()
+
+
 def test_protein_post_sa_mlp_can_be_disabled():
     config = make_config()
     config.protein_self_attention = True
@@ -763,6 +930,32 @@ def test_pair_descriptors_head_trains_and_gets_gradients():
     assert unused == []
 
 
+def test_pair_descriptor_lipid_shape_adds_four_tokens_and_trains():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.pair_descriptor_lipid_shape = True
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.pair_descriptor_head
+    assert head.token_names == (
+        "chain", "unsaturation", "hbond", "heavy", "occupancy",
+        "radius_of_gyration", "asphericity", "molecular_volume", "rotatable_fraction",
+        "extent", "aromatic_share", "polar_share",
+    )
+    assert head.token_count == 12
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name
+        for name, parameter in head.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
 def test_pair_descriptors_only_ignores_lipid_and_protein_pooling():
     config = make_config()
     config.pocket_descriptors = True
@@ -853,7 +1046,7 @@ def test_two_pair_descriptors_paths_wires_coarse_tokens_correctly():
     # good/bad_descriptors' <name>_coarse=<spec> tokens (dataloader.pair_descriptors.
     # parse_descriptor_token) must reach NamedDescriptorHead as CANONICAL tokens and
     # index into the SAME shared column order on both sides -- this pins that wiring
-    # (not the coarsening arithmetic itself, which dataloader/New_dataloader.py owns
+    # (not the coarsening arithmetic itself, which dataloader/Dataloader.py owns
     # and this synthetic-tensor harness bypasses; that path is exercised separately
     # against real data).
     config = make_config()

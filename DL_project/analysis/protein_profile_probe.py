@@ -42,7 +42,7 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dataloader.New_dataloader import PLIDataset
+from dataloader.Dataloader import PLIDataset
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.sampler import lipid_class_series
 from architecture.interaction_classification import InteractionClassification

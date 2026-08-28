@@ -1,21 +1,12 @@
 import torch
 
-try:
-    from .cross_attention import CrossAttention
-    from .final_layer import Final_Layer
-    from .lipid_encoder import Lipid_encoder
-    from .protein_encoder import Protein_encoder
-    from .mlp_utils import ConcreteDropout
-    from .fast_attention import make_grouped_attention_layout
-    from training.read_configuration import ModelConfig
-except ImportError:
-    from cross_attention import CrossAttention
-    from final_layer import Final_Layer
-    from lipid_encoder import Lipid_encoder
-    from protein_encoder import Protein_encoder
-    from mlp_utils import ConcreteDropout
-    from fast_attention import make_grouped_attention_layout
-    from read_configuration import ModelConfig
+from .cross_attention import CrossAttention
+from .final_layer import Final_Layer
+from .lipid_encoder import Lipid_encoder
+from .protein_encoder import Protein_encoder
+from .mlp_utils import ConcreteDropout
+from .fast_attention import make_grouped_attention_layout
+from training.read_configuration import ModelConfig
 
 
 class InteractionClassification(torch.nn.Module):
@@ -262,7 +253,8 @@ class InteractionClassification(torch.nn.Module):
         frozen_prior=None,
         compat_input=None,
         pair_descriptor_input=None,
-        descriptor_catalog_input=None):
+        descriptor_catalog_input=None,
+        chain_rank=None):
         """Encode a batched protein-lipid input and return binary logits."""
 
         if config.descriptors_head or config.two_pair_descriptors_paths:
@@ -400,7 +392,8 @@ class InteractionClassification(torch.nn.Module):
                     lip1, prot1, lip_cross_att_mask, prot_cross_att_mask, cross_pocket_mask,
                     lip_batch=lip_batch, prot_batch=prot_batch,
                     lip_layout=lip_layout, prot_layout=prot_layout,
-                    pocket_layout=cross_pocket_layout, pocket_index=cross_pocket_index)
+                    pocket_layout=cross_pocket_layout, pocket_index=cross_pocket_index,
+                    bury=bury, chain_rank=chain_rank)
 
             prot1, pooled_prot_batch = self._select_pocket_nodes(
                 prot1, prot_batch, pocket_mask
@@ -425,7 +418,8 @@ class InteractionClassification(torch.nn.Module):
                 lip1, prot1, lip_cross_att_mask, prot_cross_att_mask, cross_pocket_mask,
                 lip_batch=lip_batch, prot_batch=prot_batch,
                 lip_layout=lip_layout, prot_layout=prot_layout,
-                pocket_layout=cross_pocket_layout, pocket_index=cross_pocket_index)
+                pocket_layout=cross_pocket_layout, pocket_index=cross_pocket_index,
+                bury=bury, chain_rank=chain_rank)
 
             prot2 = self.protein2(
                 config,
@@ -470,6 +464,7 @@ class InteractionClassification(torch.nn.Module):
                 lip_batch=lip_batch, prot_batch=prot_batch,
                 lip_layout=lip_layout, prot_layout=prot_layout,
                 pocket_layout=cross_pocket_layout, pocket_index=cross_pocket_index,
+                bury=bury, chain_rank=chain_rank,
             )
 
             prot2, pooled_prot_batch = self._select_pocket_nodes(

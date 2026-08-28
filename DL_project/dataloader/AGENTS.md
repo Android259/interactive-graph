@@ -2,13 +2,13 @@
 
 ## Active vs Legacy
 
-- `New_dataloader.py` — **active** loader used by `training/new_train.py`.
+- `Dataloader.py` — **active** loader used by `training/new_train.py`.
 - `GRAB_graph.py` — pair-edge generation for the GRAB loss (train-only).
 - `grab_dataset_graph.py` — train-only GRAB graph filtering and batch coefficients.
 - `Dataloader.py`, `tanimoto_Dataloader.py` — **legacy** `PLIDataset` variants, not
   used by the active pipeline. Do not mirror active changes into them.
 
-## PLIDataset (`New_dataloader.py`)
+## PLIDataset (`Dataloader.py`)
 
 Constructed once, then unpacked as a 3-tuple:
 

@@ -90,7 +90,7 @@ def block_features(block, train, lengths, extents):
     """`(compat, chain)` for one held-out block, missing chain lengths filled from train.
 
     The fill is the train mean, matching `_compute_compatibility_input` in
-    dataloader/New_dataloader.py -- on this table no row needs it (all 312 species
+    dataloader/Dataloader.py -- on this table no row needs it (all 312 species
     parse), but a probe that silently differed from the loader on the one path that is
     hard to notice would be worse than useless.
     """

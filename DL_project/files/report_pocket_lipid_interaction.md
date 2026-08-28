@@ -239,7 +239,7 @@ The base configuration uses `--balanced_proteins --negatives_per_positive=2`.
 Three splits are in use. They differ in which axis of the screening matrix is held out, and
 therefore in which question the metric answers. All three are group-disjoint (no random row
 split), all three are implemented in `_split_interactions`
-([dataloader/New_dataloader.py](../dataloader/New_dataloader.py)), and all three print their own
+([dataloader/Dataloader.py](../dataloader/Dataloader.py)), and all three print their own
 leakage check into the run log (§4.3).
 
 ### 3.1 Why the split decides the question
@@ -1054,7 +1054,7 @@ Recorded here rather than answered, because the pipeline does not answer them:
 
 | quantity | script |
 |---|---|
-| prior baseline, in every run's log | `_report_lipid_prior_baseline`, [dataloader/New_dataloader.py](../dataloader/New_dataloader.py) |
+| prior baseline, in every run's log | `_report_lipid_prior_baseline`, [dataloader/Dataloader.py](../dataloader/Dataloader.py) |
 | prior baseline across families, samplers and splits | [preprocessing/lipid_marginal_baseline.py](../preprocessing/lipid_marginal_baseline.py) |
 | which classes a double cold split holds out, and its cost | [preprocessing/lipid_class_holdout.py](../preprocessing/lipid_class_holdout.py) |
 | per-row scores of saved checkpoints | [analysis/checkpoint_scores.py](../analysis/checkpoint_scores.py) |

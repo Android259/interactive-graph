@@ -5,7 +5,7 @@ import pytest
 import torch
 from torch_geometric.loader import DataLoader
 
-from dataloader.New_dataloader import LipidGraphData, PLIDataset, ProteinGraphData
+from dataloader.Dataloader import LipidGraphData, PLIDataset, ProteinGraphData
 
 
 NODE_COLUMNS = [
@@ -72,6 +72,7 @@ def write_graph(graph_dir, graph_id, num_nodes):
             "total_num_hs": 3,
             "mass": 12.011,
             "gasteiger_charge": 0.0,
+            "chain_rank": 0.5,
         }
         for _ in range(num_nodes)
     ])
@@ -85,6 +86,7 @@ def write_graph(graph_dir, graph_id, num_nodes):
             "stereo": 0,
             "bond_dir": 0,
             "is_aromatic": 0,
+            "mean_bond_length": 1.5,
         },
         {
             "source": 1,
@@ -95,6 +97,7 @@ def write_graph(graph_dir, graph_id, num_nodes):
             "stereo": 0,
             "bond_dir": 0,
             "is_aromatic": 0,
+            "mean_bond_length": 1.5,
         },
     ])
     nodes.to_csv(path / "nodes.csv", index=False)
@@ -295,7 +298,7 @@ def test_lipid_graph_smiles_uses_random_fragment(monkeypatch):
     )
     dataset = make_dataset(config)
     dataset._draw_lipid_candidate = True
-    monkeypatch.setattr("dataloader.New_dataloader.random.choice", lambda values: values[-1])
+    monkeypatch.setattr("dataloader.Dataloader.random.choice", lambda values: values[-1])
     row = pd.Series({"SmileGlobal": "CCO", "SmileFragment": "CC;CCC"})
 
     assert dataset.lipid_graph_smiles(row) == ["CCC"]
@@ -312,7 +315,7 @@ def test_lipid_graph_smiles_is_fixed_on_a_split_that_does_not_draw(monkeypatch):
     def fail(values):
         raise AssertionError("a non-drawing split must not consume the random stream")
 
-    monkeypatch.setattr("dataloader.New_dataloader.random.choice", fail)
+    monkeypatch.setattr("dataloader.Dataloader.random.choice", fail)
     row = pd.Series({"SmileGlobal": "CCO", "SmileFragment": "CC;CCC"})
 
     assert dataset.lipid_graph_smiles(row) == ["CCO"]
@@ -340,7 +343,9 @@ def test_make_graph_lipid_concats_fragments_and_offsets_edges(tmp_path):
     graph = dataset.make_graph_lipid(row)
 
     assert graph.x.shape == (4, len(NODE_COLUMNS))
-    assert graph.edge_attr.shape == (4, len(EDGE_COLUMNS) - 2)
+    # 6 topological EDGE_COLUMNS (excl. source/target) + 16 RBF-expanded
+    # mean_bond_length bins (dataloader/lipid_isomer_graph_builder.py).
+    assert graph.edge_attr.shape == (4, len(EDGE_COLUMNS) - 2 + 16)
     assert graph.edge_index.tolist() == [[0, 1, 2, 3], [1, 0, 3, 2]]
     assert not hasattr(graph, "lipid_batch")
 

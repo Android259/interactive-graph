@@ -319,13 +319,26 @@ class ProteinGraphBuilder:
         use_precomputed_geometric_nodes = (
             getattr(self.config, "geometric_transformer", False)
             or getattr(self.config, "rnabang_frozen_node_adapter", False)
+            or getattr(self.config, "protein_edge_attention", False)
+            or getattr(self.config, "protein_edge_mlp", False)
+        )
+        # protein_edge_attention/protein_edge_mlp only need the rigid frame below,
+        # not geometric_node_attr/edge_node_pairs/edge_node_degree (those feed the
+        # IPA/rnabang paths) -- loading them anyway is harmless (unused columns
+        # from the same already-open CSV) and keeps this one boolean shared instead
+        # of adding a third near-identical variant.
+        use_frame = (
+            getattr(self.config, "geometric_transformer", False)
+            or getattr(self.config, "protein_edge_attention", False)
+            or getattr(self.config, "protein_edge_mlp", False)
         )
         if use_precomputed_geometric_nodes:
             geometric = cached.get("geometric")
             if geometric is None:
                 raise FileNotFoundError(
                     f"{os.path.dirname(nodes_path)}/geometric_transformer_nodes.csv "
-                    "is required by --geometric_transformer; rebuild the protein "
+                    "is required by --geometric_transformer/--rnabang_frozen_node_adapter/"
+                    "--protein_edge_attention/--protein_edge_mlp; rebuild the protein "
                     "tensor cache after generating it"
                 )
             parts["geometric_node_attr"] = self._cached_columns(
@@ -346,7 +359,7 @@ class ProteinGraphBuilder:
                     geometric, pair_columns
                 ).reshape(-1, MAX_INCIDENT_EDGES, 2)
             parts["edge_node_degree"] = geometric["edge_degree"].long()
-            if getattr(self.config, "geometric_transformer", False):
+            if use_frame:
                 rotation_columns = [
                     f"rotation_{row}{column}"
                     for row in range(3)
@@ -627,6 +640,18 @@ class ProteinGraphBuilder:
         use_precomputed_geometric_nodes = (
             getattr(self.config, "geometric_transformer", False)
             or getattr(self.config, "rnabang_frozen_node_adapter", False)
+            or getattr(self.config, "protein_edge_attention", False)
+            or getattr(self.config, "protein_edge_mlp", False)
+        )
+        # protein_edge_attention/protein_edge_mlp only need the rigid frame below,
+        # not geometric_node_attr/edge_node_pairs/edge_node_degree (those feed the
+        # IPA/rnabang paths) -- loading them anyway is harmless (unused columns
+        # from the same already-open CSV) and keeps this one boolean shared instead
+        # of adding a third near-identical variant.
+        use_frame = (
+            getattr(self.config, "geometric_transformer", False)
+            or getattr(self.config, "protein_edge_attention", False)
+            or getattr(self.config, "protein_edge_mlp", False)
         )
         if use_precomputed_geometric_nodes:
             geometric_path = os.path.join(
@@ -634,8 +659,10 @@ class ProteinGraphBuilder:
             )
             if not os.path.exists(geometric_path):
                 raise FileNotFoundError(
-                    f"{geometric_path} is required by --geometric_transformer; "
-                    "run preprocessing/build_geometric_protein_graphs.py"
+                    f"{geometric_path} is required by --geometric_transformer/"
+                    "--rnabang_frozen_node_adapter/--protein_edge_attention/"
+                    "--protein_edge_mlp; run "
+                    "preprocessing/build_geometric_protein_graphs.py"
                 )
             geometric = pandas.read_csv(geometric_path)
             expected_ids = vertices[
@@ -682,7 +709,7 @@ class ProteinGraphBuilder:
                     geometric["edge_degree"].values,
                     dtype=torch.long,
                 )
-            if getattr(self.config, "geometric_transformer", False):
+            if use_frame:
                 parts["frame_rotation"] = torch.tensor(
                     geometric[rotation_columns].values.reshape(-1, 3, 3),
                     dtype=torch.float32,

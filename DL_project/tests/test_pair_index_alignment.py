@@ -6,7 +6,7 @@ import torch
 from torch_geometric.loader import DataLoader
 
 from architecture.loss import GRAB_loss
-from dataloader.New_dataloader import (
+from dataloader.Dataloader import (
     PLIDataset,
     ProteinGraphData,
     sample_family_balanced_negatives,

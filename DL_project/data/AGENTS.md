@@ -9,7 +9,7 @@
 
 ## Active Inputs
 
-`dataloader/New_dataloader.py` consumes:
+`dataloader/Dataloader.py` consumes:
 
 ```text
 Processed_Negative_Interaction_Without_Duplicates.csv

@@ -123,7 +123,7 @@ weight decay или шума почти обнулить этот вход. Эт
 
 Оба пути читают один и тот же `raw_compatibility()` — на прогоне с обоими флагами
 атомы кармана читаются и SMILES парсятся один раз, не дважды
-(`_raw_frozen_prior_columns` в [New_dataloader.py](../dataloader/New_dataloader.py)).
+(`_raw_frozen_prior_columns` в [Dataloader.py](../dataloader/Dataloader.py)).
 
 ### 2.3 `--compatibility_split_input` — те же две величины, но не смешанные
 
@@ -182,7 +182,7 @@ weight decay или шума почти обнулить этот вход. Эт
 `compat_input_width` в
 [pocket_lipid_compatibility.py](../dataloader/pocket_lipid_compatibility.py);
 `_compute_compatibility_split_input` в
-[New_dataloader.py](../dataloader/New_dataloader.py); ширина входа в
+[Dataloader.py](../dataloader/Dataloader.py); ширина входа в
 [final_layer.py](../architecture/final_layer.py). Проверено: сборка и обратный проход на
 всех трёх армах, отказ на несовместимых сочетаниях, и **старые чекпойнты 2.2
 воспроизводятся под новым кодом цифра в цифру** (scp2/seed0 даёт 0.875 пулом и 0.863 внутри

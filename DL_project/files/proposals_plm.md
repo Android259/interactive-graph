@@ -25,7 +25,7 @@ uniformly across the whole protein rather than focused on the binding site.
 
 ### 1.3 ESM3-row <-> graph-node alignment was checked by count only, silently
 
-The loader (`dataloader/New_dataloader.py`) attached ESM3 embedding row `i` to graph
+The loader (`dataloader/Dataloader.py`) attached ESM3 embedding row `i` to graph
 node `i` positionally, checking only that the row COUNT matched (and only printing a
 warning on mismatch, never failing). No check that residue `i` in the embedding is
 actually residue `i` in the graph (order, not just count).
@@ -51,7 +51,7 @@ Verified concrete divergence mechanisms on the actual data:
     work.
   - **Selenomethionine (MSE)**: present (as HETATM) in raw `GM2A_1g13.pdb1` and
     `PITPNA_1uw5.pdb1` -- the only two proteins in the dataset with hard-coded
-    extra-trim compensation in `New_dataloader.get()` (`GM2A: [1:-1]` extra,
+    extra-trim compensation in `Dataloader.get()` (`GM2A: [1:-1]` extra,
     `PITPNA: [4:-4]`), patching an MSE-handling mismatch upstream of
     `pocketness.pdb`. **CORRECTED (was: "MSE is NOT a live risk, `pocketness.pdb`
     shows 0 MSE records with a residue count matching the graph node count").** The
@@ -132,7 +132,7 @@ this environment) -- flag before relying on it.
   graph nodes after special-token trimming).
 - `tests/test_esm3_alignment.py` -- training-free pytest over all 35 proteins;
   currently all pass.
-- `dataloader/New_dataloader.py` -- the loader now raises `ValueError` on mismatch
+- `dataloader/Dataloader.py` -- the loader now raises `ValueError` on mismatch
   instead of printing a warning.
 - Scope note (unchanged limitation): this checks **count**, not residue **order**;
   order verification needs a real sequence alignment, not attempted.
@@ -227,12 +227,12 @@ other pre-existing file are untouched (verified: original B-factor values
 
 - `training/read_configuration.py`: new flag `use_esm3_v2_embeddings` (+ CLI
   `--use_esm3_v2_embeddings`). When on:
-    - `dataloader/New_dataloader.py` reads embeddings from `data/embedding_ESM3_v2/`
+    - `dataloader/Dataloader.py` reads embeddings from `data/embedding_ESM3_v2/`
       instead of `data/embedding_ESM3/`, and applies only the standard BOS/EOS
       `[1:-1]` trim (the `GM2A`/`PITPNA` hard-coded extra trims are v1-pipeline-
       specific patches that should not apply to a freshly-generated v2 embedding --
       see 1.4's MSE finding).
-    - `dataloader/New_dataloader.py` also loads
+    - `dataloader/Dataloader.py` also loads
       `data/esm3_input/<stem>_node_confidence.csv` into a new
       `ProteinGraphData.node_confidence` field (only attached to the graph object
       when the flag is on, so PyG batch collation never sees a mix of tensor/None

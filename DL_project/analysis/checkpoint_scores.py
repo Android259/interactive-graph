@@ -51,7 +51,7 @@ import torch_geometric  # noqa: E402
 
 from read_configuration import read_configuration  # noqa: E402
 from architecture.interaction_classification import InteractionClassification  # noqa: E402
-from dataloader.New_dataloader import PLIDataset  # noqa: E402
+from dataloader.Dataloader import PLIDataset  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.pair_descriptors import resolve_similarity_feature_names  # noqa: E402
 from forward_args import build_forward_args  # noqa: E402

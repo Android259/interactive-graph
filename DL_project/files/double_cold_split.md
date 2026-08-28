@@ -25,7 +25,7 @@
 
 `train` — это строки, которые не попали ни под одно из двух условий. Всё остальное идёт
 в `excluded_data` и делится пополам на valid и test существующим кодом
-[`_split_interactions`](../dataloader/New_dataloader.py); менять эту часть не нужно.
+[`_split_interactions`](../dataloader/Dataloader.py); менять эту часть не нужно.
 
 Отложенное распадается на три сорта строк: знакомый липид у нового белка
 (**белок-холодные**), знакомый белок с новым классом липида (**липид-холодные**), и новое
@@ -364,9 +364,9 @@ python3 preprocessing/lipid_marginal_baseline.py --seeds=0,1,2 \
 | `--double_coldsplit` / `--mixed_coldsplit` / `--coldsplit_share` | [`training/read_configuration.py`](../training/read_configuration.py) |
 | правило подбора классов | `lipid_classes_for_holdout` в [`dataloader/sampler.py`](../dataloader/sampler.py) |
 | `--negatives_per_positive` | [`training/read_configuration.py`](../training/read_configuration.py); применяется пул-сэмплерами в [`dataloader/sampler.py`](../dataloader/sampler.py) |
-| фильтр по классам в определении train | [`_split_interactions`](../dataloader/New_dataloader.py) |
+| фильтр по классам в определении train | [`_split_interactions`](../dataloader/Dataloader.py) |
 | стратифицированный набор отрицательных | `_sample_group_balanced_negatives` в [`dataloader/sampler.py`](../dataloader/sampler.py) |
-| `--protein_balance_weight` | `get_protein_balance_weights` в [`New_dataloader.py`](../dataloader/New_dataloader.py) |
+| `--protein_balance_weight` | `get_protein_balance_weights` в [`Dataloader.py`](../dataloader/Dataloader.py) |
 | просмотр подбора | [`preprocessing/lipid_class_holdout.py`](../preprocessing/lipid_class_holdout.py) |
-| бейзлайн в логе запуска | `_report_lipid_prior_baseline` в [`New_dataloader.py`](../dataloader/New_dataloader.py) |
+| бейзлайн в логе запуска | `_report_lipid_prior_baseline` в [`Dataloader.py`](../dataloader/Dataloader.py) |
 | он же по всем семействам сразу | [`preprocessing/lipid_marginal_baseline.py`](../preprocessing/lipid_marginal_baseline.py) |

@@ -34,6 +34,8 @@ def build_forward_args(config, prot, lipid):
     if getattr(config, "lipid_graph_isomers", False):
         forward_args["lip_edgidx"] = lipid.edge_index
         forward_args["lip_e_attr"] = lipid.edge_attr
+        if getattr(config, "cross_attention_chain_bias", False):
+            forward_args["chain_rank"] = lipid.chain_rank
     if (
         config.prot_attention_pos_bias
         or config.prot_pooling_by_pockets
@@ -45,7 +47,11 @@ def build_forward_args(config, prot, lipid):
         forward_args["pocket_descriptor"] = prot.pocket_descriptor
     if getattr(config, "use_esm3_v2_embeddings", False):
         forward_args["node_confidence"] = getattr(prot, "node_confidence", None)
-    if getattr(config, "geometric_transformer", False):
+    if (
+        getattr(config, "geometric_transformer", False)
+        or getattr(config, "protein_edge_attention", False)
+        or getattr(config, "protein_edge_mlp", False)
+    ):
         forward_args["prot_frame_rotation"] = prot.frame_rotation
         forward_args["prot_frame_translation"] = prot.frame_translation
     if (

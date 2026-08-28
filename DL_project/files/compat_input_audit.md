@@ -223,7 +223,7 @@ IP_trans, LBP_BPI_CETP и CRAL-TRIO. Причём LBP_BPI_CETP, про кото�
 участвует — в отличие от `s_chem`, где есть leave-one-out. Среднее и разброс для
 стандартизации берутся с обучающих строк текущего разреза. Тензор признака собирается в
 `_prepare_indexed_fields()`, который вызывается **после** подмены `csv` на нужную половину,
-отдельно для каждого из трёх датасетов (`New_dataloader.__iter__`) — сдвига строк между
+отдельно для каждого из трёх датасетов (`Dataloader.__iter__`) — сдвига строк между
 train и valid нет. Проверено по коду.
 
 **Число 0.751 получено честно.** Отзывать его из-за нечестности нечего.
@@ -274,7 +274,7 @@ train и valid нет. Проверено по коду.
 ### 6.5 База обучена на сутки раньше — проверить нечем
 
 База — 19 августа 17:24–19:07, оба compat-прогона — 20 августа 14:52–16:40. Время правки у
-`final_layer.py`, `New_dataloader.py`, `new_train.py` — 20 августа 20:46, то есть **позже
+`final_layer.py`, `Dataloader.py`, `new_train.py` — 20 августа 20:46, то есть **позже
 всех трёх прогонов**, и по файлам нельзя восстановить, что было в момент каждого.
 
 Что говорит против расхождения: у базы и у pocketcompat **одинаковое число параметров**
@@ -387,6 +387,6 @@ python3 analysis/full_label_report.py --label <label> --epochs=120 --split=both
 | признак отдельно, приращение сверх химии и признака | [analysis/compatibility_probe.py](../analysis/compatibility_probe.py) — новый |
 | абляция входа на инференсе | [analysis/compat_input_ablation.py](../analysis/compat_input_ablation.py) — новый |
 | парная часть и η² идентичности по формам признака | [analysis/compat_feature_forms.py](../analysis/compat_feature_forms.py) — новый |
-| два входа вместо разности | `--compatibility_split_input`, `--compat_extent_bins` в [read_configuration.py](../training/read_configuration.py); `raw_compatibility_parts`, `coarsen_to_levels`, `compat_input_width` в [pocket_lipid_compatibility.py](../dataloader/pocket_lipid_compatibility.py); `_compute_compatibility_split_input` в [New_dataloader.py](../dataloader/New_dataloader.py); ширина входа в [final_layer.py](../architecture/final_layer.py) |
+| два входа вместо разности | `--compatibility_split_input`, `--compat_extent_bins` в [read_configuration.py](../training/read_configuration.py); `raw_compatibility_parts`, `coarsen_to_levels`, `compat_input_width` в [pocket_lipid_compatibility.py](../dataloader/pocket_lipid_compatibility.py); `_compute_compatibility_split_input` в [Dataloader.py](../dataloader/Dataloader.py); ширина входа в [final_layer.py](../architecture/final_layer.py) |
 | правка, без которой ничего из этого не запускалось | [training/forward_args.py](../training/forward_args.py) — добавлены ветки `frozen_prior` и `compat_input` |
 | AUC сети и нуль-модели, приращение над химией | [analysis/full_label_report.py](../analysis/full_label_report.py) |

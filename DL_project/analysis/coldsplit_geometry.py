@@ -89,7 +89,7 @@ def report_lipid_sets(csv, compact):
 def evaluation_rows(csv, rows, cap):
     """How many rows an averaged evaluation scores for the given table rows.
 
-    One per candidate structure, capped the way New_dataloader caps it, so the number
+    One per candidate structure, capped the way Dataloader caps it, so the number
     is the work a validation pass does rather than the size of the block.
     """
     from dataloader.pocket_lipid_compatibility import candidates_for_row
@@ -111,7 +111,7 @@ def report_double_split(csv, share, seeds, cap):
         f"{'valid scored':>12s} {'test scored':>11s}"
     )
     print(header)
-    from dataloader.New_dataloader import PLIDataset
+    from dataloader.Dataloader import PLIDataset
     from read_configuration import ModelConfig
 
     data_dir = os.path.join(PROJECT_ROOT, "data") + os.sep

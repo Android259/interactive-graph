@@ -2,7 +2,7 @@
 
 - Preprocessing scripts produce embeddings, negative samples, FASTA/PDB derivatives, and graph-related inputs.
 - Do not run them or overwrite their outputs unless explicitly requested.
-- Preserve file naming and identifiers expected by `dataloader/New_dataloader.py`.
+- Preserve file naming and identifiers expected by `dataloader/Dataloader.py`.
 - Preserve interaction-table row order: original row positions are active pair
   IDs used by Tanimoto weights and GRAB edges.
 - Protein graph generation must keep node identifiers, edge endpoints,

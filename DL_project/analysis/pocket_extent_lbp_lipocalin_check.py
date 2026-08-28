@@ -13,14 +13,14 @@ outlier survives without this channel and the search moves elsewhere.
 Two views of the same 35 proteins:
 
 1. Raw pocket_extent (dataloader/pocket_lipid_compatibility.py's pocket_extent_by_protein,
-   the same function New_dataloader.py calls) -- eta^2 against the binary split
+   the same function Dataloader.py calls) -- eta^2 against the binary split
    {LBP_BPI_CETP, lipocalin} vs the other five families, with a label-permutation p-value.
    eta^2's floor for a 2-way split over 35 proteins is 1/34 = 0.03 (not 0), tighter than
    the 9-family floor of 0.24 pocket_shape_descriptors.md works against.
 
 2. coarse_extent as a --double_coldsplit run actually builds it: quartile edges
    (--compat_extent_bins default 4) fit on the OTHER proteins only -- excluding whichever
-   of the two families is currently held out, the same way New_dataloader.py's edges only
+   of the two families is currently held out, the same way Dataloader.py's edges only
    ever see train proteins -- then that family's own proteins banded into those edges.
    Reports which band each suspect family lands in and how it compares to the other five.
 

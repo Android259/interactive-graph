@@ -7,22 +7,13 @@ from dataloader.pocket_lipid_compatibility import compat_input_width
 from torch_geometric.utils import softmax as scatter_softmax
 from torch_geometric.utils import to_dense_batch
 
-try:
-    from .mlp_utils import (
-        make_activation, make_final_dropout, make_extra_hidden_layer,
-        insert_hidden_gate, insert_input_gate, insert_output_gate,
-        mlp_hidden_dims, link_concrete_dropouts, build_ffn_with_residual,
-    )
-    from .pair_descriptor_head import PairDescriptorHead
-    from .named_descriptor_head import NamedDescriptorHead, pool_descriptor_head_outputs
-except ImportError:
-    from mlp_utils import (
-        make_activation, make_final_dropout, make_extra_hidden_layer,
-        insert_hidden_gate, insert_input_gate, insert_output_gate,
-        mlp_hidden_dims, link_concrete_dropouts, build_ffn_with_residual,
-    )
-    from pair_descriptor_head import PairDescriptorHead
-    from named_descriptor_head import NamedDescriptorHead, pool_descriptor_head_outputs
+from .mlp_utils import (
+    make_activation, make_final_dropout, make_extra_hidden_layer,
+    insert_hidden_gate, insert_input_gate, insert_output_gate,
+    mlp_hidden_dims, link_concrete_dropouts, build_ffn_with_residual,
+)
+from .pair_descriptor_head import PairDescriptorHead
+from .named_descriptor_head import NamedDescriptorHead, pool_descriptor_head_outputs
 
 
 class _GradientReversal(torch.autograd.Function):
@@ -50,7 +41,7 @@ def grad_reverse(x, lambda_=1.0):
 
 
 # Width of the one-hot family vector the dataloader attaches as prot.family
-# (New_dataloader.fam_enc). The family DANN head predicts over exactly these.
+# (Dataloader.fam_enc). The family DANN head predicts over exactly these.
 PROTEIN_FAMILY_COUNT = 9
 
 
@@ -75,10 +66,10 @@ def family_dann_loss(features, family_onehot, labels, heads, class_conditional):
     if family_onehot.sum(dim=1).min() <= 0:
         # argmax of an all-zero row silently returns 0, which would relabel the sample
         # as the first family instead of failing. The one-hot comes from a name lookup
-        # (New_dataloader.fam_enc), so a miss means a family name drifted, not a data
+        # (Dataloader.fam_enc), so a miss means a family name drifted, not a data
         # point worth training on.
         raise ValueError(
-            "family one-hot has a row with no family set; check New_dataloader.fam_enc "
+            "family one-hot has a row with no family set; check Dataloader.fam_enc "
             "covers every ProteinDomain value"
         )
     family_index = family_onehot.argmax(dim=1)
@@ -111,7 +102,7 @@ def chem_adversary_loss(features, frozen_prior, head):
     about it inverts in meaning across families the way P(bind | lipid class) does for
     family identity, files/proposals.md "Почему family-DANN...").
 
-    `frozen_prior` is whatever New_dataloader attached under --chem_prior and/or
+    `frozen_prior` is whatever Dataloader attached under --chem_prior and/or
     --pocket_compat_prior -- the SAME combined value added to the logit in forward(),
     not s_chem specifically. Both are added outside common_out, so decorrelating
     common_out from either costs the task loss nothing it needed (files/
@@ -345,7 +336,7 @@ class Final_Layer(torch.nn.Module):
             # two heads' pooled vectors are reduced to one with pool_descriptor_head_
             # outputs -- the same pool_type reduction each head already uses
             # internally on its own tokens, just applied again over the 2-vector axis.
-            # The FULL, shared column order dataloader/New_dataloader.py's
+            # The FULL, shared column order dataloader/Dataloader.py's
             # descriptor_catalog_input tensor is stacked in for this config -- both
             # heads are built against this SAME order (not each recomputing its own
             # union) so they agree on where their tokens live in the one tensor both
@@ -527,7 +518,7 @@ class Final_Layer(torch.nn.Module):
 
         # Frozen prior (files/interaction_signal_plan.md 4.1, 4.3; files/
         # pocket_lipid_compatibility.md): score = frozen_prior + the ordinary logit.
-        # frozen_prior is attached per row by New_dataloader under --chem_prior and/or
+        # frozen_prior is attached per row by Dataloader under --chem_prior and/or
         # --pocket_compat_prior -- whichever are on -- and it already carries its own
         # calibration, fit JOINTLY across whichever terms are active
         # (fit_prior_calibration) on TRAIN LABELS ONLY, before this network exists, and
@@ -634,7 +625,7 @@ class Final_Layer(torch.nn.Module):
                 if descriptor_catalog_input is None:
                     raise ValueError(
                         "descriptors_head is set with descriptor_names but forward() "
-                        "got no descriptor_catalog_input -- New_dataloader and "
+                        "got no descriptor_catalog_input -- Dataloader and "
                         "forward_args only attach it when --descriptor_names was set "
                         "at data-load time too; check the flags match."
                     )
@@ -646,7 +637,7 @@ class Final_Layer(torch.nn.Module):
             if pair_descriptor_input is None or pocket_descriptor is None:
                 raise ValueError(
                     "descriptors_head is set but forward() got no "
-                    "pair_descriptor_input/pocket_descriptor -- New_dataloader and "
+                    "pair_descriptor_input/pocket_descriptor -- Dataloader and "
                     "forward_args only attach these when --pair_descriptors and "
                     "--pocket_descriptors were both set at data-load time too; check "
                     "the flags match."
@@ -661,7 +652,7 @@ class Final_Layer(torch.nn.Module):
             if descriptor_catalog_input is None:
                 raise ValueError(
                     "two_pair_descriptors_paths is set but forward() got no "
-                    "descriptor_catalog_input -- New_dataloader and forward_args only "
+                    "descriptor_catalog_input -- Dataloader and forward_args only "
                     "attach it when --two_pair_descriptors_paths was set at data-load "
                     "time too; check the flags match."
                 )
@@ -721,7 +712,7 @@ class Final_Layer(torch.nn.Module):
             if compat_input is None:
                 raise ValueError(
                     "compatibility_input/compatibility_split_input is set but forward() "
-                    "got no compat_input -- New_dataloader only attaches it when the "
+                    "got no compat_input -- Dataloader only attaches it when the "
                     "same flag was set at data-load time too; check the two match."
                 )
             compat_input = compat_input.view(common_out.shape[0], -1)
@@ -740,7 +731,7 @@ class Final_Layer(torch.nn.Module):
             if pair_descriptor_input is None or pocket_descriptor is None:
                 raise ValueError(
                     "pair_descriptors is set but forward() got no "
-                    "pair_descriptor_input/pocket_descriptor -- New_dataloader and "
+                    "pair_descriptor_input/pocket_descriptor -- Dataloader and "
                     "forward_args only attach these when --pair_descriptors and "
                     "--pocket_descriptors were both set at data-load time too; check "
                     "the flags match."
@@ -763,7 +754,7 @@ class Final_Layer(torch.nn.Module):
         if self.config.chem_adversary and self.training:
             # Same representation dann_family reverses, different target: this one
             # predicts frozen_prior (chemistry, compatibility, or their joint fit --
-            # whatever New_dataloader combined), not family. See __init__ for why
+            # whatever Dataloader combined), not family. See __init__ for why
             # targeting it here is safe rather than a fight with the task loss.
             self._chem_features = grad_reverse(common_out, self.chem_lambda_now)
         else:
@@ -774,7 +765,7 @@ class Final_Layer(torch.nn.Module):
             if frozen_prior is None:
                 raise ValueError(
                     "chem_prior/pocket_compat_prior is set but forward() got no "
-                    "frozen_prior -- New_dataloader only attaches it when the "
+                    "frozen_prior -- Dataloader only attaches it when the "
                     "matching flag was set at data-load time too; check the flags "
                     "match."
                 )

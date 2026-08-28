@@ -1,7 +1,7 @@
 """The chemistry-only lipid propensity score, shared by the dataloader and analysis.
 
 One function, two callers. `analysis/null_model.py` uses it as a standalone
-predictor to compare against the network. `New_dataloader` (under `--chem_prior`)
+predictor to compare against the network. `Dataloader` (under `--chem_prior`)
 attaches it to every row as a frozen input, so the network is scored against it rather
 than having to re-derive it -- the point files/interaction_signal_plan.md 4.1 makes.
 Kept in one place because the two callers must compute the identical number: a null
@@ -203,6 +203,110 @@ def _standardised_similarity(matrix):
     return (1.0 / (1.0 + distance)).astype(np.float32)
 
 
+def raw_feature_matrix(csv, data_dir, names, zscore=False):
+    """(entities, matrix, entity_column, column_names): the not-yet-standardised
+    per-entity descriptor values `feature_similarity` turns into a similarity matrix,
+    exposed on its own for a caller that needs the raw numbers themselves rather than
+    a pairwise similarity built from them -- e.g. analysis/feature_identity_check.py's
+    per-descriptor variance decomposition (eta^2) against identity, which needs to see
+    one entry at a time rather than an already-collapsed distance.
+
+    `column_names` gives `matrix`'s columns their names, in the same order the matrix
+    itself was assembled in (lipid names, then protein names, then pair names for the
+    "pair" granularity -- see below); a caller reading `matrix[:, i]` reads
+    `column_names[i]`.
+
+    See `feature_similarity` for what `names`/`zscore`/the return granularity mean --
+    this function does the assembly `feature_similarity` used to do inline; that
+    function is now a two-line wrapper calling this and then `_standardised_similarity`.
+    """
+    names = list(dict.fromkeys(names))  # de-duplicate, keep first-seen order
+    if not names:
+        raise ValueError("feature_similarity needs at least one descriptor name")
+
+    pocket_names = set(PROTEIN_DESCRIPTOR_NAMES) | set(PROTEIN_DERIVED_DESCRIPTOR_NAMES)
+    lipid_names = [n for n in names if n in LIPID_DESCRIPTOR_NAMES]
+    protein_names = [n for n in names if n in pocket_names]
+    pair_names = [n for n in names if n in PAIR_DESCRIPTOR_NAMES]
+    unknown = sorted(set(names) - set(lipid_names) - set(protein_names) - set(pair_names))
+    if unknown:
+        raise ValueError(
+            f"Unknown descriptor name(s): {unknown}. Known: "
+            f"lipid={LIPID_DESCRIPTOR_NAMES}, protein={tuple(sorted(pocket_names))}, "
+            f"pair={PAIR_DESCRIPTOR_NAMES}"
+        )
+
+    lipid_table = _lipid_descriptor_table(csv) if (lipid_names or pair_names) else {}
+    protein_table = (
+        protein_descriptor_table(data_dir) if (protein_names or pair_names) else {}
+    )
+
+    if pair_names or (lipid_names and protein_names):
+        granularity = "pair"
+    elif protein_names:
+        granularity = "protein"
+    else:
+        granularity = "lipid"
+
+    if granularity == "lipid":
+        entities = sorted(lipid_table)
+        matrix = np.array(
+            [[lipid_table[entity][n] for n in lipid_names] for entity in entities],
+            dtype=np.float64,
+        )
+        entity_column = "FullIdentityOfLipid"
+        column_names = list(lipid_names)
+    elif granularity == "protein":
+        entities = sorted(protein_table)
+        matrix = np.array(
+            [[protein_table[entity][n] for n in protein_names] for entity in entities],
+            dtype=np.float64,
+        )
+        entity_column = "LTPProtein"
+        column_names = list(protein_names)
+    else:
+        species_col = csv["FullIdentityOfLipid"]
+        protein_col = csv["LTPProtein"]
+        columns = [
+            species_col.map(lambda s, n=n: lipid_table[s][n]).to_numpy(dtype=float)
+            for n in lipid_names
+        ] + [
+            protein_col.map(lambda p, n=n: protein_table[p][n]).to_numpy(dtype=float)
+            for n in protein_names
+        ]
+        zscored_lipid_table = None
+        zscored_protein_table = None
+        needs_zscore_table = any(name in MIN_PAIR_DESCRIPTOR_NAMES for name in pair_names) or (
+            zscore and any(name in MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES for name in pair_names)
+        )
+        if needs_zscore_table:
+            zscored_lipid_table = _standardise_descriptor_table(lipid_table)
+            zscored_protein_table = _standardise_descriptor_table(protein_table)
+        for name in pair_names:
+            # MIN_PAIR_DESCRIPTOR_NAMES always reads standardised values -- min() of
+            # raw-scale quantities is a units artefact, not a bottleneck reading (see
+            # dataloader.pair_descriptors.MIN_PAIR_DESCRIPTOR_NAMES) -- independent of
+            # whether --zscore was passed.
+            use_zscore = name in MIN_PAIR_DESCRIPTOR_NAMES or (
+                zscore and name in MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES
+            )
+            lt = zscored_lipid_table if use_zscore else lipid_table
+            pt = zscored_protein_table if use_zscore else protein_table
+            columns.append(np.array(
+                [
+                    pair_descriptor_value(name, lt[s], pt[p])
+                    for s, p in zip(species_col, protein_col)
+                ],
+                dtype=float,
+            ))
+        matrix = np.column_stack(columns)
+        entities = list(csv.index)
+        entity_column = "pair_id"
+        column_names = list(lipid_names) + list(protein_names) + list(pair_names)
+
+    return entities, matrix, entity_column, column_names
+
+
 def feature_similarity(csv, data_dir, names, zscore=False):
     """Generalised null-model similarity from an arbitrary named subset of
     protein-only, lipid-only and pair descriptors -- one flag's worth of comma-
@@ -249,87 +353,7 @@ def feature_similarity(csv, data_dir, names, zscore=False):
     pair_id) `index` is keyed by, so a caller building `held`/`train` frames knows
     which column to hand null_scores.
     """
-    names = list(dict.fromkeys(names))  # de-duplicate, keep first-seen order
-    if not names:
-        raise ValueError("feature_similarity needs at least one descriptor name")
-
-    pocket_names = set(PROTEIN_DESCRIPTOR_NAMES) | set(PROTEIN_DERIVED_DESCRIPTOR_NAMES)
-    lipid_names = [n for n in names if n in LIPID_DESCRIPTOR_NAMES]
-    protein_names = [n for n in names if n in pocket_names]
-    pair_names = [n for n in names if n in PAIR_DESCRIPTOR_NAMES]
-    unknown = sorted(set(names) - set(lipid_names) - set(protein_names) - set(pair_names))
-    if unknown:
-        raise ValueError(
-            f"Unknown descriptor name(s): {unknown}. Known: "
-            f"lipid={LIPID_DESCRIPTOR_NAMES}, protein={tuple(sorted(pocket_names))}, "
-            f"pair={PAIR_DESCRIPTOR_NAMES}"
-        )
-
-    lipid_table = _lipid_descriptor_table(csv) if (lipid_names or pair_names) else {}
-    protein_table = (
-        protein_descriptor_table(data_dir) if (protein_names or pair_names) else {}
-    )
-
-    if pair_names or (lipid_names and protein_names):
-        granularity = "pair"
-    elif protein_names:
-        granularity = "protein"
-    else:
-        granularity = "lipid"
-
-    if granularity == "lipid":
-        entities = sorted(lipid_table)
-        matrix = np.array(
-            [[lipid_table[entity][n] for n in lipid_names] for entity in entities],
-            dtype=np.float64,
-        )
-        entity_column = "FullIdentityOfLipid"
-    elif granularity == "protein":
-        entities = sorted(protein_table)
-        matrix = np.array(
-            [[protein_table[entity][n] for n in protein_names] for entity in entities],
-            dtype=np.float64,
-        )
-        entity_column = "LTPProtein"
-    else:
-        species_col = csv["FullIdentityOfLipid"]
-        protein_col = csv["LTPProtein"]
-        columns = [
-            species_col.map(lambda s, n=n: lipid_table[s][n]).to_numpy(dtype=float)
-            for n in lipid_names
-        ] + [
-            protein_col.map(lambda p, n=n: protein_table[p][n]).to_numpy(dtype=float)
-            for n in protein_names
-        ]
-        zscored_lipid_table = None
-        zscored_protein_table = None
-        needs_zscore_table = any(name in MIN_PAIR_DESCRIPTOR_NAMES for name in pair_names) or (
-            zscore and any(name in MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES for name in pair_names)
-        )
-        if needs_zscore_table:
-            zscored_lipid_table = _standardise_descriptor_table(lipid_table)
-            zscored_protein_table = _standardise_descriptor_table(protein_table)
-        for name in pair_names:
-            # MIN_PAIR_DESCRIPTOR_NAMES always reads standardised values -- min() of
-            # raw-scale quantities is a units artefact, not a bottleneck reading (see
-            # dataloader.pair_descriptors.MIN_PAIR_DESCRIPTOR_NAMES) -- independent of
-            # whether --zscore was passed.
-            use_zscore = name in MIN_PAIR_DESCRIPTOR_NAMES or (
-                zscore and name in MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES
-            )
-            lt = zscored_lipid_table if use_zscore else lipid_table
-            pt = zscored_protein_table if use_zscore else protein_table
-            columns.append(np.array(
-                [
-                    pair_descriptor_value(name, lt[s], pt[p])
-                    for s, p in zip(species_col, protein_col)
-                ],
-                dtype=float,
-            ))
-        matrix = np.column_stack(columns)
-        entities = list(csv.index)
-        entity_column = "pair_id"
-
+    entities, matrix, entity_column, _ = raw_feature_matrix(csv, data_dir, names, zscore=zscore)
     index = {entity: position for position, entity in enumerate(entities)}
     similarity = _standardised_similarity(matrix)
     return similarity, index, entity_column

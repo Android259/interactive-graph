@@ -289,7 +289,7 @@ class ModelConfig:
     # A loss WEIGHT, not an architectural addition -- unlike chem_prior/chem_adversary
     # above (which need Final_Layer's fused representation and are explicitly rejected
     # under --descriptors_head, ModelConfig.validate), this only scales each training
-    # row's loss contribution (dataloader/New_dataloader.py's common_weights_parts,
+    # row's loss contribution (dataloader/Dataloader.py's common_weights_parts,
     # training/new_train.py) and works under any architecture. Per row:
     # weight = |label - s_chem| / (mean of that over rows of the same label) -- s_chem
     # is the same leave-one-out lipid-chemistry score --chem_prior reads
@@ -419,13 +419,19 @@ class ModelConfig:
     # fixed edges need no such split and carry zero data-dependence to leak in the
     # first place.
     pair_descriptor_pocket_shares_coarse: bool = False
+    # 4 extra LIPID_DESCRIPTOR_NAMES tokens (radius_of_gyration, asphericity,
+    # molecular_volume, rotatable_fraction), ensemble-averaged over the same ETKDG
+    # conformers data/build_lipid_isomer_graphs.py already generates for the
+    # bond-length edge feature. Independent toggle, combinable with --pair_descriptors
+    # and the other --pair_descriptor_* flags the same way pocket_shares/extent are.
+    pair_descriptor_lipid_shape: bool = False
     # --no_pair_descriptor_extent : drops the coarsened pocket_extent token, the last of
     # DATALOADER_TOKENS' base 6 (architecture/pair_descriptor_head.py) still unexamined --
     # highest family-identity signal of the protein-only entries at full resolution
     # (eta^2 0.78, files/compat_input_audit.md) even after the same coarsening
     # --compatibility_split_input's "clash" term uses. occupancy keeps computing from
     # extent internally (relu(cbrt(heavy_atom_count) - coarse_extent), dataloader/
-    # New_dataloader.py) regardless of this flag -- only the standalone extent token
+    # Dataloader.py) regardless of this flag -- only the standalone extent token
     # disappears from the self-attention set, occupancy is a pair term either way.
     #
     # Next suspect after --pair_descriptor_pocket_shares_split: on descriptors_path_v2,
@@ -566,7 +572,7 @@ class ModelConfig:
     # side: MolFormer is not loaded/used at all, and the lipid graph collapses to ONE
     # node per lipid (no per-token structure exists without MolFormer to tokenize
     # against) carrying only the --descriptors_in_protein_lipid broadcast as its
-    # feature vector -- dataloader/New_dataloader.py/architecture/lipid_encoder.py.
+    # feature vector -- dataloader/Dataloader.py/architecture/lipid_encoder.py.
     # Requires --descriptors_in_protein_lipid (validate() below): without it, and
     # without --no_protein_geometry's base columns either, a protein or lipid node
     # would have nothing left to be a feature vector at all.
@@ -641,7 +647,7 @@ class ModelConfig:
     # the per-lipid-class prior the coarser samplers leave behind (measured: per-class
     # positive rate 0.25-0.68 -> 0.50-0.51). It does NOT also balance per protein --
     # that trade is unavoidable on this data, see
-    # New_dataloader.sample_lipid_class_balanced_negatives -- and it currently overrides
+    # Dataloader.sample_lipid_class_balanced_negatives -- and it currently overrides
     # balanced_proteins when both are set.
     balanced_lipid_classes: bool = False
     # Compute attention block-diagonally on a dense (graphs, max_nodes, dim) layout
@@ -673,6 +679,15 @@ class ModelConfig:
     geometric_ipa_chunk_size: int = 64
     transformer_conv: bool = False
     gine_conv: bool = False
+    # Literal Ingraham (attention) / Dauparas (MLP message-passing) conv layers over
+    # the 25-dim structured edge features (architecture/protein_edge_geometry.py),
+    # replacing GATv2Conv/TransformerConv/GINEConv's own edge_dim=3 input in
+    # _make_protein_conv. The same choice also swaps GATv2Conv in
+    # architecture/lipid_encoder.py's --lipid_graph_isomers path -- one switch for
+    # both graphs, not a separate lipid flag.
+    protein_edge_attention: bool = False
+    protein_edge_mlp: bool = False
+    protein_edge_mlp_lambda: float = 30.0
     protein_gine_residual: bool = False
     attention_residual_gates: bool = False
     protein_gat_residual: bool = False
@@ -849,6 +864,14 @@ class ModelConfig:
     prot_attention_pos_bias: bool = True
     prot_pooling_by_pockets: bool = False
     prot_pos_bias_per_head: bool = False
+    # Cross-attention key bias, softplus-scaled so a bigger feature value always
+    # contributes more in the same direction (never silently inverts sign):
+    # bury (protein keys, restricted to pocket residues, extends prot_attention_pos_bias's
+    # 0/1 mask to a continuous buriedness term) and chain_rank (lipid keys, position
+    # along the acyl chain from head=0 to tail=1). Independent flags -- neither
+    # requires the other. See architecture/cross_attention.py's make_key_bias.
+    cross_attention_bury_bias: bool = False
+    cross_attention_chain_bias: bool = False
     # Hard pocket restriction: non-pocket protein residues are removed as attention
     # *keys* in protein self-attention and in lipid-query cross-attention, so the
     # lipid only ever sees the binding site. They stay queries and are still updated.
@@ -1447,19 +1470,33 @@ class ModelConfig:
             self.geometric_transformer,
             self.transformer_conv,
             self.gine_conv,
+            self.protein_edge_attention,
+            self.protein_edge_mlp,
         )
         if sum(protein_conv_modes) > 1:
             raise ValueError(
-                "geometric_transformer, transformer_conv and gine_conv are "
-                "mutually exclusive"
+                "geometric_transformer, transformer_conv, gine_conv, "
+                "protein_edge_attention and protein_edge_mlp are mutually exclusive"
             )
         if self.geometric_transformer and any(rnabang_modes):
             raise ValueError(
                 "geometric_transformer cannot be combined with RNA-BAnG embedding modes"
             )
+        if (self.protein_edge_attention or self.protein_edge_mlp) and self.bidirectional_edges:
+            raise ValueError(
+                "protein_edge_attention/protein_edge_mlp build native bidirectional "
+                "structured edges (direction- and rotation-dependent); "
+                "bidirectional_edges would incorrectly copy them onto the reversed "
+                "edge instead of recomputing the orientation"
+            )
         if self.rnabang_frozen_node_adapter and self.double_attention:
             raise ValueError(
                 "rnabang_frozen_node_adapter cannot be combined with double_attention"
+            )
+        if self.cross_attention_chain_bias and not self.lipid_graph_isomers:
+            raise ValueError(
+                "cross_attention_chain_bias needs per-atom chain_rank, which only "
+                "exists under lipid_graph_isomers"
             )
         edge_node_modes = (
             self.rnabang_edge_current,
@@ -2181,6 +2218,10 @@ SIMPLE_BOOL_FLAGS = {
     "--transformer_conv": "transformer_conv",
     "gine_conv": "gine_conv",
     "--gine_conv": "gine_conv",
+    "protein_edge_attention": "protein_edge_attention",
+    "--protein_edge_attention": "protein_edge_attention",
+    "protein_edge_mlp": "protein_edge_mlp",
+    "--protein_edge_mlp": "protein_edge_mlp",
     "protein_gine_residual": "protein_gine_residual",
     "--protein_gine_residual": "protein_gine_residual",
     "attention_residual_gates": "attention_residual_gates",
@@ -2235,6 +2276,10 @@ SIMPLE_BOOL_FLAGS = {
     "--bidirectional_edges": "bidirectional_edges",
     "prot_pos_bias_per_head": "prot_pos_bias_per_head",
     "--prot_pos_bias_per_head": "prot_pos_bias_per_head",
+    "cross_attention_bury_bias": "cross_attention_bury_bias",
+    "--cross_attention_bury_bias": "cross_attention_bury_bias",
+    "cross_attention_chain_bias": "cross_attention_chain_bias",
+    "--cross_attention_chain_bias": "cross_attention_chain_bias",
     "attention_by_pockets": "attention_by_pockets",
     "--attention_by_pockets": "attention_by_pockets",
     "protein_pockets_only": "protein_pockets_only",
@@ -2343,6 +2388,8 @@ FLAG_HANDLERS = {
     "--no_pair_descriptor_extent": set_config_flag("pair_descriptor_extent", False),
     "no_pair_descriptor_occupancy": set_config_flag("pair_descriptor_occupancy", False),
     "--no_pair_descriptor_occupancy": set_config_flag("pair_descriptor_occupancy", False),
+    "pair_descriptor_lipid_shape": set_config_flag("pair_descriptor_lipid_shape"),
+    "--pair_descriptor_lipid_shape": set_config_flag("pair_descriptor_lipid_shape"),
     "no_lipid_first_fragment_only": set_config_flag(
         "lipid_first_fragment_only", False
     ),
@@ -2405,6 +2452,9 @@ VALUE_HANDLERS = {
     "--saprot_embedding_dim=": set_config_field("saprot_embedding_dim", int),
     "--geometric_ipa_chunk_size=": set_config_field(
         "geometric_ipa_chunk_size", int
+    ),
+    "--protein_edge_mlp_lambda=": set_config_field(
+        "protein_edge_mlp_lambda", float
     ),
     "--mlp_widths=": set_config_field("mlp_widths", read_mlp_widths),
     "--plm_compression_dims=": set_config_field(

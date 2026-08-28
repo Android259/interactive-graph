@@ -1,19 +1,11 @@
 import torch
 
-try:
-    from .mlp_utils import (
-        make_activation, make_dropout, make_extra_hidden_layer, insert_hidden_gate,
-        insert_ffn_unit_gate, insert_input_gate, insert_output_gate, mlp_hidden_dims,
-        link_concrete_dropouts, make_self_attention,
-    )
-    from .fast_attention import grouped_attention, can_use_grouped_attention
-except ImportError:
-    from mlp_utils import (
-        make_activation, make_dropout, make_extra_hidden_layer, insert_hidden_gate,
-        insert_ffn_unit_gate, insert_input_gate, insert_output_gate, mlp_hidden_dims,
-        link_concrete_dropouts, make_self_attention,
-    )
-    from fast_attention import grouped_attention, can_use_grouped_attention
+from .mlp_utils import (
+    make_activation, make_dropout, make_extra_hidden_layer, insert_hidden_gate,
+    insert_ffn_unit_gate, insert_input_gate, insert_output_gate, mlp_hidden_dims,
+    link_concrete_dropouts, make_self_attention,
+)
+from .fast_attention import grouped_attention, can_use_grouped_attention
 
 
 class SelfAttention(torch.nn.Module):

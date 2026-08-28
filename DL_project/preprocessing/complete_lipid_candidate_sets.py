@@ -108,7 +108,7 @@ def split_candidates(text):
 
 
 def active_column(row):
-    """Which column the loader reads for this row (New_dataloader picks the same one)."""
+    """Which column the loader reads for this row (Dataloader picks the same one)."""
     return "SmileFragment" if str(row["SmileGlobal"]) == "0" else "SmileGlobal"
 
 

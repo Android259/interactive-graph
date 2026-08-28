@@ -1,22 +1,16 @@
 import torch
 import torch_geometric
 
-try:
-    from .self_attention import SelfAttention
-    from .mlp_utils import (
-        make_activation, make_dropout, make_extra_hidden_layer,
-        make_norm_layer, apply_norm, HeadGate, insert_hidden_gate,
-        insert_input_gate, insert_output_gate, mlp_hidden_dims,
-        link_concrete_dropouts
-    )
-except ImportError:
-    from self_attention import SelfAttention
-    from mlp_utils import (
-        make_activation, make_dropout, make_extra_hidden_layer,
-        make_norm_layer, apply_norm, HeadGate, insert_hidden_gate,
-        insert_input_gate, insert_output_gate, mlp_hidden_dims,
-        link_concrete_dropouts
-    )
+from .self_attention import SelfAttention
+from .edge_geometric_conv import EdgeAttentionConv, EdgeMLPConv
+from .mlp_utils import (
+    make_activation, make_dropout, make_extra_hidden_layer,
+    make_norm_layer, apply_norm, HeadGate, insert_hidden_gate,
+    insert_input_gate, insert_output_gate, mlp_hidden_dims,
+    link_concrete_dropouts
+)
+
+LIPID_ISOMER_EDGE_DIM = 22
 
 
 class Lipid_encoder(torch.nn.Module):
@@ -44,12 +38,39 @@ class Lipid_encoder(torch.nn.Module):
 
         if getattr(config, "lipid_graph_isomers", False):
             indim = 11 if start else hiddim
-            gat_out = hiddim * config.HEADS
-            self.encodin1 = torch_geometric.nn.conv.GATv2Conv(
-                indim, hiddim, heads=config.HEADS, edge_dim=6, add_self_loops=True)
-            self.encodin2 = torch_geometric.nn.conv.GATv2Conv(
-                gat_out, hiddim, heads=config.HEADS, edge_dim=6, add_self_loops=True)
-            if gate_heads:
+            # Same conv choice as architecture/protein_encoder.py's _make_protein_conv
+            # -- protein_edge_attention/protein_edge_mlp swap GATv2Conv here too, one
+            # switch for both graphs rather than a separate lipid-only flag.
+            self.use_edge_mlp = bool(getattr(config, "protein_edge_mlp", False))
+            use_edge_attention = bool(getattr(config, "protein_edge_attention", False))
+            conv_out_dim = hiddim if self.use_edge_mlp else hiddim * config.HEADS
+            gat_out = conv_out_dim
+            if use_edge_attention:
+                self.encodin1 = EdgeAttentionConv(
+                    indim, hiddim, config.HEADS, LIPID_ISOMER_EDGE_DIM
+                )
+                self.encodin2 = EdgeAttentionConv(
+                    gat_out, hiddim, config.HEADS, LIPID_ISOMER_EDGE_DIM
+                )
+            elif self.use_edge_mlp:
+                self.encodin1 = EdgeMLPConv(
+                    indim, hiddim, LIPID_ISOMER_EDGE_DIM,
+                    lam=getattr(config, "protein_edge_mlp_lambda", 30.0),
+                )
+                self.encodin2 = EdgeMLPConv(
+                    gat_out, hiddim, LIPID_ISOMER_EDGE_DIM,
+                    lam=getattr(config, "protein_edge_mlp_lambda", 30.0),
+                )
+            else:
+                self.encodin1 = torch_geometric.nn.conv.GATv2Conv(
+                    indim, hiddim, heads=config.HEADS,
+                    edge_dim=LIPID_ISOMER_EDGE_DIM, add_self_loops=True,
+                )
+                self.encodin2 = torch_geometric.nn.conv.GATv2Conv(
+                    gat_out, hiddim, heads=config.HEADS,
+                    edge_dim=LIPID_ISOMER_EDGE_DIM, add_self_loops=True,
+                )
+            if gate_heads and not self.use_edge_mlp:
                 self.head_gate1 = HeadGate(config.HEADS, hiddim, config)
                 self.head_gate2 = HeadGate(config.HEADS, hiddim, config)
             self.gat_ln = make_norm_layer(self.config, gat_out, "lipid_gat_graph_norm")
@@ -80,7 +101,7 @@ class Lipid_encoder(torch.nn.Module):
             # --no_embeddings: MolFormer contributes nothing at all -- there is no
             # per-token structure to build multiple nodes from without it (validate()
             # requires descriptors_in_protein_lipid for exactly this reason), so
-            # dataloader.New_dataloader collapses the lipid graph to ONE node whose
+            # dataloader.Dataloader collapses the lipid graph to ONE node whose
             # feature vector already IS these 4 scalars; encodin reads them directly,
             # no broadcast-cat needed in forward (there is nothing else to cat onto).
             #

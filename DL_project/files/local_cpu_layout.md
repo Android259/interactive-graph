@@ -93,11 +93,11 @@ OMP_THREADS_PER_JOB    = 9 / 4     = 2    # 9 «ядер» делятся на 4
 
 Что происходило:
 
-1. `New_dataloader.py:132` — читается `lipid_SMILES_embedding_deterministic.pkl`,
+1. `Dataloader.py:132` — читается `lipid_SMILES_embedding_deterministic.pkl`,
    280 МБ, целиком в память.
 2. `new_train.py`, `warm_caches()` — из него отбираются нужные 410 липидов, это
    89 МиБ.
-3. `New_dataloader.py:425`, `release_source_artifacts()` — исходная таблица больше
+3. `Dataloader.py:425`, `release_source_artifacts()` — исходная таблица больше
    не нужна, `self.smiles_encoding = None`, Python её удаляет.
 4. **Чего не происходило:** `malloc` освободившееся ядру ОС не возвращал, держал у
    себя. Для системы процесс продолжал занимать эту память.

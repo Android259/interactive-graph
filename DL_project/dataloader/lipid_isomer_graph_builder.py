@@ -9,6 +9,8 @@ import torch
 from rdkit import Chem
 from torch_geometric.data import Data
 
+from architecture.protein_edge_geometry import rbf
+
 
 class LipidGraphData(Data):
     def __inc__(self, key, value, *args, **kwargs):
@@ -54,7 +56,7 @@ class LipidIsomerGraphBuilder:
         fragment_smiles = self.canonical_lipid_smiles_list(smile_fragment)
 
         # Same rule as the embedding path: the draw is a training-split augmentation,
-        # marked per clone in New_dataloader.__iter__. Validation and test fall through
+        # marked per clone in Dataloader.__iter__. Validation and test fall through
         # to the fixed first candidate below.
         if self._draw_lipid_candidate and fragment_smiles:
             return [random.choice(fragment_smiles)]
@@ -92,29 +94,73 @@ class LipidIsomerGraphBuilder:
         edges = pandas.read_csv(os.path.join(graph_path, "edges.csv"))
         return nodes, edges
 
-    def make_graph_lipid(self, smile_global, smile_fragment=None):
-        node_columns = [
-            "atomic_num",
-            "formal_charge",
-            "degree",
-            "hybridization",
-            "is_aromatic",
-            "is_in_ring",
-            "chiral_tag",
-            "chirality_possible",
-            "total_num_hs",
-            "mass",
-            "gasteiger_charge",
-        ]
-        edge_columns = [
-            "bond_type",
-            "is_conjugated",
-            "is_in_ring",
-            "stereo",
-            "bond_dir",
-            "is_aromatic",
-        ]
+    def _one_lipid_graph_parts(self, canonical_smiles):
+        """One fragment's {x, edge_index, edge_attr, chain_rank}, cache first.
 
+        data/build_lipid_graph_tensor_cache.py mmap's this exact set of tensors for
+        every graph_id under data/lipid_graphs/, so a hit here skips the CSV parse
+        and RBF expansion below entirely. A miss (cache absent, stale, or this
+        canonical SMILES built after the cache) falls back to reading the CSVs
+        directly -- slower, never wrong.
+        """
+        graph_id = self.lipid_graph_id(canonical_smiles)
+        cached = getattr(self, "_lipid_graph_tensor_cache", {}).get(graph_id)
+        if cached is not None:
+            return cached
+        nodes, edges = self.read_lipid_graph_tables(canonical_smiles)
+        x = torch.tensor(nodes[self._LIPID_NODE_COLUMNS].values, dtype=torch.float32)
+        chain_rank = torch.tensor(nodes["chain_rank"].values, dtype=torch.float32)
+        edge_index = torch.tensor(
+            edges[["source", "target"]].values, dtype=torch.long
+        ).t().contiguous()
+        edge_attr = torch.tensor(
+            edges[self._LIPID_EDGE_COLUMNS].values, dtype=torch.float32
+        )
+        bond_length = torch.tensor(edges["mean_bond_length"].values, dtype=torch.float32)
+        edge_attr = torch.cat(
+            (
+                edge_attr,
+                rbf(
+                    bond_length,
+                    d_min=self._BOND_LENGTH_RBF_MIN,
+                    d_max=self._BOND_LENGTH_RBF_MAX,
+                ),
+            ),
+            dim=-1,
+        )
+        return {
+            "x": x,
+            "edge_index": edge_index,
+            "edge_attr": edge_attr,
+            "chain_rank": chain_rank,
+        }
+
+    _LIPID_NODE_COLUMNS = [
+        "atomic_num",
+        "formal_charge",
+        "degree",
+        "hybridization",
+        "is_aromatic",
+        "is_in_ring",
+        "chiral_tag",
+        "chirality_possible",
+        "total_num_hs",
+        "mass",
+        "gasteiger_charge",
+    ]
+    _LIPID_EDGE_COLUMNS = [
+        "bond_type",
+        "is_conjugated",
+        "is_in_ring",
+        "stereo",
+        "bond_dir",
+        "is_aromatic",
+    ]
+    # Real bond lengths run ~0.9-1.8 A, nowhere near the 2-22 A range rbf() defaults
+    # to for protein Ca-Ca contacts -- use bond-appropriate bounds instead.
+    _BOND_LENGTH_RBF_MIN, _BOND_LENGTH_RBF_MAX = 0.8, 2.0
+
+    def make_graph_lipid(self, smile_global, smile_fragment=None):
         canonical_smiles_list = self.lipid_graph_smiles(
             smile_global, smile_fragment
         )
@@ -127,6 +173,7 @@ class LipidIsomerGraphBuilder:
                 edge_attr=cached["edge_attr"],
                 liplab=cached["liplab"],
             )
+            lipid_graph.chain_rank = cached["chain_rank"]
             if self.config.lipid_fragments_mask:
                 lipid_graph.lipid_batch = cached["lipid_batch"]
             return lipid_graph
@@ -134,17 +181,15 @@ class LipidIsomerGraphBuilder:
         xs = []
         edge_indices = []
         edge_attrs = []
+        chain_ranks = []
         lipid_batches = []
         node_offset = 0
         for fragment_id, canonical_smiles in enumerate(canonical_smiles_list):
-            nodes, edges = self.read_lipid_graph_tables(canonical_smiles)
-            x = torch.tensor(nodes[node_columns].values, dtype=torch.float32)
-            edge_index = torch.tensor(
-                edges[["source", "target"]].values, dtype=torch.long
-            ).t().contiguous()
-            edge_attr = torch.tensor(
-                edges[edge_columns].values, dtype=torch.float32
-            )
+            parts = self._one_lipid_graph_parts(canonical_smiles)
+            x = parts["x"]
+            edge_index = parts["edge_index"]
+            edge_attr = parts["edge_attr"]
+            chain_ranks.append(parts["chain_rank"])
             xs.append(x)
             edge_indices.append(edge_index + node_offset)
             edge_attrs.append(edge_attr)
@@ -156,6 +201,7 @@ class LipidIsomerGraphBuilder:
         x = torch.cat(xs, dim=0)
         edge_index = torch.cat(edge_indices, dim=1)
         edge_attr = torch.cat(edge_attrs, dim=0)
+        chain_rank = torch.cat(chain_ranks, dim=0)
         lipidlabel = self.lipidlabel_enc("PC")
         liplab = torch.tensor(lipidlabel, dtype=torch.int)
         entry = {
@@ -163,10 +209,12 @@ class LipidIsomerGraphBuilder:
             "edge_index": edge_index,
             "edge_attr": edge_attr,
             "liplab": liplab,
+            "chain_rank": chain_rank,
         }
         lipid_graph = LipidGraphData(
             x=x, edge_index=edge_index, edge_attr=edge_attr, liplab=liplab
         )
+        lipid_graph.chain_rank = chain_rank
         if self.config.lipid_fragments_mask:
             lipid_batch = torch.cat(lipid_batches, dim=0)
             entry["lipid_batch"] = lipid_batch

@@ -87,7 +87,21 @@ SYNC_EXCLUDES=(
     --exclude='/data/**'
     --exclude='/data/'
 
-    # Bulk that training never imports.
+    # Bulk that training never imports -- with one carve-out, on the same
+    # include-before-exclude pattern as data/ above.
+    #
+    # architecture/protein_edge_geometry.py builds its relative-orientation
+    # quaternions with rigid_utils.Rotation, which lives in the RNA-BAnG
+    # submodule. That import is lazy (only --edge_attention / --edge_mlp reach
+    # it), so an unsynced external/ is no longer fatal for every run -- but a
+    # structured-edge config still cannot run on a cluster that does not have
+    # the file. It is ~50 KB of pure python against the hundreds of MB this
+    # exclusion exists for.
+    --include='/external/'
+    --include='/external/RNA-BAnG/'
+    --include='/external/RNA-BAnG/data/'
+    --include='/external/RNA-BAnG/data/*.py'
+    --exclude='/external/**'
     --exclude='/external/'
 
     # Pretrained weights, not project data. Both are read only by the scripts that
@@ -131,6 +145,10 @@ SYNC_PROTECT=(
     --filter='P /data/'
     --filter='P /data/**'
     --filter='P /external/'
+    # As for /data/** above: now that rsync descends into external/ to carry
+    # rigid_utils.py, every OTHER file under it is a --delete-excluded candidate.
+    # Without this line a sync wipes the cluster's external/molformer.
+    --filter='P /external/**'
     --filter='P /data/Pretrained MoLFormer/'
     --filter='P /data/esm3_checkpoint/'
     --filter='P /.bigfoot_job_queue/'

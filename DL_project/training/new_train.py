@@ -56,7 +56,7 @@ from architecture.loss import (
 )
 from dataloader.sampler import ClassBalancedBatchSampler
 from dataloader.dataset_source import interaction_csv_path
-from dataloader.New_dataloader import PLIDataset
+from dataloader.Dataloader import PLIDataset
 from candidate_averaging import (
     CandidateAccumulator,
     average_candidate_predictions,

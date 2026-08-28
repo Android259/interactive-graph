@@ -13,7 +13,7 @@
 ```text
 training/                 active entry point, CLI config parser, reproducibility
 architecture/             model modules (InteractionClassification + encoders)
-dataloader/               active PLIDataset (New_dataloader.py) + GRAB graph; legacy loaders
+dataloader/               active PLIDataset (Dataloader.py) + GRAB graph; legacy loaders
 data/                     input artifacts (CSVs, ESM3/PLM embeddings, graphs) + lipid graph generator
 preprocessing/            offline data prep (embeddings, negatives, PDB/FASTA, graphs)
 analysis/                 canonical metrics-table build / analysis / plots
@@ -52,7 +52,7 @@ closest one before editing files in that tree.
 training/new_train.py
   -> training/read_configuration.py
   -> training/reproducibility.py
-  -> dataloader/New_dataloader.py
+  -> dataloader/Dataloader.py
   -> architecture/interaction_classification.py
        -> architecture/protein_encoder.py
             -> architecture/self_attention.py
@@ -64,12 +64,12 @@ training/new_train.py
 
 dataloader/GRAB_graph.py
   -> data/grab_pair_graph_edges.csv
-  -> dataloader/New_dataloader.py
+  -> dataloader/Dataloader.py
   -> architecture/loss.py through training/new_train.py
 
 data/build_lipid_isomer_graphs.py
   -> data/lipid_graphs/*
-  -> dataloader/New_dataloader.py
+  -> dataloader/Dataloader.py
 ```
 
 ## Main Modules
@@ -77,7 +77,7 @@ data/build_lipid_isomer_graphs.py
 - `training/read_configuration.py`: `ModelConfig` and custom CLI parser.
 - `training/reproducibility.py`: Python, NumPy, PyTorch, worker, and DataLoader seeds.
 - `training/new_train.py`: active train/validation/test entry point; importing it causes runtime side effects.
-- `dataloader/New_dataloader.py`: active dataset, protein/lipid loading, pair graph, GRAB coefficient precomputation.
+- `dataloader/Dataloader.py`: active dataset, protein/lipid loading, pair graph, GRAB coefficient precomputation.
 - `dataloader/GRAB_graph.py`: pair-edge generation.
 - `architecture/interaction_classification.py`: top-level model.
 - `architecture/protein_encoder.py`: protein GATv2 encoder.

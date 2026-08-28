@@ -1,9 +1,6 @@
 import torch
 
-try:
-    from .fast_attention import grouped_attention, make_grouped_attention_layout
-except ImportError:
-    from fast_attention import grouped_attention, make_grouped_attention_layout
+from .fast_attention import grouped_attention, make_grouped_attention_layout
 
 
 EDGE_SET_WIDTH = 32

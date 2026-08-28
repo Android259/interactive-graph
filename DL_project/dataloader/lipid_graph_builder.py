@@ -20,7 +20,7 @@ class LipidGraphBuilder:
 
         ``_draw_lipid_candidate``, not the configuration flag, decides whether this row
         is drawn: the draw is an augmentation and belongs to the training split alone
-        (New_dataloader.__iter__ marks it). Validation and test come through the cache
+        (Dataloader.__iter__ marks it). Validation and test come through the cache
         below and get the same molecule every epoch.
 
         ``candidate_index`` asks for one named member of the candidate set instead, and
@@ -49,7 +49,7 @@ class LipidGraphBuilder:
         """Fill this row's cache entries without consuming the random stream.
 
         Warming runs on the training clone, and the caches are shared with the other two
-        (New_dataloader.__iter__ copies shallowly), so both entries are filled: the
+        (Dataloader.__iter__ copies shallowly), so both entries are filled: the
         candidate keys the draw picks from, and the fixed encoding validation and test
         read. Filling the second one costs nothing extra -- it is a view into the same
         mapped embedding table.

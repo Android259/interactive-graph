@@ -1,6 +1,6 @@
 """How much of a lipid-side model's cold-family score is just the lipid's own label prior.
 
-The cold split is cold in the protein only: `New_dataloader._split_interactions` holds
+The cold split is cold in the protein only: `Dataloader._split_interactions` holds
 out whole protein families, and every lipid of the held-out family's rows has already
 been seen -- paired with other proteins -- in train. So a model that reads the lipid and
 nothing else can score above chance on a held-out family without any pair reasoning at

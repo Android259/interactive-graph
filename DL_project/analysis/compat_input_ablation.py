@@ -14,7 +14,7 @@ the network using it nonlinearly, and the two readings imply opposite conclusion
 
 Only an ablation separates them, and it is cheap because it trains nothing: the
 standardised feature has train mean 0 by construction (`_compute_compatibility_input` in
-dataloader/New_dataloader.py), so substituting zero feeds the classifier exactly the value
+dataloader/Dataloader.py), so substituting zero feeds the classifier exactly the value
 an average training row carried -- the neutral input, not an out-of-range one.
 
 Reports both AUCs on the same rows, pooled and inside protein, so the difference is the
@@ -43,7 +43,7 @@ import torch_geometric  # noqa: E402
 
 from read_configuration import read_configuration  # noqa: E402
 from architecture.interaction_classification import InteractionClassification  # noqa: E402
-from dataloader.New_dataloader import PLIDataset  # noqa: E402
+from dataloader.Dataloader import PLIDataset  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from forward_args import build_forward_args  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402

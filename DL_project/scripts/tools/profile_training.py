@@ -66,7 +66,7 @@ from architecture.mlp_utils import (
 )
 from dataloader.sampler import ClassBalancedBatchSampler
 from dataloader.dataset_source import interaction_csv_path
-from dataloader.New_dataloader import PLIDataset
+from dataloader.Dataloader import PLIDataset
 from read_configuration import read_named_configuration
 from reproducibility import seed_everything, seed_worker, seeded_generator
 

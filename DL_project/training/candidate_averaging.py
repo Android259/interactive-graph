@@ -1,7 +1,7 @@
 """Averaging a pair's candidate structures back into one prediction.
 
 Under ``--eval_average_candidates`` an evaluation split carries one row per candidate
-structure of a measured lipid species (``New_dataloader._expand_candidate_rows``),
+structure of a measured lipid species (``Dataloader._expand_candidate_rows``),
 because the spectrum does not say which isomer was in the protein and training under
 ``random_choice`` answers the same thing for all of them. Reading the model back on one
 arbitrary member would throw that invariance away, so the copies are collapsed here.
@@ -14,7 +14,7 @@ def average_candidate_predictions(outl, prot, labels):
     """Collapse a batch's candidate copies of a pair into one averaged prediction.
 
     Under --eval_average_candidates the evaluation split carries one row per candidate
-    structure of the measured species (New_dataloader._expand_candidate_rows), and this
+    structure of the measured species (Dataloader._expand_candidate_rows), and this
     is where they come back together: the class probabilities are averaged over a pair's
     candidates and the result is returned as log-probabilities, which are logits for
     every reader downstream -- softmax and argmax are unchanged by the missing constant,

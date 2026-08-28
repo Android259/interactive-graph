@@ -101,7 +101,7 @@ default and neither changes the classifier's output.
 - Keep pooling batch vectors aligned after any node filtering.
 - A forward/signature/shape change must be synchronized with:
   - `training/new_train.py` train, validation, and test calls;
-  - `dataloader/New_dataloader.py`;
+  - `dataloader/Dataloader.py`;
   - `tests/test_lipid_encoder.py`;
   - `tests/test_training_smoke_integration.py`.
 - Preserve `GRAB_loss` normalization and commented historical loss unless explicitly changed.

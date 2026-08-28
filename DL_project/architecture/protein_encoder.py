@@ -3,30 +3,19 @@ import torch_geometric
 
 from dataloader.protein_graph_builder import POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES
 
-try:
-    from .edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
-    from .geometric_transformer import ProteinGeometricTransformerBlock
-    from .self_attention import ProteinSelfAttention
-    from .pair_descriptor_head import _APOLAR_SASA_SHARE_INDEX, _AROMATIC_SHARE_INDEX
-    from .mlp_utils import (
-        make_activation, make_dropout, make_extra_hidden_layer,
-        make_optional_projection, make_norm_layer, apply_norm,
-        build_sequential_compression, HeadGate, insert_hidden_gate,
-        insert_input_gate, insert_output_gate, mlp_hidden_dims,
-        link_concrete_dropouts
-    )
-except ImportError:
-    from edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
-    from geometric_transformer import ProteinGeometricTransformerBlock
-    from self_attention import ProteinSelfAttention
-    from pair_descriptor_head import _APOLAR_SASA_SHARE_INDEX, _AROMATIC_SHARE_INDEX
-    from mlp_utils import (
-        make_activation, make_dropout, make_extra_hidden_layer,
-        make_optional_projection, make_norm_layer, apply_norm,
-        build_sequential_compression, HeadGate, insert_hidden_gate,
-        insert_input_gate, insert_output_gate, mlp_hidden_dims,
-        link_concrete_dropouts
-    )
+from .edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
+from .geometric_transformer import ProteinGeometricTransformerBlock
+from .edge_geometric_conv import EdgeAttentionConv, EdgeMLPConv
+from .protein_edge_geometry import STRUCTURED_EDGE_DIM, structured_edge_features
+from .self_attention import ProteinSelfAttention
+from .pair_descriptor_head import _APOLAR_SASA_SHARE_INDEX, _AROMATIC_SHARE_INDEX
+from .mlp_utils import (
+    make_activation, make_dropout, make_extra_hidden_layer,
+    make_optional_projection, make_norm_layer, apply_norm,
+    build_sequential_compression, HeadGate, insert_hidden_gate,
+    insert_input_gate, insert_output_gate, mlp_hidden_dims,
+    link_concrete_dropouts
+)
 
 
 class Protein_encoder(torch.nn.Module):
@@ -53,6 +42,11 @@ class Protein_encoder(torch.nn.Module):
         self.use_geometric_transformer = bool(
             getattr(self.config, "geometric_transformer", False)
         )
+        self.use_edge_attention = bool(
+            getattr(self.config, "protein_edge_attention", False)
+        )
+        self.use_edge_mlp = bool(getattr(self.config, "protein_edge_mlp", False))
+        self.use_structured_edges = self.use_edge_attention or self.use_edge_mlp
         self.use_rnabang_frozen_node_adapter = bool(
             start and getattr(self.config, "rnabang_frozen_node_adapter", False)
         )
@@ -226,7 +220,10 @@ class Protein_encoder(torch.nn.Module):
             return
 
         gat_out = hiddim * self.config.HEADS
-        conv_out_dim = hiddim if (self.use_gine_conv or self.rnabang_no_gat) else gat_out
+        conv_out_dim = (
+            hiddim if (self.use_gine_conv or self.rnabang_no_gat or self.use_edge_mlp)
+            else gat_out
+        )
 
         # Old protein graph encoder:
         # self.encodin = torch_geometric.nn.conv.GATv2Conv(
@@ -259,6 +256,7 @@ class Protein_encoder(torch.nn.Module):
             and getattr(self.config, "sparsity_gate_heads", False)
             and not self.use_gine_conv
             and not self.rnabang_no_gat
+            and not self.use_edge_mlp
         ):
             self.head_gate1 = HeadGate(self.config.HEADS, hiddim, self.config)
             if not self.config.single_gat_layer:
@@ -322,6 +320,15 @@ class Protein_encoder(torch.nn.Module):
         self.ln = make_norm_layer(self.config, hiddim, "protein_output_graph_norm")
 
     def _make_protein_conv(self, indim, hiddim):
+        if self.use_edge_attention:
+            return EdgeAttentionConv(
+                indim, hiddim, self.config.HEADS, STRUCTURED_EDGE_DIM
+            )
+        if self.use_edge_mlp:
+            return EdgeMLPConv(
+                indim, hiddim, STRUCTURED_EDGE_DIM,
+                lam=getattr(self.config, "protein_edge_mlp_lambda", 30.0),
+            )
         if self.use_gine_conv:
             nn = torch.nn.Sequential(
                 torch.nn.Linear(indim, hiddim),
@@ -597,7 +604,16 @@ class Protein_encoder(torch.nn.Module):
                 getattr(self.config, "geometric_ipa_chunk_size", 64),
             )
 
-        if self.config.bidirectional_edges:
+        if self.use_structured_edges:
+            if frame_rotation is None or frame_translation is None:
+                raise ValueError(
+                    "protein_edge_attention/protein_edge_mlp require protein "
+                    "residue frames"
+                )
+            edgidx, e_attr = structured_edge_features(
+                edgidx, frame_rotation, frame_translation, e_attr
+            )
+        elif self.config.bidirectional_edges:
             edgidx, e_attr = self.make_bidirectional_edges(edgidx, e_attr)
 
         # Old protein graph encoder:

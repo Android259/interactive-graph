@@ -132,7 +132,7 @@ def test_accumulator_weighs_every_pair_once_whatever_its_candidate_count():
 def test_original_rows_come_from_pair_id_not_the_frame_index():
     import pandas as pd
 
-    from dataloader.New_dataloader import PLIDataset
+    from dataloader.Dataloader import PLIDataset
 
     # The sampled pool is re-indexed 0..N-1, so a split frame's labels are pool
     # positions; only pair_id still points at the row of the original table the

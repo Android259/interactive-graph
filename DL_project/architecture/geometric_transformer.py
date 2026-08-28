@@ -3,10 +3,7 @@ import math
 import torch
 import torch.nn.functional as F
 
-try:
-    from .mlp_utils import NodeMLPSubstitute
-except ImportError:
-    from mlp_utils import NodeMLPSubstitute
+from .mlp_utils import NodeMLPSubstitute
 
 
 class RMSNorm(torch.nn.Module):

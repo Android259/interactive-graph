@@ -206,7 +206,7 @@ ESM3 дескрипторами полости (измеримо хуже), ис
 
 | | |
 |---|---|
-| бейзлайн приора в логе каждого запуска | `_report_lipid_prior_baseline` в [New_dataloader.py](../dataloader/New_dataloader.py) |
+| бейзлайн приора в логе каждого запуска | `_report_lipid_prior_baseline` в [Dataloader.py](../dataloader/Dataloader.py) |
 | он же по всем семействам | [preprocessing/lipid_marginal_baseline.py](../preprocessing/lipid_marginal_baseline.py) |
 | подбор классов для двустороннего разреза | [preprocessing/lipid_class_holdout.py](../preprocessing/lipid_class_holdout.py) |
 | наборы для липидного разреза | `LIPID_COLDSPLIT_SETS` в [dataloader/sampler.py](../dataloader/sampler.py) |

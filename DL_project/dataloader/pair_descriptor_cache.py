@@ -1,6 +1,6 @@
 """Precomputed, disk-shared cache for --pair_descriptors' per-candidate/per-protein values.
 
-New_dataloader.py._compute_pair_descriptors runs RDKit over every candidate SMILES in
+Dataloader.py._compute_pair_descriptors runs RDKit over every candidate SMILES in
 the interaction table (chain length, unsaturation, H-bond capacity, heavy-atom count)
 and parses every protein's pocketness.pdb/coarse_graph_nodes.csv (pocket extent,
 aromatic_share_core/rim) -- none of which depends on --seed or --excluded_groups. A
@@ -182,7 +182,7 @@ def load_pair_descriptor_cache(root_dir, isomeric):
 
     None is a normal answer, not an error -- a checkout that never ran the builder, a
     regenerated interaction table, an added protein or a stale run all end up here, and
-    the caller (New_dataloader._compute_pair_descriptors) computes exactly as it did
+    the caller (Dataloader._compute_pair_descriptors) computes exactly as it did
     before this module existed.
     """
     if not store_is_current(root_dir, isomeric):
