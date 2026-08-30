@@ -2133,8 +2133,8 @@ class PLIDataset(
             )
         elif getattr(self.config, "no_embeddings", False):
             # No MolFormer, and without it no per-token structure to build multiple
-            # nodes from (validate() requires descriptors_in_protein_lipid for
-            # exactly this reason) -- one node, whose feature vector is the same
+            # nodes from (validate() requires descriptors_in_lipid for exactly this
+            # reason) -- one node, whose feature vector is the same
             # chain/unsaturation/hbond/heavy columns architecture/lipid_encoder.py
             # broadcasts onto every node when embeddings ARE on. Sliced from
             # protein_graph.pair_descriptor_input (attached above) rather than

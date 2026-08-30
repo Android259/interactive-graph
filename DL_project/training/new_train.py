@@ -35,6 +35,7 @@ sys.path.insert(0, TRAINING_DIR)
 sys.path.insert(0, PROJECT_ROOT)
 
 from read_configuration import read_configuration
+from forward_args import build_forward_args
 from append_metric_to_table import append_metric
 from architecture.final_layer import chem_adversary_loss, family_dann_loss
 from architecture.interaction_classification import InteractionClassification
@@ -736,62 +737,18 @@ def validate_prediction_label_shapes(predictions, labels, phase, batch_index):
 
 
 def _build_forward_args(prot, lipid):
-    """Assemble the model forward kwargs for a protein/lipid batch."""
-    forward_args = dict(
-        config=conf,
-        plm=prot.plm,
-        bury=prot.bury,
-        prot=prot.x,
-        prot_edgidx=prot.edge_index,
-        prot_e_attr=prot.edge_attr,
-        prot_batch=prot.batch,
-        lip=lipid.x,
-        lip_batch=lipid.batch,
-    )
-    if conf.lipid_fragments_mask:
-        forward_args["lipid_batch"] = lipid.lipid_batch
-    if getattr(conf, "lipid_graph_isomers", False):
-        forward_args["lip_edgidx"] = lipid.edge_index
-        forward_args["lip_e_attr"] = lipid.edge_attr
-    if conf.prot_attention_pos_bias or conf.prot_pooling_by_pockets:
-        forward_args["pocket_mask"] = prot.pocket
-    if getattr(conf, "use_esm3_v2_embeddings", False):
-        forward_args["node_confidence"] = getattr(prot, "node_confidence", None)
-    if getattr(conf, "geometric_transformer", False):
-        forward_args["prot_frame_rotation"] = prot.frame_rotation
-        forward_args["prot_frame_translation"] = prot.frame_translation
-    if (
-        getattr(conf, "geometric_transformer", False)
-        or getattr(conf, "rnabang_frozen_node_adapter", False)
-    ):
-        forward_args["prot_geometric_node_attr"] = prot.geometric_node_attr
-    if getattr(conf, "rnabang_frozen_node_adapter", False):
-        forward_args["prot_edge_node_pairs"] = getattr(
-            prot, "edge_node_pairs", None
-        )
-        forward_args["prot_edge_node_degree"] = prot.edge_node_degree
-    if getattr(conf, "pocket_descriptors", False):
-        # Protein_encoder raises without it, so the flag used to abort every run that
-        # set it: the dataloader attached the descriptor and nothing passed it on. The
-        # train, validation and test loops each carried their own copy of this dict,
-        # which is how one branch could be missing from all three at once -- they now
-        # call this function instead.
-        forward_args["pocket_descriptor"] = prot.pocket_descriptor
-    if getattr(conf, "chem_prior", False) or getattr(conf, "pocket_compat_prior", False):
-        forward_args["frozen_prior"] = prot.frozen_prior
-    if (
-        getattr(conf, "compatibility_input", False)
-        or getattr(conf, "compatibility_split_input", False)
-    ):
-        forward_args["compat_input"] = prot.compat_input
-    if getattr(conf, "pair_descriptors", False):
-        forward_args["pair_descriptor_input"] = prot.pair_descriptor_input
-    if getattr(conf, "two_pair_descriptors_paths", False) or (
-        getattr(conf, "descriptors_head", False)
-        and getattr(conf, "descriptor_names", "")
-    ):
-        forward_args["descriptor_catalog_input"] = prot.descriptor_catalog_input
-    return forward_args
+    """Assemble the model forward kwargs for a protein/lipid batch.
+
+    Delegates to training/forward_args.py -- the shared copy also used by
+    analysis/checkpoint_scores.py and analysis/compat_input_ablation.py. This module
+    used to carry its own copy of the same conditional dict, which drifted from the
+    shared one (missing the protein_edge_attention/protein_edge_mlp frame-rotation
+    condition and the cross_attention_chain_bias chain_rank wiring) exactly the way the
+    shared module's own docstring warns a duplicate does. One function, called from
+    everywhere, so a new config option reaches training, validation, test and analysis
+    at once instead of failing in whichever copy nobody updated.
+    """
+    return build_forward_args(conf, prot, lipid)
 
 
 def _eval_task_loss(outl, labels):

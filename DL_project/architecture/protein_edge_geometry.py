@@ -101,7 +101,17 @@ def structured_edge_features(edge_index, frame_rotation, frame_translation, edge
                 local_direction,
                 quaternion,
                 torch.log1p(area).unsqueeze(-1),
-                (boundary / area.clamp_min(1e-8)).unsqueeze(-1),
+                # Same reason area itself gets log1p: an almost-degenerate contact
+                # (area near zero, clamp_min(1e-8) only guards the literal division)
+                # sends this ratio into the hundreds while every other one of these 25
+                # columns lives in [-1, 1] or [0, 1]. That scale mismatch is what a
+                # dot-product attention head sees as noise dominating signal -- q/k
+                # collapse toward zero to damp it, attention degenerates to uniform
+                # (1/degree, content-blind), and weight decay then finishes flattening
+                # them over the course of training. log1p keeps the ratio's ordering
+                # and its near-zero behaviour (log1p(x) ~= x there) while compressing
+                # the tail the same way area's own log1p already does.
+                torch.log1p(boundary / area.clamp_min(1e-8)).unsqueeze(-1),
             ),
             dim=-1,
         )

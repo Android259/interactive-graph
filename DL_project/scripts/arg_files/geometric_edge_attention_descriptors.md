@@ -20,4 +20,3 @@
 --lipid_graph_isomers
 --pair_descriptor_lipid_shape
 
---excluded_groups=GLTP

@@ -40,15 +40,16 @@ import numpy as np
 import pandas
 import torch
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "training"))
 
 from dataloader.Dataloader import PLIDataset
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.sampler import lipid_class_series
 from architecture.interaction_classification import InteractionClassification
 from training.read_configuration import read_configuration
-
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from forward_args import build_forward_args
 
 
 def class_profiles(csv):
@@ -117,35 +118,6 @@ def one_row_per_protein(dataset):
     return seen
 
 
-def forward_args(conf, prot, lipid):
-    """The model's forward kwargs for one batch.
-
-    A copy of training/new_train.py's `_build_forward_args`, which is a module-level
-    closure over that script's `conf` and cannot be imported without running the whole
-    training file. Only the branches the probe's own flags can reach are kept; anything
-    else this configuration needs would raise inside the encoder rather than pass
-    silently, which is the failure mode worth having.
-    """
-    args = dict(
-        config=conf,
-        plm=prot.plm,
-        bury=prot.bury,
-        prot=prot.x,
-        prot_edgidx=prot.edge_index,
-        prot_e_attr=prot.edge_attr,
-        prot_batch=prot.batch,
-        lip=lipid.x,
-        lip_batch=lipid.batch,
-    )
-    if conf.lipid_fragments_mask:
-        args["lipid_batch"] = lipid.lipid_batch
-    if conf.prot_attention_pos_bias or conf.prot_pooling_by_pockets:
-        args["pocket_mask"] = prot.pocket
-    if getattr(conf, "pocket_descriptors", False):
-        args["pocket_descriptor"] = prot.pocket_descriptor
-    return args
-
-
 def pooled_protein_vectors(conf, model, loader, device):
     """Run the real branch over one loader pass and catch what its pooling produces.
 
@@ -166,7 +138,7 @@ def pooled_protein_vectors(conf, model, loader, device):
         for prot, lipid in loader:
             prot = prot.to(device)
             lipid = lipid.to(device)
-            model(**forward_args(conf, prot, lipid))
+            model(**build_forward_args(conf, prot, lipid))
         if not captured:
             raise RuntimeError("the pooling hook never fired")
         return torch.cat(captured, dim=0)

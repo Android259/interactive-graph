@@ -1,7 +1,9 @@
 import torch
 import torch_geometric
 
-from dataloader.protein_graph_builder import POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES
+from dataloader.protein_graph_builder import (
+    POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES, POCKET_DESCRIPTOR_NAMES,
+)
 
 from .edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
 from .geometric_transformer import ProteinGeometricTransformerBlock
@@ -149,15 +151,25 @@ class Protein_encoder(torch.nn.Module):
             # set_pocket_descriptor_normalization before the first epoch.
             # --pocket_descriptors_family_neutral restricts this broadcast to the 7
             # POCKET_DESCRIPTOR_NAMES entries at/near the no-structure eta^2 floor
-            # (dataloader/protein_graph_builder.py); the incoming pocket_descriptor
-            # tensor stays the full 13-wide vector (pocket_descriptor() and
-            # PairDescriptorHead's fixed indices are untouched), sliced here at both
-            # normalisation and forward time.
-            self.pocket_descriptor_indices = (
-                POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES
-                if getattr(self.config, "pocket_descriptors_family_neutral", False)
-                else None
-            )
+            # (dataloader/protein_graph_builder.py); --pocket_descriptor_names restricts
+            # it to an arbitrary named subset instead (mutually exclusive with
+            # family_neutral, enforced in training/read_configuration.py's validate()).
+            # Either way the incoming pocket_descriptor tensor stays the full 13-wide
+            # vector (pocket_descriptor() and PairDescriptorHead's fixed indices are
+            # untouched), sliced here at both normalisation and forward time.
+            pocket_descriptor_names = getattr(self.config, "pocket_descriptor_names", "")
+            if pocket_descriptor_names:
+                self.pocket_descriptor_indices = tuple(
+                    POCKET_DESCRIPTOR_NAMES.index(name)
+                    for name in (
+                        n.strip() for n in pocket_descriptor_names.split(",")
+                    )
+                    if name
+                )
+            elif getattr(self.config, "pocket_descriptors_family_neutral", False):
+                self.pocket_descriptor_indices = POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES
+            else:
+                self.pocket_descriptor_indices = None
             self.pocket_descriptor_count = int(
                 len(self.pocket_descriptor_indices)
                 if self.pocket_descriptor_indices is not None

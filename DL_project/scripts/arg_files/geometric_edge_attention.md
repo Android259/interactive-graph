@@ -19,4 +19,3 @@
 --protein_edge_attention
 --lipid_graph_isomers
 
---excluded_groups=GLTP

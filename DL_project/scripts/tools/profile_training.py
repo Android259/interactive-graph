@@ -69,6 +69,7 @@ from dataloader.dataset_source import interaction_csv_path
 from dataloader.Dataloader import PLIDataset
 from read_configuration import read_named_configuration
 from reproducibility import seed_everything, seed_worker, seeded_generator
+from forward_args import build_forward_args
 
 
 def parse_args(argv):
@@ -111,48 +112,6 @@ def parse_args(argv):
     if model_args and model_args[0] == "--":
         model_args = model_args[1:]
     return args, model_args
-
-
-def build_forward_args(conf, prot, lipid):
-    """Assemble model forward kwargs for a protein/lipid batch (mirrors new_train.py)."""
-    forward_args = dict(
-        config=conf,
-        plm=prot.plm,
-        bury=prot.bury,
-        prot=prot.x,
-        prot_edgidx=prot.edge_index,
-        prot_e_attr=prot.edge_attr,
-        prot_batch=prot.batch,
-        lip=lipid.x,
-        lip_batch=lipid.batch,
-    )
-    if conf.lipid_fragments_mask:
-        forward_args["lipid_batch"] = lipid.lipid_batch
-    if getattr(conf, "lipid_graph_isomers", False):
-        forward_args["lip_edgidx"] = lipid.edge_index
-        forward_args["lip_e_attr"] = lipid.edge_attr
-    if conf.prot_attention_pos_bias or conf.prot_pooling_by_pockets:
-        forward_args["pocket_mask"] = prot.pocket
-    if getattr(conf, "use_esm3_v2_embeddings", False):
-        forward_args["node_confidence"] = getattr(prot, "node_confidence", None)
-    # These three were in new_train.py and not here, so profiling any run with
-    # --geometric_transformer or --rnabang_frozen_node_adapter died inside the protein
-    # encoder ("requires precomputed node features") -- a stale duplicate presenting
-    # itself as a broken config. Keep them in step with new_train.py's loops.
-    if getattr(conf, "geometric_transformer", False):
-        forward_args["prot_frame_rotation"] = prot.frame_rotation
-        forward_args["prot_frame_translation"] = prot.frame_translation
-    if (
-        getattr(conf, "geometric_transformer", False)
-        or getattr(conf, "rnabang_frozen_node_adapter", False)
-    ):
-        forward_args["prot_geometric_node_attr"] = prot.geometric_node_attr
-    if getattr(conf, "rnabang_frozen_node_adapter", False):
-        forward_args["prot_edge_node_pairs"] = getattr(
-            prot, "edge_node_pairs", None
-        )
-        forward_args["prot_edge_node_degree"] = prot.edge_node_degree
-    return forward_args
 
 
 def main():

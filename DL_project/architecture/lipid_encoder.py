@@ -92,15 +92,16 @@ class Lipid_encoder(torch.nn.Module):
             link_concrete_dropouts(mlp_layers)
             self.mlp = torch.nn.Sequential(*mlp_layers)
         else:
-            # --descriptors_in_protein_lipid's lipid-only tokens (chain, unsaturation,
-            # hbond, heavy -- pair_descriptor_input's first 4 columns, already
-            # standardised by the loader; see architecture/protein_encoder.py's
+            # --descriptors_in_lipid's tokens (also settable together with the
+            # protein-side broadcast via --descriptors_in_protein_lipid: chain,
+            # unsaturation, hbond, heavy -- pair_descriptor_input's first 4 columns,
+            # already standardised by the loader; see architecture/protein_encoder.py's
             # expand_pair_descriptors for the protein-side equivalent and why no
             # normalisation buffers are needed here either).
             #
             # --no_embeddings: MolFormer contributes nothing at all -- there is no
             # per-token structure to build multiple nodes from without it (validate()
-            # requires descriptors_in_protein_lipid for exactly this reason), so
+            # requires descriptors_in_lipid for exactly this reason), so
             # dataloader.Dataloader collapses the lipid graph to ONE node whose
             # feature vector already IS these 4 scalars; encodin reads them directly,
             # no broadcast-cat needed in forward (there is nothing else to cat onto).
@@ -108,7 +109,7 @@ class Lipid_encoder(torch.nn.Module):
             # Otherwise (no_embeddings off): MolFormer's per-token embedding stays the
             # base, and forward() broadcasts the same 4 scalars onto every token node
             # in addition to it -- concatenated, not replacing, same as
-            # descriptors_in_protein_lipid coexists with --pair_descriptors elsewhere.
+            # descriptors_in_lipid coexists with --pair_descriptors elsewhere.
             # Only for the start=True instance (lipid1): the start=False second pass
             # (lipid2, under --double_attention) receives lip1 -- already hiddim-wide,
             # nothing raw left to broadcast onto, same reason
@@ -166,9 +167,7 @@ class Lipid_encoder(torch.nn.Module):
             # Under no_embeddings, lipLM already IS these 4 scalars (one node, built
             # by the loader), nothing to broadcast onto.
             if pair_descriptor_input is None:
-                raise ValueError(
-                    "descriptors_in_protein_lipid requires pair_descriptor_input"
-                )
+                raise ValueError("descriptors_in_lipid requires pair_descriptor_input")
             per_lipid = pair_descriptor_input[:, :4].to(lipLM.dtype)
             lipLM = torch.cat((lipLM, per_lipid[lipbatch]), dim=-1)
 

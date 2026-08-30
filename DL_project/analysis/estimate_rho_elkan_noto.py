@@ -74,6 +74,7 @@ import torch_geometric  # noqa: E402
 
 from read_configuration import read_configuration  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
+from forward_args import build_forward_args  # noqa: E402
 from architecture.interaction_classification import InteractionClassification  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.Dataloader import PLIDataset  # noqa: E402
@@ -131,29 +132,6 @@ def default_weights_path(conf):
         PROJECT_ROOT, "models", conf.label.strip(), excluded_set_name(conf),
         f"seed{conf.seed}.pt",
     )
-
-
-def build_forward_args(conf, prot, lipid):
-    """Assemble the model kwargs exactly as the training/eval loop does."""
-    forward_args = dict(
-        config=conf,
-        plm=prot.plm,
-        bury=prot.bury,
-        prot=prot.x,
-        prot_edgidx=prot.edge_index,
-        prot_e_attr=prot.edge_attr,
-        prot_batch=prot.batch,
-        lip=lipid.x,
-        lip_batch=lipid.batch,
-    )
-    if conf.lipid_fragments_mask:
-        forward_args["lipid_batch"] = lipid.lipid_batch
-    if getattr(conf, "lipid_graph_isomers", False):
-        forward_args["lip_edgidx"] = lipid.edge_index
-        forward_args["lip_e_attr"] = lipid.edge_attr
-    if conf.prot_attention_pos_bias or conf.prot_pooling_by_pockets:
-        forward_args["pocket_mask"] = prot.pocket
-    return forward_args
 
 
 @torch.no_grad()

@@ -2,11 +2,23 @@ import sys
 from dataclasses import dataclass, field
 
 
+# Kept as a literal, not imported, for the same reason POCKET_DESCRIPTOR_COUNT below
+# is: dataloader/protein_graph_builder.py pulls in torch/torch_geometric, which would
+# then land on every consumer of ModelConfig, including analysis scripts that only
+# want to read a run's settings. Source of truth is dataloader/pair_descriptors.py's
+# PROTEIN_DESCRIPTOR_NAMES -- change the order or membership there and change this in
+# the same commit (files/pocket_shape_descriptors.md too); --pocket_descriptor_names
+# below validates against this copy.
+POCKET_DESCRIPTOR_NAMES = (
+    "pocket_residue_share", "pocket_sasa_share", "pocket_volume_per_sasa",
+    "pocket_extent", "pocket_elongation", "pocket_flatness", "ev14_q50",
+    "buriedness_q50", "depth_q10", "apolar_sasa_share", "aromatic_share",
+    "hydropathy_core", "hydropathy_rim",
+)
 # Width of the cavity descriptor --pocket_descriptors appends to the fused pair vector.
-# The list itself is POCKET_DESCRIPTOR_NAMES in dataloader/protein_graph_builder.py,
-# which checks the descriptor it builds against this number and names the mismatch;
-# change the list and this changes with it (files/pocket_shape_descriptors.md too).
-POCKET_DESCRIPTOR_COUNT = 13
+# Checked in dataloader/protein_graph_builder.py against the descriptor it actually
+# builds, so the two cannot drift silently.
+POCKET_DESCRIPTOR_COUNT = len(POCKET_DESCRIPTOR_NAMES)
 
 POOL_TYPES = ("add", "max", "mean", "add_max", "gem")
 LOSS_TYPES = ("mse", "cross_entropy", "bce", "pairwise_rank")
@@ -567,21 +579,45 @@ class ModelConfig:
     # encoders early, the other still concatenating into Final_Layer's common_out
     # (architecture/final_layer.py) as before; this flag changes nothing about that
     # existing path.
+    #
+    # Convenience alias for turning both sides on together -- validate() ORs it into
+    # descriptors_in_protein and descriptors_in_lipid below, so every existing argfile
+    # using this flag keeps behaving exactly as before. Set the two below directly
+    # instead when only one side's broadcast is wanted (e.g. protein reads descriptors
+    # while lipid keeps reading MolFormer/its chemical graph untouched).
     descriptors_in_protein_lipid: bool = False
-    # Protein side: turns --plmon off (no ESM3 contribution to protein nodes). Lipid
-    # side: MolFormer is not loaded/used at all, and the lipid graph collapses to ONE
-    # node per lipid (no per-token structure exists without MolFormer to tokenize
-    # against) carrying only the --descriptors_in_protein_lipid broadcast as its
-    # feature vector -- dataloader/Dataloader.py/architecture/lipid_encoder.py.
-    # Requires --descriptors_in_protein_lipid (validate() below): without it, and
-    # without --no_protein_geometry's base columns either, a protein or lipid node
-    # would have nothing left to be a feature vector at all.
+    # Protein-only half of descriptors_in_protein_lipid's broadcast (aromatic_share,
+    # polar_share, coarsened extent). Settable on its own so the protein branch's
+    # input can change without touching the lipid branch at all.
+    descriptors_in_protein: bool = False
+    # Lipid-only half of descriptors_in_protein_lipid's broadcast (chain, unsaturation,
+    # hbond, heavy). Settable on its own for the symmetric reason.
+    descriptors_in_lipid: bool = False
+    # Lipid side: MolFormer is not loaded/used at all, and the lipid graph collapses to
+    # ONE node per lipid (no per-token structure exists without MolFormer to tokenize
+    # against) carrying only descriptors_in_lipid's broadcast as its feature vector --
+    # dataloader/Dataloader.py/architecture/lipid_encoder.py. Requires
+    # descriptors_in_lipid (validate() below, also satisfied by
+    # --descriptors_in_protein_lipid): without it a lipid node would have nothing left
+    # to be a feature vector at all. Says nothing about the protein branch -- see
+    # --no_protein_embeddings for the protein-only equivalent, which this flag also
+    # implies (so it still drops ESM3 too, exactly as before).
     no_embeddings: bool = False
+    # Protein side only: turns --plmon off (no ESM3 contribution to protein nodes),
+    # without touching MolFormer or the lipid graph at all -- the finer-grained sibling
+    # --no_embeddings (which implies this too, for backward compatibility) does not
+    # have on its own. On its own this needs no companion flag: base geometry columns
+    # (protein_node_columns()) stay unless --no_protein_geometry is also set, and that
+    # flag already requires --descriptors_in_protein/--descriptors_in_protein_lipid
+    # independently of this one (validate() below) -- so the two together can never
+    # leave a protein node empty either.
+    no_protein_embeddings: bool = False
     # Protein side only: drops residue_type/sas_area/volume (and
     # --protein_extra_node_features' columns, if also on) from every protein node --
     # dataloader/protein_graph_builder.py's protein_node_columns(). Requires
-    # --descriptors_in_protein_lipid for the same "node would end up empty" reason as
-    # --no_embeddings; the two are independent otherwise (this one says nothing about
+    # descriptors_in_protein (validate() below, also satisfied by
+    # --descriptors_in_protein_lipid) for the same "node would end up empty" reason as
+    # --no_protein_embeddings; independent of it otherwise (this one says nothing about
     # ESM or MolFormer).
     no_protein_geometry: bool = False
     # Give the lipid branch a smaller learning rate than the rest of the model, leaving
@@ -990,6 +1026,18 @@ class ModelConfig:
     # aromatic_share/polar_share at their own fixed indices regardless of this flag, so
     # under plain --descriptors_head it changes nothing measurable.
     pocket_descriptors_family_neutral: bool = False
+    # --pocket_descriptor_names: an arbitrary, comma-separated subset of
+    # POCKET_DESCRIPTOR_NAMES (this file, top -- same list, no coarsening syntax:
+    # unlike --descriptor_names/DESCRIPTOR_CATALOG this only selects COLUMNS of the
+    # already-built 13-wide pocket_descriptor tensor, it does not build new ones), for
+    # the SAME --pocket_descriptors broadcast --pocket_descriptors_family_neutral
+    # restricts -- a differently-sized or differently-chosen subset than that flag's
+    # fixed 7, without touching PairDescriptorHead/NamedDescriptorHead (--pair_
+    # descriptors, --descriptors_head, --two_pair_descriptors_paths), which read
+    # aromatic_share/polar_share at their own fixed indices regardless, same as
+    # pocket_descriptors_family_neutral. Mutually exclusive with it (validate() below)
+    # -- both restrict the same broadcast, so combining them is ambiguous, not additive.
+    pocket_descriptor_names: str = ""
     # Width of the protein node vector, derived in validate(). Single source of truth
     # for the loader that builds it and the encoder that sizes its input layer, so the
     # two cannot drift; also recorded in metrics_summary, where a run's node width is
@@ -1278,45 +1326,60 @@ class ModelConfig:
             0 if self.no_protein_geometry
             else 3 + (3 if self.protein_extra_node_features else 0)
         )
-        # --descriptors_in_protein_lipid: the same protein-only/lipid-only tokens
-        # architecture/pair_descriptor_head.py reads (aromatic_share, polar_share,
-        # coarsened extent when pair_descriptor_extent -- NOT occupancy, a pair term),
-        # broadcast onto every node instead of/in addition to feeding the separate
-        # descriptor self-attention head.
+        # --descriptors_in_protein_lipid is a convenience alias for turning both
+        # per-branch broadcasts on together; OR it into each so every existing argfile
+        # that only ever set the combined flag keeps building the exact same tensors.
+        self.descriptors_in_protein = (
+            self.descriptors_in_protein or self.descriptors_in_protein_lipid
+        )
+        self.descriptors_in_lipid = (
+            self.descriptors_in_lipid or self.descriptors_in_protein_lipid
+        )
+        # --descriptors_in_protein/--descriptors_in_lipid: the same protein-only/
+        # lipid-only tokens architecture/pair_descriptor_head.py reads (aromatic_share,
+        # polar_share, coarsened extent when pair_descriptor_extent -- NOT occupancy, a
+        # pair term), broadcast onto every node of that branch instead of/in addition
+        # to feeding the separate descriptor self-attention head.
         self.protein_pair_descriptor_broadcast_count = (
             (2 + (1 if self.pair_descriptor_extent else 0))
-            if self.descriptors_in_protein_lipid else 0
+            if self.descriptors_in_protein else 0
         )
         self.lipid_pair_descriptor_broadcast_count = (
-            4 if self.descriptors_in_protein_lipid else 0
+            4 if self.descriptors_in_lipid else 0
         )
-        if self.descriptors_in_protein_lipid and not (
+        if (self.descriptors_in_protein or self.descriptors_in_lipid) and not (
             self.pocket_descriptors and self.pair_descriptors
         ):
             raise ValueError(
-                "descriptors_in_protein_lipid broadcasts the same tensors "
+                "descriptors_in_protein/descriptors_in_lipid (or the "
+                "descriptors_in_protein_lipid alias) broadcast the same tensors "
                 "--pocket_descriptors/--pair_descriptors already attach "
                 "(pocket_descriptor, pair_descriptor_input) -- both must be on too, "
                 "even if --descriptors_head/the self-attention head's own use of "
                 "them is not wanted"
             )
-        if self.no_embeddings and not self.descriptors_in_protein_lipid:
+        # no_embeddings implies no_protein_embeddings (backward compatible: it always
+        # dropped ESM3 too), but is otherwise only about the lipid side -- see the two
+        # fields' own docstrings.
+        self.no_protein_embeddings = self.no_protein_embeddings or self.no_embeddings
+        if self.no_embeddings and not self.descriptors_in_lipid:
             raise ValueError(
-                "no_embeddings drops ESM from protein nodes and MolFormer entirely "
-                "from lipid nodes -- without descriptors_in_protein_lipid a lipid "
-                "node would have nothing left as a feature vector"
+                "no_embeddings drops MolFormer entirely from lipid nodes -- without "
+                "descriptors_in_lipid (or descriptors_in_protein_lipid) a lipid node "
+                "would have nothing left as a feature vector"
             )
-        if self.no_protein_geometry and not self.descriptors_in_protein_lipid:
+        if self.no_protein_geometry and not self.descriptors_in_protein:
             raise ValueError(
                 "no_protein_geometry drops residue_type/sas_area/volume from every "
-                "protein node -- without descriptors_in_protein_lipid a protein node "
-                "could end up with no base features at all"
+                "protein node -- without descriptors_in_protein (or "
+                "descriptors_in_protein_lipid) a protein node could end up with no "
+                "base features at all"
             )
-        if self.no_embeddings:
+        if self.no_protein_embeddings:
             # ESM's own toggle -- reused rather than duplicated, so every existing
             # plmon-gated code path (frozen-embedding substitutes, RNA-BAnG adapters,
-            # the compression layer) is already correct under no_embeddings with no
-            # separate check needed there.
+            # the compression layer) is already correct under no_protein_embeddings
+            # with no separate check needed there.
             self.plmon = False
         if self.pocket_attention_sites != "both" and not self.attention_by_pockets:
             raise ValueError(
@@ -1726,6 +1789,33 @@ class ModelConfig:
                 "pocket_descriptors_family_neutral requires pocket_descriptors -- "
                 "there is no broadcast to restrict when the flag is off"
             )
+        if self.pocket_descriptor_names and not self.pocket_descriptors:
+            raise ValueError(
+                "pocket_descriptor_names requires pocket_descriptors -- there is no "
+                "broadcast to restrict when the flag is off"
+            )
+        if self.pocket_descriptor_names and self.pocket_descriptors_family_neutral:
+            raise ValueError(
+                "pocket_descriptor_names and pocket_descriptors_family_neutral both "
+                "restrict the SAME --pocket_descriptors broadcast to a fixed subset "
+                "-- pick one"
+            )
+        if self.pocket_descriptor_names:
+            requested = tuple(
+                name.strip() for name in self.pocket_descriptor_names.split(",")
+                if name.strip()
+            )
+            unknown = [name for name in requested if name not in POCKET_DESCRIPTOR_NAMES]
+            if unknown:
+                raise ValueError(
+                    f"Unknown pocket descriptor name(s): {unknown}. Known: "
+                    f"{POCKET_DESCRIPTOR_NAMES}"
+                )
+            if not requested:
+                raise ValueError(
+                    "pocket_descriptor_names is set but names no descriptor -- "
+                    "leave it empty to use all of pocket_descriptors instead"
+                )
         if self.pair_descriptor_pocket_shares_split and not self.pair_descriptor_pocket_shares:
             raise ValueError(
                 "pair_descriptor_pocket_shares_split requires pair_descriptor_pocket_shares "
@@ -2142,8 +2232,14 @@ SIMPLE_BOOL_FLAGS = {
     "--two_pair_descriptors_paths": "two_pair_descriptors_paths",
     "descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
     "--descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
+    "descriptors_in_protein": "descriptors_in_protein",
+    "--descriptors_in_protein": "descriptors_in_protein",
+    "descriptors_in_lipid": "descriptors_in_lipid",
+    "--descriptors_in_lipid": "descriptors_in_lipid",
     "no_embeddings": "no_embeddings",
     "--no_embeddings": "no_embeddings",
+    "no_protein_embeddings": "no_protein_embeddings",
+    "--no_protein_embeddings": "no_protein_embeddings",
     "no_protein_geometry": "no_protein_geometry",
     "--no_protein_geometry": "no_protein_geometry",
     "pair_descriptor_pocket_shares": "pair_descriptor_pocket_shares",
@@ -2488,6 +2584,7 @@ VALUE_HANDLERS = {
     "--good_descriptors=": set_config_field("good_descriptors"),
     "--bad_descriptors=": set_config_field("bad_descriptors"),
     "--descriptor_names=": set_config_field("descriptor_names"),
+    "--pocket_descriptor_names=": set_config_field("pocket_descriptor_names"),
     "--dann_class_conditional=": set_config_field("dann_class_conditional", read_bool),
     "--pool_type=": set_config_field("pool_type"),
     "--swe_reference_points=": set_config_field("swe_reference_points", int),

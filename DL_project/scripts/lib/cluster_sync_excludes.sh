@@ -69,21 +69,55 @@ SYNC_EXCLUDES=(
     # clusters from initial setup; training reads it from there. Excluding it keeps the
     # per-run sync 10x faster over the slow gricad proxy.
     #
-    # Three exceptions, and they are the files that change when the dataset does rather
-    # than when the model does, so a code-only sync would leave the cluster reading an
-    # older table than the code expects -- which is not a wrong number but a dead run,
-    # since the loader opens the table by name. Together about 25 MB, against the 3.8 GB
-    # the exclusion is there for:
+    # Exceptions, and they are the files that change when the dataset (or the data-prep
+    # code) does rather than when the model does, so a code-only sync would leave the
+    # cluster reading an older table -- or an older lipid_graphs/, or a missing build
+    # script -- than the code expects. Not a wrong number but a dead run: the loader
+    # opens the table by name, LipidIsomerGraphBuilder raises FileNotFoundError/KeyError
+    # for a graph_id or column the cluster's copy does not have yet (this is exactly how
+    # a stale data/lipid_graphs/ was found: --lipid_graph_isomers jobs crashed on
+    # KeyError: 'chain_rank' because the cluster still had the pre-chain_rank CSVs), and
+    # the per-run preflight cache builders (data/build_pair_descriptor_cache.py etc.)
+    # simply are not there to run. Together about 160 MB, against the 3.8 GB the
+    # exclusion is there for:
     #   the interaction tables themselves;
     #   the compact Tanimoto artifacts, whose manifests name the table they were built
     #     from and which the loader refuses when that name or timestamp does not match;
-    #   the GRAB pair-graph edges, indexed by the table's row positions.
+    #   the GRAB pair-graph edges, indexed by the table's row positions;
+    #   data/*.py -- these are code (the build_*.py cache/graph generators), not data;
+    #     excluding them only because they live under data/ was the bug behind the
+    #     KeyError above, so they sync like any other .py file in the project;
+    #   data/lipid_graphs/ -- the per-molecule isomer-graph CSVs build_lipid_isomer_
+    #     graphs.py writes, read directly by LipidIsomerGraphBuilder every --lipid_graph_
+    #     isomers run; regenerated on kraken-cpu (scripts/tools/lipid_graphs_on_kraken.sh)
+    #     and needs to reach every OTHER cluster too, not just the one it was built on;
+    #   data/graphs/ -- per-protein coarse_graph_nodes/links.csv, pocketness.pdb and
+    #     geometric_transformer_nodes.csv (residue frames for --geometric_transformer/
+    #     --protein_edge_attention/--protein_edge_mlp). Was excluded like the rest of
+    #     data/, which does not just risk a stale copy: load_protein_graph_tensor_cache
+    #     (dataloader/protein_graph_tensor_cache.py) rejects protein_graph_tensors.pt
+    #     outright the moment ANY recorded source's mtime_ns does not match the file on
+    #     disk, and an independently-timestamped copy of data/graphs/ never matches the
+    #     mtimes protein_graph_tensors.manifest.json recorded when the cache was built --
+    #     so every run silently fell back to the slow uncached per-protein CSV read
+    #     instead of raising, the only visible symptom being --protein_edge_attention/
+    #     --protein_edge_mlp jobs failing with "require protein residue frames";
+    #   data/protein_graph_tensors* -- the cache itself (plus its --no_protein_geometry
+    #     variant and both .manifest.json files), for the same reason as data/lipid_
+    #     graphs/ above: rebuilt locally, it has to reach every cluster, not sit excluded
+    #     next to the source files whose mtimes it is keyed on.
     # Order matters: rsync takes the first matching rule, so the includes have to stand
     # before the exclusion they carve out of.
     --include='/data/'
     --include='/data/Processed_*.csv'
     --include='/data/Tanimoto_compact*'
     --include='/data/grab_pair_graph_edges.csv'
+    --include='/data/*.py'
+    --include='/data/lipid_graphs/'
+    --include='/data/lipid_graphs/**'
+    --include='/data/graphs/'
+    --include='/data/graphs/**'
+    --include='/data/protein_graph_tensors*'
     --exclude='/data/**'
     --exclude='/data/'
 
