@@ -21,7 +21,7 @@ metrics_summary.csv.bak_*
 run/
 models/
 test_metrics/
-graphics/
+# graphics/
 script_logs/
 
 # torch.profiler traces from scripts/profile_training.py: large, timestamped,
