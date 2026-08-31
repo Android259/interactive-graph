@@ -29,7 +29,10 @@
 # alone `dropout01` cannot be told apart from `dropout01_extra`.
 #
 # On a cluster: cancel through OAR, wait for the jobs to actually stop, then pull
-# script_logs/ back, so the logs of what was killed are here to read.
+# script_logs/ back, so the logs of what was killed are here to read. Also clears
+# that label's pending --graphics/--summarize report marker, if any -- otherwise
+# wait_and_sync.sh keeps retrying (and failing) a report for jobs that no longer
+# exist on every future idle round.
 # Locally: stop the training processes and the run_local.sh that launched them --
 # without that second part it would simply start the next queued job.
 set -euo pipefail
@@ -168,6 +171,47 @@ purge_pending_queue() {
     printf '%s' "${kept}" | ssh "${ssh_args[@]}" "${remote}" "cat > '${pending_path}'"
 }
 
+# Drop pending_reports/<label>.report[.claimed] markers for labels this
+# invocation targets. launch/run_cluster.sh --graphics/--summarize drops one of
+# these on the cluster before it starts waiting; wait_and_sync.sh's
+# check_pending_reports() picks it up the next time it sees the cluster idle,
+# runs generate_label_report.sh, and -- on ANY failure, deliberately, so a
+# transient one does not lose the report -- restores the marker for the next
+# round to retry. oardel above knows nothing of that marker, so a label killed
+# on purpose left it behind forever: every later idle round keeps retrying a
+# report for jobs that no longer exist, failing every time, which is exactly
+# what was burning time in wait_and_sync's loop. Runs even when targets is
+# empty -- a marker can outlive its jobs if they were already stopped before
+# this invocation (by hand, or a previous kill.sh run before this fix).
+purge_pending_reports() {
+    local cluster="$1"
+    local reports_dir="${CLUSTER_QUEUE_ROOT}/active/pending_reports"
+    local listing marker base variant
+    local to_remove=()
+
+    listing="$(ssh "${ssh_args[@]}" "${remote}" \
+        "ls '${reports_dir}/'*.report* 2>/dev/null" || true)"
+    [[ -n "${listing}" ]] || return 0
+
+    while IFS= read -r marker; do
+        [[ -n "${marker}" ]] || continue
+        base="$(basename "${marker}")"
+        variant="${base%.report.claimed}"
+        variant="${variant%.report}"
+        matches_label "${variant}" && to_remove+=("${marker}")
+    done <<< "${listing}"
+    (( ${#to_remove[@]} > 0 )) || return 0
+
+    printf 'Removing %d pending report marker(s) for %s on %s (their jobs were stopped).\n' \
+        "${#to_remove[@]}" "${LABEL:-everything}" "${cluster}"
+    local rm_script="" f
+    for f in "${to_remove[@]}"; do
+        rm_script+="rm -f -- $(printf '%q' "${f}"); "
+    done
+    ssh "${ssh_args[@]}" "${remote}" "${rm_script}" || \
+        printf 'WARNING: could not clear pending report markers on %s.\n' "${cluster}" >&2
+}
+
 # --- one cluster ---------------------------------------------------------------
 kill_cluster() {
     local cluster="$1"
@@ -214,6 +258,7 @@ kill_cluster() {
     # carries that path (only %jobid% is still unresolved, and label detection
     # never looks at the id).
     purge_pending_queue "${cluster}"
+    purge_pending_reports "${cluster}"
 
     if [[ -z "${targets}" ]]; then
         printf 'Nothing to stop%s.\n' "${LABEL:+ for label ${LABEL}}"

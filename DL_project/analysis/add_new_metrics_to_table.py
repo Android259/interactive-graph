@@ -20,6 +20,7 @@ SOURCE_KEY_FIELDS = (
     "datetime",
     "exclusion_set",
     "number_of_parameters",
+    "seed",
 )
 
 
@@ -35,6 +36,7 @@ def metric_source_key(metric_path: Path, metrics_root: Path) -> tuple[str, ...]:
         "datetime": format_datetime(filename_values["timestamp"]),
         "exclusion_set": "/".join(relative_path.parts[1:-1]),
         "number_of_parameters": filename_values["number_of_parameters"],
+        "seed": filename_values["seed"],
     }
     return tuple(values[field] for field in SOURCE_KEY_FIELDS)
 

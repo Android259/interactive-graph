@@ -32,7 +32,7 @@ from dataloader.pair_descriptors import (
     as_arrays,
     chain_length_angstrom,
     descriptor_values_by_row,
-    resolve_requested_tokens,
+    full_catalog_order,
 )
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.grab_dataset_graph import GrabDatasetGraphMixin
@@ -876,10 +876,11 @@ class PLIDataset(
         with the train mean, same as _raw_frozen_prior_columns.
 
         --two_pair_descriptors_paths (training/read_configuration.py, architecture/
-        named_descriptor_head.py) additionally attaches `_descpath_<token>` for every
-        token dataloader.pair_descriptors.resolve_requested_tokens resolves out of
-        --good_descriptors/--bad_descriptors -- NOT the full DESCRIPTOR_CATALOG
-        unconditionally, only whatever those two flags actually name, bare (e.g.
+        named_descriptor_head.py) -- and, sharing the same mechanism, --descriptor_names,
+        --protein_descriptors, --lipid_descriptors -- additionally attaches
+        `_descpath_<token>` for every token dataloader.pair_descriptors.full_catalog_order
+        resolves out of whichever of those flags are set -- NOT the full DESCRIPTOR_CATALOG
+        unconditionally, only whatever those flags actually name, bare (e.g.
         "pocket_extent") or coarsened (e.g. "hydropathy_core_coarse=quantiles:5" --
         see dataloader.pair_descriptors.parse_descriptor_token for the full <name>_
         coarse=<spec> grammar: N fixed equal-width bins, or N train-fit quantile
@@ -899,19 +900,17 @@ class PLIDataset(
         """
         pair_descriptors_on = getattr(self.config, "pair_descriptors", False)
         two_paths_on = getattr(self.config, "two_pair_descriptors_paths", False)
-        if not (pair_descriptors_on or two_paths_on):
+        # named_catalog_on: whether ANYTHING needs the wider, arbitrary-name catalog --
+        # --good_descriptors/--bad_descriptors, --descriptor_names (under descriptors_head
+        # or pair_descriptors), or the node-broadcast --protein_descriptors/
+        # --lipid_descriptors. full_catalog_order (dataloader/pair_descriptors.py) is the
+        # ONE place that resolves all of those raw lists together -- every consumer
+        # (this method, architecture/final_layer.py, architecture/protein_encoder.py,
+        # architecture/lipid_encoder.py) calls it instead of recomputing the union, so
+        # none of them can end up naming a token none of the others built.
+        named_catalog_on = bool(full_catalog_order(self.config))
+        if not (pair_descriptors_on or two_paths_on or named_catalog_on):
             return
-
-        # --descriptor_names (ModelConfig docstring): --descriptors_head's own single-
-        # head equivalent of --good_descriptors/--bad_descriptors -- only meaningful
-        # when descriptors_head is actually on (validate() rejects it otherwise), and
-        # shares the SAME arbitrary-name catalog materialisation two_paths_on triggers
-        # below, just off one raw string instead of two.
-        descriptor_names = (
-            getattr(self.config, "descriptor_names", "")
-            if getattr(self.config, "descriptors_head", False) else ""
-        )
-        named_catalog_on = two_paths_on or bool(descriptor_names.strip())
 
         isomeric = getattr(self.config, "lipid_isomers", False)
         # None (no current cache -- never built, or the interaction table/data/graphs
@@ -1051,13 +1050,13 @@ class PLIDataset(
                 aromatic_share_rim
             )
 
-        # --two_pair_descriptors_paths: resolve exactly the tokens --good_descriptors/
-        # --bad_descriptors actually request (bare base names AND <name>_coarse=<spec>
-        # ones -- dataloader.pair_descriptors.resolve_requested_tokens/
-        # parse_descriptor_token), build raw values only for the BASE names those
-        # tokens reference (not the full catalog unconditionally), then materialise
-        # -- coarsen if requested, then standardise train-only, same discipline as
-        # everywhere else in this function -- exactly those tokens.
+        # named_catalog_on: resolve exactly the tokens --good_descriptors/--bad_descriptors/
+        # --descriptor_names/--protein_descriptors/--lipid_descriptors actually request
+        # (bare base names AND <name>_coarse=<spec> ones -- dataloader.pair_descriptors.
+        # full_catalog_order/parse_descriptor_token), build raw values only for the BASE
+        # names those tokens reference (not the full catalog unconditionally), then
+        # materialise -- coarsen if requested, then standardise train-only, same
+        # discipline as everywhere else in this function -- exactly those tokens.
         requested_tokens = ()
         raw_values = {}  # base_name -> (values, is_ragged)
         materialised = {}  # canonical token -> (values, is_ragged, mean, spread)
@@ -1069,14 +1068,9 @@ class PLIDataset(
                 PROTEIN_DESCRIPTOR_NAMES as _CATALOG_PROTEIN_NAMES,
                 pair_descriptor_value,
                 parse_descriptor_token,
-                resolve_requested_tokens,
             )
 
-            requested_tokens = resolve_requested_tokens(
-                getattr(self.config, "good_descriptors", ""),
-                getattr(self.config, "bad_descriptors", ""),
-                descriptor_names,
-            )
+            requested_tokens = full_catalog_order(self.config)
             base_names_needed = {
                 parse_descriptor_token(token)[0] for token in requested_tokens
             }
@@ -1828,30 +1822,17 @@ class PLIDataset(
             [self.csv[name] for name in pair_descriptor_columns]
             if pair_descriptor_columns else None
         )
-        # --two_pair_descriptors_paths: the wider, arbitrary-name catalog, one column
-        # per token dataloader.pair_descriptors.resolve_requested_tokens resolves out
-        # of --good_descriptors/--bad_descriptors, in THAT (sorted, deduped) order --
-        # architecture/named_descriptor_head.py's NamedDescriptorHead instances call
-        # the SAME function against the SAME config fields to compute the identical
-        # order independently, so both heads index into this ONE tensor correctly
-        # regardless of how their name lists overlap. --descriptors_head's own
-        # --descriptor_names builds the identical tensor off one field instead of two
-        # (ModelConfig.descriptor_names docstring) -- validate() guarantees at most one
-        # of the two triples (good/bad, descriptor_names) is ever non-empty, so passing
-        # all three here always resolves to exactly the active branch's own tokens.
-        descriptor_names = (
-            getattr(self.config, "descriptor_names", "")
-            if getattr(self.config, "descriptors_head", False) else ""
-        )
-        named_catalog_on = (
-            getattr(self.config, "two_pair_descriptors_paths", False)
-            or bool(descriptor_names.strip())
-        )
-        requested_tokens = resolve_requested_tokens(
-            getattr(self.config, "good_descriptors", ""),
-            getattr(self.config, "bad_descriptors", ""),
-            descriptor_names,
-        ) if named_catalog_on else ()
+        # --two_pair_descriptors_paths (--good_descriptors/--bad_descriptors),
+        # --descriptor_names (under --descriptors_head or --pair_descriptors), and
+        # --protein_descriptors/--lipid_descriptors: the wider, arbitrary-name catalog,
+        # one column per token dataloader.pair_descriptors.full_catalog_order resolves
+        # out of all of those raw lists together, in THAT (sorted, deduped) order --
+        # architecture/named_descriptor_head.py's NamedDescriptorHead instances and
+        # architecture/protein_encoder.py's/architecture/lipid_encoder.py's broadcasts
+        # call the SAME function against the SAME config to compute the identical order
+        # independently, so every consumer indexes into this ONE tensor correctly
+        # regardless of how their name lists overlap.
+        requested_tokens = full_catalog_order(self.config)
         descriptor_catalog_columns = [
             f"_descpath_{token}" for token in requested_tokens
             if f"_descpath_{token}" in self.csv.columns

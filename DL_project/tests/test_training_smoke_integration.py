@@ -124,13 +124,11 @@ def synthetic_forward_args(config):
             and getattr(config, "pair_descriptor_pocket_shares", True)
         )
         args["pair_descriptor_input"] = torch.randn(2, base_width + (2 if split else 0))
-    if getattr(config, "two_pair_descriptors_paths", False):
-        from dataloader.pair_descriptors import resolve_requested_tokens
+    from dataloader.pair_descriptors import full_catalog_order
 
-        width = len(
-            resolve_requested_tokens(config.good_descriptors, config.bad_descriptors)
-        )
-        args["descriptor_catalog_input"] = torch.randn(2, width)
+    catalog_order = full_catalog_order(config)
+    if catalog_order:
+        args["descriptor_catalog_input"] = torch.randn(2, len(catalog_order))
 
     return args
 
@@ -986,6 +984,121 @@ def test_pair_descriptors_requires_pocket_descriptors():
     config = make_config()
     config.pair_descriptors = True
     with pytest.raises(ValueError, match="pocket_descriptors"):
+        config.validate()
+
+
+def test_pair_descriptors_with_descriptor_names_does_not_require_pocket_descriptors():
+    """Under plain --pair_descriptors, PairDescriptorHead reads aromatic_share/
+    apolar_sasa_share off the pocket descriptor tensor, so pocket_descriptors is
+    required. NamedDescriptorHead (--descriptor_names) reads everything off
+    descriptor_catalog_input by name instead -- there is nothing for it to read off
+    the pocket descriptor tensor, so pocket_descriptors is NOT required here."""
+    config = make_config()
+    config.pair_descriptors = True
+    config.descriptor_names = "chain,unsaturation,aromatic_share"
+    config.validate()  # must not raise
+    assert config.pocket_descriptors is False
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_descriptors_head_auto_enables_pair_descriptors():
+    """--descriptors_head has no meaning without --pair_descriptors -- it names WHICH
+    configuration Final_Layer builds, not a capability of its own -- so validate() sets
+    pair_descriptors rather than demanding the caller pass both flags."""
+    config = make_config()
+    config.pocket_descriptors = True
+    config.descriptors_head = True
+    assert config.pair_descriptors is False  # not yet, before validate()
+    config.validate()
+    assert config.pair_descriptors is True
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_pair_descriptors_with_descriptor_names_swaps_in_named_head_and_trains():
+    from architecture.named_descriptor_head import NamedDescriptorHead
+
+    config = make_config()
+    config.pair_descriptors = True
+    config.descriptor_names = "chain,unsaturation,aromatic_share"
+    config.validate()
+
+    model = InteractionClassification(config)
+    # Unlike --descriptors_head, the normal towers are still built -- descriptor_names
+    # only swaps which head reads the additive branch's output.
+    assert hasattr(model, "protein1")
+    assert hasattr(model, "lipid1")
+    assert hasattr(model, "cross_attention1")
+    assert isinstance(model.final_layer.pair_descriptor_head, NamedDescriptorHead)
+    assert model.final_layer.pair_descriptor_head.token_names == (
+        "chain", "unsaturation", "aromatic_share",
+    )
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in model.final_layer.pair_descriptor_head.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_protein_descriptors_broadcasts_onto_protein_nodes_and_trains():
+    config = make_config()
+    config.protein_descriptors = "chain,unsaturation,aromatic_share"
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert model.protein1.protein_descriptor_columns.shape == (3,)
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_lipid_descriptors_broadcasts_onto_lipid_nodes_and_trains():
+    config = make_config()
+    config.lipid_descriptors = "chain,unsaturation,hydropathy_core"
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert model.lipid1.lipid_descriptor_columns.shape == (3,)
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_protein_descriptors_and_lipid_descriptors_coexist_with_old_mechanisms():
+    """protein_descriptors/lipid_descriptors are additive: the old, fixed-set
+    --pocket_descriptors/--pair_descriptors broadcasts stay untouched and both
+    mechanisms can run in the same model at once."""
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.protein_descriptors = "chain,unsaturation"
+    config.lipid_descriptors = "hbond,heavy"
+    config.validate()
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_protein_descriptors_rejects_unknown_descriptor_name():
+    config = make_config()
+    config.protein_descriptors = "not_a_real_descriptor"
+    with pytest.raises(ValueError, match="Unknown descriptor name"):
+        config.validate()
+
+
+def test_descriptor_names_requires_descriptors_head_or_pair_descriptors():
+    config = make_config()
+    config.descriptor_names = "chain,unsaturation"
+    with pytest.raises(ValueError, match="descriptor_names only takes effect"):
         config.validate()
 
 

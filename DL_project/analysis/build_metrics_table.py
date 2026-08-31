@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from dataloader.pair_descriptors import parse_descriptor_list
 from training.read_configuration import ModelConfig
 from training.run_metrics import RUN_METRIC_FIELDS
 MODEL_CONFIG_REPORT_FIELDS = tuple(field.name for field in fields(ModelConfig))
@@ -95,6 +96,15 @@ RUN_DERIVED_FIELDS = (
     "max_valid_epoch_class_recall_gap",
     "max_valid_epoch_gmean_recall",
     "collapse_fraction",
+    # Not ModelConfig fields themselves (protein_descriptors/lipid_descriptors/
+    # descriptor_names ARE, and land in CONFIG_FIELDS by reflection already) -- these
+    # three are the descriptor COUNT for each of the three named-catalog vectors a run
+    # can build, recomputed from the saved name-list columns at table-build time rather
+    # than cached anywhere, same reasoning as protein_node_feature_count's own comment
+    # ("otherwise invisible" in the table without a dedicated column).
+    "protein_descriptor_count",
+    "lipid_descriptor_count",
+    "pair_descriptor_head_count",
 )
 
 CSV_FIELDS = (
@@ -624,6 +634,21 @@ def metric_row(
     row["pocket_attention"] = row["prot_attention_pos_bias"]
     row["label_positive_fraction"] = _fraction(row["real_positive"], row["total"])
     row["prediction_positive_fraction"] = _fraction(row["predicted_positive"], row["total"])
+    # protein_descriptors/lipid_descriptors/descriptor_names are ModelConfig fields
+    # (CONFIG_FIELDS above) and land in the row by serialize_config's reflection
+    # already -- these three are just their COUNT, recomputed from that same string at
+    # table-build time so it does not need its own ModelConfig field.
+    row["protein_descriptor_count"] = str(
+        len(parse_descriptor_list(row.get("protein_descriptors", "")))
+    )
+    row["lipid_descriptor_count"] = str(
+        len(parse_descriptor_list(row.get("lipid_descriptors", "")))
+    )
+    row["pair_descriptor_head_count"] = (
+        str(len(parse_descriptor_list(row.get("descriptor_names", ""))))
+        if row.get("pair_descriptors") == "1" and row.get("descriptor_names")
+        else ""
+    )
 
     warnings = []
     if undefined:

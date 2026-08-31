@@ -336,6 +336,7 @@ class InteractionClassification(torch.nn.Module):
             pocket_index=self_pocket_index,
             pocket_descriptor=pocket_descriptor,
             pair_descriptor_input=pair_descriptor_input,
+            descriptor_catalog_input=descriptor_catalog_input,
             frame_rotation=prot_frame_rotation,
             frame_translation=prot_frame_translation,
             geometric_node_attr=prot_geometric_node_attr,
@@ -356,11 +357,13 @@ class InteractionClassification(torch.nn.Module):
                 lip, lip_batch, lip_self_att_mask, multiple_lipid_mask,
                 fast_layout=lip_layout,
                 pair_descriptor_input=pair_descriptor_input,
+                descriptor_catalog_input=descriptor_catalog_input,
             )
         else:
             lip1 = self.lipid1(
                 lip, lip_batch, lip_self_att_mask, fast_layout=lip_layout,
                 pair_descriptor_input=pair_descriptor_input,
+                descriptor_catalog_input=descriptor_catalog_input,
             )
 
         # Adversarial anti-shortcut: run the per-partner adversaries on the
@@ -405,6 +408,7 @@ class InteractionClassification(torch.nn.Module):
                 compat_input=compat_input,
                 pocket_descriptor=pocket_descriptor,
                 pair_descriptor_input=pair_descriptor_input,
+                descriptor_catalog_input=descriptor_catalog_input,
             )
 
         if config.double_attention:
@@ -477,6 +481,7 @@ class InteractionClassification(torch.nn.Module):
                 compat_input=compat_input,
                 pocket_descriptor=pocket_descriptor,
                 pair_descriptor_input=pair_descriptor_input,
+                descriptor_catalog_input=descriptor_catalog_input,
             )
 
         return out

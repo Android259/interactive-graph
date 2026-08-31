@@ -504,9 +504,13 @@ class ModelConfig:
     # and cross-attention spend, see analysis/model_parameter_breakdown.py), not an
     # ablation of the full one: a checkpoint trained under --descriptors_head has a
     # different state_dict than one trained without it and the two cannot load into
-    # each other. Requires --pair_descriptors (which requires --pocket_descriptors);
-    # everything that assumes the full architecture's modules is rejected in
-    # combination (see validate()) since Final_Layer would not have built them.
+    # each other. Implies --pair_descriptors (validate() sets it, so there is no
+    # separate flag to remember to pass alongside this one) -- which in turn requires
+    # --pocket_descriptors, unless --descriptor_names is also set (NamedDescriptorHead
+    # reads descriptor_catalog_input by name instead, nothing to read off the pocket
+    # descriptor tensor there). Everything that assumes the full architecture's
+    # modules is rejected in combination (see validate()) since Final_Layer would not
+    # have built them.
     descriptors_head: bool = False
     # --descriptor_names: names an arbitrary, comma-separated subset of the full
     # descriptor catalog (dataloader/pair_descriptors.py's DESCRIPTOR_CATALOG -- same
@@ -1038,6 +1042,20 @@ class ModelConfig:
     # pocket_descriptors_family_neutral. Mutually exclusive with it (validate() below)
     # -- both restrict the same broadcast, so combining them is ambiguous, not additive.
     pocket_descriptor_names: str = ""
+    # --protein_descriptors / --lipid_descriptors: an arbitrary, comma-separated subset of
+    # the FULL DESCRIPTOR_CATALOG (dataloader/pair_descriptors.py -- lipid, protein/pocket,
+    # AND pair-level names, bare or <name>_coarse=<spec>), broadcast onto every node of the
+    # protein branch / lipid branch respectively -- the same NamedDescriptorHead-style
+    # name resolution --good_descriptors/--bad_descriptors/--descriptor_names already use
+    # (dataloader.pair_descriptors.full_catalog_order/parse_descriptor_list), just read as a
+    # raw broadcast instead of pooled through a head. Independent, coexisting mechanism from
+    # --pocket_descriptors/--pocket_descriptor_names (protein-pocket-only, fixed tensor) and
+    # --descriptors_in_lipid (fixed 4-token lipid broadcast) -- neither of those is touched
+    # or restricted by this. No derived width field: architecture/protein_encoder.py and
+    # architecture/lipid_encoder.py each compute their own broadcast width inline from this
+    # string via parse_descriptor_list, so there is nothing here that could drift from it.
+    protein_descriptors: str = ""
+    lipid_descriptors: str = ""
     # Width of the protein node vector, derived in validate(). Single source of truth
     # for the loader that builds it and the encoder that sizes its input layer, so the
     # two cannot drift; also recorded in metrics_summary, where a run's node width is
@@ -1768,6 +1786,13 @@ class ModelConfig:
             raise ValueError(
                 f"compat_extent_bins must be at least 1, got {self.compat_extent_bins}"
             )
+        if self.descriptors_head:
+            # descriptors_head has no meaning without pair_descriptors -- it names
+            # WHICH configuration Final_Layer builds (the head-only sufficiency-test
+            # branch instead of the additive one), not a capability on its own. No
+            # scenario ever wants one without the other, so this is set here rather
+            # than demanded as a separate flag the caller has to remember to pass too.
+            self.pair_descriptors = True
         if self.pair_descriptors and self.bilinear_fusion:
             # Same reasoning as compatibility_input/compatibility_split_input above:
             # the descriptor head's pooled vector is concatenated after fusion, which
@@ -1778,11 +1803,14 @@ class ModelConfig:
                 "pooled vector would be concatenated after the bilinear product, the "
                 "same shortcut bilinear_fusion is meant to close"
             )
-        if self.pair_descriptors and not self.pocket_descriptors:
+        if self.pair_descriptors and not self.descriptor_names and not self.pocket_descriptors:
             raise ValueError(
                 "pair_descriptors requires pocket_descriptors -- the descriptor "
                 "head's aromatic/H-bond pair terms read aromatic_share and "
-                "apolar_sasa_share off the pocket descriptor tensor"
+                "apolar_sasa_share off the pocket descriptor tensor. Not required "
+                "under --descriptor_names: NamedDescriptorHead reads everything "
+                "off descriptor_catalog_input by name instead, so there is "
+                "nothing here for it to read off the pocket descriptor tensor."
             )
         if self.pocket_descriptors_family_neutral and not self.pocket_descriptors:
             raise ValueError(
@@ -1816,6 +1844,20 @@ class ModelConfig:
                     "pocket_descriptor_names is set but names no descriptor -- "
                     "leave it empty to use all of pocket_descriptors instead"
                 )
+        if self.protein_descriptors or self.lipid_descriptors:
+            # Local import, not a module-level one: dataloader/pair_descriptors.py pulls in
+            # rdkit, which analysis scripts that only want to read a run's settings off
+            # ModelConfig should not be forced to have installed -- same reasoning as
+            # POCKET_DESCRIPTOR_NAMES above being a literal copy rather than an import.
+            # parse_descriptor_list already raises "Unknown descriptor name(s)..." against
+            # the full DESCRIPTOR_CATALOG (lipid + protein/pocket + pair names) on a bad
+            # token -- reused as-is so a typo here fails now, not at model-build time.
+            from dataloader.pair_descriptors import parse_descriptor_list
+
+            if self.protein_descriptors:
+                parse_descriptor_list(self.protein_descriptors)
+            if self.lipid_descriptors:
+                parse_descriptor_list(self.lipid_descriptors)
         if self.pair_descriptor_pocket_shares_split and not self.pair_descriptor_pocket_shares:
             raise ValueError(
                 "pair_descriptor_pocket_shares_split requires pair_descriptor_pocket_shares "
@@ -1842,15 +1884,20 @@ class ModelConfig:
                 "it with lipid_only/protein_only is redundant and their zeroing order "
                 "would be ambiguous"
             )
-        if self.descriptors_head and not self.pair_descriptors:
-            raise ValueError("descriptors_head requires pair_descriptors")
-        if self.descriptor_names and not self.descriptors_head:
-            raise ValueError("descriptor_names only takes effect under descriptors_head")
-        if self.descriptors_head and self.descriptor_names:
+        if self.descriptor_names and not (self.descriptors_head or self.pair_descriptors):
+            raise ValueError(
+                "descriptor_names only takes effect under descriptors_head or "
+                "pair_descriptors"
+            )
+        if (self.descriptors_head or self.pair_descriptors) and self.descriptor_names:
             # NamedDescriptorHead reads its token set directly off --descriptor_names
             # instead of PairDescriptorHead's fixed DATALOADER_TOKENS composed from
             # these flags -- a non-default value here would otherwise be silently
             # ignored, same discipline as the unsupported-combination list just below.
+            # Applies the same way whether descriptor_names swaps in the head-only
+            # descriptor head (--descriptors_head) or the additive one that runs
+            # alongside the normal towers (plain --pair_descriptors) -- either way
+            # PairDescriptorHead itself is not built, so these have nothing to compose.
             fixed_token_flags = [
                 name for name, default in (
                     ("pair_descriptor_pocket_shares", True),
@@ -1879,7 +1926,8 @@ class ModelConfig:
                     "chem_adversary", "pocket_compat_prior", "compatibility_input",
                     "compatibility_split_input", "attention_pooling", "swe_pooling",
                     "lipid_only", "protein_only", "pair_descriptors_only",
-                    "lipid_path_handicap", "double_attention",
+                    "lipid_path_handicap", "double_attention", "protein_descriptors",
+                    "lipid_descriptors",
                 )
                 if getattr(self, name)
             ]
@@ -1918,6 +1966,7 @@ class ModelConfig:
                     "compatibility_split_input", "attention_pooling", "swe_pooling",
                     "lipid_only", "protein_only", "pair_descriptors_only",
                     "lipid_path_handicap", "double_attention", "pair_descriptors",
+                    "protein_descriptors", "lipid_descriptors",
                 )
                 if getattr(self, name)
             ]
@@ -2585,6 +2634,8 @@ VALUE_HANDLERS = {
     "--bad_descriptors=": set_config_field("bad_descriptors"),
     "--descriptor_names=": set_config_field("descriptor_names"),
     "--pocket_descriptor_names=": set_config_field("pocket_descriptor_names"),
+    "--protein_descriptors=": set_config_field("protein_descriptors"),
+    "--lipid_descriptors=": set_config_field("lipid_descriptors"),
     "--dann_class_conditional=": set_config_field("dann_class_conditional", read_bool),
     "--pool_type=": set_config_field("pool_type"),
     "--swe_reference_points=": set_config_field("swe_reference_points", int),

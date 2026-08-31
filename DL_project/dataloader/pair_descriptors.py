@@ -362,6 +362,32 @@ def resolve_requested_tokens(*raw_lists):
     return tuple(sorted(union))
 
 
+def full_catalog_order(config):
+    """Every raw name-list that feeds the ONE shared descriptor_catalog_input tensor for
+    this config, resolved through resolve_requested_tokens to the single deterministic
+    column order every consumer indexes into: --good_descriptors/--bad_descriptors
+    (--two_pair_descriptors_paths), --descriptor_names (usable under --descriptors_head OR
+    --pair_descriptors -- architecture/final_layer.py builds a NamedDescriptorHead instead
+    of PairDescriptorHead/the fixed head-only descriptor head under either), and the two
+    node-broadcast lists --protein_descriptors/--lipid_descriptors (architecture/
+    protein_encoder.py, architecture/lipid_encoder.py). Every one of those call sites uses
+    THIS function rather than assembling its own tuple, so no destination can end up naming
+    a token none of the others built.
+    """
+    named_descriptor_names = (
+        getattr(config, "descriptor_names", "")
+        if getattr(config, "descriptors_head", False) or getattr(config, "pair_descriptors", False)
+        else ""
+    )
+    return resolve_requested_tokens(
+        getattr(config, "good_descriptors", ""),
+        getattr(config, "bad_descriptors", ""),
+        named_descriptor_names,
+        getattr(config, "protein_descriptors", ""),
+        getattr(config, "lipid_descriptors", ""),
+    )
+
+
 def resolve_similarity_feature_names(*raw_lists):
     """Any number of --good_descriptors/--bad_descriptors/--descriptor_names-style raw
     strings -> the sorted, deduped union of their BASE names, with any coarse-

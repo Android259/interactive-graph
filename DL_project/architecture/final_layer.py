@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch_geometric
 
-from dataloader.pair_descriptors import parse_descriptor_list, resolve_requested_tokens
+from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
 from dataloader.pocket_lipid_compatibility import compat_input_width
 from torch_geometric.utils import softmax as scatter_softmax
 from torch_geometric.utils import to_dense_batch
@@ -308,7 +308,7 @@ class Final_Layer(torch.nn.Module):
             # own tokens (nothing else shares the descriptor_catalog_input tensor to
             # agree on column order with).
             if config.descriptor_names:
-                catalog_order = resolve_requested_tokens(config.descriptor_names)
+                catalog_order = full_catalog_order(config)
                 self.pair_descriptor_head = NamedDescriptorHead(
                     config, parse_descriptor_list(config.descriptor_names),
                     catalog_order, act_fn,
@@ -341,9 +341,7 @@ class Final_Layer(torch.nn.Module):
             # heads are built against this SAME order (not each recomputing its own
             # union) so they agree on where their tokens live in the one tensor both
             # read from.
-            catalog_order = resolve_requested_tokens(
-                config.good_descriptors, config.bad_descriptors
-            )
+            catalog_order = full_catalog_order(config)
             self.good_descriptor_head = NamedDescriptorHead(
                 config, parse_descriptor_list(config.good_descriptors), catalog_order, act_fn
             )
@@ -423,11 +421,23 @@ class Final_Layer(torch.nn.Module):
         # bilinear_fusion for the same reason (ModelConfig.validate). Width is
         # PairDescriptorHead.output_dim, not a hardcoded hiddim -- see its own
         # __init__ for when pool_type/--pair_descriptor_flatten widen it.
-        self.pair_descriptor_head = (
-            PairDescriptorHead(self.config, act_fn) if self.config.pair_descriptors
-            else None
-        )
-        if self.pair_descriptor_head is not None:
+        #
+        # --descriptor_names alongside plain --pair_descriptors (i.e. without
+        # --descriptors_head) swaps this ADDITIVE head for a NamedDescriptorHead over an
+        # arbitrary named token set too -- the same swap the head-only descriptors_head
+        # branch above already does, just here the result still runs alongside the
+        # normal protein/lipid towers instead of replacing them. See forward() below for
+        # the matching swap of which tensor gets read.
+        self.pair_descriptor_head = None
+        if self.config.pair_descriptors:
+            if self.config.descriptor_names:
+                catalog_order = full_catalog_order(self.config)
+                self.pair_descriptor_head = NamedDescriptorHead(
+                    self.config, parse_descriptor_list(self.config.descriptor_names),
+                    catalog_order, act_fn,
+                )
+            else:
+                self.pair_descriptor_head = PairDescriptorHead(self.config, act_fn)
             classifier_input_dim += self.pair_descriptor_head.output_dim
 
         if self.config.attention_pooling:
@@ -728,17 +738,32 @@ class Final_Layer(torch.nn.Module):
             common_out = torch.cat([common_out, compat_input], dim=1)
 
         if self.pair_descriptor_head is not None:
-            if pair_descriptor_input is None or pocket_descriptor is None:
-                raise ValueError(
-                    "pair_descriptors is set but forward() got no "
-                    "pair_descriptor_input/pocket_descriptor -- Dataloader and "
-                    "forward_args only attach these when --pair_descriptors and "
-                    "--pocket_descriptors were both set at data-load time too; check "
-                    "the flags match."
+            if self.config.descriptor_names:
+                # NamedDescriptorHead reads the shared descriptor_catalog_input tensor
+                # by name -- see __init__ above for why this head is a NamedDescriptorHead
+                # instead of PairDescriptorHead under --descriptor_names.
+                if descriptor_catalog_input is None:
+                    raise ValueError(
+                        "pair_descriptors is set with descriptor_names but forward() "
+                        "got no descriptor_catalog_input -- Dataloader and forward_args "
+                        "only attach it when --descriptor_names was set at data-load "
+                        "time too; check the flags match."
+                    )
+                descriptor_vec = self.pair_descriptor_head(
+                    descriptor_catalog_input.view(common_out.shape[0], -1)
                 )
-            descriptor_vec = self.pair_descriptor_head(
-                pair_descriptor_input.view(common_out.shape[0], -1), pocket_descriptor
-            )
+            else:
+                if pair_descriptor_input is None or pocket_descriptor is None:
+                    raise ValueError(
+                        "pair_descriptors is set but forward() got no "
+                        "pair_descriptor_input/pocket_descriptor -- Dataloader and "
+                        "forward_args only attach these when --pair_descriptors and "
+                        "--pocket_descriptors were both set at data-load time too; check "
+                        "the flags match."
+                    )
+                descriptor_vec = self.pair_descriptor_head(
+                    pair_descriptor_input.view(common_out.shape[0], -1), pocket_descriptor
+                )
             common_out = torch.cat([common_out, descriptor_vec], dim=1)
 
         # Family DANN reads the FUSED vector -- the one place the per-partner adversary

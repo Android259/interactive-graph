@@ -110,6 +110,17 @@ def test_read_configuration_parses_new_boolean_flags():
     assert config.rnabang_with_esm3 is True
 
 
+def test_read_configuration_parses_protein_and_lipid_descriptors():
+    config = read_named_configuration([
+        "train.py",
+        "--protein_descriptors=chain,unsaturation,aromatic_share",
+        "--lipid_descriptors=hydropathy_core_coarse=quantiles:3",
+    ])
+
+    assert config.protein_descriptors == "chain,unsaturation,aromatic_share"
+    assert config.lipid_descriptors == "hydropathy_core_coarse=quantiles:3"
+
+
 def test_read_configuration_parses_geometric_transformer():
     config = read_named_configuration([
         "train.py",

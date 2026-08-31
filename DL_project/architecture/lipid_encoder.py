@@ -1,6 +1,8 @@
 import torch
 import torch_geometric
 
+from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
+
 from .self_attention import SelfAttention
 from .edge_geometric_conv import EdgeAttentionConv, EdgeMLPConv
 from .mlp_utils import (
@@ -121,9 +123,41 @@ class Lipid_encoder(torch.nn.Module):
                 self.lipid_pair_descriptor_broadcast_count = int(
                     getattr(config, "lipid_pair_descriptor_broadcast_count", 0)
                 )
+                # --lipid_descriptors: same idea as --protein_descriptors
+                # (architecture/protein_encoder.py) but for the lipid side -- an
+                # arbitrary named DESCRIPTOR_CATALOG subset (not the fixed 4 tokens
+                # --descriptors_in_lipid reads above), broadcast onto every lipid node,
+                # selected out of the shared descriptor_catalog_input tensor by column
+                # index. Independent, coexisting mechanism from
+                # lipid_pair_descriptor_broadcast_count just above -- neither is touched
+                # or restricted by this. Only for start=True, same reason
+                # lipid_pair_descriptor_broadcast_count above is: lipid2 (start=False,
+                # --double_attention) receives lip1, already hiddim-wide.
+                lipid_descriptor_tokens = parse_descriptor_list(
+                    getattr(config, "lipid_descriptors", "")
+                )
+                lipid_descriptor_broadcast_count = 0
+                if lipid_descriptor_tokens:
+                    catalog_order = full_catalog_order(config)
+                    catalog_index = {
+                        name: position for position, name in enumerate(catalog_order)
+                    }
+                    self.register_buffer(
+                        "lipid_descriptor_columns",
+                        torch.tensor(
+                            [catalog_index[name] for name in lipid_descriptor_tokens],
+                            dtype=torch.long,
+                        ),
+                        persistent=False,
+                    )
+                    lipid_descriptor_broadcast_count = len(lipid_descriptor_tokens)
+                else:
+                    self.lipid_descriptor_columns = None
                 base_dim = 0 if no_embeddings else 768
                 self.encodin = torch.nn.Linear(
-                    base_dim + self.lipid_pair_descriptor_broadcast_count, hiddim
+                    base_dim + self.lipid_pair_descriptor_broadcast_count
+                    + lipid_descriptor_broadcast_count,
+                    hiddim,
                 )
             else:
                 self.encodin = torch.nn.Linear(hiddim, hiddim)
@@ -151,7 +185,8 @@ class Lipid_encoder(torch.nn.Module):
 
     def forward(
         self, lipLM, lipbatch, attn_mask, mult_mask=None, edge_index=None,
-        edge_attr=None, start=True, fast_layout=None, pair_descriptor_input=None
+        edge_attr=None, start=True, fast_layout=None, pair_descriptor_input=None,
+        descriptor_catalog_input=None,
     ):
         """Encode lipid nodes using the configured embedding or graph path."""
         if self.config.lipid_fragments_mask:
@@ -170,6 +205,25 @@ class Lipid_encoder(torch.nn.Module):
                 raise ValueError("descriptors_in_lipid requires pair_descriptor_input")
             per_lipid = pair_descriptor_input[:, :4].to(lipLM.dtype)
             lipLM = torch.cat((lipLM, per_lipid[lipbatch]), dim=-1)
+
+        lipid_descriptor_columns = getattr(self, "lipid_descriptor_columns", None)
+        if (
+            lipid_descriptor_columns is not None
+            and not getattr(self.config, "lipid_graph_isomers", False)
+            and not getattr(self.config, "no_embeddings", False)
+        ):
+            # --lipid_descriptors: same guard as the fixed 4-token broadcast just above
+            # (nothing to broadcast onto under lipid_graph_isomers/no_embeddings), but
+            # an arbitrary named DESCRIPTOR_CATALOG subset selected out of the shared
+            # descriptor_catalog_input tensor instead of a fixed pair_descriptor_input
+            # slice -- see architecture/protein_encoder.py's
+            # expand_named_protein_descriptors for the protein-side equivalent.
+            if descriptor_catalog_input is None:
+                raise ValueError("lipid_descriptors requires descriptor_catalog_input")
+            selected = descriptor_catalog_input.index_select(
+                1, lipid_descriptor_columns
+            ).to(lipLM.dtype)
+            lipLM = torch.cat((lipLM, selected[lipbatch]), dim=-1)
 
         if getattr(self.config, "lipid_graph_isomers", False):
             assert edge_index is not None

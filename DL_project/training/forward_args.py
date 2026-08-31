@@ -15,6 +15,8 @@ three places: a config option added here reaches training, validation and profil
 once, or fails in all three at once, which is the honest outcome.
 """
 
+from dataloader.pair_descriptors import full_catalog_order
+
 
 def build_forward_args(config, prot, lipid):
     """Model kwargs for one protein/lipid batch under this configuration."""
@@ -73,9 +75,11 @@ def build_forward_args(config, prot, lipid):
         forward_args["compat_input"] = prot.compat_input
     if getattr(config, "pair_descriptors", False):
         forward_args["pair_descriptor_input"] = prot.pair_descriptor_input
-    if getattr(config, "two_pair_descriptors_paths", False) or (
-        getattr(config, "descriptors_head", False)
-        and getattr(config, "descriptor_names", "")
-    ):
+    if full_catalog_order(config):
+        # Covers --two_pair_descriptors_paths, --descriptor_names (under
+        # descriptors_head or pair_descriptors), and --protein_descriptors/
+        # --lipid_descriptors -- one shared predicate instead of re-deriving the same
+        # boolean here a third time (dataloader/Dataloader.py's named_catalog_on is the
+        # other).
         forward_args["descriptor_catalog_input"] = prot.descriptor_catalog_input
     return forward_args

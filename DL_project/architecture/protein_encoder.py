@@ -4,6 +4,7 @@ import torch_geometric
 from dataloader.protein_graph_builder import (
     POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES, POCKET_DESCRIPTOR_NAMES,
 )
+from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
 
 from .edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
 from .geometric_transformer import ProteinGeometricTransformerBlock
@@ -194,6 +195,35 @@ class Protein_encoder(torch.nn.Module):
                 getattr(self.config, "protein_pair_descriptor_broadcast_count", 0)
             )
             indim += self.pair_descriptor_broadcast_count
+            # --protein_descriptors: broadcast an ARBITRARY named subset of the full
+            # DESCRIPTOR_CATALOG (lipid, protein/pocket, or pair-level names -- unlike
+            # pocket_descriptor_count above, not restricted to POCKET_DESCRIPTOR_NAMES)
+            # onto every node, read out of the shared descriptor_catalog_input tensor by
+            # column index -- same {name: position} lookup NamedDescriptorHead.__init__
+            # uses (architecture/named_descriptor_head.py). Independent, coexisting
+            # mechanism from pocket_descriptor_count/pair_descriptor_broadcast_count
+            # above: neither is touched or restricted by this. No derived width field on
+            # ModelConfig -- the count is only ever this many tokens, computed here from
+            # the string itself.
+            protein_descriptor_tokens = parse_descriptor_list(
+                getattr(self.config, "protein_descriptors", "")
+            )
+            if protein_descriptor_tokens:
+                catalog_order = full_catalog_order(self.config)
+                catalog_index = {
+                    name: position for position, name in enumerate(catalog_order)
+                }
+                self.register_buffer(
+                    "protein_descriptor_columns",
+                    torch.tensor(
+                        [catalog_index[name] for name in protein_descriptor_tokens],
+                        dtype=torch.long,
+                    ),
+                    persistent=False,
+                )
+                indim += len(protein_descriptor_tokens)
+            else:
+                self.protein_descriptor_columns = None
             plm_output_dim = self.config.plm_compression_dim
             plm_input_dim = 1536
             frozen_replacement = (
@@ -454,6 +484,23 @@ class Protein_encoder(torch.nn.Module):
         per_protein = torch.cat(parts, dim=-1).to(node.dtype)
         return torch.cat((node, per_protein[batch]), dim=-1)
 
+    def expand_named_protein_descriptors(self, node, batch, descriptor_catalog_input):
+        """--protein_descriptors: broadcast an arbitrary named DESCRIPTOR_CATALOG subset
+        (dataloader/pair_descriptors.py) over every node, selected out of the shared
+        descriptor_catalog_input tensor by column index -- same shape as
+        expand_pair_descriptors above, but reading named columns instead of a fixed pair
+        of pocket_descriptor indices. Values are already standardised (train-only) by
+        the loader when it materialises descriptor_catalog_input, same as
+        pair_descriptor_input's tokens -- no local buffers needed here either.
+        """
+        columns = getattr(self, "protein_descriptor_columns", None)
+        if columns is None:
+            return node
+        if descriptor_catalog_input is None:
+            raise ValueError("protein_descriptors requires descriptor_catalog_input")
+        selected = descriptor_catalog_input.index_select(1, columns).to(node.dtype)
+        return torch.cat((node, selected[batch]), dim=-1)
+
     def set_rnabang_normalization(self, stats):
         """Install fixed feature statistics computed from train proteins only."""
         if not self.use_rnabang_frozen_node_adapter:
@@ -476,7 +523,7 @@ class Protein_encoder(torch.nn.Module):
         pocket_mask, start=True, fast_layout=None, frame_rotation=None,
         frame_translation=None, geometric_node_attr=None, edge_node_pairs=None,
         edge_node_degree=None, pocket_layout=None, pocket_index=None,
-        pocket_descriptor=None, pair_descriptor_input=None
+        pocket_descriptor=None, pair_descriptor_input=None, descriptor_catalog_input=None
     ):
         """Encode protein nodes while preserving graph-node alignment."""
         if self.use_rnabang_frozen_node_adapter:
@@ -595,6 +642,9 @@ class Protein_encoder(torch.nn.Module):
             node = self.expand_pocket_descriptor(node, batch, pocket_descriptor)
             node = self.expand_pair_descriptors(
                 node, batch, pocket_descriptor, pair_descriptor_input
+            )
+            node = self.expand_named_protein_descriptors(
+                node, batch, descriptor_catalog_input
             )
 
         if self.use_geometric_transformer:
