@@ -105,7 +105,7 @@ def block_features(block, train, lengths, extents):
 
 
 def probe_table(csv, similarity, index, lengths, extents, network, families, seeds,
-                 neighbours=15, share=0.7, ratio=2, split="valid", epoch=None):
+                 neighbours=15, share=0.8, ratio=2, split="valid", epoch=None):
     """One row per (family, seed): every AUC and every in-sample fit, side by side.
 
     `network=None` runs the feature-only half -- no checkpoints, no label, and the
@@ -285,7 +285,7 @@ def main():
     parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
     parser.add_argument("--seeds", default="0,1")
     parser.add_argument("--neighbours", type=int, default=15)
-    parser.add_argument("--share", type=float, default=0.7)
+    parser.add_argument("--share", type=float, default=0.8)
     parser.add_argument("--ratio", type=int, default=2)
     parser.add_argument("--split", default="valid", choices=("valid", "test", "both"))
     args = parser.parse_args()

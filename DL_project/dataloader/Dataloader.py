@@ -917,7 +917,11 @@ class PLIDataset(
         # changed since it was) falls every lookup below back to computing directly,
         # exactly as before this cache existed. See dataloader/pair_descriptor_cache.py
         # and data/build_pair_descriptor_cache.py, which scripts/run_local.sh runs once
-        # before a grid launches so its N (group, seed) processes share one build.
+        # before a grid launches so its N (group, seed) processes share one build. The
+        # cache always carries every measure (no lipid_shape flag on load_pair_
+        # descriptor_cache/store_is_current anymore) -- a run below that never sets
+        # --pair_descriptor_lipid_shape simply never reads the three conformer-based
+        # keys the cache still has, same as it never reads any other unrequested key.
         pair_cache = load_pair_descriptor_cache(self.ROOT_DIR, isomeric)
         protein_cache = pair_cache["proteins"] if pair_cache else None
         chain = as_arrays(chain_lengths_by_row(csv, isomeric, cache=pair_cache))

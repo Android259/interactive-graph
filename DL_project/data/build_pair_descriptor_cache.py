@@ -17,6 +17,7 @@ already current: launching a grid must not rebuild it every time.
 
 Usage:
     python3 data/build_pair_descriptor_cache.py [--args_file=PATH] [--force] [--quiet]
+                                                 [--check_only]
 
     --args_file=PATH  Pick whether a cache is needed, and which isomeric variant, from
                        that run's flags: neither --pair_descriptors nor
@@ -27,6 +28,14 @@ Usage:
                        assumed and the deterministic (non-isomeric) variant is built.
     --force           Rebuild even when the cache is already current.
     --quiet           Print nothing when there was nothing to do.
+    --check_only      Report whether a rebuild is needed (exit 0: nothing to do: not
+                       needed, or already current; exit 1: a rebuild would run) without
+                       doing the RDKit/pocket-parse work. For a caller (e.g. a cluster
+                       launcher) that wants to know cheaply, on a shared login node,
+                       whether it must hand the real build off to a job -- the check
+                       itself is a handful of stat() calls, never the ~5 minutes of
+                       single-threaded RDKit the actual build can take on the full
+                       interaction table.
 """
 
 import sys
@@ -59,19 +68,43 @@ def flags_in(args_file):
 def needs_cache(args_file):
     """(needed, isomeric), from that run's flags, or (True, False) with no args file.
 
-    Needed under --pair_descriptors OR --two_pair_descriptors_paths: Dataloader.
-    _compute_pair_descriptors reads this cache (chain/unsaturation/hbond/heavy/
-    tail_count) whenever either is on, not just the first -- --two_pair_descriptors_
-    paths' --good_descriptors/--bad_descriptors are built from those same base values
-    (dataloader.pair_descriptors.resolve_requested_tokens), so a run of one without the
-    other still pays the ~12s-of-~13.6s RDKit/pocket-parse cost this cache exists to
-    remove, independently in every job sharing a node, if this only checked the flag
-    named in the cache's own docstring.
+    Needed under --pair_descriptors OR --two_pair_descriptors_paths OR anything that
+    makes dataloader.pair_descriptors.full_catalog_order(config) non-empty:
+    Dataloader._compute_pair_descriptors computes chain/unsaturation/hbond/heavy (and
+    conditionally tail_count) the moment ANY of pair_descriptors_on/two_paths_on/
+    named_catalog_on is true (it returns early only when ALL THREE are false), so a
+    config using only --descriptor_names/--good_descriptors/--bad_descriptors/
+    --protein_descriptors/--lipid_descriptors -- with neither --pair_descriptors nor
+    --two_pair_descriptors_paths itself -- still pays the ~12s-of-~13.6s RDKit/
+    pocket-parse cost this cache exists to remove, independently in every job sharing
+    a node, if this only checked the two bare flags. Checked here as raw flag presence
+    rather than by calling full_catalog_order itself (which needs a parsed ModelConfig,
+    not a flag list) -- --descriptor_names only counts when paired with --descriptors_head
+    or --pair_descriptors, matching that function's own guard.
+
+    No lipid_shape distinction anymore: dataloader/pair_descriptor_cache.py's build
+    always computes every measure (see that module's docstring) regardless of whether
+    THIS run's own flags read radius_of_gyration/asphericity/molecular_volume, so the
+    next run that does never finds a cache silently missing them.
     """
     if args_file is None:
         return True, False
     flags = flags_in(args_file)
-    needed = "--pair_descriptors" in flags or "--two_pair_descriptors_paths" in flags
+    named_catalog_on = (
+        "--good_descriptors" in flags
+        or "--bad_descriptors" in flags
+        or "--protein_descriptors" in flags
+        or "--lipid_descriptors" in flags
+        or (
+            "--descriptor_names" in flags
+            and ("--descriptors_head" in flags or "--pair_descriptors" in flags)
+        )
+    )
+    needed = (
+        "--pair_descriptors" in flags
+        or "--two_pair_descriptors_paths" in flags
+        or named_catalog_on
+    )
     return needed, "--lipid_isomers" in flags
 
 
@@ -79,6 +112,7 @@ def main(argv):
     args_file = None
     force = False
     quiet = False
+    check_only = False
     for argument in argv:
         if argument.startswith("--args_file="):
             args_file = argument.split("=", 1)[1]
@@ -86,6 +120,8 @@ def main(argv):
             force = True
         elif argument == "--quiet":
             quiet = True
+        elif argument == "--check_only":
+            check_only = True
         else:
             print(f"Unknown option: {argument}", file=sys.stderr)
             print(__doc__, file=sys.stderr)
@@ -106,6 +142,12 @@ def main(argv):
             variant = "isomeric" if isomeric else "deterministic"
             print(f"pair descriptor cache: {variant} already current")
         return 0
+
+    if check_only:
+        if not quiet:
+            variant = "isomeric" if isomeric else "deterministic"
+            print(f"pair descriptor cache: {variant} needs a rebuild")
+        return 1
 
     import pandas
 

@@ -32,6 +32,8 @@ builds the occupancy term (heavy_atom_count vs the SAME coarsened pocket_extent
 coarsen_to_levels, so a held-out protein's raw cavity size still cannot leak through it
 (files/compat_input_audit.md).
 """
+import functools
+
 import numpy
 
 from rdkit import Chem
@@ -582,11 +584,31 @@ def generate_conformer_ensemble(mol, n_confs=CONFORMER_COUNT, seed=CONFORMER_SEE
     return mol_h, conf_ids
 
 
-def _mean_over_conformers(smiles, per_conformer_fn):
+@functools.lru_cache(maxsize=4096)
+def _cached_conformer_ensemble(smiles):
+    """(mol_h, conf_ids) for `smiles`, memoized by canonical SMILES.
+
+    radius_of_gyration/asphericity/molecular_volume below each want their own mean
+    over the SAME 10-conformer ensemble (CONFORMER_SEED is fixed, so it is a pure
+    function of `smiles`) -- calling generate_conformer_ensemble independently per
+    measure paid the ETKDG embed + MMFF optimize three times over for identical
+    geometry. Measured as most of why data/build_pair_descriptor_cache.py's rebuild
+    took ~20 minutes on this project's ~1300 unique candidates even after pinning
+    OMP_NUM_THREADS=1 (which fixed a separate, smaller BLAS-thread-thrashing cost).
+    None (not raised) for anything RDKit cannot parse, matching every other measure
+    here's convention.
+    """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
-    mol_h, conf_ids = generate_conformer_ensemble(mol)
+    return generate_conformer_ensemble(mol)
+
+
+def _mean_over_conformers(smiles, per_conformer_fn):
+    ensemble = _cached_conformer_ensemble(smiles)
+    if ensemble is None:
+        return None
+    mol_h, conf_ids = ensemble
     values = [per_conformer_fn(mol_h, conf_id) for conf_id in conf_ids]
     return float(sum(values) / len(values))
 
@@ -694,7 +716,18 @@ def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
                 seen.add(key)
                 if key not in by_smiles:
                     cached = cached_values.get(key)
-                    by_smiles[key] = cached[measure] if cached is not None else fn(key)
+                    # `measure in cached` first, not cached.get(measure, fn(key)): the
+                    # latter's default is evaluated eagerly regardless of the lookup,
+                    # which would call fn (an ETKDG embed, for the three lipid_shape
+                    # measures) on every candidate even on a cache hit. A cache built
+                    # with lipid_shape=False (dataloader/pair_descriptor_cache.py)
+                    # carries every OTHER measure for a SMILES it has seen, just not
+                    # those three, so this still must fall back per-measure rather than
+                    # KeyError.
+                    if cached is not None and measure in cached:
+                        by_smiles[key] = cached[measure]
+                    else:
+                        by_smiles[key] = fn(key)
                 values.append(by_smiles[key])
             values = values or [None]
             by_field[field] = values

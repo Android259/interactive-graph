@@ -12,7 +12,7 @@
 --no_protein_embeddings
 
 --pocket_descriptors
---pocket_descriptor_names=pocket_extent,pocket_elongation,pocket_flatness,depth_q10,buriedness_q50,aromatic_share,hydropathy_core,hydropathy_rim,pocket_vomume_per_sasa
+--pocket_descriptor_names=pocket_extent,pocket_elongation,pocket_flatness,depth_q10,buriedness_q50,aromatic_share,hydropathy_core,hydropathy_rim,pocket_volume_per_sasa
 
 --protein_edge_mlp
 

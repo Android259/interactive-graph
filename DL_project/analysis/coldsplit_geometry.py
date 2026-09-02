@@ -243,7 +243,7 @@ def sweep_shares(csv, compact, shares, seed, families):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--share", type=float, default=0.7)
+    parser.add_argument("--share", type=float, default=0.8)
     parser.add_argument("--seeds", default="0,1,2")
     parser.add_argument(
         "--eval_candidates_per_pair",

@@ -325,6 +325,72 @@ REMOTE_QUEUE_DIR="${CLUSTER_QUEUE_ROOT}/active"
 # computed once rather than once per label in the loop below.
 remote_env="$(cluster_remote_env)"
 
+# GRICAD kills anything using >600s CPU on a frontend/login node (own
+# monitoring, not OAR) -- see e.g. the kraken warning for a
+# build_pair_descriptor_cache.py run that hit 351s there. The two prep builds
+# below used to run as a plain `ssh ... python3 ...` on the login node, which
+# is exactly what that policy forbids once a cache build is not a no-op (a
+# stale/missing cache on a big args-file can run past the limit and get
+# killed mid-build). This submits the same command as a small OAR job instead
+# and blocks until it drains, so the caches are still ready before the real
+# grid below queues -- see that loop's own comment for why "before" matters.
+PREP_JOB_CORES="${PREP_JOB_CORES:-2}"
+PREP_JOB_WALLTIME="${PREP_JOB_WALLTIME:-1:00:00}"
+
+run_prep_job() {
+    local job_label="$1" job_cmd="$2"
+    local job_name="${job_label}_$$"
+    local job_dir="${REMOTE_PROJECT}/.prep_jobs"
+    local script_path="${job_dir}/${job_name}.sh"
+    local out_path="${job_dir}/${job_name}.out"
+    local err_path="${job_dir}/${job_name}.err"
+    local exit_path="${job_dir}/${job_name}.exit"
+
+    ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+        "mkdir -p '${job_dir}' && rm -f '${exit_path}' && cat > '${script_path}'" <<EOF
+#!/usr/bin/env bash
+set -uo pipefail
+cd $(printf '%q' "${REMOTE_PROJECT}")
+source $(printf '%q' "${CONDA_SH}")
+conda activate $(printf '%q' "${CONDA_ENV}")
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+${job_cmd}
+echo \$? > $(printf '%q' "${exit_path}")
+EOF
+    ssh -S "${SSH_CONTROL_PATH}" "${remote}" "chmod +x '${script_path}'"
+
+    if ! ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+        "cd '${REMOTE_PROJECT}' && oarsub --project $(printf '%q' "${PROJECT}") --name '${job_name}' -l /core=${PREP_JOB_CORES},walltime=${PREP_JOB_WALLTIME} -O '${out_path}' -E '${err_path}' '${script_path}'" \
+        2>&1 | sed 's/^/  /'
+    then
+        return 1
+    fi
+
+    # Same primitive the whole-queue drain loop further below uses
+    # (oarstat_json.py jobs), filtered to this one job's name. 10s, not that
+    # loop's 60s: this blocks the real grid submission and is a single
+    # lightweight job, not a whole queue to babysit.
+    local still_running
+    while :; do
+        still_running="$(
+            ssh -S "${SSH_CONTROL_PATH}" "${remote}" "oarstat -J -f -u '${REMOTE_USER}' 2>/dev/null" |
+                python3 "${PROJECT_ROOT}/scripts/lib/oarstat_json.py" jobs 2>/dev/null |
+                awk -F'\t' -v n="${job_name}" '$2==n' | wc -l
+        )"
+        (( still_running == 0 )) && break
+        sleep 10
+    done
+
+    ssh -S "${SSH_CONTROL_PATH}" "${remote}" "cat '${out_path}' 2>/dev/null" | sed 's/^/  /'
+    local job_exit
+    job_exit="$(ssh -S "${SSH_CONTROL_PATH}" "${remote}" "cat '${exit_path}' 2>/dev/null")"
+    if [[ "${job_exit}" != "0" ]]; then
+        ssh -S "${SSH_CONTROL_PATH}" "${remote}" "cat '${err_path}' 2>/dev/null" | sed 's/^/  [stderr] /' >&2
+        return 1
+    fi
+    return 0
+}
+
 # Per-label prep (resolve, --complete scan, sync that label's arg file, build
 # its shared caches) still runs once per label below, but capture itself is
 # called ONCE after the loop with every label's REMOTE_INPUT_PATH joined into
@@ -420,27 +486,46 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
     # script is read-only by contract, and before submission rather than inside a job
     # because 45 jobs starting at once would otherwise race to write the same archive.
     #
+    # Runs as its own OAR job (run_prep_job, above) rather than directly on the
+    # login node -- see that function's comment.
+    #
     # Never fatal: a cluster where this cannot run still trains correctly, the jobs
     # just read the pickle as they always did. The build is a no-op when the store is
     # already current, so re-submitting the same grid costs nothing.
     # The environment has to be activated exactly as the jobs do it below: the
     # login shell's bare python3 has no torch, so without this the build always
     # failed and every job silently fell back to the pickle.
-    printf 'Building shared embedding store on %s (skipped if current).\n' "${remote}"
-    if ! ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
-        "cd '${REMOTE_PROJECT}' && source $(printf '%q' "${CONDA_SH}") && conda activate $(printf '%q' "${CONDA_ENV}") && python3 data/build_lipid_embedding_store.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")" \
-        2>&1 | sed 's/^/  /'; then
+    printf 'Building shared embedding store on %s via OAR (skipped if current).\n' "${remote}"
+    if ! run_prep_job "embed_store" \
+        "python3 data/build_lipid_embedding_store.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")"; then
         printf 'WARNING: could not build the embedding store; jobs will read the pickle instead.\n' >&2
     fi
 
     # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values
     # (dataloader/pair_descriptor_cache.py). Never fatal, same as above: a job that
     # cannot read it just computes the values itself, slower but not wrong.
-    printf 'Building shared pair descriptor cache on %s (skipped if current).\n' "${remote}"
-    if ! ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
-        "cd '${REMOTE_PROJECT}' && source $(printf '%q' "${CONDA_SH}") && conda activate $(printf '%q' "${CONDA_ENV}") && python3 data/build_pair_descriptor_cache.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")" \
-        2>&1 | sed 's/^/  /'; then
-        printf 'WARNING: could not build the pair descriptor cache; jobs will compute it themselves.\n' >&2
+    #
+    # Unlike the embedding store this cache is a few hundred KB, so
+    # cluster_sync_excludes.sh now carries scripts/run_local.sh's own copy of it
+    # along with the code sync above -- the common case is already current the
+    # moment it lands (store_is_current() checks the payload's own recorded
+    # source sizes/mtimes, not where it was built), and --check_only confirms
+    # that with a handful of stat() calls, cheap enough to run directly on the
+    # login node. Escalate to an OAR job (run_prep_job) only on an actual
+    # mismatch (a table/protein-graph edit that has not round-tripped to this
+    # machine yet) -- that RDKit/pocket-parse rebuild is what hit GRICAD's 600s
+    # login-node CPU limit in the first place (see run_prep_job's comment).
+    variant_pair_cache_cmd="python3 data/build_pair_descriptor_cache.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")"
+    if ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+        "cd '${REMOTE_PROJECT}' && source $(printf '%q' "${CONDA_SH}") && conda activate $(printf '%q' "${CONDA_ENV}") && OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 ${variant_pair_cache_cmd} --check_only" \
+        2>&1 | sed 's/^/  /'
+    then
+        : # already current -- the synced copy (or no cache needed at all) covers it
+    else
+        printf 'Building shared pair descriptor cache on %s via OAR (stale copy).\n' "${remote}"
+        if ! run_prep_job "pair_descr_cache" "${variant_pair_cache_cmd}"; then
+            printf 'WARNING: could not build the pair descriptor cache; jobs will compute it themselves.\n' >&2
+        fi
     fi
 
     # One submitter for both series: it reads the config and picks the ordinary

@@ -658,8 +658,20 @@ fi
 # current means no work, so relaunching a grid costs nothing.
 # Once per label (each may set --lipid_isomers differently, and the store/
 # cache builders read their own args_file to decide which variant is needed).
+#
+# OMP_NUM_THREADS/MKL_NUM_THREADS/OPENBLAS_NUM_THREADS=1 here is load-bearing, same
+# as scripts/tools/lipid_graphs_on_kraken.sh's own run_lipid_graphs.sh: both
+# builders below are single-process scripts, but numpy/BLAS (pocket_shape's
+# eigh/cov) and RDKit spin up one OS thread per host core the moment something
+# under them calls into a threaded BLAS, with no work to actually spread across
+# them -- 25 threads measured on a 24-core machine for what is serial work,
+# thrashing on creation/synchronisation instead of finishing sooner. Cut this
+# builder's own rebuild from ~7 to ~3 minutes even after the far bigger
+# lipid_shape-gating fix (dataloader/pair_descriptor_cache.py) removed the
+# redundant conformer generation that was most of the ~20-minute baseline.
 for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
-    if ! python3 "${PROJECT_ROOT}/data/build_lipid_embedding_store.py" \
+    if ! OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+        python3 "${PROJECT_ROOT}/data/build_lipid_embedding_store.py" \
         --args_file="${_label_args_file}"; then
         printf 'WARNING: could not build the embedding store for %s; its jobs will read the pickle.\n' \
             "${_label_args_file}" >&2
@@ -670,7 +682,8 @@ for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     # share one cache instead of each re-running RDKit over the whole interaction table.
     # Never fatal: without it a job computes these values itself, exactly as before this
     # cache existed -- slower, not wrong.
-    if ! python3 "${PROJECT_ROOT}/data/build_pair_descriptor_cache.py" \
+    if ! OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+        python3 "${PROJECT_ROOT}/data/build_pair_descriptor_cache.py" \
         --args_file="${_label_args_file}"; then
         printf 'WARNING: could not build the pair descriptor cache for %s; its jobs will compute it themselves.\n' \
             "${_label_args_file}" >&2

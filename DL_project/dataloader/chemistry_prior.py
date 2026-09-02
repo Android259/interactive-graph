@@ -8,7 +8,9 @@ Kept in one place because the two callers must compute the identical number: a n
 model that silently drifted from the number the network is judged against would make
 every AUC in that file wrong without anything failing loudly.
 """
+import json
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas
@@ -66,14 +68,40 @@ def species_similarity(csv, data_dir):
     return similarity, index
 
 
-def _lipid_descriptor_table(csv):
+def _lipid_descriptor_table_path(data_dir):
+    return Path(data_dir) / "lipid_descriptor_table.json"
+
+
+def _lipid_descriptor_table(csv, data_dir=None):
     """{species: {LIPID_DESCRIPTOR_NAMES: value}}, mean over each species' candidate
     structures (pocket_lipid_compatibility.candidates_for_row's own convention: a
     candidate list is a spectroscopic ambiguity, not a choice, so every candidate
     counts equally -- taking only the first would report an arbitrary member of the
     ambiguity as if it were the lipid's own property).
+
+    Self-persisting exactly like protein_descriptor_table above (same reasoning: RDKit
+    over every candidate SMILES does not depend on --seed/--excluded_groups, only on
+    the interaction table, so recomputing it in every caller with nothing shared is
+    pure waste) -- `data_dir=None` (every call site inside this module passes the CSV
+    only, not a data_dir) means "no interaction table path known here, do not persist",
+    which callers can opt into by passing data_dir explicitly.
     """
     from dataloader.pocket_lipid_compatibility import candidates_for_row
+
+    if data_dir is not None:
+        table_path = _lipid_descriptor_table_path(data_dir)
+        csv_path = getattr(csv, "attrs", {}).get("source_path")
+        source = None
+        if csv_path and os.path.isfile(csv_path):
+            stat = os.stat(csv_path)
+            source = {"path": os.path.basename(csv_path), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+        if source and table_path.exists():
+            try:
+                manifest = json.loads(table_path.read_text())
+                if manifest.get("format_version") == 1 and manifest.get("source") == source:
+                    return manifest["values"]
+            except (OSError, ValueError, json.JSONDecodeError, KeyError):
+                pass
 
     measures = {
         "chain": longest_acyl_chain,
@@ -105,6 +133,25 @@ def _lipid_descriptor_table(csv):
     return per_species_values
 
 
+_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 1
+
+
+def _protein_descriptor_table_path(data_dir):
+    return Path(data_dir) / "protein_descriptor_table.json"
+
+
+def _protein_descriptor_table_sources(data_dir, protein_names):
+    from dataloader.protein_graph_tensor_cache import _source_record
+
+    root_dir = Path(data_dir).resolve()
+    paths = []
+    for protein in protein_names:
+        protein_dir = root_dir / "graphs" / protein
+        paths.append(protein_dir / "pocketness.pdb")
+        paths.append(protein_dir / "coarse_graph_nodes.csv")
+    return [_source_record(path, root_dir) for path in paths if path.exists()]
+
+
 def protein_descriptor_table(data_dir):
     """{protein: {PROTEIN_DESCRIPTOR_NAMES + PROTEIN_DERIVED_DESCRIPTOR_NAMES: value}},
     read straight off data/graphs/<protein>/{coarse_graph_nodes.csv,pocketness.pdb} --
@@ -113,26 +160,59 @@ def protein_descriptor_table(data_dir):
     `config` argument is only used to cross-check pocket_descriptor_count, which is
     skipped when config is None).
 
+    These 35 proteins' worth of values do not depend on --seed/--excluded_groups/the
+    interaction table at all -- only on data/graphs/*/{pocketness.pdb,
+    coarse_graph_nodes.csv}, which almost never change once built -- yet every
+    Dataloader instance (one per (group, seed) job) used to recompute the whole table
+    from scratch: ~10ms/protein once imports are warm, ~4s cold on the very first call
+    in a process, paid independently by every one of a grid's N processes with nothing
+    shared between them (measured; unlike dataloader/pair_descriptor_cache.py, which at
+    least amortises the lipid side, this had no persistence at all).
+
+    Self-persisting rather than a build-it-first-or-fall-back-slow cache: the first
+    call anywhere (any process, any machine sharing this data/ dir) computes the table
+    and writes data/protein_descriptor_table.json; every call after that, in any
+    process, reads it back in milliseconds -- no separate prep script, no args-file
+    flag to detect, nothing to remember to run before a grid launches. Still keyed on
+    each source file's size/mtime (same discipline as protein_graph_tensor_cache.py) so
+    a rebuilt data/graphs/<protein>/ is picked up rather than served stale.
+
     The two derived names (aromatic_share_coarse/polar_share_coarse) are computed
     here too, from the raw aromatic_share/apolar_sasa_share this function already
     reads, so a caller can look either kind up by name the same way -- see
     coarse_share/PROTEIN_DERIVED_DESCRIPTOR_NAMES in dataloader/pair_descriptors.py.
     """
-    from pathlib import Path
-
     import pandas as pd
 
     from dataloader.protein_graph_builder import pocket_descriptor
     from dataloader.protein_graph_tensor_cache import _pocket_tensor
 
     graphs_dir = os.path.join(data_dir, "graphs")
+    protein_names = sorted(
+        protein for protein in os.listdir(graphs_dir)
+        if os.path.isfile(os.path.join(graphs_dir, protein, "pocketness.pdb"))
+        and os.path.isfile(os.path.join(graphs_dir, protein, "coarse_graph_nodes.csv"))
+    )
+
+    table_path = _protein_descriptor_table_path(data_dir)
+    if table_path.exists():
+        try:
+            manifest = json.loads(table_path.read_text())
+            current_sources = _protein_descriptor_table_sources(data_dir, protein_names)
+            if (
+                manifest.get("format_version") == _PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION
+                and manifest.get("sources") == current_sources
+                and sorted(manifest.get("values", {})) == protein_names
+            ):
+                return manifest["values"]
+        except (OSError, ValueError, json.JSONDecodeError, KeyError):
+            pass  # fall through and recompute, same as any other stale/corrupt cache
+
     values = {}
-    for protein in sorted(os.listdir(graphs_dir)):
+    for protein in protein_names:
         protein_dir = os.path.join(graphs_dir, protein)
         pocketness_path = os.path.join(protein_dir, "pocketness.pdb")
         nodes_path = os.path.join(protein_dir, "coarse_graph_nodes.csv")
-        if not os.path.isfile(pocketness_path) or not os.path.isfile(nodes_path):
-            continue
         vertices = pd.read_csv(nodes_path)
         pocket = _pocket_tensor(Path(pocketness_path))
         descriptor = pocket_descriptor(
@@ -146,6 +226,17 @@ def protein_descriptor_table(data_dir):
         raw["aromatic_share_coarse"] = coarse_share(raw["aromatic_share"])
         raw["polar_share_coarse"] = coarse_share(raw["polar_share"])
         values[protein] = raw
+
+    try:
+        table_path.write_text(json.dumps({
+            "format_version": _PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION,
+            "sources": _protein_descriptor_table_sources(data_dir, protein_names),
+            "values": values,
+        }))
+    except OSError:
+        pass  # never fatal -- a read-only data/ (or a race with another process
+              # writing the same file) still returns correct values, just unpersisted
+
     return values
 
 

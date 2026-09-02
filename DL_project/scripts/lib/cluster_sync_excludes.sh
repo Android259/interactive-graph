@@ -113,6 +113,17 @@ SYNC_EXCLUDES=(
     --include='/data/Tanimoto_compact*'
     --include='/data/grab_pair_graph_edges.csv'
     --include='/data/*.py'
+    # Self-validating (dataloader/pair_descriptor_cache.py's store_is_current() embeds
+    # every source file's size/mtime_ns in the JSON itself and checks it fresh on every
+    # load), so shipping a copy built on this machine is never a wrong answer on the
+    # far side -- at worst its recorded sources don't match the cluster's copies (a
+    # table/protein-graph edit that has not round-tripped yet) and the loader falls
+    # back to building it there, exactly as before this include existed. Worth carrying
+    # unlike the rest of data/: a few hundred KB, against the single-threaded RDKit/
+    # pocket-parse pass (minutes on the full interaction table -- GRICAD kills anything
+    # over 600s of CPU on a login node, which is what motivated this) that a from-
+    # scratch remote build otherwise costs on every table change.
+    --include='/data/pair_descriptor_cache_*.json'
     --include='/data/lipid_graphs/'
     --include='/data/lipid_graphs/**'
     --include='/data/graphs/'

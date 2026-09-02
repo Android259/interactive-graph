@@ -274,7 +274,7 @@ def main():
     parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
     parser.add_argument("--seeds", default="0,1,2,3,4")
     parser.add_argument("--neighbours", type=int, default=15)
-    parser.add_argument("--share", type=float, default=0.7)
+    parser.add_argument("--share", type=float, default=0.8)
     parser.add_argument("--ratio", type=int, default=2)
     parser.add_argument("--split", default="valid", choices=("valid", "test"))
     parser.add_argument("--epochs", default="", help="default: every epoch in the file")

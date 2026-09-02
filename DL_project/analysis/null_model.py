@@ -632,7 +632,7 @@ def main():
     parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
     parser.add_argument("--seeds", default="0,1,2,3,4")
     parser.add_argument("--neighbours", default="5,15,40", help="k, comma separated")
-    parser.add_argument("--share", type=float, default=0.7, help="--coldsplit_share of the run")
+    parser.add_argument("--share", type=float, default=0.8, help="--coldsplit_share of the run")
     parser.add_argument("--ratio", type=int, default=2, help="--negatives_per_positive of the run")
     parser.add_argument("--split", default="valid", choices=("valid", "test"))
     parser.add_argument(
