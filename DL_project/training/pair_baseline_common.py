@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from dataloader.dataset_source import interaction_csv_path
 from dataloader.sampler import lipid_class_series, lipid_classes_for_holdout
 from preprocessing.audit_lipid_identity_by_smiles import features as smiles_features
 
@@ -25,11 +26,10 @@ except ModuleNotFoundError:  # pragma: no cover - project environments include R
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CSV = (
-    PROJECT_ROOT
-    / "data"
-    / "Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed_CandidatesCompleted.csv"
-)
+# The canonical, deduplicated interaction table (dataloader.dataset_source is the single
+# source of truth for which file that is) -- every artefact indexed by row position
+# (pair_id, the compact Tanimoto arrays) is built against this exact file.
+DEFAULT_CSV = Path(interaction_csv_path(str(PROJECT_ROOT / "data")))
 DEFAULT_GRAPHS = PROJECT_ROOT / "data" / "graphs"
 
 POCKET13_NAMES = (
@@ -132,6 +132,21 @@ def raw_double_cold_pool(
     if train.empty or evaluation.empty:
         raise ValueError(f"{family}: empty train or held-out block")
     return train, evaluation, held_classes
+
+
+def raw_single_cold_pool(
+    table: pd.DataFrame, family: str
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return all P-vs-U rows of a protein-only cold split (parity with --excluded_groups
+    without --double_coldsplit): only the protein family is held out, every lipid class
+    stays available in training.
+    """
+    domain = table["ProteinDomain"].str.lower()
+    train = table[domain != family.lower()].copy()
+    evaluation = table[domain == family.lower()].copy()
+    if train.empty or evaluation.empty:
+        raise ValueError(f"{family}: empty train or held-out block")
+    return train, evaluation
 
 
 def split_held_pairs(
@@ -425,6 +440,214 @@ def rbf_kernel(
     return np.exp(-squared_distance / max(left.shape[1], 1))
 
 
+def linear_kernel(
+    features: pd.DataFrame,
+    left_names: list[str] | tuple[str, ...],
+    right_names: list[str] | tuple[str, ...],
+    train_names: list[str] | tuple[str, ...],
+) -> np.ndarray:
+    """Train-only z-scored dot product. A cheaper alternative to `rbf_kernel` for
+    feature vectors where scale, not just direction, carries information."""
+    scaled = standardize_from_train(features, train_names)
+    left = scaled.loc[list(left_names)].to_numpy(dtype=float)
+    right = scaled.loc[list(right_names)].to_numpy(dtype=float)
+    return left @ right.T
+
+
+def cosine_kernel(
+    features: pd.DataFrame,
+    left_names: list[str] | tuple[str, ...],
+    right_names: list[str] | tuple[str, ...],
+    train_names: list[str] | tuple[str, ...],
+) -> np.ndarray:
+    """Train-only z-scored cosine similarity. Suited to embedding-style vectors (e.g. a
+    user-supplied protein language model pooling) where only direction should count."""
+    scaled = standardize_from_train(features, train_names)
+    left = scaled.loc[list(left_names)].to_numpy(dtype=float)
+    right = scaled.loc[list(right_names)].to_numpy(dtype=float)
+    left = left / np.maximum(np.linalg.norm(left, axis=1, keepdims=True), 1e-12)
+    right = right / np.maximum(np.linalg.norm(right, axis=1, keepdims=True), 1e-12)
+    return left @ right.T
+
+
+KERNEL_FUNCTIONS = {"rbf": rbf_kernel, "linear": linear_kernel, "cosine": cosine_kernel}
+
+
+def _feature_kernel(
+    kernel_type: str,
+    features: pd.DataFrame,
+    entities: list[str],
+    train_names: list[str] | tuple[str, ...],
+) -> np.ndarray:
+    try:
+        function = KERNEL_FUNCTIONS[kernel_type]
+    except KeyError:
+        raise ValueError(
+            f"unknown kernel_type {kernel_type!r}; expected one of {sorted(KERNEL_FUNCTIONS)}"
+        )
+    return function(features, entities, entities, train_names)
+
+
+def load_feature_table(path: Path | str, index_name: str) -> pd.DataFrame:
+    """Arbitrary externally supplied entity vectors: first CSV column is the entity id
+    (must match `LTPProtein` / `FullIdentityOfLipid` values exactly), the rest are
+    numeric features of any kind -- there is no fixed schema here by design."""
+    table = pd.read_csv(path)
+    id_column = table.columns[0]
+    table = table.set_index(id_column)
+    table.index = table.index.astype(str)
+    table.index.name = index_name
+    numeric = table.apply(pd.to_numeric, errors="coerce")
+    bad = numeric.index[numeric.isna().any(axis=1)]
+    if len(bad):
+        raise ValueError(f"{path}: non-numeric or missing feature values for {list(bad)}")
+    return numeric
+
+
+def load_precomputed_kernel(
+    path: Path | str, names_path: Path | str
+) -> tuple[np.ndarray, dict[str, int]]:
+    """A user-supplied square similarity/kernel matrix (e.g. an ESM3-embedding cosine
+    matrix, or any other precomputed measure) used as-is, without recomputing it from
+    feature vectors. `names_path` lists one entity name per line, in the matrix's row
+    and column order."""
+    matrix = np.load(path).astype(np.float64)
+    names = [line.strip() for line in Path(names_path).read_text().splitlines() if line.strip()]
+    if matrix.shape != (len(names), len(names)):
+        raise ValueError(
+            f"{path}: matrix shape {matrix.shape} does not match {len(names)} names in {names_path}"
+        )
+    return matrix, {name: position for position, name in enumerate(names)}
+
+
+def _kernel_from_index(
+    matrix: np.ndarray, index: dict[str, int], entities: list[str], source: str
+) -> np.ndarray:
+    missing = sorted(set(entities) - set(index))
+    if missing:
+        raise ValueError(f"{source} is missing entities: {missing}")
+    positions = [index[name] for name in entities]
+    return matrix[np.ix_(positions, positions)]
+
+
+def build_protein_kernel(
+    kind: str,
+    entities: list[str] | tuple[str, ...],
+    train_names: list[str] | tuple[str, ...],
+    graphs: Path | str = DEFAULT_GRAPHS,
+    kernel_type: str = "rbf",
+    descriptor_names: list[str] | tuple[str, ...] | None = None,
+    features_path: Path | str | None = None,
+    kernel_path: Path | str | None = None,
+    names_path: Path | str | None = None,
+) -> tuple[np.ndarray, dict[str, int]]:
+    """Build a protein x protein kernel over `entities`, standardized by `train_names`
+    only. `kind` selects the feature source:
+
+    - "pocket13" / "pocket23": the full 13- or 23-name pocket-shape descriptor set.
+    - "pocket_subset": the same pocket descriptors, restricted to `descriptor_names`
+      (any subset of POCKET23_NAMES) -- use this to match a network run's own
+      `--pocket_descriptor_names` exactly, e.g. the project's "protgeom8" set.
+    - "custom_features": any vectors of your own (`features_path`, see
+      `load_feature_table`), turned into a kernel via `kernel_type`.
+    - "custom_kernel": a precomputed similarity/kernel matrix of your own
+      (`kernel_path` + `names_path`, see `load_precomputed_kernel`), used directly.
+    """
+    entities = list(entities)
+    if kind in ("pocket13", "pocket23"):
+        features = protein_pocket_features(entities, graphs)
+        names = POCKET13_NAMES if kind == "pocket13" else POCKET23_NAMES
+        kernel = _feature_kernel(kernel_type, features.loc[:, names], entities, train_names)
+    elif kind == "pocket_subset":
+        if not descriptor_names:
+            raise ValueError("descriptor_names is required for protein_kernel=pocket_subset")
+        unknown = sorted(set(descriptor_names) - set(POCKET23_NAMES))
+        if unknown:
+            raise ValueError(f"unknown pocket descriptor names: {unknown}")
+        features = protein_pocket_features(entities, graphs)
+        kernel = _feature_kernel(
+            kernel_type, features.loc[:, list(descriptor_names)], entities, train_names
+        )
+    elif kind == "custom_features":
+        if features_path is None:
+            raise ValueError("--protein_features is required for protein_kernel=custom_features")
+        features = load_feature_table(features_path, index_name="LTPProtein")
+        missing = sorted(set(entities) - set(features.index))
+        if missing:
+            raise ValueError(f"{features_path} is missing proteins: {missing}")
+        kernel = _feature_kernel(kernel_type, features, entities, train_names)
+    elif kind == "custom_kernel":
+        if kernel_path is None or names_path is None:
+            raise ValueError(
+                "--protein_kernel_matrix and --protein_kernel_names are required "
+                "for protein_kernel=custom_kernel"
+            )
+        matrix, index = load_precomputed_kernel(kernel_path, names_path)
+        kernel = _kernel_from_index(matrix, index, entities, str(kernel_path))
+    else:
+        raise ValueError(
+            f"unknown protein kernel {kind!r}; expected pocket13, pocket23, "
+            "pocket_subset, custom_features, or custom_kernel"
+        )
+    return kernel, {name: position for position, name in enumerate(entities)}
+
+
+def build_lipid_kernel(
+    kind: str,
+    table: pd.DataFrame,
+    entities: list[str] | tuple[str, ...],
+    train_names: list[str] | tuple[str, ...],
+    kernel_type: str = "rbf",
+    features_path: Path | str | None = None,
+    kernel_path: Path | str | None = None,
+    names_path: Path | str | None = None,
+) -> tuple[np.ndarray, dict[str, int]]:
+    """Build a lipid x lipid kernel over `entities`, standardized by `train_names` only.
+    `kind` selects the feature source:
+
+    - "tanimoto": the existing Morgan-fingerprint species similarity. `table` MUST be
+      the full, unfiltered, original-row-order interaction table (see
+      `species_tanimoto_similarity` -- it is positionally aligned to the compact
+      Tanimoto artefacts, not to any subset).
+    - "explicit": the existing interpretable lipid descriptors, turned into a kernel
+      via `kernel_type`.
+    - "custom_features" / "custom_kernel": your own vectors or precomputed kernel, same
+      contract as `build_protein_kernel`.
+    """
+    entities = list(entities)
+    if kind == "tanimoto":
+        similarity, index = species_tanimoto_similarity(table)
+        kernel = _kernel_from_index(similarity.astype(float), index, entities, "tanimoto similarity")
+    elif kind == "explicit":
+        features = explicit_lipid_features(table)
+        missing = sorted(set(entities) - set(features.index))
+        if missing:
+            raise ValueError(f"explicit lipid features are missing: {missing}")
+        kernel = _feature_kernel(kernel_type, features, entities, train_names)
+    elif kind == "custom_features":
+        if features_path is None:
+            raise ValueError("--lipid_features is required for lipid_kernel=custom_features")
+        features = load_feature_table(features_path, index_name="FullIdentityOfLipid")
+        missing = sorted(set(entities) - set(features.index))
+        if missing:
+            raise ValueError(f"{features_path} is missing lipids: {missing}")
+        kernel = _feature_kernel(kernel_type, features, entities, train_names)
+    elif kind == "custom_kernel":
+        if kernel_path is None or names_path is None:
+            raise ValueError(
+                "--lipid_kernel_matrix and --lipid_kernel_names are required "
+                "for lipid_kernel=custom_kernel"
+            )
+        matrix, index = load_precomputed_kernel(kernel_path, names_path)
+        kernel = _kernel_from_index(matrix, index, entities, str(kernel_path))
+    else:
+        raise ValueError(
+            f"unknown lipid kernel {kind!r}; expected tanimoto, explicit, "
+            "custom_features, or custom_kernel"
+        )
+    return kernel, {name: position for position, name in enumerate(entities)}
+
+
 def species_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarray, dict[str, int]]:
     """Species Tanimoto, max-reduced over the same candidate structures as the loader."""
     data_dir = PROJECT_ROOT / "data"
@@ -470,6 +693,21 @@ def two_step_kronrls(
     return np.linalg.solve(
         lipid_kernel + lipid_lambda * np.eye(len(lipid_kernel)), left.T
     ).T
+
+
+def predict_kronrls(
+    coefficients: np.ndarray,
+    protein_kernel_query_train: np.ndarray,
+    lipid_kernel_train_query: np.ndarray,
+) -> np.ndarray:
+    """Score (protein, lipid) pairs whose protein and/or lipid need not have been in
+    training. `coefficients` is `two_step_kronrls`'s return value, `A = (Kp+lambda_p I)^-1
+    Y (Kl+lambda_l I)^-1`. `protein_kernel_query_train` is `[n_query_proteins,
+    n_train_proteins]`, `lipid_kernel_train_query` is `[n_train_lipids,
+    n_query_lipids]`; querying exactly the training entities (i.e. passing the training
+    kernels themselves) recovers the fitted training-block scores, `Kp @ A @ Kl`.
+    """
+    return protein_kernel_query_train @ coefficients @ lipid_kernel_train_query
 
 
 def pair_prediction_frame(
