@@ -381,7 +381,16 @@ def explicit_lipid_features(table: pd.DataFrame) -> pd.DataFrame:
     species_rows = table.assign(_lipid_class=classes).drop_duplicates("FullIdentityOfLipid")
     all_classes = sorted(classes.unique())
     for _, row in species_rows.iterrows():
-        candidates = [_candidate_explicit_features(smiles) for smiles in _candidate_smiles(row["SmileGlobal"])]
+        # SmileGlobal is "0" (a stand-in, not a structure) for about a third of the
+        # catalog's species; SmileFragment carries a real, detailed candidate SMILES
+        # set for those same rows. Fall back to it rather than let RDKit fail on the
+        # placeholder and every downstream feature degrade to its mol-is-None default.
+        smiles_source = (
+            row["SmileGlobal"]
+            if str(row["SmileGlobal"]).strip() not in ("", "0")
+            else row["SmileFragment"]
+        )
+        candidates = [_candidate_explicit_features(smiles) for smiles in _candidate_smiles(smiles_source)]
         if not candidates:
             raise ValueError(f"{row['FullIdentityOfLipid']}: empty SmileGlobal candidate set")
         candidate_table = pd.DataFrame(candidates)
@@ -399,6 +408,14 @@ def explicit_lipid_features(table: pd.DataFrame) -> pd.DataFrame:
             max_carbon = mean_carbon
         if not np.isfinite(total_unsaturation):
             total_unsaturation = values["carbon_double_bond_count"]
+        # The reverse gap: when every candidate's SMILES fails to parse (RDKit
+        # returns no molecule), _candidate_explicit_features leaves its own
+        # "carbon_double_bond_count" NaN and nothing here ever patched THAT field
+        # back -- only total_unsaturation got a fallback. Chain-composition text
+        # (species name / ChainFragments) is available for nearly every species even
+        # when its structure isn't, so borrow the same count in the other direction.
+        if not np.isfinite(values["carbon_double_bond_count"]):
+            values["carbon_double_bond_count"] = total_unsaturation
         values.update(
             {
                 "chain_count": chain_count,
@@ -473,12 +490,32 @@ def cosine_kernel(
 KERNEL_FUNCTIONS = {"rbf": rbf_kernel, "linear": linear_kernel, "cosine": cosine_kernel}
 
 
+def _require_finite(features: pd.DataFrame, entities: list[str]) -> None:
+    """A NaN/inf feature value does not stay local: standardize_from_train's z-score
+    turns it into a NaN row of the kernel, and a single NaN anywhere in a kernel makes
+    np.linalg.solve return an all-NaN result for the WHOLE block, not just that one
+    entity's pair -- see kronrls_baseline.py's --lipid_kernel=explicit failure, one
+    species with an unparseable SmileGlobal ("0") silently NaN-ed every AUC in every
+    family/seed/lambda combination. Fail loud here instead, naming the entity.
+    """
+    subset = features.loc[list(entities)]
+    finite = np.isfinite(subset.to_numpy(dtype=float))
+    bad_rows = subset.index[~finite.all(axis=1)]
+    if len(bad_rows):
+        bad_columns = subset.columns[~finite.all(axis=0)].tolist()
+        raise ValueError(
+            f"non-finite feature values for {list(bad_rows)} (columns: {bad_columns}); "
+            "fix or drop these entities before building the kernel -- see _require_finite"
+        )
+
+
 def _feature_kernel(
     kernel_type: str,
     features: pd.DataFrame,
     entities: list[str],
     train_names: list[str] | tuple[str, ...],
 ) -> np.ndarray:
+    _require_finite(features, entities)
     try:
         function = KERNEL_FUNCTIONS[kernel_type]
     except KeyError:
@@ -527,7 +564,18 @@ def _kernel_from_index(
     if missing:
         raise ValueError(f"{source} is missing entities: {missing}")
     positions = [index[name] for name in entities]
-    return matrix[np.ix_(positions, positions)]
+    kernel = matrix[np.ix_(positions, positions)]
+    if not np.isfinite(kernel).all():
+        bad = sorted(
+            entities[row] for row in range(len(entities))
+            if not np.isfinite(kernel[row]).all()
+        )
+        raise ValueError(
+            f"{source}: non-finite kernel values involving {bad}; a NaN/inf here "
+            "would silently poison the whole solve for every entity, not just "
+            "these -- fix the source matrix before using it"
+        )
+    return kernel
 
 
 def build_protein_kernel(

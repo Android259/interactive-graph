@@ -48,8 +48,11 @@ import pandas as pd
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, PROJECT_ROOT)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
+from dataloader.sampler import lipid_class_series  # noqa: E402
+from null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
 from training.pair_baseline_common import (  # noqa: E402
     aggregate_pair_labels,
     auc_p_vs_u,
@@ -74,8 +77,14 @@ def _score_pool(
     lipid_index: dict[str, int],
     train_proteins: list[str],
     train_lipids: list[str],
-) -> float:
-    """AUC of one held-out pool, scored via the out-of-sample Kron-RLS extension."""
+) -> tuple[float, pd.DataFrame]:
+    """Score one held-out pool via the out-of-sample Kron-RLS extension.
+
+    Returns the pooled PU-AUC and the pool with a `_score` column attached, so a
+    caller can also run the within-protein / within-lipid-class / pair diagnostics
+    (per_protein_auc, per_lipid_auc, per_pair_auc, all from analysis/null_model.py)
+    on the same scores without re-solving the out-of-sample extension.
+    """
     query_proteins = sorted(pool["LTPProtein"].unique())
     query_lipids = sorted(pool["FullIdentityOfLipid"].unique())
     kp_query_train = protein_kernel[
@@ -99,7 +108,8 @@ def _score_pool(
             for p, l in zip(pool["LTPProtein"], pool["FullIdentityOfLipid"])
         ]
     )
-    return auc_p_vs_u(pool["Interaction"].to_numpy(), score_column)
+    scored_pool = pool.assign(_score=score_column)
+    return auc_p_vs_u(pool["Interaction"].to_numpy(), score_column), scored_pool
 
 
 def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.Namespace) -> dict:
@@ -168,7 +178,7 @@ def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.N
         coefficients = two_step_kronrls(
             kp_train, kl_train, labels.to_numpy(), protein_lambda, lipid_lambda
         )
-        valid_auc = _score_pool(
+        valid_auc, _ = _score_pool(
             valid_pool, coefficients, protein_kernel, protein_index,
             lipid_kernel, lipid_index, train_proteins, train_lipids,
         )
@@ -181,10 +191,21 @@ def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.N
             best = candidate
     valid_auc, protein_lambda, lipid_lambda, coefficients = best
 
-    test_auc = _score_pool(
+    test_auc, test_scored = _score_pool(
         test_pool, coefficients, protein_kernel, protein_index,
         lipid_kernel, lipid_index, train_proteins, train_lipids,
     )
+
+    # Pooled test_auc mixes each row's own signal with whatever the protein's and
+    # the lipid class' own marginals contribute -- the within-group and two-way-
+    # residual diagnostics below (same functions already used for the network and
+    # the chemistry null model, see analysis/null_model.py) separate those out.
+    test_scored = test_scored.assign(lipid_class=lipid_class_series(test_scored))
+    protein_auc, n_proteins = per_protein_auc(test_scored, test_scored["_score"].to_numpy())
+    lipid_auc, n_lipid_classes = per_lipid_auc(test_scored, test_scored["_score"].to_numpy())
+    pair_auc = per_pair_auc(test_scored, test_scored["_score"].to_numpy())
+    n_pair_groups = int(test_scored["lipid_class"].nunique())
+
     return {
         "family": family,
         "seed": seed,
@@ -192,6 +213,12 @@ def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.N
         "lipid_lambda": lipid_lambda,
         "valid_auc": valid_auc,
         "test_auc": test_auc,
+        "pair_auc": pair_auc,
+        "n_pair_groups": n_pair_groups,
+        "per_protein_auc": protein_auc,
+        "n_proteins": n_proteins,
+        "per_lipid_auc": lipid_auc,
+        "n_lipid_classes": n_lipid_classes,
         "train_proteins": len(train_proteins),
         "train_lipids": len(train_lipids),
         "valid_rows": len(valid_pool),
@@ -217,11 +244,22 @@ def print_report(report: pd.DataFrame, args: argparse.Namespace) -> None:
     )
     print(report.to_string(index=False))
     print()
-    summary = report.groupby("family")[["valid_auc", "test_auc"]].agg(["mean", "std"])
+    summary = report.groupby("family")[
+        ["valid_auc", "test_auc", "pair_auc", "per_protein_auc", "per_lipid_auc"]
+    ].agg(["mean", "std"])
     print(summary)
+    print()
+    group_sizes = report.groupby("family")[
+        ["n_pair_groups", "n_proteins", "n_lipid_classes"]
+    ].mean()
+    print(group_sizes)
     print(
         f"\noverall test AUC: mean={report['test_auc'].mean():.4f} "
         f"std={report['test_auc'].std():.4f}"
+    )
+    print(
+        f"overall pair AUC: mean={report['pair_auc'].mean():.4f} "
+        f"std={report['pair_auc'].std():.4f}"
     )
 
 

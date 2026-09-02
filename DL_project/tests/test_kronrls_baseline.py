@@ -14,9 +14,13 @@ import pytest
 from dataloader.dataset_source import interaction_csv_path
 from training.pair_baseline_common import (
     DEFAULT_CSV,
+    _feature_kernel,
+    _kernel_from_index,
+    _require_finite,
     build_lipid_kernel,
     build_protein_kernel,
     cosine_kernel,
+    explicit_lipid_features,
     linear_kernel,
     load_feature_table,
     load_precomputed_kernel,
@@ -215,6 +219,83 @@ def test_linear_and_cosine_kernel_are_symmetric():
     for kernel_function in (linear_kernel, cosine_kernel):
         kernel = kernel_function(features, names, names, names)
         assert np.allclose(kernel, kernel.T)
+
+
+def test_require_finite_passes_for_clean_features():
+    features = pd.DataFrame({"dim0": [0.0, 1.0]}, index=["A", "B"])
+    _require_finite(features, ["A", "B"])  # must not raise
+
+
+def test_require_finite_rejects_nan_and_names_the_entity():
+    # This is the exact failure mode that once silently NaN-ed an entire Kron-RLS
+    # solve: one entity with a bad feature value (e.g. an unparseable SmileGlobal)
+    # must be reported by name, not allowed to poison every other entity's kernel.
+    features = pd.DataFrame({"dim0": [0.0, np.nan]}, index=["A", "B"])
+    with pytest.raises(ValueError, match="B"):
+        _require_finite(features, ["A", "B"])
+
+
+def test_require_finite_rejects_inf():
+    features = pd.DataFrame({"dim0": [0.0, np.inf]}, index=["A", "B"])
+    with pytest.raises(ValueError, match="B"):
+        _require_finite(features, ["A", "B"])
+
+
+def test_feature_kernel_rejects_nan_before_building_a_kernel():
+    features = pd.DataFrame({"dim0": [0.0, np.nan, 2.0]}, index=["A", "B", "C"])
+    with pytest.raises(ValueError, match="B"):
+        _feature_kernel("rbf", features, ["A", "B", "C"], ["A", "C"])
+
+
+def test_kernel_from_index_rejects_non_finite_kernel_values():
+    matrix = np.array([[1.0, np.nan], [np.nan, 1.0]])
+    index = {"A": 0, "B": 1}
+    with pytest.raises(ValueError, match="A"):
+        _kernel_from_index(matrix, index, ["A", "B"], "test-source")
+
+
+def test_explicit_lipid_features_backfills_double_bond_count_from_chain_text():
+    # Reproduces the real failure: a species whose only candidate SmileGlobal is an
+    # unparseable placeholder ("0") still has a real head-group name and chain
+    # composition (34:1 = one double bond), which _chain_composition can read even
+    # though RDKit cannot. carbon_double_bond_count must not stay NaN in that case --
+    # ~90 real species in the project's own table hit exactly this before the fix.
+    table = pd.DataFrame(
+        {
+            "FullIdentityOfLipid": ["Phosphatidylethanolamine (34:1)"],
+            "SmileGlobal": ["0"],
+            "SmileFragment": ["0"],  # placeholder here too -- no real structure at all
+            "ChainFragments": ["34:1"],
+            "Lipid": ["Phosphatidylethanolamine (34:1)"],
+        }
+    )
+    features = explicit_lipid_features(table)
+    value = features.loc["Phosphatidylethanolamine (34:1)", "carbon_double_bond_count"]
+    assert np.isfinite(value)
+    assert value == pytest.approx(1.0)
+
+
+def test_explicit_lipid_features_falls_back_to_smile_fragment_when_global_is_a_placeholder():
+    # SmileGlobal == "0" is a stand-in for "no resolved structure", not a real
+    # molecule; SmileFragment carries the real candidate structure for the same rows
+    # in the project's own table. The placeholder must not be handed to RDKit when a
+    # real structure sits right next to it in SmileFragment.
+    table = pd.DataFrame(
+        {
+            "FullIdentityOfLipid": ["Phosphatidylglycerol (30:1)"],
+            "SmileGlobal": ["0"],
+            "SmileFragment": ["COP(=O)(O)OCC(O)CO"],
+            "ChainFragments": [""],
+            "Lipid": ["Phosphatidylglycerol (30:1)"],
+        }
+    )
+    features = explicit_lipid_features(table)
+    row = features.loc["Phosphatidylglycerol (30:1)"]
+    # phosphate_count is a plain substring count on the SMILES actually used ("P(" in
+    # SmileFragment vs. none in the literal "0") -- it can only be 1 if the fallback
+    # to SmileFragment actually happened, not just the separate chain-text backfill.
+    assert row["phosphate_count"] == pytest.approx(1.0)
+    assert np.isfinite(row["carbon_double_bond_count"])
 
 
 def test_cosine_kernel_self_similarity_is_one():
