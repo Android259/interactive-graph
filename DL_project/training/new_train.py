@@ -48,6 +48,7 @@ from architecture.mlp_utils import (
 )
 from architecture.loss import (
     GRAB_loss,
+    GroupDROState,
     Non_Negative_Positive_Unlabeled_loss,
     focal_loss,
     get_pu_loss_diagnostics,
@@ -58,6 +59,7 @@ from architecture.loss import (
 from dataloader.sampler import ClassBalancedBatchSampler
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.Dataloader import PLIDataset
+from dataloader.protein_graph_builder import FAMILY_NAMES
 from candidate_averaging import (
     CandidateAccumulator,
     average_candidate_predictions,
@@ -187,6 +189,28 @@ if conf.logit_adjustment:
         class_counts, tau=conf.logit_adjustment_tau
     ).to(device)
     print(f"logit adjustment bias : {logit_adjustment_bias_tensor.detach().cpu().tolist()}")
+
+group_dro_state = None
+if conf.group_dro:
+    family_train_counts = torch.tensor(
+        [
+            float((train_dataset.csvtrain["ProteinDomain"] == name).sum())
+            for name in FAMILY_NAMES
+        ],
+        dtype=torch.float32,
+    ).to(device)
+    group_dro_state = GroupDROState(
+        family_train_counts,
+        step_size=conf.group_dro_step_size,
+        group_adj=conf.group_dro_adj,
+    )
+    print(
+        "group DRO train counts : "
+        + ", ".join(
+            f"{name}={int(count)}"
+            for name, count in zip(FAMILY_NAMES, family_train_counts.tolist())
+        )
+    )
 
 
 loader_kwargs = {
@@ -1161,15 +1185,22 @@ def epoch(idx,counttrain,countval):
                         )
                     else:
                         los_unred = F.cross_entropy(loss_logits, interaction_labels.long(), weight=class_weights, reduction="none")
-                    # The None branch is the same number, not an approximation of it:
-                    # see batch_sample_weights. It matches what focal_loss, GRAB_loss and
-                    # the PU loss already do when handed no weights.
-                    los = (
-                        los_unred.mean()
-                        if sample_weights is None
-                        else (los_unred * sample_weights).sum()
-                        / sample_weights.sum().clamp_min(1e-8)
-                    )
+                    if conf.group_dro:
+                        # Group DRO's own worst-family weighting replaces the plain (or
+                        # tanimoto-weighted) batch mean below; sample_weights is computed
+                        # above unconditionally but not read on this path.
+                        family_index = prot.family.view(sample_count, -1).argmax(dim=1)
+                        los = group_dro_state.step(los_unred, family_index)
+                    else:
+                        # The None branch is the same number, not an approximation of it:
+                        # see batch_sample_weights. It matches what focal_loss, GRAB_loss and
+                        # the PU loss already do when handed no weights.
+                        los = (
+                            los_unred.mean()
+                            if sample_weights is None
+                            else (los_unred * sample_weights).sum()
+                            / sample_weights.sum().clamp_min(1e-8)
+                        )
                 else:
                     los=conf.loss(outl,interaction_labels.long())
             # Batch-level logging is temporarily disabled; keep it for re-enabling.
@@ -1276,6 +1307,14 @@ def epoch(idx,counttrain,countval):
                 f"mean={pu_diag['sum_negative_loss'] / pu_diag['calls']:.6f}, "
                 f"max={pu_diag['max_negative_loss']:.6f}]"
             )
+    if conf.group_dro:
+        print(
+            "group DRO weights : "
+            + ", ".join(
+                f"{name}={weight:.4f}"
+                for name, weight in zip(FAMILY_NAMES, group_dro_state.probs.detach().cpu().tolist())
+            )
+        )
     model.eval()
     valid_stats = {
         "TP": 0,

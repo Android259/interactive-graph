@@ -4,7 +4,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import dataloader.pair_descriptor_cache as pair_descriptor_cache
 from dataloader.pair_descriptor_cache import (
+    _compute_one,
+    _previous_cache_values,
     build_pair_descriptor_cache,
     cache_path,
     load_pair_descriptor_cache,
@@ -149,6 +152,89 @@ def test_unseen_candidate_falls_back_to_direct_computation(fixture_csv, csv_path
     direct = chain_lengths_by_row(extended, isomeric=False)
     assert cached == direct
     assert cached[-1] != [None]
+
+
+def test_compute_one_reuses_seeded_measures_and_only_computes_missing_ones():
+    # A new _MEASURES entry (any future descriptor) must not force re-embedding a
+    # measure that is already correct in whatever cache existed before -- otherwise
+    # adding ONE cheap descriptor pays for every existing expensive one all over
+    # again, every single time.
+    key = "CCO"  # ethanol: trivially fast even if genuinely (re)computed
+    seed_entry = {
+        "unsaturation": 999.0, "hbond": 999.0, "heavy_atoms": 999.0, "tail_count": 999.0,
+        "radius_of_gyration": 999.0, "asphericity": 999.0, "molecular_volume": 999.0,
+        "rotatable_fraction": 999.0,
+        # npr1/npr2 deliberately absent -- simulates a cache built before they existed.
+    }
+    _, entry = _compute_one(key, seed_entry)
+    for measure in seed_entry:
+        assert entry[measure] == 999.0, f"{measure} should have been reused from the seed"
+    assert entry["npr1"] is not None and entry["npr1"] != 999.0
+    assert entry["npr2"] is not None and entry["npr2"] != 999.0
+
+
+def test_compute_one_computes_everything_fresh_without_a_seed():
+    key = "CCO"
+    _, entry = _compute_one(key, seed_entry=None)
+    assert set(entry) == {"chain", *pair_descriptor_cache._MEASURES}
+    assert all(value is not None for value in entry.values())
+
+
+def test_previous_cache_values_reads_most_recent_file_regardless_of_fingerprint(tmp_path):
+    # Simulates a code change: the OLD file's fingerprint suffix differs from
+    # whatever the CURRENT code would compute, which is exactly the case this
+    # function must still find a seed for (a fingerprint MATCH would mean there is
+    # nothing stale to seed from in the first place).
+    old_path = tmp_path / "pair_descriptor_cache_deterministic_oldfingerprint.json"
+    old_path.write_text(json.dumps({"values": {"CCO": {"unsaturation": 0.0}}}))
+    assert _previous_cache_values(tmp_path, isomeric=False) == {"CCO": {"unsaturation": 0.0}}
+
+    import time
+
+    time.sleep(0.01)
+    new_path = tmp_path / "pair_descriptor_cache_deterministic_newerfingerprint.json"
+    new_path.write_text(json.dumps({"values": {"CCO": {"unsaturation": 1.0}}}))
+    # The most recently modified file wins, not filename order.
+    assert _previous_cache_values(tmp_path, isomeric=False) == {"CCO": {"unsaturation": 1.0}}
+
+
+def test_previous_cache_values_empty_with_no_existing_file(tmp_path):
+    assert _previous_cache_values(tmp_path, isomeric=False) == {}
+
+
+def test_build_pair_descriptor_cache_seeds_expensive_measures_across_a_code_change(
+    fixture_csv, csv_path, clean_cache_files, monkeypatch
+):
+    # First build under "old" code: pretend npr1/npr2 do not exist yet. Patched on
+    # dataloader.pair_descriptor_cache itself (the name _compute_one actually reads,
+    # bound at import time from dataloader.pair_descriptors) -- patching the
+    # pair_descriptors module's own attribute would not be seen here.
+    original_measures = dict(pair_descriptor_cache._MEASURES)
+    monkeypatch.setattr(
+        pair_descriptor_cache, "_MEASURES",
+        {k: v for k, v in original_measures.items() if k not in ("npr1", "npr2")},
+    )
+    build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
+    old_cache = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
+    old_values = old_cache["values"]
+
+    # Now "add" npr1/npr2 back (a code change) and rebuild -- every OTHER measure's
+    # value must survive unchanged (reused, not re-embedded), and npr1/npr2 must be
+    # freshly present.
+    monkeypatch.setattr(pair_descriptor_cache, "_MEASURES", original_measures)
+    build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
+    new_cache = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
+    new_values = new_cache["values"]
+
+    assert set(new_values) == set(old_values)
+    for key, old_entry in old_values.items():
+        new_entry = new_values[key]
+        for measure in old_entry:
+            assert new_entry[measure] == old_entry[measure], (
+                f"{measure} for {key} changed across a mere code-fingerprint bump"
+            )
+        assert new_entry["npr1"] is not None
+        assert new_entry["npr2"] is not None
 
 
 def test_json_payload_has_no_non_serialisable_values(fixture_csv, csv_path, clean_cache_files):

@@ -3,9 +3,7 @@
 ## Summary (analysis/summarize_label.py)
 
 ```
-conda is not available in this environment.
-Could not activate Kalinin_project_LP (create it with: source /home/andrei/DL_project_5/DL_project/scripts/tools/enter_project_env.sh); using current python3: /usr/bin/python3
-No rows found with label='geometric_edge_mlp_protgeom8_hbond_match' in /home/andrei/DL_project_5/DL_project/metrics_summary.csv
+No rows found with label='geometric_edge_mlp_protgeom8_hbond_match' in /home/kalinina/ltp/DL_project/metrics_summary.csv
 (summarize_label.py exited non-zero; output above, if any, is what it printed before failing)
 ```
 

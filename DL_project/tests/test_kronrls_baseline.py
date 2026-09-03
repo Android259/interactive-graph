@@ -211,6 +211,58 @@ def test_build_lipid_kernel_rejects_unknown_kind():
         build_lipid_kernel("not-a-kind", table, ["l1"], ["l1"])
 
 
+def test_build_lipid_kernel_explicit_subset_restricts_to_requested_descriptors():
+    # The lipid-side mirror of build_protein_kernel's pocket_subset -- picking a
+    # specific explicit-descriptor combination (e.g. proposal 9's whole-molecule set)
+    # instead of every explicit column diluted into one kernel at once.
+    table = pd.DataFrame(
+        {
+            "FullIdentityOfLipid": ["cholesterol", "ethanol"],
+            "SmileGlobal": [
+                "CC(C)CCCC(C)C1CCC2C1(CCC3C2CC=C4C3(CCC(C4)O)C)C",
+                "CCO",
+            ],
+            "SmileFragment": ["", ""],
+            "ChainFragments": ["", ""],
+            "Lipid": ["cholesterol", "ethanol"],
+        }
+    )
+    names = ["cholesterol", "ethanol"]
+    kernel, index = build_lipid_kernel(
+        "explicit_subset", table, names, names,
+        kernel_type="linear", descriptor_names=["ring_count", "logp"],
+    )
+    assert kernel.shape == (2, 2)
+    assert index == {"cholesterol": 0, "ethanol": 1}
+
+
+def test_build_lipid_kernel_explicit_subset_rejects_unknown_descriptor_name():
+    table = _candidate_explicit_features_table()
+    with pytest.raises(ValueError, match="not_a_real_descriptor"):
+        build_lipid_kernel(
+            "explicit_subset", table, ["l1"], ["l1"],
+            descriptor_names=["not_a_real_descriptor"],
+        )
+
+
+def test_build_lipid_kernel_explicit_subset_requires_descriptor_names():
+    table = _candidate_explicit_features_table()
+    with pytest.raises(ValueError, match="descriptor_names is required"):
+        build_lipid_kernel("explicit_subset", table, ["l1"], ["l1"])
+
+
+def _candidate_explicit_features_table():
+    return pd.DataFrame(
+        {
+            "FullIdentityOfLipid": ["l1"],
+            "SmileGlobal": ["CCO"],
+            "SmileFragment": [""],
+            "ChainFragments": [""],
+            "Lipid": ["l1"],
+        }
+    )
+
+
 def test_linear_and_cosine_kernel_are_symmetric():
     features = pd.DataFrame(
         {"dim0": [0.0, 1.0, 5.0], "dim1": [2.0, 1.0, -1.0]}, index=["A", "B", "C"]
@@ -296,6 +348,57 @@ def test_explicit_lipid_features_falls_back_to_smile_fragment_when_global_is_a_p
     # to SmileFragment actually happened, not just the separate chain-text backfill.
     assert row["phosphate_count"] == pytest.approx(1.0)
     assert np.isfinite(row["carbon_double_bond_count"])
+
+
+def test_explicit_lipid_features_include_whole_molecule_rdkit_descriptors():
+    # Proposal 9: logp/tpsa/molar_refractivity/rotatable_bond_count/aromatic_ring_count/
+    # ring_count are the lipid-side counterparts of the protein pocket's family_neutral
+    # axes, added to the same explicit descriptor table the "explicit" lipid kernel reads.
+    # Cholesterol: 4 fused, non-aromatic rings, one real double bond, no rotatable ring bonds.
+    cholesterol_smiles = "CC(C)CCCC(C)C1CCC2C1(CCC3C2CC=C4C3(CCC(C4)O)C)C"
+    table = pd.DataFrame(
+        {
+            "FullIdentityOfLipid": ["Cholesterol"],
+            "SmileGlobal": [cholesterol_smiles],
+            "SmileFragment": [cholesterol_smiles],
+            "ChainFragments": [""],
+            "Lipid": ["Cholesterol"],
+        }
+    )
+    features = explicit_lipid_features(table)
+    row = features.loc["Cholesterol"]
+    for name in (
+        "logp", "tpsa", "molar_refractivity", "rotatable_bond_count",
+        "aromatic_ring_count", "ring_count",
+    ):
+        assert name in features.columns
+        assert np.isfinite(row[name])
+    assert row["ring_count"] == pytest.approx(4.0)
+    assert row["aromatic_ring_count"] == pytest.approx(0.0)
+    assert row["logp"] > 5.0
+
+
+def test_explicit_lipid_features_include_npr_shape_descriptors():
+    # npr1/npr2 (Sauer & Schwarz 2003): the 3D-conformer-ensemble shape ratios, the
+    # lipid-side counterpart of pocket_elongation/pocket_flatness -- a straight
+    # saturated fatty acid should read as rod-like (npr1 near 0, npr2 near 1), not the
+    # 2D-topology tail_count/chain proxy this project used before.
+    stearic_acid_smiles = "CCCCCCCCCCCCCCCCCC(=O)O"
+    table = pd.DataFrame(
+        {
+            "FullIdentityOfLipid": ["Stearic acid"],
+            "SmileGlobal": [stearic_acid_smiles],
+            "SmileFragment": [stearic_acid_smiles],
+            "ChainFragments": [""],
+            "Lipid": ["Stearic acid"],
+        }
+    )
+    features = explicit_lipid_features(table)
+    row = features.loc["Stearic acid"]
+    assert "npr1" in features.columns and "npr2" in features.columns
+    assert np.isfinite(row["npr1"]) and np.isfinite(row["npr2"])
+    assert 0.0 <= row["npr1"] <= 0.3
+    assert row["npr2"] > 0.8
 
 
 def test_cosine_kernel_self_similarity_is_one():

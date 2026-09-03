@@ -228,6 +228,81 @@ def Non_Negative_Positive_Unlabeled_loss(
     return positive_risk + negative_risk
 
 
+class GroupDROState:
+    """Running per-family adversarial weights for --group_dro (Sagawa et al., 2019).
+
+    Plain mean-of-batch training lets whichever families are already easy (large,
+    well-separated) dominate the gradient, since a mean does not know some rows
+    are LBP_BPI_CETP and some are CRAL-TRIO. Group DRO turns the batch loss into
+    a moving worst-group weighted mean instead: after every batch the weight on
+    each family is multiplied by exp(step_size * that family's batch loss) and
+    renormalised, so a family the model is currently doing worst on comes to
+    dominate the objective rather than being averaged away.
+
+    group_adj (>0) implements the paper's "generalization adjustment": before the
+    exp() update (never in the backpropagated loss itself) each family's batch
+    loss has group_adj / sqrt(train_count) added to it. Group DRO's minimax
+    pressure otherwise chases whichever family's batch loss is noisiest, which on
+    this dataset means the smallest families (GLTP/LBP_BPI_CETP: 2 proteins,
+    scp2/START/IP_trans: 3) -- the adjustment discounts a small family's estimate
+    of its own loss in proportion to how little data that estimate rests on, so
+    the minimax weight moves on a family actually being harder, not on it having
+    a noisier batch-loss estimate. This is the "усиленная регуляризация" half of
+    the proposal: without it, group_adj=0.0 recovers plain group DRO.
+    """
+
+    def __init__(self, group_counts, step_size=0.01, group_adj=0.0):
+        if group_counts.dim() != 1:
+            raise ValueError("group_dro group_counts must be 1-D")
+        if step_size <= 0.0:
+            raise ValueError("group_dro step_size must be positive")
+        if group_adj < 0.0:
+            raise ValueError("group_dro group_adj must be non-negative")
+        self.group_counts = group_counts.float()
+        self.step_size = step_size
+        self.group_adj = group_adj
+        self.probs = torch.ones_like(self.group_counts) / self.group_counts.numel()
+
+    def step(self, per_sample_loss, group_index):
+        """Fold one batch's per-sample losses into the robust batch loss.
+
+        per_sample_loss: (batch,) unreduced loss, one value per row.
+        group_index: (batch,) int, this row's family index into group_counts.
+        Returns the differentiable robust loss to call .backward() on. Families
+        absent from this batch keep their existing weight (their batch loss is
+        treated as 0 for the update, and exp(step_size * 0) == 1) and contribute
+        nothing to the returned loss.
+        """
+        num_groups = self.probs.shape[0]
+        device = per_sample_loss.device
+        group_index = group_index.to(device).long()
+        if group_index.shape != per_sample_loss.shape:
+            raise ValueError(
+                "group_dro group_index must have the same shape as per_sample_loss, "
+                f"got {tuple(group_index.shape)} vs {tuple(per_sample_loss.shape)}"
+            )
+        if (group_index < 0).any() or (group_index >= num_groups).any():
+            raise ValueError("group_dro group_index out of range")
+
+        group_count = torch.zeros(num_groups, device=device)
+        group_count.scatter_add_(0, group_index, torch.ones_like(per_sample_loss))
+        present = group_count > 0
+
+        group_loss = torch.zeros(num_groups, device=device, dtype=per_sample_loss.dtype)
+        group_loss = group_loss.scatter_add(0, group_index, per_sample_loss)
+        group_loss = torch.where(present, group_loss / group_count.clamp_min(1.0), group_loss)
+
+        with torch.no_grad():
+            adjusted = group_loss.detach().clone()
+            if self.group_adj > 0.0:
+                adjusted = adjusted + self.group_adj / self.group_counts.to(device).clamp_min(1.0).sqrt()
+            adjusted = torch.where(present, adjusted, torch.zeros_like(adjusted))
+            self.probs = self.probs.to(device) * torch.exp(self.step_size * adjusted)
+            self.probs = self.probs / self.probs.sum()
+
+        return (group_loss * self.probs).sum()
+
+
 def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None, protein_ids=None):
     """RankNet-style pairwise logistic loss: a smooth surrogate for AUC, not for BA.
 

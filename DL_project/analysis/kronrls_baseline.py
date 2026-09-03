@@ -16,8 +16,8 @@ project's other non-neural baseline (analysis/null_model.py).
 Both kernels are pluggable and accept arbitrary externally supplied vectors, not just
 the two built-in descriptor sets:
 
-    --protein_kernel {pocket13,pocket23,custom_features,custom_kernel}
-    --lipid_kernel   {tanimoto,explicit,custom_features,custom_kernel}
+    --protein_kernel {pocket13,pocket23,pocket_subset,custom_features,custom_kernel}
+    --lipid_kernel   {tanimoto,explicit,explicit_subset,custom_features,custom_kernel}
 
 custom_features takes a CSV (id column + numeric feature columns of any kind) and
 turns it into a kernel via --protein_kernel_type/--lipid_kernel_type (rbf/linear/
@@ -32,6 +32,9 @@ this data, not a reason to hard-code any one feature source.
     python3 analysis/kronrls_baseline.py --split_mode single --protein_kernel pocket23
     python3 analysis/kronrls_baseline.py --lipid_kernel custom_features \\
         --lipid_features my_lipid_vectors.csv --lambda_grid 0.01,0.1,1,10,100
+    python3 analysis/kronrls_baseline.py --lipid_kernel explicit_subset \\
+        --lipid_descriptor_names=logp,tpsa,molar_refractivity,rotatable_bond_count,\\
+aromatic_ring_count,ring_count --lambda_grid 0.01,0.1,1,10,100
 
 Reads only. Fits a closed-form regression in memory each run; writes nothing unless
 --out is given.
@@ -153,6 +156,7 @@ def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.N
         all_lipids,
         train_lipids,
         kernel_type=args.lipid_kernel_type,
+        descriptor_names=args.lipid_descriptor_names,
         features_path=args.lipid_features,
         kernel_path=args.lipid_kernel_matrix,
         names_path=args.lipid_kernel_names,
@@ -242,17 +246,19 @@ def print_report(report: pd.DataFrame, args: argparse.Namespace) -> None:
         f"protein={args.protein_kernel}/{args.protein_kernel_type}, "
         f"lipid={args.lipid_kernel}/{args.lipid_kernel_type}) ===\n"
     )
-    print(report.to_string(index=False))
-    print()
+    if args.show_per_block:
+        print(report.to_string(index=False))
+        print()
     summary = report.groupby("family")[
         ["valid_auc", "test_auc", "pair_auc", "per_protein_auc", "per_lipid_auc"]
     ].agg(["mean", "std"])
     print(summary)
     print()
-    group_sizes = report.groupby("family")[
-        ["n_pair_groups", "n_proteins", "n_lipid_classes"]
-    ].mean()
-    print(group_sizes)
+    if args.show_per_block:
+        group_sizes = report.groupby("family")[
+            ["n_pair_groups", "n_proteins", "n_lipid_classes"]
+        ].mean()
+        print(group_sizes)
     print(
         f"\noverall test AUC: mean={report['test_auc'].mean():.4f} "
         f"std={report['test_auc'].std():.4f}"
@@ -318,11 +324,21 @@ def main() -> None:
     )
     parser.add_argument(
         "--lipid_kernel", default="tanimoto",
-        choices=("tanimoto", "explicit", "custom_features", "custom_kernel"),
+        choices=("tanimoto", "explicit", "explicit_subset", "custom_features", "custom_kernel"),
     )
     parser.add_argument(
         "--lipid_kernel_type", default="rbf", choices=("rbf", "linear", "cosine"),
-        help="how custom_features (or explicit) vectors become a kernel",
+        help="how custom_features (or explicit/explicit_subset) vectors become a kernel",
+    )
+    parser.add_argument(
+        "--lipid_descriptor_names", type=lambda text: [n for n in text.split(",") if n],
+        default=None,
+        help=(
+            "comma-separated explicit lipid descriptor names, for "
+            "--lipid_kernel=explicit_subset -- any column training.pair_baseline_common."
+            "explicit_lipid_features produces, e.g. the whole-molecule set: "
+            "logp,tpsa,molar_refractivity,rotatable_bond_count,aromatic_ring_count,ring_count"
+        ),
     )
     parser.add_argument(
         "--lipid_features",
@@ -347,6 +363,10 @@ def main() -> None:
         ),
     )
     parser.add_argument("--out", help="write the per-block report as JSON records to this path")
+    parser.add_argument(
+        "--show_per_block", action="store_true",
+        help="also print the full per-family/per-seed row table (hidden by default)",
+    )
     args = parser.parse_args()
 
     csv_path = args.csv or interaction_csv_path(os.path.join(PROJECT_ROOT, "data"))

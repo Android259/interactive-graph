@@ -651,8 +651,54 @@ def rotatable_fraction(smiles):
     return float(rdMolDescriptors.CalcNumRotatableBonds(mol)) / total_bonds
 
 
+def _median_over_conformers(smiles, per_conformer_fn):
+    """Same 10-conformer ensemble as _mean_over_conformers, reduced by MEDIAN instead
+    -- npr1/npr2 below live in a bounded triangular shape space (Sauer & Schwarz,
+    2003) where one poorly-optimized outlier conformer's ratio can sit far from the
+    rest, and a median resists that the way a mean does not.
+    """
+    ensemble = _cached_conformer_ensemble(smiles)
+    if ensemble is None:
+        return None
+    mol_h, conf_ids = ensemble
+    values = [per_conformer_fn(mol_h, conf_id) for conf_id in conf_ids]
+    return float(numpy.median(values))
+
+
+def npr1(smiles):
+    """Median normalized principal moment ratio PMI1/PMI3 (Sauer & Schwarz, 2003)
+    over the same 10-conformer ensemble radius_of_gyration/asphericity/
+    molecular_volume already share -- how elongated the lipid's own 3D conformation
+    is, the direct lipid-side counterpart of the pocket's own pocket_elongation
+    (unlike chain/tail_count, which only stand in for shape via carbon-count
+    topology)."""
+    return _median_over_conformers(
+        smiles, lambda mol_h, conf_id: rdMolDescriptors.CalcNPR1(mol_h, confId=conf_id)
+    )
+
+
+def npr2(smiles):
+    """Median normalized principal moment ratio PMI2/PMI3 -- how flat/planar the
+    lipid's own 3D conformation is, the counterpart of pocket_flatness."""
+    return _median_over_conformers(
+        smiles, lambda mol_h, conf_id: rdMolDescriptors.CalcNPR2(mol_h, confId=conf_id)
+    )
+
+
 LIPID_SHAPE_DESCRIPTOR_NAMES = (
     "radius_of_gyration", "asphericity", "molecular_volume", "rotatable_fraction",
+    "npr1", "npr2",
+)
+
+# The five _MEASURES entries whose per-candidate cost is a real 10-conformer
+# ETKDG+MMFF embed, not microseconds -- dataloader/pair_descriptor_cache.py's build
+# routes exactly these through its process pool (_parallel_measures) rather than
+# computing every measure serially; npr1/npr2 share the SAME cached ensemble
+# radius_of_gyration/asphericity/molecular_volume already pay for, so adding them
+# here costs no extra embedding, only two more cheap reductions over conformers
+# already generated.
+CONFORMER_MEASURE_NAMES = (
+    "radius_of_gyration", "asphericity", "molecular_volume", "npr1", "npr2",
 )
 
 
@@ -665,6 +711,8 @@ _MEASURES = {
     "asphericity": asphericity,
     "molecular_volume": molecular_volume,
     "rotatable_fraction": rotatable_fraction,
+    "npr1": npr1,
+    "npr2": npr2,
 }
 
 

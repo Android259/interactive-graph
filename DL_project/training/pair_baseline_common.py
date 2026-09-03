@@ -16,13 +16,19 @@ import numpy as np
 import pandas as pd
 
 from dataloader.dataset_source import interaction_csv_path
+from dataloader.pair_descriptors import npr1 as _compute_npr1
+from dataloader.pair_descriptors import npr2 as _compute_npr2
+from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.sampler import lipid_class_series, lipid_classes_for_holdout
 from preprocessing.audit_lipid_identity_by_smiles import features as smiles_features
 
 try:
     from rdkit import Chem
+    from rdkit.Chem import Descriptors, rdMolDescriptors
 except ModuleNotFoundError:  # pragma: no cover - project environments include RDKit
     Chem = None
+    Descriptors = None
+    rdMolDescriptors = None
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -324,13 +330,48 @@ def _chain_composition(chain_fragments: object, lipid_name: object) -> tuple[flo
     )
 
 
-def _candidate_explicit_features(smiles: str) -> dict[str, float]:
+def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> dict[str, float]:
+    """`npr_cache`, when given, is a dataloader.pair_descriptor_cache load result
+    ({"raw_to_canonical", "values", ...}) -- npr1/npr2 are looked up there first (a
+    disk-cached value skips the 10-conformer ETKDG+MMFF embed entirely), falling
+    back to dataloader.pair_descriptors.npr1/npr2 (which still hits that module's own
+    in-process lru_cache on repeat calls within the same run) exactly as without a
+    cache. Same fallback discipline as dataloader.pair_descriptors.descriptor_values_
+    by_row's own `cache` parameter.
+    """
     parsed = smiles_features(smiles)
     mol = Chem.MolFromSmiles(smiles) if Chem is not None else None
     formal_charge = 0.0
     positive_atoms = 0.0
     negative_atoms = 0.0
     carbon_double_bonds = np.nan
+    # Whole-molecule RDKit descriptors (proposal 9): the lipid-side analogues of the
+    # protein pocket's own family_neutral axes (pocket_volume_per_sasa/apolar_sasa_share/
+    # hydropathy_rim/pocket_extent/aromatic_share) -- logp/tpsa are the two orthogonal
+    # hydrophobicity/polarity axes (a molecule can be apolar overall with polarity
+    # concentrated in one headgroup, which logp alone would not show), molar_refractivity
+    # is the volume/polarizability analogue of pocket_volume_per_sasa, rotatable_bond_count
+    # is how much the lipid can conform to a cavity's shape, and aromatic_ring_count/
+    # ring_count are the direct counterparts of the pocket's own aromatic_share. Left NaN
+    # (not defaulted to 0.0, unlike formal_charge/positive_atoms/negative_atoms above) when
+    # RDKit cannot parse a candidate -- 0.0 is a real logp/tpsa value, not a "no structure"
+    # placeholder, so it must not be fabricated; every species in this project's own table
+    # has at least one parseable candidate (verified), so explicit_lipid_features' per-
+    # species median never actually sees an all-NaN column.
+    logp = np.nan
+    tpsa = np.nan
+    molar_refractivity = np.nan
+    rotatable_bond_count = np.nan
+    aromatic_ring_count = np.nan
+    ring_count = np.nan
+    # npr1/npr2 (Sauer & Schwarz 2003): normalized principal moment ratios off an
+    # actual 3D conformer ensemble, not a 2D-topology proxy -- the direct lipid-side
+    # counterparts of the pocket's own pocket_elongation/pocket_flatness, and the
+    # most direct candidate bilinear partner for pocket shape (unlike chain/tail_count,
+    # which only stand in for shape via carbon-count topology). See npr1/npr2 above
+    # for the median-over-conformers rationale.
+    npr1_value = np.nan
+    npr2_value = np.nan
     if mol is not None:
         charges = [atom.GetFormalCharge() for atom in mol.GetAtoms()]
         formal_charge = float(sum(charges))
@@ -344,6 +385,27 @@ def _candidate_explicit_features(smiles: str) -> dict[str, float]:
                 for bond in mol.GetBonds()
             )
         )
+        logp = float(Descriptors.MolLogP(mol))
+        tpsa = float(Descriptors.TPSA(mol))
+        molar_refractivity = float(Descriptors.MolMR(mol))
+        rotatable_bond_count = float(rdMolDescriptors.CalcNumRotatableBonds(mol))
+        aromatic_ring_count = float(rdMolDescriptors.CalcNumAromaticRings(mol))
+        ring_count = float(rdMolDescriptors.CalcNumRings(mol))
+        cached_entry = None
+        if npr_cache is not None:
+            canonical = npr_cache["raw_to_canonical"].get(smiles)
+            if canonical is not None:
+                cached_entry = npr_cache["values"].get(canonical)
+        if cached_entry is not None and "npr1" in cached_entry and "npr2" in cached_entry:
+            npr1_value = cached_entry["npr1"]
+            npr2_value = cached_entry["npr2"]
+            npr1_value = np.nan if npr1_value is None else npr1_value
+            npr2_value = np.nan if npr2_value is None else npr2_value
+        else:
+            npr1_value = _compute_npr1(smiles)
+            npr2_value = _compute_npr2(smiles)
+            npr1_value = np.nan if npr1_value is None else npr1_value
+            npr2_value = np.nan if npr2_value is None else npr2_value
     ether_tail_count = max(
         0.0,
         float(parsed["tail_count"])
@@ -365,17 +427,36 @@ def _candidate_explicit_features(smiles: str) -> dict[str, float]:
         "sulfate_present": float(bool(parsed["sulfate_present"])),
         "carbon_count": float(parsed["carbon_count"]),
         "carbon_double_bond_count": carbon_double_bonds,
+        "logp": logp,
+        "tpsa": tpsa,
+        "molar_refractivity": molar_refractivity,
+        "rotatable_bond_count": rotatable_bond_count,
+        "aromatic_ring_count": aromatic_ring_count,
+        "ring_count": ring_count,
+        "npr1": npr1_value,
+        "npr2": npr2_value,
     }
 
 
-def explicit_lipid_features(table: pd.DataFrame) -> pd.DataFrame:
+def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) -> pd.DataFrame:
     """Interpretable lipid features, derived only from fields already in the CSV.
 
     Head-group is one-hot encoded from the table's canonical full-name class.  Chemical
     counts are medians across the documented candidate isomers, while acyl composition
     uses ChainFragments when present.  Thus a candidate enumeration cannot turn into an
     arbitrary first-isomer choice.
+
+    `npr_cache`: a dataloader.pair_descriptor_cache.load_pair_descriptor_cache result,
+    or None to auto-load the project's own on-disk cache (data/pair_descriptor_cache_
+    deterministic_<fingerprint>.json) -- the SAME cache dataloader/pair_descriptors.py's
+    network path reads, so npr1/npr2 (the only expensive, conformer-based fields this
+    module computes) are a dict lookup here too instead of a fresh ETKDG+MMFF embed,
+    once `data/build_pair_descriptor_cache.py` has been run since npr1/npr2 were added.
+    None (not an error) when no current cache exists -- _candidate_explicit_features
+    falls back to computing them directly, exactly as before this cache was wired in.
     """
+    if npr_cache is None:
+        npr_cache = load_pair_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
     records = []
     classes = csv_classes(table)
     species_rows = table.assign(_lipid_class=classes).drop_duplicates("FullIdentityOfLipid")
@@ -646,6 +727,7 @@ def build_lipid_kernel(
     entities: list[str] | tuple[str, ...],
     train_names: list[str] | tuple[str, ...],
     kernel_type: str = "rbf",
+    descriptor_names: list[str] | tuple[str, ...] | None = None,
     features_path: Path | str | None = None,
     kernel_path: Path | str | None = None,
     names_path: Path | str | None = None,
@@ -659,6 +741,16 @@ def build_lipid_kernel(
       Tanimoto artefacts, not to any subset).
     - "explicit": the existing interpretable lipid descriptors, turned into a kernel
       via `kernel_type`.
+    - "explicit_subset": the same explicit_lipid_features table, restricted to
+      `descriptor_names` -- the lipid-side mirror of build_protein_kernel's
+      "pocket_subset", for picking a specific descriptor combination (e.g. just the
+      new logp/tpsa/molar_refractivity/rotatable_bond_count/aromatic_ring_count/
+      ring_count whole-molecule set) instead of every explicit column at once, the
+      same way mixing all 17 explicit+family_neutral columns into one RBF kernel
+      diluted the signal (files/cron.md) rather than helping it. Names are checked
+      against the columns explicit_lipid_features(table) actually produced for THIS
+      table (not a fixed list) since headgroup::<class> one-hot columns depend on
+      the lipid classes present.
     - "custom_features" / "custom_kernel": your own vectors or precomputed kernel, same
       contract as `build_protein_kernel`.
     """
@@ -672,6 +764,22 @@ def build_lipid_kernel(
         if missing:
             raise ValueError(f"explicit lipid features are missing: {missing}")
         kernel = _feature_kernel(kernel_type, features, entities, train_names)
+    elif kind == "explicit_subset":
+        if not descriptor_names:
+            raise ValueError("descriptor_names is required for lipid_kernel=explicit_subset")
+        features = explicit_lipid_features(table)
+        unknown = sorted(set(descriptor_names) - set(features.columns))
+        if unknown:
+            raise ValueError(
+                f"unknown explicit lipid descriptor names: {unknown}. "
+                f"Known: {sorted(features.columns)}"
+            )
+        missing = sorted(set(entities) - set(features.index))
+        if missing:
+            raise ValueError(f"explicit lipid features are missing: {missing}")
+        kernel = _feature_kernel(
+            kernel_type, features.loc[:, list(descriptor_names)], entities, train_names
+        )
     elif kind == "custom_features":
         if features_path is None:
             raise ValueError("--lipid_features is required for lipid_kernel=custom_features")
@@ -690,7 +798,7 @@ def build_lipid_kernel(
         kernel = _kernel_from_index(matrix, index, entities, str(kernel_path))
     else:
         raise ValueError(
-            f"unknown lipid kernel {kind!r}; expected tanimoto, explicit, "
+            f"unknown lipid kernel {kind!r}; expected tanimoto, explicit, explicit_subset, "
             "custom_features, or custom_kernel"
         )
     return kernel, {name: position for position, name in enumerate(entities)}

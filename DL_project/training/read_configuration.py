@@ -1101,6 +1101,20 @@ class ModelConfig:
     # other, which is the interaction term. Costs pair count: batches are drawn across
     # proteins, so most of the pair matrix is discarded.
     rank_within_protein: bool = False
+    # Group DRO (Sagawa et al., 2019): replace the plain batch mean with a moving
+    # worst-family weighted mean over the 9 protein families (proposals.md 5.4), so a
+    # family the model currently fits worst dominates the gradient instead of being
+    # averaged away by families already easy. Requires loss_type=cross_entropy (the
+    # branch that already has an unreduced per-sample loss to regroup by family) and
+    # is mutually exclusive with grab_loss/pu_loss, whose loss terms are population-
+    # or pair-level rather than per-row. See architecture.loss.GroupDROState.
+    group_dro: bool = False
+    group_dro_step_size: float = 0.01
+    # >0 adds group_dro_adj / sqrt(train_count) to a family's loss before the weight
+    # update only (never backpropagated) -- the paper's "generalization adjustment",
+    # which discounts how much a small family's noisy batch loss is trusted to move
+    # its weight. 0.0 is plain group DRO with no adjustment.
+    group_dro_adj: float = 0.0
     pool_type: str = "max"
     # Learned attention pooling (one learnable query per partner) instead of the fixed
     # pool_type reduction: out = sum_i softmax_i(w·x_i) x_i over each graph's nodes -- a
@@ -1763,6 +1777,17 @@ class ModelConfig:
             )
         if self.rank_within_protein and self.loss_type != "pairwise_rank":
             raise ValueError("rank_within_protein requires loss_type=pairwise_rank")
+        if self.group_dro:
+            if self.loss_type != "cross_entropy":
+                raise ValueError("group_dro requires loss_type=cross_entropy")
+            if self.grab_loss:
+                raise ValueError("group_dro is incompatible with grab_loss")
+            if self.pu_loss:
+                raise ValueError("group_dro is incompatible with pu_loss")
+            if self.group_dro_step_size <= 0.0:
+                raise ValueError("group_dro_step_size must be positive")
+            if self.group_dro_adj < 0.0:
+                raise ValueError("group_dro_adj must be non-negative")
         if self.chem_adversary and not (self.chem_prior or self.pocket_compat_prior):
             raise ValueError(
                 "chem_adversary requires chem_prior and/or pocket_compat_prior -- it "
@@ -2315,6 +2340,8 @@ SIMPLE_BOOL_FLAGS = {
     "--attention_pooling_pocket_bias": "attention_pooling_pocket_bias",
     "rank_within_protein": "rank_within_protein",
     "--rank_within_protein": "rank_within_protein",
+    "group_dro": "group_dro",
+    "--group_dro": "group_dro",
     "swe_pooling": "swe_pooling",
     "--swe_pooling": "swe_pooling",
     "swe_freeze_reference": "swe_freeze_reference",
@@ -2615,6 +2642,8 @@ VALUE_HANDLERS = {
     "--pu_gamma=": set_config_field("pu_gamma", float),
     "--pu_tau=": set_config_field("pu_tau", float),
     "--pu_loss_cap=": set_config_field("pu_loss_cap", float),
+    "--group_dro_step_size=": set_config_field("group_dro_step_size", float),
+    "--group_dro_adj=": set_config_field("group_dro_adj", float),
     "--focal_gamma=": set_config_field("focal_gamma", float),
     "--logit_adjustment_tau=": set_config_field("logit_adjustment_tau", float),
     "--adv_weight=": set_config_field("adv_weight", float),

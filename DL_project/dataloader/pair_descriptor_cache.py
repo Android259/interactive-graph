@@ -118,18 +118,42 @@ def _init_worker():
     os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 
-def _compute_one(key):
+def _compute_one(key, seed_entry=None):
     """{"chain": ..., **_MEASURES} for one canonical SMILES -- the pool's unit of work.
+
+    `seed_entry`, when given, is that same key's entry from a PREVIOUS build (any
+    older code fingerprint) -- a measure already present there (and not None) is
+    reused as-is instead of calling its fn again. This is what makes adding one new
+    _MEASURES entry (a new descriptor, unrelated formulas for the rest) NOT force a
+    fresh 10-conformer ETKDG+MMFF embed for the four measures that already had it:
+    radius_of_gyration/asphericity/molecular_volume/npr1/npr2 all read the SAME
+    _cached_conformer_ensemble(key), so a genuinely new conformer-based measure
+    (missing from every seed) still costs one embed per key, same as always -- this
+    only removes cost that ISN'T actually needed, never changes what a from-scratch
+    build (seed_entry=None, e.g. this project's very first build) computes.
 
     Module-level (not a closure) so it can be pickled to worker processes.
     """
+    seed_entry = seed_entry or {}
     entry = {"chain": longest_acyl_chain(key)}
-    entry.update((measure, fn(key)) for measure, fn in _MEASURES.items())
+    for measure, fn in _MEASURES.items():
+        seeded = seed_entry.get(measure)
+        entry[measure] = seeded if seeded is not None else fn(key)
     return key, entry
 
 
-def _parallel_measures(keys):
+def _compute_one_star(args):
+    """Pool.starmap-free (key, seed_entry) unpacking -- Pool.map takes one arg per
+    call, and a seed dict cannot be a second positional without this."""
+    return _compute_one(*args)
+
+
+def _parallel_measures(keys, seed_values=None):
     """{key: {"chain": ..., **_MEASURES}} for every key in `keys`, via a process pool.
+
+    `seed_values`: {key: previous-build entry}, see _compute_one -- keys absent from
+    it (a genuinely new candidate, or no previous cache at all) compute every measure
+    fresh, exactly as before this parameter existed.
 
     Serial below a small pool would not be worth starting (fork overhead exceeds the
     saving), but there is no such thing as "too few" here in practice -- a build is a
@@ -140,9 +164,35 @@ def _parallel_measures(keys):
         return {}
     import multiprocessing
 
+    seed_values = seed_values or {}
+    tasks = [(key, seed_values.get(key)) for key in keys]
     workers = min(len(keys), max(1, multiprocessing.cpu_count() - 1))
     with multiprocessing.Pool(workers, initializer=_init_worker) as pool:
-        return dict(pool.map(_compute_one, keys))
+        return dict(pool.map(_compute_one_star, tasks))
+
+
+def _previous_cache_values(root_dir, isomeric):
+    """{key: entry} from the MOST RECENTLY MODIFIED existing pair_descriptor_cache_
+    <stem>_*.json for this isomeric variant, regardless of its code fingerprint --
+    deliberately NOT gated by store_is_current/code_fingerprint (a code change is
+    exactly the case this exists to make cheap: a fingerprint match would mean
+    nothing to seed from in the first place). {} when none exists yet (this
+    project's very first build for this variant) -- an empty seed is the same as
+    not seeding at all, never an error.
+    """
+    stem = "isomeric" if isomeric else "deterministic"
+    candidates = sorted(
+        Path(root_dir).glob(f"pair_descriptor_cache_{stem}_*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in candidates:
+        try:
+            manifest = json.loads(path.read_text())
+            return manifest["values"]
+        except (OSError, KeyError, ValueError, json.JSONDecodeError):
+            continue
+    return {}
 
 
 def build_pair_descriptor_cache(root_dir, csv, protein_names, csv_path, isomeric=False):
@@ -154,9 +204,15 @@ def build_pair_descriptor_cache(root_dir, csv, protein_names, csv_path, isomeric
     always computed (see module docstring) -- there is no lipid_shape flag here
     anymore; a run that never reads radius_of_gyration/asphericity/molecular_volume
     still gets a cache that carries them, because the NEXT run that does must never
-    hit a cache silently missing what it asked for.
+    hit a cache silently missing what it asked for. "Computed" does not mean
+    "recomputed from RDKit every time a rebuild runs", though -- see
+    _previous_cache_values/_compute_one: a measure already correct in whatever
+    cache existed before this call (any older code fingerprint) is carried over
+    rather than re-embedded, so adding ONE new descriptor costs ONLY that
+    descriptor's own compute, not every existing one's too.
     """
     root_dir = Path(root_dir).resolve()
+    seed_values = _previous_cache_values(root_dir, isomeric)
 
     raw_to_canonical = {}
     pending_keys = []
@@ -173,7 +229,7 @@ def build_pair_descriptor_cache(root_dir, csv, protein_names, csv_path, isomeric
             if key not in pending_keys:
                 pending_keys.append(key)
 
-    values = _parallel_measures(pending_keys)
+    values = _parallel_measures(pending_keys, seed_values=seed_values)
 
     extents = pocket_extent_by_protein(root_dir, protein_names)
     rim_core = pocket_rim_core_aromatic_share_by_protein(root_dir, protein_names)

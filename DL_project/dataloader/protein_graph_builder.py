@@ -14,6 +14,14 @@ from dataloader.pair_descriptors import PROTEIN_DESCRIPTOR_NAMES as POCKET_DESCR
 MAX_INCIDENT_EDGES = 21
 EDGE_QUANTILES = (0, 10, 25, 50, 75, 90, 100)
 
+# The 9-family encoding of prot.family (one-hot, this order). Shared with
+# --group_dro (training/new_train.py), which needs the same names to read
+# per-family training counts off the interaction table's ProteinDomain column.
+FAMILY_NAMES = (
+    "CRAL-TRIO", "LBP_BPI_CETP", "GLTP", "ML", "lipocalin",
+    "START", "IP_trans", "scp2", "OSBP",
+)
+
 # Base protein node vector. Positional: several paths index node[:, 0..2] directly
 # (residue type, SASA, volume), so anything optional must be appended after these.
 BASE_NODE_COLUMNS = ("residue_type", "residue_sas_area", "residue_volume")
@@ -928,10 +936,9 @@ class ProteinGraphBuilder:
 
 
         family = self.protein_family(prot_file)
-        fam_enc =["CRAL-TRIO","LBP_BPI_CETP","GLTP","ML","lipocalin","START","IP_trans","scp2","OSBP"]
         tenfam=torch.zeros(9)
-        for i in range(len(fam_enc)):
-            if fam_enc[i] == family.strip():
+        for i in range(len(FAMILY_NAMES)):
+            if FAMILY_NAMES[i] == family.strip():
                 tenfam[i]=1
 
         node_confidence = None
