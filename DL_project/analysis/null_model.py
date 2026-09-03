@@ -540,7 +540,6 @@ def print_null_model_report(table, split, epoch, entity_column="FullIdentityOfLi
     has_net_lipid = "net_AUC_lipid" in table.columns
     show_prot_group = (prot_meaningful or has_net_prot) and not is_pair
     show_lipid_group = (lipid_meaningful or has_net_lipid) and not is_pair
-    show_pair_group = is_pair
 
     def group_cols(*prefixes):
         return [c for c in table.columns if c.startswith(prefixes)]
@@ -548,6 +547,14 @@ def print_null_model_report(table, split, epoch, entity_column="FullIdentityOfLi
     prot_group_all = group_cols("null_AUC_prot", "net_AUC_prot")
     lipid_group_all = group_cols("null_AUC_lipid", "net_AUC_lipid")
     pair_group_all = group_cols("null_AUC_pair", "net_AUC_pair")
+    # null_AUC_pair_k*/net_AUC_pair are computed unconditionally in null_model_table
+    # regardless of entity_column (see its own comment there), so there is always
+    # data to show here once `table` carries a network's scores or a null model was
+    # run at all -- shown alongside prot/lipid now, not only when is_pair collapses
+    # to pair-only (that collapse, and its "replaces" rationale above, is unchanged
+    # for entity_column == "pair_id"; this only turns pair_group ON for every other
+    # entity_column too, where it used to be silently computed and then dropped).
+    show_pair_group = is_pair or bool(pair_group_all)
 
     # rows/pos (block size, not a measurement) dropped from the printed mean -- still
     # fully present in `table` itself and in the on-disk cache, just not useful next

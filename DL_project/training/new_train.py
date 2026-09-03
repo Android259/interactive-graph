@@ -59,6 +59,7 @@ from architecture.loss import (
 from dataloader.sampler import ClassBalancedBatchSampler
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.Dataloader import PLIDataset
+from dataloader.lipid_classes import class_level_positive_labels
 from dataloader.protein_graph_builder import FAMILY_NAMES
 from candidate_averaging import (
     CandidateAccumulator,
@@ -166,7 +167,12 @@ def batch_sample_weights(prot, sample_count):
             f"{invalid_positions}"
         )
     return common_weights[pos]
-train_labels = torch.as_tensor(train_dataset.csvtrain["Interaction"].values, dtype=torch.long)
+train_labels = torch.as_tensor(
+    class_level_positive_labels(train_dataset.csvtrain).values
+    if conf.lipid_class_targets
+    else train_dataset.csvtrain["Interaction"].values,
+    dtype=torch.long,
+)
 class_counts = torch.bincount(train_labels, minlength=2).float()
 if conf.pu_loss:
     conf.pu_rho = conf.effective_pu_rho(
