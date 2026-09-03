@@ -181,6 +181,20 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
         float(aromatic.mean()),
         float(hydropathy[core].mean()),
         float(hydropathy[rim].mean()) if rim.any() else float(hydropathy.mean()),
+        # Appended, not interleaved with their thematic siblings above: architecture/
+        # pair_descriptor_head.py's _AROMATIC_SHARE_INDEX/_APOLAR_SASA_SHARE_INDEX are
+        # bare integer literals into this tuple, not name lookups, so every existing
+        # position must stay put -- new entries only ever go at the end. The two
+        # promoted from analysis/pocket_shape_descriptors.py's research catalog after
+        # files/pocket_shape_descriptors.md section 7's eta^2 check (both at/near the
+        # no-structure floor, unlike the 13 above's own six excluded entries) and
+        # section 7's addendum (aromatic_share_rim's sign agrees across both large
+        # families AND pooled against head-group-class count; ev28_q10 does not
+        # against either target -- neither survives correction, both merely passed
+        # the family-fingerprint screen a candidate needs before this promotion, not a
+        # proof of transferable pair signal).
+        float(numpy.percentile(site["residue_mean_ev28"].to_numpy(dtype=float), 10)),
+        float(aromatic[rim].mean()) if rim.any() else float(aromatic.mean()),
     )
     if len(values) != len(POCKET_DESCRIPTOR_NAMES):
         raise ValueError("pocket descriptor list and name list disagree")

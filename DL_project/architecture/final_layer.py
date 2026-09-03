@@ -401,6 +401,16 @@ class Final_Layer(torch.nn.Module):
         if self.config.bilinear_fusion:
             self.bilinear = torch.nn.Bilinear(pooled_lip_dim, pooled_prot_dim, middim)
             classifier_input_dim = middim
+            # --bilinear_pooled_norm: LayerNorm on lip_outs/prot_outs right before the
+            # product, in forward() below. The LayerNorms inside CrossAttention
+            # normalise each NODE before pooling; pool_type="add" (the default) then
+            # sums a different number of nodes per sample (lipid atom count, pocket
+            # residue count both vary), so the pooled vector's magnitude still varies
+            # sample-to-sample no matter how well-normalised the summands were -- this
+            # catches that second, separate source of scale.
+            if self.config.bilinear_pooled_norm:
+                self.lip_pool_norm = torch.nn.LayerNorm(pooled_lip_dim)
+                self.prot_pool_norm = torch.nn.LayerNorm(pooled_prot_dim)
         else:
             classifier_input_dim = pooled_lip_dim + pooled_prot_dim
         # Extra columns concatenated into common_out in forward(): one standardised
@@ -708,6 +718,9 @@ class Final_Layer(torch.nn.Module):
             prot_outs = torch.zeros_like(prot_outs)
 
         if self.config.bilinear_fusion:
+            if self.config.bilinear_pooled_norm:
+                lip_outs = self.lip_pool_norm(lip_outs)
+                prot_outs = self.prot_pool_norm(prot_outs)
             common_out = self.bilinear(lip_outs, prot_outs)
         else:
             common_out = torch.cat([lip_outs, prot_outs], dim=1)

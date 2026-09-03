@@ -136,6 +136,13 @@ PROTEIN_DESCRIPTOR_NAMES = (
     "aromatic_share",
     "hydropathy_core",
     "hydropathy_rim",
+    # Appended, not interleaved -- dataloader/protein_graph_builder.py's
+    # pocket_descriptor() has the full reasoning (architecture/pair_descriptor_head.py
+    # indexes earlier entries by bare integer literal, so their positions are load-
+    # bearing). Promoted from the research-only catalog by files/pocket_shape_
+    # descriptors.md section 7's eta^2 check.
+    "ev28_q10",
+    "aromatic_share_rim",
 )
 
 # Not raw pocket_descriptor() output, so not in PROTEIN_DESCRIPTOR_NAMES itself --

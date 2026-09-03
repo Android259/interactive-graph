@@ -328,10 +328,23 @@ dropout_logit_params = [
     module.logit for module in model.modules() if isinstance(module, ConcreteDropout)
 ]
 dropout_logit_ids = {id(p) for p in dropout_logit_params}
+# --bilinear_weight_decay: self.bilinear's weight/bias get their own optimizer group
+# instead of following the global --weight_decay, so that one tensor (the only one
+# whose output has no built-in ceiling, and whose size grows cubically with --hiddim
+# under bilinear_fusion) can be reined in harder without over-penalising the rest of
+# the network. Empty list, no-op group, when bilinear_fusion is off.
+bilinear_module = getattr(model.final_layer, "bilinear", None)
+bilinear_params = list(bilinear_module.parameters()) if bilinear_module is not None else []
+bilinear_param_ids = {id(p) for p in bilinear_params}
+bilinear_weight_decay = (
+    conf.weight_decay if conf.bilinear_weight_decay is None else conf.bilinear_weight_decay
+)
 theta_params = [
     p
     for p in model.parameters()
-    if id(p) not in gate_param_ids and id(p) not in dropout_logit_ids
+    if id(p) not in gate_param_ids
+    and id(p) not in dropout_logit_ids
+    and id(p) not in bilinear_param_ids
 ]
 
 lipid_branch_param_ids = (
@@ -368,6 +381,10 @@ if conf.bilevel and gate_params:
     # theta (with weight decay) + dropout logits (no weight decay) on train; the main
     # optimizer never touches the gate params -- those are stepped on validation below.
     main_groups = [{"params": theta_params, "weight_decay": conf.weight_decay}]
+    if bilinear_params:
+        main_groups.append(
+            {"params": bilinear_params, "weight_decay": bilinear_weight_decay}
+        )
     if dropout_logit_params:
         main_groups.append({"params": dropout_logit_params, "weight_decay": 0.0})
     optimizer = torch.optim.Adam(split_lipid_branch(main_groups), lr=conf.lr)
@@ -375,21 +392,28 @@ if conf.bilevel and gate_params:
 elif dropout_logit_params:
     # Not bilevel: everything trains on the train objective, but keep dropout logits out
     # of weight decay. Gates (if any) are learned via the train-loss penalty below.
-    optimizer = torch.optim.Adam(
-        split_lipid_branch(
-            [
-                {
-                    "params": theta_params + gate_params,
-                    "weight_decay": conf.weight_decay,
-                },
-                {"params": dropout_logit_params, "weight_decay": 0.0},
-            ]
-        ),
-        lr=conf.lr,
-    )
+    groups = [
+        {
+            "params": theta_params + gate_params,
+            "weight_decay": conf.weight_decay,
+        },
+        {"params": dropout_logit_params, "weight_decay": 0.0},
+    ]
+    if bilinear_params:
+        groups.append({"params": bilinear_params, "weight_decay": bilinear_weight_decay})
+    optimizer = torch.optim.Adam(split_lipid_branch(groups), lr=conf.lr)
 else:
+    # No bilevel, no ConcreteDropout: everything (including gate_params, if any exist
+    # without bilevel search being on) trains as one plain group at the top-level
+    # weight_decay, same as before this split existed -- only bilinear_params is
+    # carved out, not theta_params, since theta_params also drops gate_param_ids/
+    # dropout_logit_ids that this branch never re-adds.
+    base_params = [p for p in model.parameters() if id(p) not in bilinear_param_ids]
+    groups = [{"params": base_params}]
+    if bilinear_params:
+        groups.append({"params": bilinear_params, "weight_decay": bilinear_weight_decay})
     optimizer = torch.optim.Adam(
-        split_lipid_branch([{"params": list(model.parameters())}]),
+        split_lipid_branch(groups),
         lr=conf.lr,
         weight_decay=conf.weight_decay,
     )

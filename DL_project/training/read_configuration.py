@@ -249,6 +249,26 @@ class ModelConfig:
     # discriminative signal is multiplicative in both partners and a single-
     # partner (lipid-identity) shortcut cannot survive. See Final_Layer.
     bilinear_fusion: bool = False
+    # Separate weight decay for self.bilinear's own weight tensor, applied instead of
+    # the global --weight_decay for that one parameter group. Motivation: that tensor
+    # has shape pooled_lip_dim x pooled_prot_dim x middim (all three tied to --hiddim
+    # under the default add-pool), so it grows cubically with hiddim while every other
+    # tensor grows roughly linearly/quadratically, and its output (the bilinear
+    # product of two pooled vectors) has no built-in ceiling the way a concatenation
+    # does -- a global decay rate spread evenly across the network gives this one
+    # outsized tensor no more restraint than any other. None (default) falls back to
+    # --weight_decay, unchanged behaviour. Only meaningful under --bilinear_fusion
+    # (validate() below).
+    bilinear_weight_decay: float | None = None
+    # LayerNorm on lip_outs/prot_outs right before self.bilinear (Final_Layer.forward,
+    # after _pool_partners, before the bilinear product). Distinct from the LayerNorms
+    # inside CrossAttention: those normalise each NODE before pooling, but pool_type=
+    # "add" (the default) then sums a different number of nodes per sample (lipid atom
+    # count, pocket residue count both vary), so the pooled vector's magnitude still
+    # varies sample-to-sample no matter how well-normalised the nodes going into the
+    # sum were -- this is the second, separate normalisation that catches THAT. Only
+    # meaningful under --bilinear_fusion (validate() below).
+    bilinear_pooled_norm: bool = False
     # Adversarial anti-shortcut training (Ganin-style gradient reversal): add a
     # per-partner adversary head that predicts the label from one partner's pooled
     # PRE-cross-attention representation alone (before cross-attention mixes in the
@@ -1761,6 +1781,18 @@ class ModelConfig:
             raise ValueError(
                 "bilinear_fusion cannot be combined with lipid_only/protein_only"
             )
+        if self.bilinear_weight_decay is not None and not self.bilinear_fusion:
+            raise ValueError(
+                "bilinear_weight_decay requires bilinear_fusion -- there is no "
+                "self.bilinear parameter group to apply it to otherwise"
+            )
+        if self.bilinear_weight_decay is not None and self.bilinear_weight_decay < 0.0:
+            raise ValueError("bilinear_weight_decay must be non-negative")
+        if self.bilinear_pooled_norm and not self.bilinear_fusion:
+            raise ValueError(
+                "bilinear_pooled_norm requires bilinear_fusion -- there is no pooled "
+                "product to normalise the inputs of otherwise"
+            )
         if self.adversarial_grl and (self.lipid_only or self.protein_only):
             # The GRL adversaries penalize per-partner label leakage; zeroing a
             # partner makes its adversary trivial and the ablation meaningless.
@@ -2276,6 +2308,8 @@ SIMPLE_BOOL_FLAGS = {
     "--cross_attention": "cross_attention",
     "bilinear_fusion": "bilinear_fusion",
     "--bilinear_fusion": "bilinear_fusion",
+    "bilinear_pooled_norm": "bilinear_pooled_norm",
+    "--bilinear_pooled_norm": "bilinear_pooled_norm",
     "hard_negative_mining": "hard_negative_mining",
     "--hard_negative_mining": "hard_negative_mining",
     "adversarial_grl": "adversarial_grl",
@@ -2592,6 +2626,7 @@ VALUE_HANDLERS = {
     "--final_dropout=": set_config_field("final_dropout", float),
     "--lr=": set_config_field("lr", float),
     "--weight_decay=": set_config_field("weight_decay", float),
+    "--bilinear_weight_decay=": set_config_field("bilinear_weight_decay", float),
     "--hiddim=": set_config_field("hiddim", int),
     "--sparsity_mode=": set_config_field("sparsity_mode", str),
     "--sparsity_lambda=": set_config_field("sparsity_lambda", float),
