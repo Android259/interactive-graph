@@ -90,3 +90,25 @@ def _resolved_class(names):
 def head_group_class(name):
     """The class of one entry, for callers that hold a name rather than a table."""
     return _resolved_class(str(name).split(";"))
+
+
+def class_level_positive_labels(table):
+    """Coarsen `Interaction` from "this exact lipid" to "this lipid's head-group class".
+
+    A row reads positive here whenever its own protein (`LTPProtein`) has a measured
+    positive against ANY lipid sharing this row's head-group class in `table` -- not
+    only when the row's own species was screened positive. This is a training-target
+    transform, not a re-labelling of the data: it exists so a model can be asked to
+    predict "does this protein take this lipid's class" instead of "this exact
+    molecule", while the (protein, lipid) pair fed in and scored out stay exactly what
+    they are today. Callers must build this only from rows the model is allowed to
+    train on (e.g. the train split alone) -- computing it over rows a cold split holds
+    out would leak their positives into the classes those very rows supply.
+    """
+    classes = lipid_class_series(table)
+    return (
+        table.assign(_lipid_class=classes)
+        .groupby(["LTPProtein", "_lipid_class"])["Interaction"]
+        .transform("max")
+        .astype(int)
+    )

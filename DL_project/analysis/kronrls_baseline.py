@@ -162,7 +162,9 @@ def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.N
         names_path=args.lipid_kernel_names,
     )
 
-    labels = aggregate_pair_labels(train_pool).reindex(index=train_proteins, columns=train_lipids)
+    labels = aggregate_pair_labels(
+        train_pool, lipid_class_targets=args.lipid_class_targets
+    ).reindex(index=train_proteins, columns=train_lipids)
     kp_train = protein_kernel[
         np.ix_(
             [protein_index[name] for name in train_proteins],
@@ -290,6 +292,16 @@ def main() -> None:
     parser.add_argument(
         "--share", type=float, default=0.8,
         help="lipid-class positive-coverage share held out, for --split_mode double",
+    )
+    parser.add_argument(
+        "--lipid_class_targets", action="store_true",
+        help=(
+            "fit against the lipid head-group class instead of the exact species: a "
+            "training cell is positive whenever its protein has a positive anywhere in "
+            "that lipid's class (training.pair_baseline_common.aggregate_pair_labels), "
+            "computed from the train pool alone. The held-out valid/test pools are still "
+            "scored against their own exact Interaction values, unchanged."
+        ),
     )
     parser.add_argument(
         "--protein_kernel", default="pocket13",

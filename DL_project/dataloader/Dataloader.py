@@ -54,6 +54,7 @@ from dataloader.tanimoto_compact import load_compact
 from dataloader.sampler import (
     COLDSPLIT_MINIMUM_TEST_POSITIVES,
     LIPID_COLDSPLIT_SETS,
+    class_level_positive_labels,
     lipid_class_series,
     lipid_classes_for_holdout,
     rebalance_excluded_group_negatives,
@@ -333,6 +334,12 @@ class PLIDataset(
         self._draw_lipid_candidate = False
         self._augment_residues = False
         self._augmentation_epoch = 0
+        # --lipid_class_targets: set True on the train split alone, in __iter__. Off
+        # here so a dataset instance never carries it before __iter__ decides which
+        # split it is, and so validation/test -- built by copying this instance rather
+        # than by going through __iter__'s explicit per-split assignment -- keep reading
+        # the exact-molecule label untouched.
+        self._use_lipid_class_targets = False
         lipid_graph_index_path = os.path.join(self.lipid_graph_dir, "lipid_graph_index.csv")
         if getattr(self.config, "lipid_graph_isomers", False) and os.path.exists(lipid_graph_index_path):
             lipid_graph_index = pandas.read_csv(lipid_graph_index_path)
@@ -1068,6 +1075,7 @@ class PLIDataset(
             from dataloader.chemistry_prior import protein_descriptor_table
             from dataloader.pair_descriptors import (
                 BOUNDED_SHARE_DESCRIPTOR_NAMES,
+                LIPID_DESCRIPTOR_NAMES as _CATALOG_LIPID_NAMES,
                 PAIR_DESCRIPTOR_NAMES as _CATALOG_PAIR_NAMES,
                 PROTEIN_DESCRIPTOR_NAMES as _CATALOG_PROTEIN_NAMES,
                 pair_descriptor_value,
@@ -1103,6 +1111,32 @@ class PLIDataset(
                     "tail-count",
                 )
                 raw_values["tail_count"] = (tail_count, True)
+
+            # Every LIPID_DESCRIPTOR_NAMES entry beyond the base five above (chain/
+            # unsaturation/hbond/heavy handled unconditionally, tail_count just
+            # above) -- npr1/npr2 (conformer-based) and the whole-molecule RDKit set
+            # (logp/tpsa/molar_refractivity/rotatable_bond_count/aromatic_ring_count/
+            # ring_count), computed only when actually named. descriptor_values_by_row's
+            # `pair_cache` lookup (the same on-disk pair_descriptor_cache --pair_
+            # descriptor_lipid_shape reads above) makes npr1/npr2 a dict lookup rather
+            # than a fresh ETKDG+MMFF embed whenever a current cache build has already
+            # seen the candidate; the rest are cheap regardless.
+            _base_lipid_names = {"chain", "unsaturation", "hbond", "heavy", "tail_count"}
+            for extra_name in _CATALOG_LIPID_NAMES:
+                if extra_name in _base_lipid_names:
+                    continue
+                if extra_name in base_names_needed:
+                    raw_values[extra_name] = (
+                        fill_train_mean(
+                            as_arrays(
+                                descriptor_values_by_row(
+                                    csv, extra_name, isomeric, cache=pair_cache
+                                )
+                            ),
+                            extra_name,
+                        ),
+                        True,
+                    )
 
             if protein_names_needed or pair_names_needed:
                 protein_raw = protein_descriptor_table(self.ROOT_DIR)
@@ -1733,8 +1767,18 @@ class PLIDataset(
         self._smile_fragment_by_idx = self.csv["SmileFragment"].to_numpy(
             copy=False
         )
+        # --lipid_class_targets (train split only, see __iter__): the loss target
+        # widens from "this exact species was screened positive" to "this protein has
+        # a screened positive somewhere in this species' head-group class". Built from
+        # self.csv alone, which at this point is already just this split's rows, so a
+        # cold-held class or family's positives never enter a train row's target.
+        interaction_source = (
+            class_level_positive_labels(self.csv)
+            if self._use_lipid_class_targets
+            else self.csv["Interaction"]
+        )
         self._interaction_tensor = torch.tensor(
-            self.csv["Interaction"].to_numpy(),
+            interaction_source.to_numpy(),
             dtype=torch.long,
         )
         orig_indexes = self.csv["pair_id"].to_numpy()
@@ -1926,6 +1970,9 @@ class PLIDataset(
         # unrelated to the model. Those two splits take the first candidate instead,
         # which is what the deterministic treatments encode as well, so their rows stay
         # comparable across epochs and across runs.
+        train_dataset._use_lipid_class_targets = bool(
+            getattr(self.config, "lipid_class_targets", False)
+        )
         train_dataset._draw_lipid_candidate = bool(self.config.lipid_random_choice)
         train_dataset._augment_residues = bool(
             getattr(self.config, "protein_residue_subsample", 0)

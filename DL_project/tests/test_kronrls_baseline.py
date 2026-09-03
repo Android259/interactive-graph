@@ -17,6 +17,7 @@ from training.pair_baseline_common import (
     _feature_kernel,
     _kernel_from_index,
     _require_finite,
+    aggregate_pair_labels,
     build_lipid_kernel,
     build_protein_kernel,
     cosine_kernel,
@@ -103,6 +104,33 @@ def test_raw_single_cold_pool_rejects_unknown_family():
     table = _synthetic_domain_table()
     with pytest.raises(ValueError):
         raw_single_cold_pool(table, "does-not-exist")
+
+
+def _synthetic_class_table():
+    return pd.DataFrame(
+        {
+            "LTPProtein": ["A", "A", "A"],
+            "FullIdentityOfLipid": [
+                "Phosphatidylcholine (32:1)",
+                "Phosphatidylcholine (34:1)",
+                "Phosphatidylserine (32:1)",
+            ],
+            "Interaction": [1, 0, 0],
+        }
+    )
+
+
+def test_aggregate_pair_labels_defaults_to_the_exact_species_label():
+    matrix = aggregate_pair_labels(_synthetic_class_table())
+    assert matrix.loc["A", "Phosphatidylcholine (34:1)"] == 0.0
+
+
+def test_aggregate_pair_labels_lipid_class_targets_widens_within_protein_and_class():
+    matrix = aggregate_pair_labels(_synthetic_class_table(), lipid_class_targets=True)
+    # Shares protein A's Phosphatidylcholine class with the measured positive.
+    assert matrix.loc["A", "Phosphatidylcholine (34:1)"] == 1.0
+    # A different head-group class stays unaffected.
+    assert matrix.loc["A", "Phosphatidylserine (32:1)"] == 0.0
 
 
 def test_load_feature_table_round_trips_arbitrary_vectors(tmp_path):

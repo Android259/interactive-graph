@@ -19,7 +19,11 @@ from dataloader.dataset_source import interaction_csv_path
 from dataloader.pair_descriptors import npr1 as _compute_npr1
 from dataloader.pair_descriptors import npr2 as _compute_npr2
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
-from dataloader.sampler import lipid_class_series, lipid_classes_for_holdout
+from dataloader.sampler import (
+    class_level_positive_labels,
+    lipid_class_series,
+    lipid_classes_for_holdout,
+)
 from preprocessing.audit_lipid_identity_by_smiles import features as smiles_features
 
 try:
@@ -172,14 +176,30 @@ def split_held_pairs(
     return held.loc[in_valid].copy(), held.loc[~in_valid].copy()
 
 
-def aggregate_pair_labels(table: pd.DataFrame) -> pd.DataFrame:
+def aggregate_pair_labels(
+    table: pd.DataFrame, lipid_class_targets: bool = False
+) -> pd.DataFrame:
     """Collapse duplicate assay rows into a complete protein-by-lipid P-vs-U matrix.
 
     `Interaction=0` is unlabelled rather than a confirmed negative.  A duplicate pair
     is therefore positive whenever either existing screen observed a positive.  Screen
     remains available in the separate row-level diagnostic.
+
+    lipid_class_targets widens what counts as positive before that collapse: a cell is
+    positive whenever its protein has ANY positive elsewhere in `table` sharing its
+    lipid's head-group class (dataloader.lipid_classes.class_level_positive_labels),
+    not only when its own species was screened positive. `table` here is always the
+    caller's train pool alone (see evaluate_block in analysis/kronrls_baseline.py), so
+    a held-out block's positives never leak into a training cell's label through this
+    widening; the held-out pool is still scored against its own exact Interaction
+    values, unchanged.
     """
-    labels = table.groupby(["LTPProtein", "FullIdentityOfLipid"], sort=True)["Interaction"].max()
+    source = (
+        table.assign(Interaction=class_level_positive_labels(table))
+        if lipid_class_targets
+        else table
+    )
+    labels = source.groupby(["LTPProtein", "FullIdentityOfLipid"], sort=True)["Interaction"].max()
     matrix = labels.unstack("FullIdentityOfLipid")
     if matrix.isna().any().any():
         missing = int(matrix.isna().sum().sum())
@@ -471,7 +491,10 @@ def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) 
             if str(row["SmileGlobal"]).strip() not in ("", "0")
             else row["SmileFragment"]
         )
-        candidates = [_candidate_explicit_features(smiles) for smiles in _candidate_smiles(smiles_source)]
+        candidates = [
+            _candidate_explicit_features(smiles, npr_cache=npr_cache)
+            for smiles in _candidate_smiles(smiles_source)
+        ]
         if not candidates:
             raise ValueError(f"{row['FullIdentityOfLipid']}: empty SmileGlobal candidate set")
         candidate_table = pd.DataFrame(candidates)

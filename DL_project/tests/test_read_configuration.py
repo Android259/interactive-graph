@@ -746,6 +746,14 @@ def test_dann_family_flags_parse_and_default_off():
     assert config.balanced_lipid_classes is True
 
 
+def test_lipid_class_targets_parses_and_defaults_off():
+    assert ModelConfig().lipid_class_targets is False
+
+    config = read_named_configuration(["train.py", "--lipid_class_targets"])
+
+    assert config.lipid_class_targets is True
+
+
 def test_dann_lambda_ramp_by_fit_parses_and_defaults_off():
     assert ModelConfig().dann_lambda_ramp_by_fit is False
 

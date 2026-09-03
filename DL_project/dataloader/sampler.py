@@ -211,6 +211,7 @@ def split_and_sample_protein_balanced_interactions(
 # here because everything already reaches for them through this module.
 from dataloader.lipid_classes import (  # noqa: F401
     AMBIGUOUS_CLASS_RESOLUTION,
+    class_level_positive_labels,
     head_group_class,
     lipid_class_series,
 )

@@ -690,6 +690,14 @@ class ModelConfig:
     # Dataloader.sample_lipid_class_balanced_negatives -- and it currently overrides
     # balanced_proteins when both are set.
     balanced_lipid_classes: bool = False
+    # Coarsen the train-time target from "this exact lipid was screened positive" to
+    # "this protein has a screened positive somewhere in this lipid's head-group class"
+    # (dataloader.lipid_classes.class_level_positive_labels, same head-group classes
+    # --lipid_coldsplit/--double_coldsplit already use). The (protein, lipid) pair
+    # encoded on the input side, the model architecture, and validation/test -- which
+    # keep scoring the exact-molecule Interaction column -- are all untouched; only
+    # which train rows count as positive for the loss changes.
+    lipid_class_targets: bool = False
     # Compute attention block-diagonally on a dense (graphs, max_nodes, dim) layout
     # instead of one long padded sequence with an N x N -inf mask, which is the same
     # attention over ~9x fewer logits. See architecture/fast_attention.py -- results
@@ -2334,6 +2342,8 @@ SIMPLE_BOOL_FLAGS = {
     "--chem_lambda_ramp_by_fit": "chem_lambda_ramp_by_fit",
     "balanced_lipid_classes": "balanced_lipid_classes",
     "--balanced_lipid_classes": "balanced_lipid_classes",
+    "lipid_class_targets": "lipid_class_targets",
+    "--lipid_class_targets": "lipid_class_targets",
     "attention_pooling": "attention_pooling",
     "--attention_pooling": "attention_pooling",
     "attention_pooling_pocket_bias": "attention_pooling_pocket_bias",

@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas
 
+from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.pair_descriptors import (
     LIPID_DESCRIPTOR_NAMES,
     MIN_PAIR_DESCRIPTOR_NAMES,
@@ -23,13 +24,23 @@ from dataloader.pair_descriptors import (
     PROTEIN_DERIVED_DESCRIPTOR_NAMES,
     PROTEIN_DESCRIPTOR_NAMES,
     acyl_chain_count,
+    aromatic_ring_count,
     coarse_share,
     heavy_atom_count,
     hbond_capacity,
+    logp,
     longest_acyl_chain,
+    molar_refractivity,
     pair_descriptor_value,
+    ring_count,
+    rotatable_bond_count,
+    tpsa,
     unsaturation_count,
 )
+from dataloader.pair_descriptors import npr1 as _compute_npr1
+from dataloader.pair_descriptors import npr2 as _compute_npr2
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def species_similarity(csv, data_dir):
@@ -103,12 +114,37 @@ def _lipid_descriptor_table(csv, data_dir=None):
             except (OSError, ValueError, json.JSONDecodeError, KeyError):
                 pass
 
+    # npr1/npr2 are conformer-based (a 10-conformer ETKDG+MMFF embed per candidate,
+    # not microseconds like the other five) -- look them up in the project's on-disk
+    # pair_descriptor_cache first (same cache dataloader/pair_descriptors.py's network
+    # path and training/pair_baseline_common.py's explicit_lipid_features read), and
+    # only fall back to a fresh embed on a cache miss, same fallback discipline as
+    # descriptor_values_by_row's own `cache` parameter.
+    npr_cache = load_pair_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
+
+    def _cached_npr(measure, compute, smiles):
+        if npr_cache is not None:
+            canonical = npr_cache["raw_to_canonical"].get(smiles)
+            if canonical is not None:
+                cached_entry = npr_cache["values"].get(canonical)
+                if cached_entry is not None and measure in cached_entry:
+                    return cached_entry[measure]
+        return compute(smiles)
+
     measures = {
         "chain": longest_acyl_chain,
         "unsaturation": unsaturation_count,
         "hbond": hbond_capacity,
         "heavy": heavy_atom_count,
         "tail_count": acyl_chain_count,
+        "logp": logp,
+        "tpsa": tpsa,
+        "molar_refractivity": molar_refractivity,
+        "rotatable_bond_count": rotatable_bond_count,
+        "aromatic_ring_count": aromatic_ring_count,
+        "ring_count": ring_count,
+        "npr1": lambda smiles: _cached_npr("npr1", _compute_npr1, smiles),
+        "npr2": lambda smiles: _cached_npr("npr2", _compute_npr2, smiles),
     }
     per_species_values = {}
     smiles_cache = {}
@@ -412,7 +448,9 @@ def feature_similarity(csv, data_dir, names, zscore=False):
     happens to have the larger native scale.
 
     `names`: any mix of
-      lipid-only   : LIPID_DESCRIPTOR_NAMES (chain, unsaturation, hbond, heavy).
+      lipid-only   : LIPID_DESCRIPTOR_NAMES (chain, unsaturation, hbond, heavy,
+                     tail_count, npr1, npr2, logp, tpsa, molar_refractivity,
+                     rotatable_bond_count, aromatic_ring_count, ring_count).
       protein-only : dataloader.protein_graph_builder.POCKET_DESCRIPTOR_NAMES
                      (pocket_residue_share, pocket_sasa_share, pocket_volume_per_sasa,
                      pocket_extent, pocket_elongation, pocket_flatness, ev14_q50,
@@ -451,8 +489,10 @@ def feature_similarity(csv, data_dir, names, zscore=False):
 
 
 def lipid_descriptor_similarity(csv, data_dir=None):
-    """Species x species similarity from the 4 lipid-only pair_descriptor tokens
-    (chain, unsaturation, hbond, heavy). Thin LIPID_DESCRIPTOR_NAMES-only wrapper
+    """Species x species similarity from every lipid-only pair_descriptor token
+    (LIPID_DESCRIPTOR_NAMES -- chain, unsaturation, hbond, heavy, tail_count, npr1,
+    npr2, logp, tpsa, molar_refractivity, rotatable_bond_count, aromatic_ring_count,
+    ring_count). Thin LIPID_DESCRIPTOR_NAMES-only wrapper
     around feature_similarity, kept as a named entry point for existing callers --
     same (similarity, index) 2-tuple contract as species_similarity (drops
     feature_similarity's entity_column, always "FullIdentityOfLipid" at this

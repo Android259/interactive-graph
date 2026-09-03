@@ -48,7 +48,11 @@ from rdkit.Chem import AllChem, Descriptors, rdMolDescriptors
 # The full descriptor catalog analysis/null_model.py's --features and
 # architecture/pair_descriptor_head.py's token set both draw on, named together in one
 # place.
-LIPID_DESCRIPTOR_NAMES = ("chain", "unsaturation", "hbond", "heavy", "tail_count")
+LIPID_DESCRIPTOR_NAMES = (
+    "chain", "unsaturation", "hbond", "heavy", "tail_count", "npr1", "npr2",
+    "logp", "tpsa", "molar_refractivity", "rotatable_bond_count",
+    "aromatic_ring_count", "ring_count",
+)
 # See pair_descriptor_value below for what each one actually computes.
 PAIR_DESCRIPTOR_NAMES = (
     "occupancy", "chain_extent_gap", "aromatic_contact", "hbond_match", "volume_fit",
@@ -173,7 +177,7 @@ _SHARE_BAND_CENTRES = (1.0 / 6, 0.5, 5.0 / 6)
 # measured directly on this project's 35 proteins, aromatic_share never leaves the
 # scheme's own first fixed third, so 34 of 35 proteins collapsed onto one value).
 DESCRIPTOR_CATALOG = (
-    LIPID_DESCRIPTOR_NAMES  # now includes "tail_count" too
+    LIPID_DESCRIPTOR_NAMES  # now includes "tail_count", "npr1", "npr2" too
     + ("extent",)
     + PROTEIN_DESCRIPTOR_NAMES
     + ("polar_share",)
@@ -544,6 +548,64 @@ def heavy_atom_count(smiles):
     return float(mol.GetNumHeavyAtoms())
 
 
+# Whole-molecule RDKit descriptors (the lipid-side analogues of the protein pocket's own
+# family_neutral axes -- pocket_volume_per_sasa/apolar_sasa_share/hydropathy_rim/
+# pocket_extent/aromatic_share): logp/tpsa are the two orthogonal hydrophobicity/
+# polarity axes, molar_refractivity is the volume/polarizability analogue of
+# pocket_volume_per_sasa, rotatable_bond_count is how much the lipid can conform to a
+# cavity's shape (an absolute count, unlike rotatable_fraction above), and
+# aromatic_ring_count/ring_count are the direct counterparts of the pocket's own
+# aromatic_share. All purely topological (no conformer needed), same convention as
+# unsaturation_count/hbond_capacity/heavy_atom_count above: None where RDKit cannot
+# parse the candidate.
+def logp(smiles):
+    """RDKit Crippen logP -- octanol/water partition coefficient."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return float(Descriptors.MolLogP(mol))
+
+
+def tpsa(smiles):
+    """Topological polar surface area (Angstrom^2)."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return float(Descriptors.TPSA(mol))
+
+
+def molar_refractivity(smiles):
+    """RDKit molar refractivity."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return float(Descriptors.MolMR(mol))
+
+
+def rotatable_bond_count(smiles):
+    """Absolute rotatable-bond count."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return float(rdMolDescriptors.CalcNumRotatableBonds(mol))
+
+
+def aromatic_ring_count(smiles):
+    """Aromatic ring count."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return float(rdMolDescriptors.CalcNumAromaticRings(mol))
+
+
+def ring_count(smiles):
+    """Total ring count (aromatic + aliphatic)."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return float(rdMolDescriptors.CalcNumRings(mol))
+
+
 # --pair_descriptor_lipid_shape (LIPID_SHAPE_DESCRIPTOR_NAMES below): the one deliberate
 # exception to this module's own "no 3D embedding" rule stated in its docstring above --
 # ETKDG is indeed slow and fails unpredictably per-molecule, which is why it is opt-in,
@@ -713,6 +775,12 @@ _MEASURES = {
     "rotatable_fraction": rotatable_fraction,
     "npr1": npr1,
     "npr2": npr2,
+    "logp": logp,
+    "tpsa": tpsa,
+    "molar_refractivity": molar_refractivity,
+    "rotatable_bond_count": rotatable_bond_count,
+    "aromatic_ring_count": aromatic_ring_count,
+    "ring_count": ring_count,
 }
 
 
