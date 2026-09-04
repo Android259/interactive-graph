@@ -3,8 +3,6 @@
 ## Summary (analysis/summarize_label.py)
 
 ```
-conda is not available in this environment.
-Could not activate Kalinin_project_LP (create it with: source /home/andrei/DL_project_5/DL_project/scripts/tools/enter_project_env.sh); using current python3: /usr/bin/python3
 Summary: 'geometric_edge_mlp_protgeom_family_neutral_normalized_bilinear_fusion_bilinear_norm_rim_ev28'
 rows: 35
 
@@ -137,4 +135,4 @@ groups_scp2 (n=5):
 
 ## AUC vs chemistry null model, in-sample increment
 
-Failed: scp2 seed4 epoch120 : scored (27326 parameters) -- rerun for the full output: `python3 analysis/full_label_report.py --label geometric_edge_mlp_protgeom_family_neutral_normalized_bilinear_fusion_bilinear_norm_rim_ev28 --seeds=0,1,2,3,4`
+(skipped: SKIP_AUC=1 -- rerun without it to fill this in: `python3 analysis/full_label_report.py --label geometric_edge_mlp_protgeom_family_neutral_normalized_bilinear_fusion_bilinear_norm_rim_ev28 --seeds=0,1,2,3,4`)

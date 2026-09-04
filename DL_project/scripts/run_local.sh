@@ -59,8 +59,9 @@
 #                           Override with 0 on a headless worker.
 #   MAX_OMP_THREADS_PER_JOB Upper bound for one training process. Default: 4, the
 #                           measured optimum on the local 12-CPU machine -- 1 instead
-#                           when the args file has --descriptors_head or
-#                           --pair_descriptors_only (measured too little compute per
+#                           when the args file has --descriptors_head,
+#                           --pair_descriptors_only, --two_pair_descriptors_paths or
+#                           --thematical_paths (measured too little compute per
 #                           batch for multithreading to pay for itself; see the comment
 #                           at MAX_OMP_THREADS_PER_JOB's assignment below).
 #   RESERVED_MEM_GIB        RAM held back from the job-count cap, same idea as
@@ -566,7 +567,14 @@ if (( OMP_THREADS_PER_JOB < 1 )); then OMP_THREADS_PER_JOB=1; fi
 default_max_omp_threads_per_job=4
 for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     if args_file_has_flag "${_label_args_file}" --descriptors_head \
-        || args_file_has_flag "${_label_args_file}" --pair_descriptors_only; then
+        || args_file_has_flag "${_label_args_file}" --pair_descriptors_only \
+        || args_file_has_flag "${_label_args_file}" --two_pair_descriptors_paths \
+        || args_file_has_flag "${_label_args_file}" --thematical_paths; then
+        # --two_pair_descriptors_paths/--thematical_paths are the same no-encoder-
+        # towers shape as --descriptors_head/--pair_descriptors_only (architecture/
+        # final_layer.py builds only a tiny descriptor head + classifier under any
+        # of the four) -- same measured 9x slowdown risk from over-threading a
+        # too-small model applies.
         default_max_omp_threads_per_job=1
         break
     fi

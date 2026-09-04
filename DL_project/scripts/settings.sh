@@ -38,9 +38,17 @@ WALLTIME="${WALLTIME:-5:00:00}"
 # Measured on Kraken 2026-08-19: 120 epochs of the fast-attention model take about
 # 22 minutes per run with four runs sharing one H100. 25 minutes left a 12% margin,
 # which was enough only while the card ran four at a time; at eight the runs contend
-# for it and each one slows down. 35 covers that without the pack having to ask for
-# more total walltime, because the extra concurrency removes a whole sequential wave.
-FAST_ATTENTION_WALLTIME="${FAST_ATTENTION_WALLTIME:-0:35:00}"
+# for it and each one slows down -- that is why this was raised to 35 rather than
+# staying at 25.
+# Trimmed back to 20 (2026-09-04): the family_neutral bilinear_fusion grid actually
+# run overnight (2026-09-03/04) measured training_duration_sec of 300-850s (5-14 min)
+# at the CURRENT pack depth (2 on Bigfoot, 4 on Kraken, per cluster_common.sh) --
+# 20 minutes still leaves >=30% margin over the observed max. This does not
+# override the 2026-08-19 finding above: if pack depth is ever pushed past what
+# cluster_common.sh currently sets (the 8-way attempt that motivated 35 was
+# reverted as saturating), re-measure before trusting 20 again, since contention
+# at higher packing was exactly what ate the margin last time.
+FAST_ATTENTION_WALLTIME="${FAST_ATTENTION_WALLTIME:-0:20:00}"
 
 # --descriptors_head budget: this is a ~1000-parameter model (only
 # architecture/pair_descriptor_head.py's self-attention head + a small
@@ -55,6 +63,18 @@ FAST_ATTENTION_WALLTIME="${FAST_ATTENTION_WALLTIME:-0:35:00}"
 # can set both; descriptors_head is the more specific and correct budget when
 # it does).
 DESCRIPTORS_HEAD_WALLTIME="${DESCRIPTORS_HEAD_WALLTIME:-0:20:00}"
+
+# --thematical_paths budget: same cost class as --descriptors_head (Final_Layer
+# builds only architecture/thematic_descriptor_head.py's ~4-5K-parameter head, no
+# protein/lipid encoders at all -- see files/thematic_interaction_architecture.md).
+# No thematical_paths-specific training_sec_per_epoch rows exist yet in
+# metrics_summary.csv, so this borrows DESCRIPTORS_HEAD_WALLTIME's measured budget
+# rather than guessing a different number; kept as its OWN variable (not a literal
+# reuse of DESCRIPTORS_HEAD_WALLTIME) so it can be re-measured and retuned
+# independently once real thematical_paths runs exist, the same way
+# FAST_ATTENTION_WALLTIME and DESCRIPTORS_HEAD_WALLTIME above were each measured
+# and tuned on their own label's actual runs rather than sharing one number.
+THEMATICAL_PATHS_WALLTIME="${THEMATICAL_PATHS_WALLTIME:-0:20:00}"
 
 # How many jobs may sit WAITING in OAR at once. The cluster's own copy of this
 # (<queue>/max_waiting) wins when it exists, so two computers draining the same

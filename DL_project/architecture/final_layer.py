@@ -14,6 +14,7 @@ from .mlp_utils import (
 )
 from .pair_descriptor_head import PairDescriptorHead
 from .named_descriptor_head import NamedDescriptorHead, pool_descriptor_head_outputs
+from .thematic_descriptor_head import ThematicDescriptorHead
 
 
 class _GradientReversal(torch.autograd.Function):
@@ -375,6 +376,31 @@ class Final_Layer(torch.nn.Module):
             self._chem_features = None
             return
 
+        if config.thematical_paths:
+            # Third sufficiency-test branch, sibling to descriptors_head/two_pair_
+            # descriptors_paths above (mutually exclusive, ModelConfig.validate):
+            # forces a lipid<->protein interaction within each of --geometric_
+            # descriptors/--chemical_descriptors, then forces the two group vectors
+            # together -- see architecture/thematic_descriptor_head.py and files/
+            # thematic_interaction_architecture.md.
+            catalog_order = full_catalog_order(config)
+            self.thematical_head = ThematicDescriptorHead(
+                config, config.geometric_descriptors, config.chemical_descriptors,
+                catalog_order, act_fn,
+            )
+            head_dim = self.thematical_head.output_dim
+            self.binar = torch.nn.Sequential(
+                torch.nn.Linear(head_dim, config.hiddim),
+                make_activation(config, act_fn),
+                *make_final_dropout(config, config.hiddim),
+                torch.nn.Linear(config.hiddim, 2),
+            )
+            self._adv = None
+            self._pooled_partners = None
+            self._dann_features = None
+            self._chem_features = None
+            return
+
         middim = config.hiddim
         lip_dim = config.hiddim
         prot_dim = config.hiddim
@@ -666,6 +692,18 @@ class Final_Layer(torch.nn.Module):
             vec = self.pair_descriptor_head(
                 pair_descriptor_input.view(batch_size, -1), pocket_descriptor
             )
+            return self.binar(vec)
+
+        if self.config.thematical_paths:
+            if descriptor_catalog_input is None:
+                raise ValueError(
+                    "thematical_paths is set but forward() got no "
+                    "descriptor_catalog_input -- Dataloader and forward_args only "
+                    "attach it when --geometric_descriptors/--chemical_descriptors "
+                    "were set at data-load time too; check the flags match."
+                )
+            batch_size = descriptor_catalog_input.shape[0]
+            vec = self.thematical_head(descriptor_catalog_input.view(batch_size, -1))
             return self.binar(vec)
 
         if self.config.two_pair_descriptors_paths:

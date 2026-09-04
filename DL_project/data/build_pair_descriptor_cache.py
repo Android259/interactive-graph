@@ -74,13 +74,18 @@ def needs_cache(args_file):
     conditionally tail_count) the moment ANY of pair_descriptors_on/two_paths_on/
     named_catalog_on is true (it returns early only when ALL THREE are false), so a
     config using only --descriptor_names/--good_descriptors/--bad_descriptors/
-    --protein_descriptors/--lipid_descriptors -- with neither --pair_descriptors nor
+    --protein_descriptors/--lipid_descriptors/--geometric_descriptors/
+    --chemical_descriptors -- with neither --pair_descriptors nor
     --two_pair_descriptors_paths itself -- still pays the ~12s-of-~13.6s RDKit/
     pocket-parse cost this cache exists to remove, independently in every job sharing
     a node, if this only checked the two bare flags. Checked here as raw flag presence
     rather than by calling full_catalog_order itself (which needs a parsed ModelConfig,
     not a flag list) -- --descriptor_names only counts when paired with --descriptors_head
-    or --pair_descriptors, matching that function's own guard.
+    or --pair_descriptors, matching that function's own guard. --geometric_descriptors/
+    --chemical_descriptors (--thematical_paths, architecture/thematic_descriptor_head.py)
+    need no such pairing -- they are only ever read together with --thematical_paths
+    (ModelConfig.validate rejects them otherwise), and unlike --descriptor_names they
+    are never a bare, ambiguous name shared with an unrelated mode.
 
     No lipid_shape distinction anymore: dataloader/pair_descriptor_cache.py's build
     always computes every measure (see that module's docstring) regardless of whether
@@ -95,6 +100,8 @@ def needs_cache(args_file):
         or "--bad_descriptors" in flags
         or "--protein_descriptors" in flags
         or "--lipid_descriptors" in flags
+        or "--geometric_descriptors" in flags
+        or "--chemical_descriptors" in flags
         or (
             "--descriptor_names" in flags
             and ("--descriptors_head" in flags or "--pair_descriptors" in flags)
@@ -103,6 +110,7 @@ def needs_cache(args_file):
     needed = (
         "--pair_descriptors" in flags
         or "--two_pair_descriptors_paths" in flags
+        or "--thematical_paths" in flags
         or named_catalog_on
     )
     return needed, "--lipid_isomers" in flags

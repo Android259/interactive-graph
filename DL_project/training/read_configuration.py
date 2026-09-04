@@ -590,6 +590,27 @@ class ModelConfig:
     two_pair_descriptors_paths: bool = False
     good_descriptors: str = ""
     bad_descriptors: str = ""
+    # --thematical_paths: a third sufficiency-test branch, sibling to descriptors_head/
+    # two_pair_descriptors_paths above (mutually exclusive, see validate()). Two named
+    # groups, --geometric_descriptors and --chemical_descriptors (same comma-separated
+    # DESCRIPTOR_CATALOG syntax as good_descriptors/bad_descriptors), are each split
+    # into a lipid-side and a protein-side token list (dataloader.pair_descriptors.
+    # split_names_by_side -- rejects PAIR_DESCRIPTOR_NAMES entries, which already
+    # combine both sides and have none left to assign) and run through
+    # architecture.thematic_descriptor_head.ThematicDescriptorHead: a small MLP per
+    # side, forced together (product-only, no skip -- ForcedInteraction) into one group
+    # vector, then the two group vectors forced together the same way into one final
+    # vector before Final_Layer's small classifier. See files/
+    # thematic_interaction_architecture.md for the design discussion this implements,
+    # including its known limitation.
+    thematical_paths: bool = False
+    geometric_descriptors: str = ""
+    chemical_descriptors: str = ""
+    # 0.0 (default) leaves every ForcedInteraction's probe_a/probe_b unbuilt -- see
+    # that class's docstring. A nonzero value both builds them and weights
+    # thematical_orthogonality_loss's (penalty + probe_loss) term in the training loop
+    # (training/new_train.py) -- only takes effect under thematical_paths (validate()).
+    thematical_orth_weight: float = 0.0
     # Feeds the SAME protein-only/lipid-only tokens --pair_descriptors' self-attention
     # head reads (aromatic_share, polar_share, and coarsened extent when
     # --pair_descriptor_extent is on, from POCKET_DESCRIPTOR_NAMES for protein; chain,
@@ -2043,6 +2064,63 @@ class ModelConfig:
                     "itself, --pair_descriptors) are never built, so these options have "
                     "nothing to attach to: " + ", ".join(unsupported)
                 )
+        if self.thematical_paths and (self.descriptors_head or self.two_pair_descriptors_paths):
+            raise ValueError(
+                "thematical_paths, descriptors_head and two_pair_descriptors_paths are "
+                "three different sufficiency-test branches Final_Layer can build -- "
+                "pick one"
+            )
+        if self.thematical_paths and not (
+            self.geometric_descriptors.strip() and self.chemical_descriptors.strip()
+        ):
+            raise ValueError(
+                "thematical_paths requires both --geometric_descriptors and "
+                "--chemical_descriptors to name at least one descriptor each"
+            )
+        if (
+            (self.geometric_descriptors or self.chemical_descriptors)
+            and not self.thematical_paths
+        ):
+            raise ValueError(
+                "geometric_descriptors/chemical_descriptors only take effect under "
+                "thematical_paths"
+            )
+        if self.thematical_orth_weight and not self.thematical_paths:
+            raise ValueError(
+                "thematical_orth_weight only takes effect under thematical_paths"
+            )
+        if self.thematical_paths:
+            # Local import, not module-level -- same rdkit-dependency reasoning as
+            # protein_descriptors/lipid_descriptors' own check above. split_names_by_
+            # side raises here (bad token, or a pair descriptor with no single side)
+            # so a bad --geometric_descriptors/--chemical_descriptors value fails now,
+            # not at model-build time inside ThematicDescriptorHead.
+            from dataloader.pair_descriptors import parse_descriptor_list, split_names_by_side
+
+            split_names_by_side(parse_descriptor_list(self.geometric_descriptors))
+            split_names_by_side(parse_descriptor_list(self.chemical_descriptors))
+            # Same reasoning as descriptors_head/two_pair_descriptors_paths just above:
+            # Final_Layer builds only the two thematic interaction groups + a small
+            # binar under this flag, so nothing else has a pooled representation to
+            # attach to.
+            unsupported = [
+                name for name in (
+                    "bilinear_fusion", "adversarial_grl", "dann_family", "chem_prior",
+                    "chem_adversary", "pocket_compat_prior", "compatibility_input",
+                    "compatibility_split_input", "attention_pooling", "swe_pooling",
+                    "lipid_only", "protein_only", "pair_descriptors_only",
+                    "lipid_path_handicap", "double_attention", "pair_descriptors",
+                    "protein_descriptors", "lipid_descriptors",
+                )
+                if getattr(self, name)
+            ]
+            if unsupported:
+                raise ValueError(
+                    "thematical_paths builds only the two thematic descriptor "
+                    "interaction groups and a small classifier -- protein1/lipid1/"
+                    "cross_attention1/final_layer's usual modules are never built, so "
+                    "these options have nothing to attach to: " + ", ".join(unsupported)
+                )
         if self.compatibility_split_input:
             named = [n.strip() for n in self.compat_input_parts.split(",") if n.strip()]
             unknown = [n for n in named if n not in ("chain", "clash")]
@@ -2346,6 +2424,8 @@ SIMPLE_BOOL_FLAGS = {
     "--descriptors_head": "descriptors_head",
     "two_pair_descriptors_paths": "two_pair_descriptors_paths",
     "--two_pair_descriptors_paths": "two_pair_descriptors_paths",
+    "thematical_paths": "thematical_paths",
+    "--thematical_paths": "thematical_paths",
     "descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
     "--descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
     "descriptors_in_protein": "descriptors_in_protein",
@@ -2707,6 +2787,9 @@ VALUE_HANDLERS = {
     "--good_descriptors=": set_config_field("good_descriptors"),
     "--bad_descriptors=": set_config_field("bad_descriptors"),
     "--descriptor_names=": set_config_field("descriptor_names"),
+    "--geometric_descriptors=": set_config_field("geometric_descriptors"),
+    "--chemical_descriptors=": set_config_field("chemical_descriptors"),
+    "--thematical_orth_weight=": set_config_field("thematical_orth_weight", float),
     "--pocket_descriptor_names=": set_config_field("pocket_descriptor_names"),
     "--protein_descriptors=": set_config_field("protein_descriptors"),
     "--lipid_descriptors=": set_config_field("lipid_descriptors"),

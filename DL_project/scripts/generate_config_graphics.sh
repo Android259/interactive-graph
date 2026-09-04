@@ -93,14 +93,27 @@ for group in "${COMPLETE_GROUPS[@]}"; do
 done
 
 # --- Subgroup bar charts: aggregate over whatever completed reports exist. ---
+# Not fatal on its own (unlike a hard failure elsewhere in this script, which
+# still aborts under set -e): "no subgroup metrics matched" happens whenever
+# --filter "label=${LABEL}" finds nothing in test_metrics/**/*.txt's own
+# label: line for this metric -- a genuinely label-less/subgroup-less config,
+# or (seen in practice) a report whose embedded label: does not match the
+# directory LABEL was resolved from, e.g. a run submitted with a --label that
+# drifted from its output directory's name. Either way it is data this
+# label's reports do not have, not a reason to throw away the learning
+# curves already written above by aborting the whole script under set -e.
+SUBGROUP_FAILED_METRICS=()
 for metric in "${SUBGROUP_METRICS[@]}"; do
     printf '\n== subgroup metric: %s ==\n' "${metric}"
-    python3 "${PROJECT_ROOT}/analysis/plot_metric_by_subgroup.py" \
+    if ! python3 "${PROJECT_ROOT}/analysis/plot_metric_by_subgroup.py" \
         --reports-root test_metrics \
         --metric "${metric}" \
         --filter "label=${LABEL}" \
         --title "${LABEL} ${metric} by subgroup" \
         --output "${OUTPUT_DIR}/subgroups/${LABEL}_${metric}_by_subgroup.pdf"
+    then
+        SUBGROUP_FAILED_METRICS+=("${metric}")
+    fi
 done
 
 printf '\nDone. Graphics written under %s\n' "${OUTPUT_DIR}"
@@ -109,4 +122,8 @@ printf 'Learning curves plotted for %d group(s): %s\n' \
 if (( ${#SKIPPED_GROUPS[@]} > 0 )); then
     printf 'Learning curves skipped for %d group(s) missing seeds: %s\n' \
         "${#SKIPPED_GROUPS[@]}" "${SKIPPED_GROUPS[*]}"
+fi
+if (( ${#SUBGROUP_FAILED_METRICS[@]} > 0 )); then
+    printf 'Subgroup bar charts skipped for %d metric(s) (no matching reports): %s\n' \
+        "${#SUBGROUP_FAILED_METRICS[@]}" "${SUBGROUP_FAILED_METRICS[*]}" >&2
 fi

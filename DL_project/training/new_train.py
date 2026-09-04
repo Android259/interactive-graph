@@ -38,6 +38,7 @@ from read_configuration import read_configuration
 from forward_args import build_forward_args
 from append_metric_to_table import append_metric
 from architecture.final_layer import chem_adversary_loss, family_dann_loss
+from architecture.thematic_descriptor_head import thematical_orthogonality_loss
 from architecture.interaction_classification import InteractionClassification
 from architecture.mlp_utils import (
     collect_sparsity_penalty,
@@ -651,6 +652,7 @@ def log_adversary_metrics(writer, epoch_index, stats):
         ("adv", "adv_batches", "adversary loss"),
         ("dann", "dann_batches", "family dann loss"),
         ("chem", "chem_batches", "chem adversary loss"),
+        ("thematical_orth", "thematical_orth_batches", "thematical orthogonality penalty"),
     ):
         batches = stats.get(batches_key, 0)
         if batches:
@@ -1143,7 +1145,11 @@ def epoch(idx,counttrain,countval):
     # trace in TensorBoard at all. They are what says whether a partner is still
     # individually decodable -- the premise the whole GRL setup rests on -- so they are
     # tracked separately rather than folded into "epoch/train loss".
-    adversary_stats = {"adv": 0.0, "adv_batches": 0, "dann": 0.0, "dann_batches": 0, "chem": 0.0, "chem_batches": 0}
+    adversary_stats = {
+        "adv": 0.0, "adv_batches": 0, "dann": 0.0, "dann_batches": 0,
+        "chem": 0.0, "chem_batches": 0,
+        "thematical_orth": 0.0, "thematical_orth_batches": 0,
+    }
     for i, graph in enumerate(train_loader):
         #dataset is reduced because of high variety of experience parameters 
         if i < train_batches_to_run:
@@ -1306,6 +1312,22 @@ def epoch(idx,counttrain,countval):
                     los = los + conf.chem_weight * chem_loss
                     adversary_stats["chem"] += float(chem_loss.detach())
                     adversary_stats["chem_batches"] += 1
+
+            # Thematic-interaction non-redundancy penalty: pushes each --thematical_
+            # paths ForcedInteraction's output away from correlating with what a
+            # stop-gradient probe already predicts from ONE side alone. Read as a
+            # narrower leak gauge than adversarial_grl/dann_family, not a replacement
+            # for them -- see thematical_orthogonality_loss's own docstring for the
+            # blind spot it does not close (a fingerprint jointly correlated across
+            # both sides at once).
+            if conf.thematical_paths and conf.thematical_orth_weight:
+                orth_penalty, probe_loss = thematical_orthogonality_loss(
+                    model.final_layer.thematical_head, interaction_labels
+                )
+                if orth_penalty is not None:
+                    los = los + conf.thematical_orth_weight * (orth_penalty + probe_loss)
+                    adversary_stats["thematical_orth"] += float(orth_penalty.detach())
+                    adversary_stats["thematical_orth_batches"] += 1
 
             if use_amp:
                 scaler.scale(los).backward()

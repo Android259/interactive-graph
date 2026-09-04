@@ -464,12 +464,34 @@ check_pending_reports() {
         "ls '${CLUSTER_QUEUE_ROOT}/active/pending_reports/'*.report 2>/dev/null" || true)"
     [[ -n "${markers}" ]] || return 0
 
-    while IFS= read -r marker; do
+    # Reads from fd 3, not the loop's implicit stdin (fd 0): every ssh call in
+    # this body lacks -n, so without its own fd the classic "ssh inside a
+    # while-read loop" trap applies -- ssh still holds/forwards stdin even
+    # though the remote commands (mv/cat/rm) never read it, which drains the
+    # here-string after the very first iteration and makes `read` see EOF.
+    # Confirmed in practice: with ten markers queued, every round processed
+    # exactly the alphabetically-first one and silently dropped the other
+    # nine, regardless of which label they were -- not the transient-network
+    # failure guarded against above, a deterministic one that fired every
+    # single time.
+    while IFS= read -r marker <&3; do
         [[ -n "${marker}" ]] || continue
         label="$(basename "${marker}" .report)"
 
+        # || claimed=no (not just || true on the assignment): ssh itself can
+        # fail before ever reaching the remote command -- a transient
+        # reconnect blip ("kex_exchange_identification: Connection closed by
+        # remote host") returns 255 with no "yes"/"no" printed at all. Under
+        # this script's `set -e`, an unguarded failure here aborts the WHOLE
+        # check_pending_reports call, silently skipping every marker still
+        # left in the `while` loop below this one for the rest of this round
+        # -- not just this marker. Observed in practice: one flaky
+        # reconnect mid-sweep left three finished labels' reports unclaimed
+        # for hours because nothing retried them until a human re-ran this
+        # script by hand.
         claimed="$(ssh "${ssh_args[@]}" "${remote}" \
-            "mv '${marker}' '${marker}.claimed' 2>/dev/null && echo yes || echo no")"
+            "mv '${marker}' '${marker}.claimed' 2>/dev/null && echo yes || echo no")" \
+            || claimed=no
         [[ "${claimed}" == "yes" ]] || continue
 
         report_body="$(ssh "${ssh_args[@]}" "${remote}" "cat '${marker}.claimed'" || true)"
@@ -495,7 +517,7 @@ check_pending_reports() {
             ssh "${ssh_args[@]}" "${remote}" \
                 "mv '${marker}.claimed' '${marker}' 2>/dev/null" || true
         fi
-    done <<< "${markers}"
+    done 3<<< "${markers}"
 }
 
 # --- one cluster, one round ----------------------------------------------
@@ -615,6 +637,17 @@ poll_cluster() {
             printf 'All %s jobs completed; nothing pending.\n' "${cluster}"
             (( ARCHIVE_IDLE_QUEUES )) && archive_idle_queues "${cluster}"
         fi
+        # check_pending_reports below reads metrics_summary.csv, but the
+        # round's own rebuild (update_metrics_table, called once at the end of
+        # the main loop after every source has been visited) has not run yet
+        # this round. Without this, a label whose queue happens to drain (and
+        # therefore whose report fires) in the very same round its own last
+        # results synced would be judged against a table that does not have
+        # those results in it yet -- "No rows found" for a label that just
+        # finished, not for one that is actually missing data. Rebuilding here
+        # too, right before the check, closes that race; the later end-of-round
+        # call becomes a cheap no-op ("Added 0 ...") when this already ran.
+        (( ROUND_SYNCED )) && { update_metrics_table || true; }
         check_pending_reports "${cluster}" || true
     fi
     return 0

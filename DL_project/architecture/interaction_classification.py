@@ -17,12 +17,16 @@ class InteractionClassification(torch.nn.Module):
         config.validate()
         self.config = config
 
-        if not (self.config.descriptors_head or self.config.two_pair_descriptors_paths):
-            # --descriptors_head and --two_pair_descriptors_paths (training/
-            # read_configuration.py) are both sufficiency tests -- one for
-            # --pair_descriptors alone, one for --good_descriptors/--bad_descriptors --
-            # so neither builds the usual encoder/attention modules, and forward()
-            # below never reaches the code that would use them.
+        if not (
+            self.config.descriptors_head or self.config.two_pair_descriptors_paths
+            or self.config.thematical_paths
+        ):
+            # --descriptors_head, --two_pair_descriptors_paths and --thematical_paths
+            # (training/read_configuration.py) are all sufficiency tests -- one for
+            # --pair_descriptors alone, one for --good_descriptors/--bad_descriptors,
+            # one for --geometric_descriptors/--chemical_descriptors -- so none of them
+            # builds the usual encoder/attention modules, and forward() below never
+            # reaches the code that would use them.
             self.lipid1 = Lipid_encoder(self.config)
             self.protein1 = Protein_encoder(self.config)
             if self.config.cross_attention:
@@ -257,10 +261,14 @@ class InteractionClassification(torch.nn.Module):
         chain_rank=None):
         """Encode a batched protein-lipid input and return binary logits."""
 
-        if config.descriptors_head or config.two_pair_descriptors_paths:
-            # No protein1/lipid1/cross_attention1 exist under either flag (__init__
-            # above); every other argument here is ignored. Final_Layer.forward()
-            # short-circuits the same way, reading only what its own branch needs.
+        if (
+            config.descriptors_head or config.two_pair_descriptors_paths
+            or config.thematical_paths
+        ):
+            # No protein1/lipid1/cross_attention1 exist under any of these flags
+            # (__init__ above); every other argument here is ignored. Final_Layer.
+            # forward() short-circuits the same way, reading only what its own branch
+            # needs.
             return self.final_layer(
                 None, None, None, None, None,
                 pocket_descriptor=pocket_descriptor,

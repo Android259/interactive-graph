@@ -18,6 +18,10 @@ label="$1"
 seeds_csv="$2"
 do_graphics="$3"
 do_summarize="$4"
+# Set by the caller (not a positional -- every existing caller stays
+# unchanged) to defer the slow AUC-vs-null-model section; see its own comment
+# below at the "## AUC vs chemistry null model" block.
+SKIP_AUC="${SKIP_AUC:-0}"
 
 (( do_graphics || do_summarize )) || exit 0
 
@@ -85,7 +89,26 @@ if (( do_summarize )); then
         # ratio, split) actually recomputes it. full_label_report.py's own
         # output already states which features were resolved and used.
         printf '## AUC vs chemistry null model, in-sample increment\n\n'
-        if full_report_out=$("${PROJECT_ROOT}/scripts/env.sh" python3 "${PROJECT_ROOT}/analysis/full_label_report.py" \
+        if (( SKIP_AUC )); then
+            # summarize_label.py above is a table scan (seconds); this section's
+            # analysis/full_label_report.py call scores every seed's checkpoint
+            # against a chemistry null model and has been measured taking 40+
+            # minutes for a single label. Run serially across a backlog of
+            # pending labels (wait_and_sync.sh's check_pending_reports,
+            # run_cluster.sh's own VARIANTS loop), that turns "get the fast
+            # summary written for everything that just finished" into "wait an
+            # hour+ per label queued ahead of you" -- and a closed terminal or
+            # dropped SSH mid-backlog leaves every label after the one it died
+            # on without even the fast section. SKIP_AUC=1 (set by whoever is
+            # racing to get summaries out for a backlog) leaves this section as
+            # a placeholder and does NOT set full_report_failed, so the caller's
+            # exit code stays clean -- this is a deliberate deferral, not a
+            # failure to retry. Re-run without SKIP_AUC later (same label, same
+            # seeds) to fill this section in; that rewrites the whole file, so
+            # the fast section above is regenerated too, harmlessly.
+            printf '(skipped: SKIP_AUC=1 -- rerun without it to fill this in: `python3 analysis/full_label_report.py --label %s --seeds=%s`)\n' \
+                "${label}" "${seeds_csv}"
+        elif full_report_out=$("${PROJECT_ROOT}/scripts/env.sh" python3 "${PROJECT_ROOT}/analysis/full_label_report.py" \
                 --label "${label}" --seeds="${seeds_csv}" 2>&1); then
             printf '```\n'
             printf '%s\n' "${full_report_out}" | sed -n '/^##########/,$p'

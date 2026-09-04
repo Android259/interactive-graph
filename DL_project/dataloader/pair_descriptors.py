@@ -381,11 +381,12 @@ def full_catalog_order(config):
     column order every consumer indexes into: --good_descriptors/--bad_descriptors
     (--two_pair_descriptors_paths), --descriptor_names (usable under --descriptors_head OR
     --pair_descriptors -- architecture/final_layer.py builds a NamedDescriptorHead instead
-    of PairDescriptorHead/the fixed head-only descriptor head under either), and the two
+    of PairDescriptorHead/the fixed head-only descriptor head under either), the two
     node-broadcast lists --protein_descriptors/--lipid_descriptors (architecture/
-    protein_encoder.py, architecture/lipid_encoder.py). Every one of those call sites uses
-    THIS function rather than assembling its own tuple, so no destination can end up naming
-    a token none of the others built.
+    protein_encoder.py, architecture/lipid_encoder.py), and --geometric_descriptors/
+    --chemical_descriptors (--thematical_paths, architecture/thematic_descriptor_head.py).
+    Every one of those call sites uses THIS function rather than assembling its own tuple,
+    so no destination can end up naming a token none of the others built.
     """
     named_descriptor_names = (
         getattr(config, "descriptor_names", "")
@@ -398,7 +399,45 @@ def full_catalog_order(config):
         named_descriptor_names,
         getattr(config, "protein_descriptors", ""),
         getattr(config, "lipid_descriptors", ""),
+        getattr(config, "geometric_descriptors", ""),
+        getattr(config, "chemical_descriptors", ""),
     )
+
+
+def split_names_by_side(names):
+    """Canonical descriptor tokens (parse_descriptor_list's output) -> (lipid_names,
+    protein_names), both tuples, preserving `names`' own order within each side.
+
+    --thematical_paths (architecture/thematic_descriptor_head.py) needs this: each of
+    --geometric_descriptors/--chemical_descriptors names a GROUP, and a forced
+    lipid<->protein interaction within that group needs to know which of the group's
+    tokens are lipid-side and which are protein-side. LIPID_DESCRIPTOR_NAMES and
+    PROTEIN_DESCRIPTOR_NAMES + ("extent", "polar_share") are disjoint from each other
+    by construction (DESCRIPTOR_CATALOG concatenates them once each), so every
+    non-pair token lands on exactly one side.
+
+    Raises ValueError for a PAIR_DESCRIPTOR_NAMES entry (occupancy, aromatic_contact,
+    ...) or a <name>_coarse=<spec> token built from one -- those already combine both
+    sides by formula (pair_descriptor_value), so there is no single side of a forced
+    interaction to put them on. A caller that wants a PAIR_DESCRIPTOR_NAMES value
+    belongs in a plain --pair_descriptors/--good_descriptors self-attention head
+    instead, not a --thematical_paths group.
+    """
+    protein_side = PROTEIN_DESCRIPTOR_NAMES + ("extent", "polar_share")
+    lipid, protein = [], []
+    for token in names:
+        base = token.partition(_COARSE_SUFFIX)[0]
+        if base in LIPID_DESCRIPTOR_NAMES:
+            lipid.append(token)
+        elif base in protein_side:
+            protein.append(token)
+        else:
+            raise ValueError(
+                f"Descriptor {token!r} is a pair descriptor (already combines lipid "
+                "and protein) and has no single side to assign in a --thematical_paths "
+                f"group. Known pair descriptors: {PAIR_DESCRIPTOR_NAMES}"
+            )
+    return tuple(lipid), tuple(protein)
 
 
 def resolve_similarity_feature_names(*raw_lists):

@@ -12,6 +12,7 @@ from architecture.mlp_utils import export_surviving_structure
 from architecture.protein_edge_geometry import (
     STRUCTURED_EDGE_DIM, rbf, structured_edge_features,
 )
+from architecture.thematic_descriptor_head import thematical_orthogonality_loss
 from training.read_configuration import ModelConfig
 
 
@@ -1237,6 +1238,121 @@ def test_two_pair_descriptors_paths_conflicts_with_descriptors_head():
     config.bad_descriptors = "heavy"
     with pytest.raises(ValueError, match="two_pair_descriptors_paths and descriptors_head"):
         config.validate()
+
+
+def test_thematical_paths_builds_no_encoder_or_cross_attention_modules():
+    config = make_config()
+    config.thematical_paths = True
+    config.geometric_descriptors = "chain,pocket_extent"
+    config.chemical_descriptors = "unsaturation,aromatic_share"
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert not hasattr(model, "lipid1")
+    assert not hasattr(model, "protein1")
+    assert not hasattr(model, "cross_attention1")
+    assert hasattr(model.final_layer, "thematical_head")
+    # thematical_orth_weight defaults to 0.0 -- no probes built, no extra parameters.
+    assert model.final_layer.thematical_head.geom_interaction.probe_a is None
+    assert model.final_layer.thematical_head.chem_interaction.probe_a is None
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in model.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_thematical_paths_wires_columns_correctly():
+    config = make_config()
+    config.thematical_paths = True
+    config.geometric_descriptors = "chain,pocket_extent"
+    config.chemical_descriptors = "unsaturation,aromatic_share"
+    config.validate()
+
+    model = InteractionClassification(config)
+    from dataloader.pair_descriptors import full_catalog_order
+
+    catalog_order = full_catalog_order(config)
+    head = model.final_layer.thematical_head
+    assert catalog_order[head.geom_lip_columns.item()] == "chain"
+    assert catalog_order[head.geom_prot_columns.item()] == "pocket_extent"
+    assert catalog_order[head.chem_lip_columns.item()] == "unsaturation"
+    assert catalog_order[head.chem_prot_columns.item()] == "aromatic_share"
+
+
+def test_thematical_paths_rejects_pair_descriptor_name():
+    config = make_config()
+    config.thematical_paths = True
+    config.geometric_descriptors = "occupancy,chain"
+    config.chemical_descriptors = "unsaturation,aromatic_share"
+    with pytest.raises(ValueError, match="pair descriptor"):
+        config.validate()
+
+
+def test_thematical_paths_requires_both_groups():
+    config = make_config()
+    config.thematical_paths = True
+    config.geometric_descriptors = "chain,pocket_extent"
+    with pytest.raises(ValueError, match="thematical_paths requires both"):
+        config.validate()
+
+
+def test_thematical_paths_conflicts_with_descriptors_head():
+    config = make_config()
+    config.pocket_descriptors = True
+    config.pair_descriptors = True
+    config.descriptors_head = True
+    config.thematical_paths = True
+    config.geometric_descriptors = "chain,pocket_extent"
+    config.chemical_descriptors = "unsaturation,aromatic_share"
+    with pytest.raises(ValueError, match="three different sufficiency-test branches"):
+        config.validate()
+
+
+def test_thematical_orth_weight_only_takes_effect_under_thematical_paths():
+    config = make_config()
+    config.thematical_orth_weight = 0.5
+    with pytest.raises(ValueError, match="thematical_orth_weight only takes effect"):
+        config.validate()
+
+
+def test_thematical_paths_orth_weight_trains_probes_and_resets_in_eval():
+    config = make_config()
+    config.thematical_paths = True
+    config.geometric_descriptors = "chain,pocket_extent"
+    config.chemical_descriptors = "unsaturation,aromatic_share"
+    config.thematical_orth_weight = 0.1
+    config.validate()
+
+    torch.manual_seed(0)
+    model = InteractionClassification(config)
+    model.train()
+    labels = torch.tensor([0, 1], dtype=torch.long)
+    out = model(**synthetic_forward_args(config))
+    task_loss = F.cross_entropy(out, labels)
+    orth_penalty, probe_loss = thematical_orthogonality_loss(
+        model.final_layer.thematical_head, labels
+    )
+    assert orth_penalty is not None and torch.isfinite(orth_penalty)
+    assert probe_loss is not None and torch.isfinite(probe_loss)
+    total = task_loss + config.thematical_orth_weight * (orth_penalty + probe_loss)
+    total.backward()
+    probe_params = [p for name, p in model.named_parameters() if "probe_" in name]
+    assert probe_params
+    assert all(
+        p.grad is not None and torch.isfinite(p.grad).all() for p in probe_params
+    )
+
+    model.eval()
+    with torch.no_grad():
+        model(**synthetic_forward_args(config))
+    assert model.final_layer.thematical_head._orth_stash is None
 
 
 def test_mlp_in_place_of_sa_replaces_self_attention_and_still_trains():

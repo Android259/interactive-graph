@@ -359,8 +359,33 @@ echo \$? > $(printf '%q' "${exit_path}")
 EOF
     ssh -S "${SSH_CONTROL_PATH}" "${remote}" "chmod +x '${script_path}'"
 
+    # A bare /core=N request used to be admitted here; GRICAD's admission rule on
+    # this project now rejects any resource request without an explicit gpu/nodes
+    # clause ("Bad resources description request. You must provide gpu or nodes
+    # descriptions") -- confirmed by hand on Bigfoot 2026-09-04. That made every
+    # oarsub call in this function fail silently (this function returns 1, the
+    # caller prints its own "WARNING: could not build..." and proceeds without a
+    # cache), so every job in the label recomputed its descriptors itself instead
+    # of reading a shared cache -- fatal, not just slow, for any config whose
+    # descriptors need a 3D conformer embed (radius_of_gyration/asphericity/
+    # molecular_volume/npr1/npr2): computed serially per job instead of once via
+    # the dedicated build script's process pool, it silently ran past the job's
+    # walltime with zero output. Request the SAME resource profile a real
+    # training job would (OAR_RESOURCES/GPU_PROPERTY, set by cluster_profile()
+    # in cluster_common.sh) instead of a hand-rolled CPU-only one -- wasteful for
+    # a task that never touches the GPU, but the alternative is failing admission
+    # outright on a cluster whose queue requires it. PREP_JOB_CORES stays the
+    # fallback for a cluster whose OAR_RESOURCES has no gpu clause (kraken-cpu),
+    # where a bare /core=N is still accepted.
+    local prep_resources="/core=${PREP_JOB_CORES}"
+    local -a prep_gpu_flag=()
+    if [[ -n "${GPU_PROPERTY}" ]]; then
+        prep_resources="${OAR_RESOURCES}"
+        prep_gpu_flag=(-p "${GPU_PROPERTY}")
+    fi
+
     if ! ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
-        "cd '${REMOTE_PROJECT}' && oarsub --project $(printf '%q' "${PROJECT}") --name '${job_name}' -l /core=${PREP_JOB_CORES},walltime=${PREP_JOB_WALLTIME} -O '${out_path}' -E '${err_path}' '${script_path}'" \
+        "cd '${REMOTE_PROJECT}' && oarsub --project $(printf '%q' "${PROJECT}") --name '${job_name}' -l ${prep_resources},walltime=${PREP_JOB_WALLTIME} $(printf '%q ' "${prep_gpu_flag[@]}") -O '${out_path}' -E '${err_path}' '${script_path}'" \
         2>&1 | sed 's/^/  /'
     then
         return 1
