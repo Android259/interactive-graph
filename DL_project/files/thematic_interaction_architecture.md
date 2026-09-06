@@ -234,6 +234,17 @@ External work this design borrows mechanisms from or should be checked against:
 | `--geometric_descriptors=<comma-separated>` | geometric group's token list |
 | `--chemical_descriptors=<comma-separated>` | chemical group's token list |
 | `--thematical_orth_weight=<float>` | 0.0 (default) = off; nonzero builds the probes and weights the penalty |
+| `--thematical_single_norm` | off by default; drops `group_interaction`'s (level2) L2-normalize only -- see files/thematical_paths_dynamics_and_pair_auc.md section 7 |
+| `--thematical_bn_scale` | off by default; `_ModalityMLP`'s centering BatchNorm becomes `affine=True` with `bias` frozen at its zero init, so only a learnable per-channel scale is added |
+| `--thematical_orthogonal_init` | off by default; orthogonal init (`torch.nn.init.orthogonal_`) for every `ForcedInteraction.proj_a`/`proj_b`, instead of the PyTorch Kaiming-uniform default |
+| `--thematical_interaction_lr` | off by default; all `ForcedInteraction` parameters (geom/chem/level2 combined) get their own optimizer group at `THEMATICAL_INTERACTION_LR_MULTIPLIER=5.0` times `--lr` (`training/new_train.py`) |
+
+All four are independent, off by default, only take effect under `--thematical_paths`
+(`validate()`), and can be combined with each other and with
+`--thematical_orth_weight`. Not yet trained or benchmarked -- proposed fixes for the
+training-dynamics problem in files/thematical_paths_dynamics_and_pair_auc.md section
+7, one arg file per flag under `scripts/arg_files/thematical_paths_geom_chem_
+{single_norm,bn_scale,orthogonal_init,interaction_lr}.md`.
 
 `validate()` rejects combining `--thematical_paths` with anything the usual
 protein/lipid towers would need (`--bilinear_fusion`, `--adversarial_grl`,

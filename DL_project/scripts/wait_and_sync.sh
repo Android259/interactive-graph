@@ -498,6 +498,9 @@ check_pending_reports() {
         seeds_csv="$(printf '%s\n' "${report_body}" | sed -n 's/^seeds_csv=//p')"
         do_graphics="$(printf '%s\n' "${report_body}" | sed -n 's/^graphics=//p')"
         do_summarize="$(printf '%s\n' "${report_body}" | sed -n 's/^summarize=//p')"
+        # Older markers predate this line -- treated as 0 failures so far.
+        failures="$(printf '%s\n' "${report_body}" | sed -n 's/^failures=//p')"
+        failures="${failures:-0}"
 
         printf '%s: generating the report for %s (queued elsewhere, picked up here).\n' \
             "${cluster}" "${label}"
@@ -511,11 +514,31 @@ check_pending_reports() {
             # (a transient one included), with no error printed and no way for a
             # later round -- from this computer or another -- to ever retry it.
             # Restoring the marker (not deleting it) means the next round that
-            # sees this cluster idle tries again instead of losing the report.
-            printf '%s: generate_label_report.sh failed for %s -- leaving its marker queued for retry.\n' \
-                "${cluster}" "${label}" >&2
-            ssh "${ssh_args[@]}" "${remote}" \
-                "mv '${marker}.claimed' '${marker}' 2>/dev/null" || true
+            # sees this cluster idle tries again instead of losing the report --
+            # but only up to MAX_REPORT_FAILURES times (scripts/settings.sh):
+            # generate_label_report.sh only READS existing test_metrics/dynamics
+            # files, it never resubmits the training job, so a label whose job
+            # never produced usable data fails this step the same way forever.
+            # Without a cap that meant every future round, on any computer,
+            # retried it again and printed the same failure, forever. Past the
+            # cap the marker is parked as .gaveup instead of restored -- still
+            # on disk, not auto-retried.
+            failures=$((failures + 1))
+            marker_body="$(printf 'seeds_csv=%s\ngraphics=%s\nsummarize=%s\nfailures=%s\n' \
+                "${seeds_csv:-0,1,2,3,4}" "${do_graphics:-1}" "${do_summarize:-1}" "${failures}")"
+            if (( failures >= MAX_REPORT_FAILURES )); then
+                printf '%s: generate_label_report.sh failed for %s %d times -- giving up, marker parked as %s.gaveup (rename back to .report by hand once the underlying job is fixed/resubmitted).\n' \
+                    "${cluster}" "${label}" "${failures}" "${marker}" >&2
+                ssh "${ssh_args[@]}" "${remote}" \
+                    "printf '%s' $(printf '%q' "${marker_body}") > '${marker}.gaveup' && rm -f '${marker}.claimed'" \
+                    || true
+            else
+                printf '%s: generate_label_report.sh failed for %s (%d/%d) -- leaving its marker queued for retry.\n' \
+                    "${cluster}" "${label}" "${failures}" "${MAX_REPORT_FAILURES}" >&2
+                ssh "${ssh_args[@]}" "${remote}" \
+                    "printf '%s' $(printf '%q' "${marker_body}") > '${marker}' && rm -f '${marker}.claimed'" \
+                    || true
+            fi
         fi
     done 3<<< "${markers}"
 }

@@ -20,14 +20,20 @@ class _ModalityMLP(torch.nn.Module):
     a raw one.
     """
 
-    def __init__(self, n_inputs, hidden, dim, config, act_fn=None):
+    def __init__(self, n_inputs, hidden, dim, config, act_fn=None, bn_scale=False):
         super().__init__()
         self.mlp = torch.nn.Sequential(
             torch.nn.Linear(n_inputs, hidden),
             make_activation(config, act_fn),
             torch.nn.Linear(hidden, dim),
         )
-        self.center = torch.nn.BatchNorm1d(dim, affine=False)
+        # --thematical_bn_scale: affine=True but bias frozen at its zero init, so the
+        # network can learn a per-channel SCALE (fixing an under/over-scaled channel
+        # feeding ForcedInteraction) without reopening a per-sample SHIFT shortcut --
+        # see ModelConfig.thematical_bn_scale's docstring.
+        self.center = torch.nn.BatchNorm1d(dim, affine=bn_scale)
+        if bn_scale:
+            self.center.bias.requires_grad_(False)
 
     def forward(self, x):
         return self.center(self.mlp(x))
@@ -84,10 +90,19 @@ class ForcedInteraction(torch.nn.Module):
     their (detached) predictions.
     """
 
-    def __init__(self, dim, config, act_fn=None, orth_weight=0.0):
+    def __init__(self, dim, config, act_fn=None, orth_weight=0.0, orthogonal_init=False,
+                 normalize=True):
         super().__init__()
         self.proj_a = torch.nn.Linear(dim, dim)
         self.proj_b = torch.nn.Linear(dim, dim)
+        if orthogonal_init:
+            # --thematical_orthogonal_init: default Kaiming-uniform rows can end up
+            # nearly parallel by chance at dim as small as this one's -- orthogonal
+            # init guarantees maximally separated projection directions from step 0,
+            # instead of leaving it to chance whether the following L2-normalize
+            # collapses distinct samples onto near-identical points on the sphere.
+            torch.nn.init.orthogonal_(self.proj_a.weight)
+            torch.nn.init.orthogonal_(self.proj_b.weight)
         hidden = max(config.m * dim, dim)
         self.ffn = torch.nn.Sequential(
             torch.nn.Linear(dim, hidden),
@@ -96,11 +111,20 @@ class ForcedInteraction(torch.nn.Module):
         )
         self.probe_a = _make_probe(dim, act_fn) if orth_weight else None
         self.probe_b = _make_probe(dim, act_fn) if orth_weight else None
+        # --thematical_single_norm (ThematicDescriptorHead passes normalize=False for
+        # group_interaction only): z_geom/z_chem are already normalised, well-scaled
+        # FFN outputs, not the raw unconstrained bilinear product MLB/MFB's
+        # signed-sqrt+L2-norm fix was designed to protect -- chaining that fix a
+        # second time on top of already-normalised inputs is untested by either paper
+        # and empirically correlates with the longer/more frequent flat-0.5-BA startup
+        # (files/thematical_paths_dynamics_and_pair_auc.md section 7).
+        self.normalize = normalize
 
     def forward(self, a, b):
         product = self.proj_a(a) * self.proj_b(b)
         product = torch.sign(product) * torch.sqrt(product.abs() + 1e-6)
-        product = F.normalize(product, p=2, dim=-1)
+        if self.normalize:
+            product = F.normalize(product, p=2, dim=-1)
         return self.ffn(product)
 
 
@@ -120,7 +144,10 @@ class ThematicDescriptorHead(torch.nn.Module):
     implements.
     """
 
-    def __init__(self, config, geometric_names, chemical_names, catalog_order, act_fn=None):
+    def __init__(
+        self, config, geometric_names, chemical_names, catalog_order, act_fn=None,
+        geometric_pair_priors="", chemical_pair_priors="",
+    ):
         super().__init__()
         geom_tokens = parse_descriptor_list(geometric_names)
         chem_tokens = parse_descriptor_list(chemical_names)
@@ -142,6 +169,15 @@ class ThematicDescriptorHead(torch.nn.Module):
                     f"{side_name} is empty -- a forced interaction needs at least one "
                     "descriptor on each side of each group"
                 )
+        # --geometric_pair_priors/--chemical_pair_priors (training/read_configuration.py):
+        # PAIR_DESCRIPTOR_NAMES entries -- already a fixed, analytically-defined match
+        # of both sides (see ModelConfig docstring) -- concatenated onto BOTH this
+        # group's lipid-side and protein-side _ModalityMLP input, not a third input of
+        # their own. Still no skip path to the classifier: the raw pair value only
+        # reaches ForcedInteraction's product after passing through a side's own MLP,
+        # same as every other column here.
+        geom_priors = parse_descriptor_list(geometric_pair_priors)
+        chem_priors = parse_descriptor_list(chemical_pair_priors)
 
         dim = config.hiddim
         hidden = max(config.m * dim, dim)
@@ -159,15 +195,39 @@ class ThematicDescriptorHead(torch.nn.Module):
         register_columns("geom_prot_columns", geom_prot)
         register_columns("chem_lip_columns", chem_lip)
         register_columns("chem_prot_columns", chem_prot)
+        register_columns("geom_prior_columns", geom_priors)
+        register_columns("chem_prior_columns", chem_priors)
 
-        self.geom_lip_mlp = _ModalityMLP(len(geom_lip), hidden, dim, config, act_fn)
-        self.geom_prot_mlp = _ModalityMLP(len(geom_prot), hidden, dim, config, act_fn)
-        self.chem_lip_mlp = _ModalityMLP(len(chem_lip), hidden, dim, config, act_fn)
-        self.chem_prot_mlp = _ModalityMLP(len(chem_prot), hidden, dim, config, act_fn)
+        bn_scale = getattr(config, "thematical_bn_scale", False)
+        orthogonal_init = getattr(config, "thematical_orthogonal_init", False)
+        single_norm = getattr(config, "thematical_single_norm", False)
 
-        self.geom_interaction = ForcedInteraction(dim, config, act_fn, orth_weight)
-        self.chem_interaction = ForcedInteraction(dim, config, act_fn, orth_weight)
-        self.group_interaction = ForcedInteraction(dim, config, act_fn, orth_weight)
+        self.geom_lip_mlp = _ModalityMLP(
+            len(geom_lip) + len(geom_priors), hidden, dim, config, act_fn, bn_scale
+        )
+        self.geom_prot_mlp = _ModalityMLP(
+            len(geom_prot) + len(geom_priors), hidden, dim, config, act_fn, bn_scale
+        )
+        self.chem_lip_mlp = _ModalityMLP(
+            len(chem_lip) + len(chem_priors), hidden, dim, config, act_fn, bn_scale
+        )
+        self.chem_prot_mlp = _ModalityMLP(
+            len(chem_prot) + len(chem_priors), hidden, dim, config, act_fn, bn_scale
+        )
+
+        self.geom_interaction = ForcedInteraction(
+            dim, config, act_fn, orth_weight, orthogonal_init,
+        )
+        self.chem_interaction = ForcedInteraction(
+            dim, config, act_fn, orth_weight, orthogonal_init,
+        )
+        # --thematical_single_norm drops the L2-normalize on THIS site only -- its
+        # inputs (z_geom, z_chem) are already-normalised FFN outputs, not the raw
+        # bilinear product the other two sites still need protecting (ForcedInteraction
+        # docstring).
+        self.group_interaction = ForcedInteraction(
+            dim, config, act_fn, orth_weight, orthogonal_init, normalize=not single_norm,
+        )
 
         self.output_dim = dim
         self.orth_weight = orth_weight
@@ -178,17 +238,31 @@ class ThematicDescriptorHead(torch.nn.Module):
         order this head was built with -- see ThematicDescriptorHead.__init__).
         Returns [batch, self.output_dim].
         """
+        geom_priors = descriptor_catalog_input.index_select(1, self.geom_prior_columns)
+        chem_priors = descriptor_catalog_input.index_select(1, self.chem_prior_columns)
         geom_lip = self.geom_lip_mlp(
-            descriptor_catalog_input.index_select(1, self.geom_lip_columns)
+            torch.cat(
+                (descriptor_catalog_input.index_select(1, self.geom_lip_columns), geom_priors),
+                dim=-1,
+            )
         )
         geom_prot = self.geom_prot_mlp(
-            descriptor_catalog_input.index_select(1, self.geom_prot_columns)
+            torch.cat(
+                (descriptor_catalog_input.index_select(1, self.geom_prot_columns), geom_priors),
+                dim=-1,
+            )
         )
         chem_lip = self.chem_lip_mlp(
-            descriptor_catalog_input.index_select(1, self.chem_lip_columns)
+            torch.cat(
+                (descriptor_catalog_input.index_select(1, self.chem_lip_columns), chem_priors),
+                dim=-1,
+            )
         )
         chem_prot = self.chem_prot_mlp(
-            descriptor_catalog_input.index_select(1, self.chem_prot_columns)
+            torch.cat(
+                (descriptor_catalog_input.index_select(1, self.chem_prot_columns), chem_priors),
+                dim=-1,
+            )
         )
 
         z_geom = self.geom_interaction(geom_lip, geom_prot)

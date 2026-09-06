@@ -691,6 +691,59 @@ def test_protein_edge_mlp_forward_backward():
     )
 
 
+def test_protein_edge_rbf_count_forward_backward():
+    config = make_config()
+    config.protein_edge_mlp = True
+    config.protein_edge_rbf_count = 4
+    config.single_gat_layer = False
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+
+    expected_edge_dim = 4 + 3 + 4 + 1 + 1
+    node_in_features = model.protein1.encodin1.mlp[0].in_features - expected_edge_dim
+    assert node_in_features > 0
+    assert any(
+        parameter.grad is not None
+        for parameter in model.protein1.encodin1.parameters()
+    )
+
+
+def test_protein_edge_orientation_scalar_forward_backward():
+    config = make_config()
+    config.protein_edge_attention = True
+    config.protein_edge_orientation_scalar = True
+    config.single_gat_layer = False
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+
+    expected_edge_dim = 16 + 3 + 1 + 1 + 1
+    node_in_features = model.protein1.encodin1.k_proj.in_features - expected_edge_dim
+    assert node_in_features > 0
+    assert any(
+        parameter.grad is not None
+        for parameter in model.protein1.encodin1.parameters()
+    )
+
+
+def test_protein_edge_raw3_forward_backward():
+    config = make_config()
+    config.protein_edge_mlp = True
+    config.protein_edge_raw3 = True
+    config.single_gat_layer = False
+    model = InteractionClassification(config)
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+
+    node_in_features = model.protein1.encodin1.mlp[0].in_features - 3
+    assert node_in_features > 0
+    assert any(
+        parameter.grad is not None
+        for parameter in model.protein1.encodin1.parameters()
+    )
+
+
 def test_lipid_edge_attention_forward_backward():
     config = make_config(lipid_graph_isomers=True, lipid_mode="concat")
     config.protein_edge_attention = True
@@ -767,6 +820,22 @@ def test_protein_edge_modes_are_mutually_exclusive_with_other_convs():
     config.protein_edge_mlp = True
     config.gine_conv = True
     with pytest.raises(ValueError, match="mutually exclusive"):
+        config.validate()
+
+
+def test_protein_edge_rbf_count_requires_edge_mode():
+    config = make_config()
+    config.protein_edge_rbf_count = 4
+    with pytest.raises(ValueError, match="protein_edge_rbf_count"):
+        config.validate()
+
+
+def test_protein_edge_raw3_rejects_rbf_count_override():
+    config = make_config()
+    config.protein_edge_mlp = True
+    config.protein_edge_raw3 = True
+    config.protein_edge_rbf_count = 4
+    with pytest.raises(ValueError, match="protein_edge_raw3"):
         config.validate()
 
 
@@ -1284,6 +1353,69 @@ def test_thematical_paths_wires_columns_correctly():
     assert catalog_order[head.geom_prot_columns.item()] == "pocket_extent"
     assert catalog_order[head.chem_lip_columns.item()] == "unsaturation"
     assert catalog_order[head.chem_prot_columns.item()] == "aromatic_share"
+
+
+def test_thematical_pair_priors_widen_per_side_mlps_and_train():
+    config = make_config()
+    config.thematical_paths = True
+    config.geometric_descriptors = "chain,pocket_extent"
+    config.chemical_descriptors = "unsaturation,aromatic_share"
+    config.geometric_pair_priors = "elongation_shape_match,flatness_shape_match"
+    config.chemical_pair_priors = "hydropathy_rim_match"
+    config.validate()
+
+    model = InteractionClassification(config)
+    head = model.final_layer.thematical_head
+    # 1 named descriptor + 2 pair priors on each geometric side, +1 on each chemical side.
+    assert head.geom_lip_mlp.mlp[0].in_features == 3
+    assert head.geom_prot_mlp.mlp[0].in_features == 3
+    assert head.chem_lip_mlp.mlp[0].in_features == 2
+    assert head.chem_prot_mlp.mlp[0].in_features == 2
+
+    output = model(**synthetic_forward_args(config))
+    loss = F.cross_entropy(output, torch.tensor([0, 1]))
+    loss.backward()
+    assert loss == loss
+    unused = [
+        name for name, parameter in model.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_thematical_pair_priors_columns_point_at_the_right_catalog_names():
+    config = make_config()
+    config.thematical_paths = True
+    config.geometric_descriptors = "chain,pocket_extent"
+    config.chemical_descriptors = "unsaturation,aromatic_share"
+    config.geometric_pair_priors = "elongation_shape_match"
+    config.chemical_pair_priors = "hydropathy_rim_match"
+    config.validate()
+
+    model = InteractionClassification(config)
+    from dataloader.pair_descriptors import full_catalog_order
+
+    catalog_order = full_catalog_order(config)
+    head = model.final_layer.thematical_head
+    assert catalog_order[head.geom_prior_columns.item()] == "elongation_shape_match"
+    assert catalog_order[head.chem_prior_columns.item()] == "hydropathy_rim_match"
+
+
+def test_thematical_pair_priors_reject_non_pair_names():
+    config = make_config()
+    config.thematical_paths = True
+    config.geometric_descriptors = "chain,pocket_extent"
+    config.chemical_descriptors = "unsaturation,aromatic_share"
+    config.geometric_pair_priors = "chain"
+    with pytest.raises(ValueError, match="PAIR_DESCRIPTOR_NAMES"):
+        config.validate()
+
+
+def test_thematical_pair_priors_require_thematical_paths():
+    config = make_config()
+    config.chemical_pair_priors = "hydropathy_rim_match"
+    with pytest.raises(ValueError, match="only take effect under thematical_paths"):
+        config.validate()
 
 
 def test_thematical_paths_rejects_pair_descriptor_name():

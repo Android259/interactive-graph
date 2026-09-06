@@ -9,7 +9,7 @@ from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_lis
 from .edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
 from .geometric_transformer import ProteinGeometricTransformerBlock
 from .edge_geometric_conv import EdgeAttentionConv, EdgeMLPConv
-from .protein_edge_geometry import STRUCTURED_EDGE_DIM, structured_edge_features
+from .protein_edge_geometry import structured_edge_dim, structured_edge_features
 from .self_attention import ProteinSelfAttention
 from .pair_descriptor_head import _APOLAR_SASA_SHARE_INDEX, _AROMATIC_SHARE_INDEX
 from .mlp_utils import (
@@ -50,6 +50,17 @@ class Protein_encoder(torch.nn.Module):
         )
         self.use_edge_mlp = bool(getattr(self.config, "protein_edge_mlp", False))
         self.use_structured_edges = self.use_edge_attention or self.use_edge_mlp
+        # --protein_edge_raw3: use the plain [distance, area, boundary] edge_attr
+        # (edge_dim=3) as input to EdgeAttentionConv/EdgeMLPConv instead of the
+        # SE(3)-invariant structured vector -- isolates the Ingraham/Dauparas
+        # message-passing mechanism from the RBF/direction/orientation expansion.
+        self.use_edge_raw3 = bool(getattr(self.config, "protein_edge_raw3", False))
+        self.structured_edge_dim = structured_edge_dim(
+            rbf_count=getattr(self.config, "protein_edge_rbf_count", None) or 16,
+            use_orientation_scalar=bool(
+                getattr(self.config, "protein_edge_orientation_scalar", False)
+            ),
+        )
         self.use_rnabang_frozen_node_adapter = bool(
             start and getattr(self.config, "rnabang_frozen_node_adapter", False)
         )
@@ -362,13 +373,14 @@ class Protein_encoder(torch.nn.Module):
         self.ln = make_norm_layer(self.config, hiddim, "protein_output_graph_norm")
 
     def _make_protein_conv(self, indim, hiddim):
+        edge_dim = 3 if self.use_edge_raw3 else self.structured_edge_dim
         if self.use_edge_attention:
             return EdgeAttentionConv(
-                indim, hiddim, self.config.HEADS, STRUCTURED_EDGE_DIM
+                indim, hiddim, self.config.HEADS, edge_dim
             )
         if self.use_edge_mlp:
             return EdgeMLPConv(
-                indim, hiddim, STRUCTURED_EDGE_DIM,
+                indim, hiddim, edge_dim,
                 lam=getattr(self.config, "protein_edge_mlp_lambda", 30.0),
             )
         if self.use_gine_conv:
@@ -666,14 +678,23 @@ class Protein_encoder(torch.nn.Module):
                 getattr(self.config, "geometric_ipa_chunk_size", 64),
             )
 
-        if self.use_structured_edges:
+        if self.use_structured_edges and self.use_edge_raw3:
+            edgidx, e_attr = self.make_bidirectional_edges(edgidx, e_attr)
+        elif self.use_structured_edges:
             if frame_rotation is None or frame_translation is None:
                 raise ValueError(
                     "protein_edge_attention/protein_edge_mlp require protein "
                     "residue frames"
                 )
             edgidx, e_attr = structured_edge_features(
-                edgidx, frame_rotation, frame_translation, e_attr
+                edgidx,
+                frame_rotation,
+                frame_translation,
+                e_attr,
+                rbf_count=getattr(self.config, "protein_edge_rbf_count", None) or 16,
+                use_orientation_scalar=bool(
+                    getattr(self.config, "protein_edge_orientation_scalar", False)
+                ),
             )
         elif self.config.bidirectional_edges:
             edgidx, e_attr = self.make_bidirectional_edges(edgidx, e_attr)

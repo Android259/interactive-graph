@@ -405,6 +405,9 @@ class InteractionClassification(torch.nn.Module):
                     lip_layout=lip_layout, prot_layout=prot_layout,
                     pocket_layout=cross_pocket_layout, pocket_index=cross_pocket_index,
                     bury=bury, chain_rank=chain_rank)
+                node_bilinear_vec = self.cross_attention1.node_bilinear_vec
+            else:
+                node_bilinear_vec = None
 
             prot1, pooled_prot_batch = self._select_pocket_nodes(
                 prot1, prot_batch, pocket_mask
@@ -417,6 +420,7 @@ class InteractionClassification(torch.nn.Module):
                 pocket_descriptor=pocket_descriptor,
                 pair_descriptor_input=pair_descriptor_input,
                 descriptor_catalog_input=descriptor_catalog_input,
+                node_bilinear_input=node_bilinear_vec,
             )
 
         if config.double_attention:
@@ -490,6 +494,14 @@ class InteractionClassification(torch.nn.Module):
                 pocket_descriptor=pocket_descriptor,
                 pair_descriptor_input=pair_descriptor_input,
                 descriptor_catalog_input=descriptor_catalog_input,
+                # cross_attention2 is the block immediately before this pooling --
+                # see interaction_classification's own docstrings on why lip2/prot2
+                # (not lip1/prot1) are what final_layer reads under double_attention.
+                # cross_attention1 also computes its own node_bilinear_vec when the
+                # flag is on (CrossAttention.forward does not know which call is
+                # "last"); it is simply not read here, which costs an unused extra
+                # pass of node_bilinear -- correctness only, not the cheapest option.
+                node_bilinear_input=self.cross_attention2.node_bilinear_vec,
             )
 
         return out

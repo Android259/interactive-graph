@@ -58,6 +58,7 @@ PAIR_DESCRIPTOR_NAMES = (
     "occupancy", "chain_extent_gap", "aromatic_contact", "hbond_match", "volume_fit",
     "buriedness_match", "depth_bulk_match", "hydropathy_chain_match",
     "aromatic_contact_min", "hbond_match_min", "tail_elongation_fit",
+    "hydropathy_rim_match", "elongation_shape_match", "flatness_shape_match",
 )
 # occupancy/chain_extent_gap are signed differences of a single PHYSICAL quantity
 # (both sides converted to angstrom, chain via chain_length_angstrom) -- standardising
@@ -74,6 +75,7 @@ PAIR_DESCRIPTOR_NAMES = (
 MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES = (
     "aromatic_contact", "hbond_match", "volume_fit", "buriedness_match",
     "depth_bulk_match", "hydropathy_chain_match",
+    "hydropathy_rim_match", "elongation_shape_match", "flatness_shape_match",
 )
 # aromatic_contact/hbond_match's min-variants: min(A, B) instead of A * B is a
 # BOTTLENECK reading -- the pair scores no higher than its weaker side, so a pocket
@@ -383,8 +385,9 @@ def full_catalog_order(config):
     --pair_descriptors -- architecture/final_layer.py builds a NamedDescriptorHead instead
     of PairDescriptorHead/the fixed head-only descriptor head under either), the two
     node-broadcast lists --protein_descriptors/--lipid_descriptors (architecture/
-    protein_encoder.py, architecture/lipid_encoder.py), and --geometric_descriptors/
-    --chemical_descriptors (--thematical_paths, architecture/thematic_descriptor_head.py).
+    protein_encoder.py, architecture/lipid_encoder.py), --geometric_descriptors/
+    --chemical_descriptors, and --geometric_pair_priors/--chemical_pair_priors
+    (--thematical_paths, architecture/thematic_descriptor_head.py).
     Every one of those call sites uses THIS function rather than assembling its own tuple,
     so no destination can end up naming a token none of the others built.
     """
@@ -401,6 +404,8 @@ def full_catalog_order(config):
         getattr(config, "lipid_descriptors", ""),
         getattr(config, "geometric_descriptors", ""),
         getattr(config, "chemical_descriptors", ""),
+        getattr(config, "geometric_pair_priors", ""),
+        getattr(config, "chemical_pair_priors", ""),
     )
 
 
@@ -1060,7 +1065,39 @@ def pair_descriptor_value(name, lipid_values, protein_values):
                               elongation = 0.0 rather than a real ratio, which would
                               otherwise divide UP instead of down.
 
-    None of these eleven needs a bound pose (which residue contacts which double
+        hydropathy_rim_match : hydropathy_rim * hbond -- mouth/rim hydropathy
+                              (Kyte-Doolittle mean over the pocket's SHALLOW half
+                              only, distinct from hydropathy_core/hydropathy_chain_
+                              match above, which read the DEEP half) against the
+                              headgroup's own H-bond donor/acceptor count. Motivated
+                              by files/protein_lipid_binding_family_literature.md:
+                              IP_trans/START/OSBP's documented specificity mechanism
+                              is recognising a polar/charged headgroup AT THE POCKET
+                              ENTRANCE (phosphoinositide, choline, PI(4)P respectively)
+                              -- a mouth-chemistry-vs-headgroup match hbond_match
+                              (which reads whole-pocket polar_share, core+rim
+                              undivided) cannot express on its own.
+        elongation_shape_match : pocket_elongation * lipid npr1 -- cavity tube-vs-
+                              bowl ratio (protein_graph_builder.pocket_shape) against
+                              the ligand's own PMI1/PMI3 elongation (npr1, dataloader.
+                              pair_descriptors.npr1) -- both are the SAME physical
+                              axis (elongated vs compact 3D shape), one for the
+                              cavity, one for the ligand. Motivated by the OSBP/ORP
+                              literature (files/protein_lipid_binding_family_
+                              literature.md): that family's documented specificity
+                              mechanism is a hydrophobic TUNNEL whose usable diameter/
+                              length, not chemistry, decides whether a given ligand's
+                              rigid, elongated ring system fits -- a shape-vs-shape
+                              term neither pocket_elongation nor npr1 alone expresses.
+        flatness_shape_match : pocket_flatness * lipid npr2 -- cavity slit-vs-tube
+                              ratio against the ligand's own PMI2/PMI3 flatness
+                              (npr2) -- the second of the same pair-of-shape-axes
+                              idea as elongation_shape_match, covering the OTHER
+                              cavity/ligand shape axis (protein_graph_builder.
+                              pocket_shape's pocket_flatness is a distinct ratio from
+                              pocket_elongation, not the same number read twice).
+
+    None of these fourteen needs a bound pose (which residue contacts which double
     bond, which residue H-bonds which headgroup atom) -- same discipline as the rest
     of this module: pocket-wide chemistry shares and lipid-wide scalars, not a
     specific residue-atom contact this project has no docking pipeline to place.
@@ -1090,4 +1127,10 @@ def pair_descriptor_value(name, lipid_values, protein_values):
         return min(protein_values["polar_share"], lipid_values["hbond"])
     if name == "tail_elongation_fit":
         return lipid_values["tail_count"] / max(protein_values["pocket_elongation"], 1.0)
+    if name == "hydropathy_rim_match":
+        return protein_values["hydropathy_rim"] * lipid_values["hbond"]
+    if name == "elongation_shape_match":
+        return protein_values["pocket_elongation"] * lipid_values["npr1"]
+    if name == "flatness_shape_match":
+        return protein_values["pocket_flatness"] * lipid_values["npr2"]
     raise ValueError(f"Unknown pair descriptor: {name}. Known: {PAIR_DESCRIPTOR_NAMES}")

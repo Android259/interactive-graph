@@ -20,7 +20,7 @@ analysis/                 canonical metrics-table build / analysis / plots
 scripts/                  launch, watch, stop runs -- see scripts/AGENTS.md for its layout
 tests/                    CPU pytest suite
 tanimoto_group_analysis/  Tanimoto similarity scripts + their output CSVs
-files/                    documents: proposals, reports, the slide deck
+files/                    documents: proposals, reports, the slide deck -- see files/AGENTS.md for run-analysis/proposal prompts
 ```
 
 Each code subdirectory has its own `AGENTS.md` with detailed contracts. Read the

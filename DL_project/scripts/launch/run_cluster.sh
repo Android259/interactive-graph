@@ -665,20 +665,41 @@ if (( DO_GRAPHICS || DO_SUMMARIZE )); then
                 "mv '${marker}' '${marker}.claimed' 2>/dev/null && echo yes || echo no"
         )"
         [[ "${claimed}" == "yes" ]] || continue
+        # failures= line, if any (older markers predate it -- treated as 0).
+        failures="$(
+            ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+                "sed -n 's/^failures=//p' '${marker}.claimed' 2>/dev/null"
+        )"
+        failures="${failures:-0}"
         # Explicit if/else, not a bare call: this script runs under set -e, and an
         # unguarded failure here would abort the WHOLE loop -- silently skipping
         # every remaining label in VARIANTS, not just this one. On failure the
         # marker is restored (not deleted), so wait_and_sync.sh (or a later
         # --graphics/--summarize invocation) retries this label instead of its
-        # report being lost with no trace.
+        # report being lost with no trace -- up to MAX_REPORT_FAILURES times
+        # (scripts/settings.sh): past that it is parked as .gaveup instead,
+        # since a label whose underlying job never produced data fails this
+        # step the same way forever and retrying it does not resubmit training.
         if bash "${PROJECT_ROOT}/scripts/lib/generate_label_report.sh" \
             "${variant}" "${seeds_csv}" "${DO_GRAPHICS}" "${DO_SUMMARIZE}"; then
             ssh -S "${SSH_CONTROL_PATH}" "${remote}" "rm -f '${marker}.claimed'" || true
         else
-            printf 'generate_label_report.sh failed for %s -- leaving its marker queued for retry.\n' \
-                "${variant}" >&2
-            ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
-                "mv '${marker}.claimed' '${marker}' 2>/dev/null" || true
+            failures=$((failures + 1))
+            marker_body="$(printf 'seeds_csv=%s\ngraphics=%s\nsummarize=%s\nfailures=%s\n' \
+                "${seeds_csv}" "${DO_GRAPHICS}" "${DO_SUMMARIZE}" "${failures}")"
+            if (( failures >= MAX_REPORT_FAILURES )); then
+                printf 'generate_label_report.sh failed for %s %d times -- giving up, marker parked as %s.gaveup (rename back to .report by hand once the underlying job is fixed/resubmitted).\n' \
+                    "${variant}" "${failures}" "${marker}" >&2
+                ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+                    "printf '%s' $(printf '%q' "${marker_body}") > '${marker}.gaveup' && rm -f '${marker}.claimed'" \
+                    || true
+            else
+                printf 'generate_label_report.sh failed for %s (%d/%d) -- leaving its marker queued for retry.\n' \
+                    "${variant}" "${failures}" "${MAX_REPORT_FAILURES}" >&2
+                ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+                    "printf '%s' $(printf '%q' "${marker_body}") > '${marker}' && rm -f '${marker}.claimed'" \
+                    || true
+            fi
         fi
     done
 

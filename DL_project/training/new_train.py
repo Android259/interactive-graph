@@ -337,6 +337,22 @@ dropout_logit_ids = {id(p) for p in dropout_logit_params}
 bilinear_module = getattr(model.final_layer, "bilinear", None)
 bilinear_params = list(bilinear_module.parameters()) if bilinear_module is not None else []
 bilinear_param_ids = {id(p) for p in bilinear_params}
+# --thematical_interaction_lr (ModelConfig docstring, files/thematical_paths_dynamics_
+# and_pair_auc.md section 7): ForcedInteraction's parameters sit behind two chained
+# hard-normalisation ops MLB's own paper reports as slow/hyperparameter-sensitive to
+# converge -- give all three sites (geom/chem/level2) their own optimizer group at a
+# higher lr instead of raising --lr globally. Empty list, no-op group, when off or
+# not a thematical_paths run.
+THEMATICAL_INTERACTION_LR_MULTIPLIER = 5.0
+thematic_head = getattr(model.final_layer, "thematical_head", None)
+thematic_interaction_params = (
+    list(thematic_head.geom_interaction.parameters())
+    + list(thematic_head.chem_interaction.parameters())
+    + list(thematic_head.group_interaction.parameters())
+    if (thematic_head is not None and conf.thematical_interaction_lr)
+    else []
+)
+thematic_interaction_param_ids = {id(p) for p in thematic_interaction_params}
 bilinear_weight_decay = (
     conf.weight_decay if conf.bilinear_weight_decay is None else conf.bilinear_weight_decay
 )
@@ -346,6 +362,7 @@ theta_params = [
     if id(p) not in gate_param_ids
     and id(p) not in dropout_logit_ids
     and id(p) not in bilinear_param_ids
+    and id(p) not in thematic_interaction_param_ids
 ]
 
 lipid_branch_param_ids = (
@@ -388,6 +405,12 @@ if conf.bilevel and gate_params:
         )
     if dropout_logit_params:
         main_groups.append({"params": dropout_logit_params, "weight_decay": 0.0})
+    if thematic_interaction_params:
+        main_groups.append({
+            "params": thematic_interaction_params,
+            "weight_decay": conf.weight_decay,
+            "lr": conf.lr * THEMATICAL_INTERACTION_LR_MULTIPLIER,
+        })
     optimizer = torch.optim.Adam(split_lipid_branch(main_groups), lr=conf.lr)
     hyper_optimizer = torch.optim.Adam(gate_params, lr=conf.bilevel_lr)
 elif dropout_logit_params:
@@ -402,6 +425,12 @@ elif dropout_logit_params:
     ]
     if bilinear_params:
         groups.append({"params": bilinear_params, "weight_decay": bilinear_weight_decay})
+    if thematic_interaction_params:
+        groups.append({
+            "params": thematic_interaction_params,
+            "weight_decay": conf.weight_decay,
+            "lr": conf.lr * THEMATICAL_INTERACTION_LR_MULTIPLIER,
+        })
     optimizer = torch.optim.Adam(split_lipid_branch(groups), lr=conf.lr)
 else:
     # No bilevel, no ConcreteDropout: everything (including gate_params, if any exist
@@ -409,10 +438,18 @@ else:
     # weight_decay, same as before this split existed -- only bilinear_params is
     # carved out, not theta_params, since theta_params also drops gate_param_ids/
     # dropout_logit_ids that this branch never re-adds.
-    base_params = [p for p in model.parameters() if id(p) not in bilinear_param_ids]
+    base_params = [
+        p for p in model.parameters()
+        if id(p) not in bilinear_param_ids and id(p) not in thematic_interaction_param_ids
+    ]
     groups = [{"params": base_params}]
     if bilinear_params:
         groups.append({"params": bilinear_params, "weight_decay": bilinear_weight_decay})
+    if thematic_interaction_params:
+        groups.append({
+            "params": thematic_interaction_params,
+            "lr": conf.lr * THEMATICAL_INTERACTION_LR_MULTIPLIER,
+        })
     optimizer = torch.optim.Adam(
         split_lipid_branch(groups),
         lr=conf.lr,

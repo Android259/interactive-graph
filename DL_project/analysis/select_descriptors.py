@@ -41,7 +41,7 @@ project computes, combined into one search objective:
 
 Search: start from the empty set, repeatedly add whichever untried descriptor raises
 `score` the most, stop when no remaining descriptor improves it (or --max is hit).
-Forward, not exhaustive (11 pair descriptors -> 2**11 subsets is not needed): O(n^2)
+Forward, not exhaustive (14 pair descriptors -> 2**14 subsets is not needed): O(n^2)
 evaluations, each one an actual analysis/null_model.py run, printed as it goes so a
 long search is legible while it runs rather than only at the end.
 

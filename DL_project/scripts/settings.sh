@@ -81,6 +81,21 @@ THEMATICAL_PATHS_WALLTIME="${THEMATICAL_PATHS_WALLTIME:-0:20:00}"
 # queue cannot use two different limits.
 MAX_WAITING_JOBS="${MAX_WAITING_JOBS:-50}"
 
+# How many times launch/run_cluster.sh's --graphics/--summarize claim loop and
+# wait_and_sync.sh's check_pending_reports() each retry a label whose
+# generate_label_report.sh call failed, before giving up on it. Both restore
+# the marker (not delete it) on failure so a transient blip gets retried --
+# but generate_label_report.sh only READS existing test_metrics/dynamics
+# files, it never resubmits the training job, so a label whose job never
+# produced usable data fails the SAME way forever: without a cap, every
+# unrelated future --graphics/--summarize invocation (or wait_and_sync.sh
+# round) retries it again, forever, printing the same failure with no signal
+# that it will never succeed. Past MAX_REPORT_FAILURES the marker is parked as
+# "<label>.report.gaveup" instead of being restored -- still on disk, not
+# auto-retried, rename it back to "<label>.report" by hand once the actual
+# problem (usually: resubmit that label's training) is fixed.
+MAX_REPORT_FAILURES="${MAX_REPORT_FAILURES:-3}"
+
 # ---------------------------------------------------------------------------
 # What gets run
 # ---------------------------------------------------------------------------

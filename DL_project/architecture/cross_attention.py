@@ -5,7 +5,10 @@ from .mlp_utils import (
     insert_hidden_gate, insert_ffn_unit_gate, insert_input_gate, insert_output_gate,
     mlp_hidden_dims, link_concrete_dropouts,
 )
-from .fast_attention import grouped_attention, can_use_grouped_attention
+from .fast_attention import (
+    grouped_attention, can_use_grouped_attention, make_grouped_attention_layout,
+)
+from .thematic_descriptor_head import ForcedInteraction
 
 
 class CrossAttention(torch.nn.Module):
@@ -54,6 +57,43 @@ class CrossAttention(torch.nn.Module):
             self.prot_attn_gate = torch.nn.Parameter(torch.zeros(1))
             self.lip_ffn_gate = torch.nn.Parameter(torch.zeros(1))
             self.prot_ffn_gate = torch.nn.Parameter(torch.zeros(1))
+
+        # --node_bilinear_fusion (training/read_configuration.py): the node-level,
+        # pre-pool sibling of --bilinear_fusion (architecture/final_layer.py). Neither
+        # attention path below produces an elementwise/Hadamard product of a lipid
+        # node's own content and a protein node's own content -- both compute a
+        # weighted SUM of the OTHER side's raw value vectors (see the "Current compact
+        # variant" comment in forward()); the interaction only ever decides which
+        # values to copy in, never fuses both sides' content per output dimension.
+        # ForcedInteraction (architecture/thematic_descriptor_head.py) is reused
+        # unmodified for that missing product: lip_dim == prot_dim == config.hiddim
+        # always (both CrossAttention instances are built with (hiddim, hiddim) in
+        # architecture/interaction_classification.py), so its single `dim` matches
+        # both sides.
+        self.node_bilinear_fusion_on = bool(
+            getattr(self.config, "node_bilinear_fusion", False)
+        )
+        self.node_bilinear_vec = None
+        if self.node_bilinear_fusion_on:
+            self.node_bilinear = ForcedInteraction(lip_dim, self.config, act_fn)
+
+        # --cross_attention_forced_interaction: replaces the residual update itself
+        # (finish() below), not an extra side-channel like node_bilinear_fusion above.
+        # Plain cross-attention only ever computes a weighted SUM of the partner's
+        # value vectors and adds it to the node's own content (`lip = lip + lip_outs`)
+        # -- a skip path survives whenever attention degenerates toward uniform/near-
+        # zero output, since the residual add alone still passes the node's own
+        # content through unchanged. Routing (lip, lip_outs) through ForcedInteraction
+        # (product-only, no skip -- same class node_bilinear_fusion/thematical_paths
+        # reuse) before the residual add means the UPDATE ITSELF is forced to depend
+        # on both the node's own content and what it pulled from the partner, not an
+        # additional term next to an unforced one.
+        self.cross_forced_interaction_on = bool(
+            getattr(self.config, "cross_attention_forced_interaction", False)
+        )
+        if self.cross_forced_interaction_on:
+            self.lip_forced_interaction = ForcedInteraction(lip_dim, self.config, act_fn)
+            self.prot_forced_interaction = ForcedInteraction(prot_dim, self.config, act_fn)
 
         lip_enlarged, lip_last = mlp_hidden_dims(
             self.config, "cross_lip_ffn", self.config.m * lip_dim
@@ -225,6 +265,71 @@ class CrossAttention(torch.nn.Module):
             attention_bias = attention_bias + chain_term * weight
         return attention_bias
 
+    def _node_bilinear_pooled(self, lip_in, prot_in, lip_batch, prot_batch,
+                               lip_layout, prot_layout, pocket_layout, pocket_index,
+                               pocket_mask):
+        """One --node_bilinear_fusion vector per graph pair (see __init__ docstring).
+
+        Restricted to the SAME (lipid, protein) pairs the lipid-query cross-attention
+        already scores in forward() -- pocket-only keys when self.attention_by_pockets
+        narrows that site, every same-sample pair otherwise -- so this adds a
+        comparable channel, not a wider one. That restriction has two different
+        existing spellings depending on --fast_attention, and both are reused as-is:
+        on the fast/grouped path pocket_index/pocket_layout are already the compacted
+        pocket-only key layout (mirroring the ``pocket_prot = prot[pocket_index]``
+        restriction forward()'s grouped-attention branch applies); off that path
+        pocket_index is always None (interaction_classification._pocket_attention_
+        operands only builds it under --fast_attention) and the same restriction is
+        instead spelled as a boolean mask there (make_lip_attention_bias's
+        ``pocket_key_mask``), so this falls back to ``prot_in[pocket_mask]`` -- the
+        exact boolean-indexing pattern interaction_classification._select_pocket_nodes
+        already uses for the pooling step, not a new indexing scheme.
+
+        Reuses GroupedAttentionLayout.pack/valid (architecture/fast_attention.py)
+        purely to get a dense (graphs, nodes, dim) view of each side and know which
+        entries are padding; lip_layout/prot_layout/pocket_layout are the SAME layouts
+        forward()'s grouped-attention branch builds (and are None, requiring a local
+        build, exactly on the non-fast_attention path -- no new segment/scatter logic
+        either way). The full outer product over a graph's lipid x protein/pocket
+        nodes is masked and summed directly rather than routed through
+        torch_geometric.nn.global_add_pool: building a flat pair index for a
+        variable-size dense product would be new indexing logic of the kind this
+        feature is meant to avoid, and masking padding to zero before summing over
+        both node axes is the same reduction global_add_pool performs, applied on the
+        layout already in hand.
+        """
+        num_graphs = int(max(int(lip_batch.max()), int(prot_batch.max()))) + 1
+        lip_layout = lip_layout or make_grouped_attention_layout(lip_batch, num_graphs)
+        if self.attention_by_pockets:
+            if pocket_index is not None:
+                kv = prot_in[pocket_index]
+                kv_batch = prot_batch[pocket_index]
+                kv_layout = pocket_layout or make_grouped_attention_layout(kv_batch, num_graphs)
+            elif pocket_mask is not None:
+                pocket_bool = pocket_mask.bool()
+                kv = prot_in[pocket_bool]
+                kv_batch = prot_batch[pocket_bool]
+                kv_layout = make_grouped_attention_layout(kv_batch, num_graphs)
+            else:
+                raise ValueError(
+                    "node_bilinear_fusion with attention_by_pockets restricting the "
+                    "cross site needs pocket_index or pocket_mask -- got neither"
+                )
+        else:
+            kv = prot_in
+            kv_batch = prot_batch
+            kv_layout = prot_layout or make_grouped_attention_layout(kv_batch, num_graphs)
+
+        lip_dense = lip_layout.pack(lip_in)  # [graphs, max_lip, dim]
+        kv_dense = kv_layout.pack(kv)  # [graphs, max_kv, dim]
+        # Broadcasts to [graphs, max_lip, max_kv, dim]: ForcedInteraction's proj_a/
+        # proj_b/ffn are plain per-last-dim Linears, so they apply unchanged to the
+        # extra leading axes -- no modification to that class was needed.
+        interaction = self.node_bilinear(lip_dense.unsqueeze(2), kv_dense.unsqueeze(1))
+        pair_valid = lip_layout.valid.unsqueeze(2) & kv_layout.valid.unsqueeze(1)
+        interaction = interaction * pair_valid.unsqueeze(-1).to(interaction.dtype)
+        return interaction.sum(dim=(1, 2))  # [graphs, dim]
+
     def forward(self, lip, prot, lip_mask, prot_mask, pocket_mask=None,
                 lip_batch=None, prot_batch=None, lip_layout=None, prot_layout=None,
                 pocket_layout=None, pocket_index=None, bury=None, chain_rank=None):
@@ -264,6 +369,18 @@ class CrossAttention(torch.nn.Module):
 
         # Save inputs so the whole block can be gated to an identity when pruned.
         lip_in, prot_in = lip, prot
+
+        if self.node_bilinear_fusion_on:
+            if lip_batch is None or prot_batch is None:
+                raise ValueError(
+                    "node_bilinear_fusion requires lip_batch and prot_batch"
+                )
+            self.node_bilinear_vec = self._node_bilinear_pooled(
+                lip_in, prot_in, lip_batch, prot_batch, lip_layout, prot_layout,
+                pocket_layout, pocket_index, pocket_mask,
+            )
+        else:
+            self.node_bilinear_vec = None
 
         if can_use_grouped_attention(self.config, lip_batch) and prot_batch is not None:
             num_graphs = int(max(int(lip_batch.max()), int(prot_batch.max()))) + 1
@@ -335,6 +452,9 @@ class CrossAttention(torch.nn.Module):
     def finish(self, lip_in, prot_in, lip, prot, lip_outs, prot_outs):
         """Residual add, norms, FFNs and block gate -- shared by both attention paths."""
         # add
+        if self.cross_forced_interaction_on:
+            lip_outs = self.lip_forced_interaction(lip, lip_outs)
+            prot_outs = self.prot_forced_interaction(prot, prot_outs)
         gated = getattr(self.config, "attention_residual_gates", False)
         lip = lip + (self.lip_attn_gate * lip_outs if gated else lip_outs)
         prot = prot + (self.prot_attn_gate * prot_outs if gated else prot_outs)

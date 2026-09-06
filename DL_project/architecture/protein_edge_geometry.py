@@ -48,18 +48,39 @@ def _rotation_class():
 RBF_COUNT = 16
 RBF_MIN = 2.0
 RBF_MAX = 22.0
-STRUCTURED_EDGE_DIM = 25
+
+
+def structured_edge_dim(rbf_count=RBF_COUNT, use_orientation_scalar=False):
+    """Total width of the structured edge vector for a given (rbf_count,
+    use_orientation_scalar) pair -- see structured_edge_features for the layout.
+    """
+    orientation_dim = 1 if use_orientation_scalar else 4
+    return rbf_count + 3 + orientation_dim + 1 + 1
+
+
+STRUCTURED_EDGE_DIM = structured_edge_dim()
 
 
 def rbf(distance, count=RBF_COUNT, d_min=RBF_MIN, d_max=RBF_MAX):
-    """Gaussian RBF expansion of a [*] distance tensor into [*, count]."""
+    """Gaussian RBF expansion of a [*] distance tensor into [*, count].
+
+    sigma widens with count so the count-1 centers always span the same
+    [d_min, d_max] range -- fewer, wider bins, not the same bins subsampled.
+    """
     centers = torch.linspace(d_min, d_max, count, device=distance.device, dtype=distance.dtype)
     sigma = (d_max - d_min) / count
     return torch.exp(-((distance.unsqueeze(-1) - centers) / sigma) ** 2)
 
 
-def structured_edge_features(edge_index, frame_rotation, frame_translation, edge_attr):
-    """Build native bidirectional 25-dim structured edges.
+def structured_edge_features(
+    edge_index,
+    frame_rotation,
+    frame_translation,
+    edge_attr,
+    rbf_count=RBF_COUNT,
+    use_orientation_scalar=False,
+):
+    """Build native bidirectional structured edges (25-dim by default).
 
     Args:
         edge_index: [2, E] long, one direction per column (as loaded from the
@@ -70,10 +91,16 @@ def structured_edge_features(edge_index, frame_rotation, frame_translation, edge
             existing [distance, area, boundary] layout -- only area/boundary are
             reused; distance is recomputed from frame_translation so it stays
             consistent with the direction vector and quaternion.
+        rbf_count: width of the distance RBF expansion (--protein_edge_rbf_count).
+        use_orientation_scalar: replace the 4-dim relative quaternion with 1
+            scalar, the cosine between the two frames' local Z axes
+            (relative_rotation[..., 2, 2] -- parallel/antiparallel packing,
+            --protein_edge_orientation_scalar).
 
     Returns:
-        (edge_index_bidi [2, 2E], e_attr [2E, 25]) -- both directions, each with
-        correctly oriented direction vectors and quaternions.
+        (edge_index_bidi [2, 2E], e_attr [2E, structured_edge_dim(...)]) -- both
+        directions, each with correctly oriented direction vectors and
+        quaternions/orientation scalar.
     """
     src, dst = edge_index[0], edge_index[1]
     area = edge_attr[:, -2].clamp_min(0.0)
@@ -94,12 +121,19 @@ def structured_edge_features(edge_index, frame_rotation, frame_translation, edge
         relative_rotation = torch.einsum(
             "eij,eik->ejk", r_i, frame_rotation[j]
         )
-        quaternion = _rotation_class()(rot_mats=relative_rotation).get_quats()
+        if use_orientation_scalar:
+            # relative_rotation[k, l] = (column k of r_i) . (column l of r_j), so
+            # the [2, 2] entry is the dot product of the two frames' own local Z
+            # axes -- one interpretable parallel(+1)/antiparallel(-1) number
+            # instead of the full 4-dim relative-orientation quaternion.
+            orientation = relative_rotation[..., 2, 2].unsqueeze(-1)
+        else:
+            orientation = _rotation_class()(rot_mats=relative_rotation).get_quats()
         return torch.cat(
             (
-                rbf(distance),
+                rbf(distance, count=rbf_count),
                 local_direction,
-                quaternion,
+                orientation,
                 torch.log1p(area).unsqueeze(-1),
                 # Same reason area itself gets log1p: an almost-degenerate contact
                 # (area near zero, clamp_min(1e-8) only guards the literal division)

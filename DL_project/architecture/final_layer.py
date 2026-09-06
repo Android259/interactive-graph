@@ -387,6 +387,8 @@ class Final_Layer(torch.nn.Module):
             self.thematical_head = ThematicDescriptorHead(
                 config, config.geometric_descriptors, config.chemical_descriptors,
                 catalog_order, act_fn,
+                geometric_pair_priors=getattr(config, "geometric_pair_priors", ""),
+                chemical_pair_priors=getattr(config, "chemical_pair_priors", ""),
             )
             head_dim = self.thematical_head.output_dim
             self.binar = torch.nn.Sequential(
@@ -450,6 +452,24 @@ class Final_Layer(torch.nn.Module):
         # vectors, and pair-level scalars have no well-defined place in that product.
         self.compat_width = compat_input_width(self.config)
         classifier_input_dim += self.compat_width
+
+        # --node_bilinear_fusion (training/read_configuration.py, architecture/
+        # cross_attention.py): CrossAttention stashes one interaction vector per graph
+        # pair -- a genuine elementwise/Hadamard fusion of a lipid node's own content
+        # and a protein node's own content (ForcedInteraction's signed_sqrt(proj_a(lip)
+        # * proj_b(prot)) recipe, architecture/thematic_descriptor_head.py), summed
+        # over every lipid/protein node pair the cross-attention already scores,
+        # BEFORE either side is pooled. Concatenated into common_out the same way
+        # compat_input is, just below -- but unlike compat_input/pair_descriptors this
+        # is NOT rejected alongside --bilinear_fusion (ModelConfig.validate): it is
+        # already a bottlenecked multiplicative quantity in its own right, so stacking
+        # it next to the pool-level bilinear product adds a second, independent
+        # bilinear channel rather than reopening the single-partner shortcut
+        # --bilinear_fusion exists to close. Width is lip_dim == prot_dim (both
+        # config.hiddim; see CrossAttention.__init__ for why the two always match).
+        self.node_bilinear_fusion = bool(getattr(self.config, "node_bilinear_fusion", False))
+        if self.node_bilinear_fusion:
+            classifier_input_dim += lip_dim
 
         # --pair_descriptors (training/read_configuration.py, architecture/
         # pair_descriptor_head.py): one self-attention-pooled vector, concatenated
@@ -660,6 +680,7 @@ class Final_Layer(torch.nn.Module):
         self, lip, prot, lip_batch, prot_batch, pool, prot_pocket=None,
         frozen_prior=None, compat_input=None, pocket_descriptor=None,
         pair_descriptor_input=None, descriptor_catalog_input=None,
+        node_bilinear_input=None,
     ):
         """Pool both modalities by sample and return binary logits."""
         if self.config.descriptors_head:
@@ -787,6 +808,16 @@ class Final_Layer(torch.nn.Module):
                     "were configured with different compatibility flags"
                 )
             common_out = torch.cat([common_out, compat_input], dim=1)
+
+        if self.node_bilinear_fusion:
+            if node_bilinear_input is None:
+                raise ValueError(
+                    "node_bilinear_fusion is set but forward() got no "
+                    "node_bilinear_input -- InteractionClassification only attaches "
+                    "it when cross_attention ran with the flag on; check the two "
+                    "match."
+                )
+            common_out = torch.cat([common_out, node_bilinear_input], dim=1)
 
         if self.pair_descriptor_head is not None:
             if self.config.descriptor_names:

@@ -1112,16 +1112,43 @@ class PLIDataset(
                 )
                 raw_values["tail_count"] = (tail_count, True)
 
-            # Every LIPID_DESCRIPTOR_NAMES entry beyond the base five above (chain/
-            # unsaturation/hbond/heavy handled unconditionally, tail_count just
-            # above) -- npr1/npr2 (conformer-based) and the whole-molecule RDKit set
+            # npr1/npr2 (conformer-based lipid 3D shape) are needed unnamed, the same
+            # way tail_count is above, when elongation_shape_match/flatness_shape_match
+            # reads them -- these two are the only pair formulas that need a lipid
+            # field beyond chain/unsaturation/hbond/heavy/tail_count.
+            npr1_needed = "npr1" in base_names_needed or "elongation_shape_match" in pair_names_needed
+            npr2_needed = "npr2" in base_names_needed or "flatness_shape_match" in pair_names_needed
+            if npr1_needed:
+                npr1_values = fill_train_mean(
+                    as_arrays(
+                        descriptor_values_by_row(csv, "npr1", isomeric, cache=pair_cache)
+                    ),
+                    "npr1",
+                )
+                raw_values["npr1"] = (npr1_values, True)
+            if npr2_needed:
+                npr2_values = fill_train_mean(
+                    as_arrays(
+                        descriptor_values_by_row(csv, "npr2", isomeric, cache=pair_cache)
+                    ),
+                    "npr2",
+                )
+                raw_values["npr2"] = (npr2_values, True)
+
+            # Every LIPID_DESCRIPTOR_NAMES entry beyond the base seven above (chain/
+            # unsaturation/hbond/heavy handled unconditionally, tail_count/npr1/npr2
+            # just above -- npr1/npr2 already handled there, whether named directly or
+            # needed by elongation_shape_match/flatness_shape_match, so this loop must
+            # skip them rather than recomputing) -- the whole-molecule RDKit set
             # (logp/tpsa/molar_refractivity/rotatable_bond_count/aromatic_ring_count/
             # ring_count), computed only when actually named. descriptor_values_by_row's
             # `pair_cache` lookup (the same on-disk pair_descriptor_cache --pair_
             # descriptor_lipid_shape reads above) makes npr1/npr2 a dict lookup rather
             # than a fresh ETKDG+MMFF embed whenever a current cache build has already
             # seen the candidate; the rest are cheap regardless.
-            _base_lipid_names = {"chain", "unsaturation", "hbond", "heavy", "tail_count"}
+            _base_lipid_names = {
+                "chain", "unsaturation", "hbond", "heavy", "tail_count", "npr1", "npr2",
+            }
             for extra_name in _CATALOG_LIPID_NAMES:
                 if extra_name in _base_lipid_names:
                     continue
@@ -1161,6 +1188,14 @@ class PLIDataset(
                                         "hbond": hbond[row_position][candidate],
                                         "heavy": heavy[row_position][candidate],
                                         "tail_count": tail_count[row_position][candidate],
+                                        **(
+                                            {"npr1": npr1_values[row_position][candidate]}
+                                            if npr1_needed else {}
+                                        ),
+                                        **(
+                                            {"npr2": npr2_values[row_position][candidate]}
+                                            if npr2_needed else {}
+                                        ),
                                     },
                                     protein_raw[protein_column[row_position]],
                                 )

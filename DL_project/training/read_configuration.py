@@ -269,6 +269,30 @@ class ModelConfig:
     # sum were -- this is the second, separate normalisation that catches THAT. Only
     # meaningful under --bilinear_fusion (validate() below).
     bilinear_pooled_norm: bool = False
+    # Node-level, pre-pool sibling of --bilinear_fusion. --bilinear_fusion replaces
+    # the classifier's concatenation with lip^T W prot, but only AFTER both sides are
+    # already pooled to one vector each -- see Final_Layer. Before that, CrossAttention
+    # ties a lipid node to a protein node only through nn.MultiheadAttention's own Q.K
+    # attention SCORE (a scalar weight); the feature update it produces is a weighted
+    # SUM of the other side's raw value vectors (architecture/cross_attention.py's
+    # "Current compact variant" comment), never an elementwise/Hadamard product of both
+    # sides' own content. This flag adds that missing node-pair-level product: for
+    # every (lipid node, protein node) pair the lipid-query cross-attention already
+    # scores (pocket-restricted keys when --attention_by_pockets narrows that site,
+    # every same-sample pair otherwise), CrossAttention computes ForcedInteraction's
+    # signed_sqrt(proj_a(lip_i) * proj_b(prot_j)) recipe (architecture/
+    # thematic_descriptor_head.py) and sums the per-pair vectors into one vector per
+    # graph pair, which Final_Layer concatenates into common_out alongside the existing
+    # pooled representations -- additive, not a replacement for --bilinear_fusion or
+    # the attention update above (files/thematical_paths_dynamics_and_pair_auc.md
+    # section 9). Requires --cross_attention (validate()): there is no per-node lipid/
+    # protein pairing to reuse without it.
+    node_bilinear_fusion: bool = False
+    # Replaces cross-attention's residual update itself (architecture/cross_attention.py
+    # CrossAttention.finish) with ForcedInteraction(own_content, attention_output)
+    # instead of a plain sum -- no skip path when attention degenerates toward
+    # uniform/near-zero. Requires --cross_attention (validate()).
+    cross_attention_forced_interaction: bool = False
     # Adversarial anti-shortcut training (Ganin-style gradient reversal): add a
     # per-partner adversary head that predicts the label from one partner's pooled
     # PRE-cross-attention representation alone (before cross-attention mixes in the
@@ -606,11 +630,64 @@ class ModelConfig:
     thematical_paths: bool = False
     geometric_descriptors: str = ""
     chemical_descriptors: str = ""
+    # Additional, ANALYTICALLY-DEFINED pair-descriptor terms (dataloader.pair_
+    # descriptors.PAIR_DESCRIPTOR_NAMES only -- rejected if any name lacks a formula
+    # combining both sides already, same DESCRIPTOR_CATALOG syntax as good_descriptors/
+    # bad_descriptors) concatenated onto BOTH the lipid-side and protein-side raw
+    # inputs of the matching group's _ModalityMLP (architecture/thematic_descriptor_
+    # head.py), before ForcedInteraction. Motivation (files/protein_lipid_binding_
+    # family_literature.md): geometric_descriptors/chemical_descriptors feed
+    # ForcedInteraction raw SINGLE-SIDE scalars and leave it to learn their
+    # combination itself (a low-rank bilinear MLP, hard to fit well from ~35
+    # proteins) -- these three pair formulas already encode a specific,
+    # literature-motivated match (tunnel shape vs ligand shape, pocket rim polarity
+    # vs headgroup) as a fixed prior the interaction does not have to rediscover.
+    # Still no skip path to the classifier: the raw pair value only reaches
+    # ForcedInteraction's product after passing through a side's own _ModalityMLP,
+    # same discipline as every other input here. Only takes effect under
+    # thematical_paths (validate()).
+    geometric_pair_priors: str = ""
+    chemical_pair_priors: str = ""
     # 0.0 (default) leaves every ForcedInteraction's probe_a/probe_b unbuilt -- see
     # that class's docstring. A nonzero value both builds them and weights
     # thematical_orthogonality_loss's (penalty + probe_loss) term in the training loop
     # (training/new_train.py) -- only takes effect under thematical_paths (validate()).
     thematical_orth_weight: float = 0.0
+    # Four independent, off-by-default fixes for thematical_paths' training-dynamics
+    # problem (files/thematical_paths_dynamics_and_pair_auc.md section 7: valid
+    # balanced_accuracy pinned at exactly 0.5 for the first 10-17 epochs in ~20-26% of
+    # family x seed runs). Each targets one specific step of ForcedInteraction's
+    # forward pass, each can be turned on alone or combined with the others, all only
+    # take effect under thematical_paths (validate()).
+    #
+    # Two chained F.normalize(p=2) calls (geom/chem level, then again on their
+    # already-normalised output at level2) collapse per-sample variation in an
+    # 8-dim vector before the classifier ever sees it. This drops the SECOND one
+    # (group_interaction only -- geom_interaction/chem_interaction keep theirs, which
+    # is the one MLB/MFB's own convergence fix is actually about).
+    thematical_single_norm: bool = False
+    # _ModalityMLP's centering BatchNorm1d is affine=False (no learned scale OR
+    # shift after normalising) -- deliberately, so nothing can reintroduce a per-side
+    # offset (see thematic_interaction_architecture.md). This flag switches to
+    # affine=True but immediately freezes the bias at its zero init
+    # (architecture/thematic_descriptor_head.py's _ModalityMLP), so the network can
+    # still learn a per-channel SCALE (fixing an under/over-scaled channel) without
+    # reopening a shift-based shortcut.
+    thematical_bn_scale: bool = False
+    # ForcedInteraction.proj_a/proj_b default to PyTorch's Kaiming-uniform init. At
+    # dim=8, random Kaiming rows can end up nearly parallel by chance, which the
+    # following L2-normalize then collapses further. Orthogonal init
+    # (torch.nn.init.orthogonal_) guarantees maximally separated projection
+    # directions from step 0.
+    thematical_orthogonal_init: bool = False
+    # ForcedInteraction's parameters sit behind two chained hard-normalisation ops
+    # that MLB's own paper (cited in thematic_interaction_architecture.md) reports as
+    # slow/hyperparameter-sensitive to converge. When on, training/new_train.py gives
+    # every ForcedInteraction's parameters (geom_interaction, chem_interaction,
+    # group_interaction; all three, always -- not configurable per-site) their own
+    # optimizer group at THEMATICAL_INTERACTION_LR_MULTIPLIER x the base --lr, instead
+    # of raising --lr globally.
+    thematical_interaction_lr: bool = False
     # Feeds the SAME protein-only/lipid-only tokens --pair_descriptors' self-attention
     # head reads (aromatic_share, polar_share, and coarsened extent when
     # --pair_descriptor_extent is on, from POCKET_DESCRIPTOR_NAMES for protein; chain,
@@ -777,6 +854,19 @@ class ModelConfig:
     protein_edge_attention: bool = False
     protein_edge_mlp: bool = False
     protein_edge_mlp_lambda: float = 30.0
+    # Width of the distance RBF expansion inside the 25-dim structured edge
+    # vector (architecture/protein_edge_geometry.py); default 16 reproduces the
+    # original width unchanged. Only meaningful under protein_edge_attention/mlp.
+    protein_edge_rbf_count: int = 16
+    # Replace the 4-dim relative-orientation quaternion with 1 scalar (cosine
+    # between the two residues' local Z axes -- parallel/antiparallel packing).
+    # Only meaningful under protein_edge_attention/mlp.
+    protein_edge_orientation_scalar: bool = False
+    # Use the plain [distance, area, boundary] edge_attr (edge_dim=3) as input to
+    # EdgeAttentionConv/EdgeMLPConv instead of the structured RBF/direction/
+    # orientation vector -- isolates the message-passing mechanism itself from
+    # the geometric feature expansion. Only meaningful under protein_edge_attention/mlp.
+    protein_edge_raw3: bool = False
     protein_gine_residual: bool = False
     attention_residual_gates: bool = False
     protein_gat_residual: bool = False
@@ -1633,6 +1723,27 @@ class ModelConfig:
                 "bidirectional_edges would incorrectly copy them onto the reversed "
                 "edge instead of recomputing the orientation"
             )
+        edge_geometry_variants = (
+            self.protein_edge_rbf_count != 16
+            or self.protein_edge_orientation_scalar
+            or self.protein_edge_raw3
+        )
+        if edge_geometry_variants and not (self.protein_edge_attention or self.protein_edge_mlp):
+            raise ValueError(
+                "protein_edge_rbf_count/protein_edge_orientation_scalar/"
+                "protein_edge_raw3 only apply to the structured edge vector built "
+                "under protein_edge_attention/protein_edge_mlp"
+            )
+        if self.protein_edge_raw3 and (
+            self.protein_edge_rbf_count != 16 or self.protein_edge_orientation_scalar
+        ):
+            raise ValueError(
+                "protein_edge_raw3 bypasses structured_edge_features entirely, so "
+                "protein_edge_rbf_count/protein_edge_orientation_scalar would be "
+                "silently ignored -- combining them is almost certainly a mistake"
+            )
+        if self.protein_edge_rbf_count <= 0:
+            raise ValueError("protein_edge_rbf_count must be positive")
         if self.rnabang_frozen_node_adapter and self.double_attention:
             raise ValueError(
                 "rnabang_frozen_node_adapter cannot be combined with double_attention"
@@ -2013,7 +2124,7 @@ class ModelConfig:
                     "compatibility_split_input", "attention_pooling", "swe_pooling",
                     "lipid_only", "protein_only", "pair_descriptors_only",
                     "lipid_path_handicap", "double_attention", "protein_descriptors",
-                    "lipid_descriptors",
+                    "lipid_descriptors", "node_bilinear_fusion",
                 )
                 if getattr(self, name)
             ]
@@ -2052,7 +2163,7 @@ class ModelConfig:
                     "compatibility_split_input", "attention_pooling", "swe_pooling",
                     "lipid_only", "protein_only", "pair_descriptors_only",
                     "lipid_path_handicap", "double_attention", "pair_descriptors",
-                    "protein_descriptors", "lipid_descriptors",
+                    "protein_descriptors", "lipid_descriptors", "node_bilinear_fusion",
                 )
                 if getattr(self, name)
             ]
@@ -2089,16 +2200,49 @@ class ModelConfig:
             raise ValueError(
                 "thematical_orth_weight only takes effect under thematical_paths"
             )
+        thematical_fixes = (
+            "thematical_single_norm", "thematical_bn_scale",
+            "thematical_orthogonal_init", "thematical_interaction_lr",
+        )
+        active_fixes = [name for name in thematical_fixes if getattr(self, name)]
+        if active_fixes and not self.thematical_paths:
+            raise ValueError(
+                ", ".join(active_fixes) + " only take effect under thematical_paths"
+            )
+        pair_prior_fields = ("geometric_pair_priors", "chemical_pair_priors")
+        active_pair_priors = [name for name in pair_prior_fields if getattr(self, name)]
+        if active_pair_priors and not self.thematical_paths:
+            raise ValueError(
+                ", ".join(active_pair_priors) + " only take effect under thematical_paths"
+            )
         if self.thematical_paths:
             # Local import, not module-level -- same rdkit-dependency reasoning as
             # protein_descriptors/lipid_descriptors' own check above. split_names_by_
             # side raises here (bad token, or a pair descriptor with no single side)
             # so a bad --geometric_descriptors/--chemical_descriptors value fails now,
             # not at model-build time inside ThematicDescriptorHead.
-            from dataloader.pair_descriptors import parse_descriptor_list, split_names_by_side
+            from dataloader.pair_descriptors import (
+                PAIR_DESCRIPTOR_NAMES, parse_descriptor_list, split_names_by_side,
+            )
 
             split_names_by_side(parse_descriptor_list(self.geometric_descriptors))
             split_names_by_side(parse_descriptor_list(self.chemical_descriptors))
+            # --geometric_pair_priors/--chemical_pair_priors: the opposite constraint
+            # from geometric_descriptors/chemical_descriptors above -- these names must
+            # ALREADY combine both sides (that is the whole point, see ModelConfig
+            # docstring), so split_names_by_side is the wrong check here; validate
+            # membership in PAIR_DESCRIPTOR_NAMES directly instead.
+            for field_name in pair_prior_fields:
+                tokens = parse_descriptor_list(getattr(self, field_name))
+                unknown_priors = [
+                    token for token in tokens if token not in PAIR_DESCRIPTOR_NAMES
+                ]
+                if unknown_priors:
+                    raise ValueError(
+                        f"{field_name} names must be PAIR_DESCRIPTOR_NAMES entries "
+                        f"(already combine both sides by formula): {unknown_priors}. "
+                        f"Known: {PAIR_DESCRIPTOR_NAMES}"
+                    )
             # Same reasoning as descriptors_head/two_pair_descriptors_paths just above:
             # Final_Layer builds only the two thematic interaction groups + a small
             # binar under this flag, so nothing else has a pooled representation to
@@ -2110,7 +2254,7 @@ class ModelConfig:
                     "compatibility_split_input", "attention_pooling", "swe_pooling",
                     "lipid_only", "protein_only", "pair_descriptors_only",
                     "lipid_path_handicap", "double_attention", "pair_descriptors",
-                    "protein_descriptors", "lipid_descriptors",
+                    "protein_descriptors", "lipid_descriptors", "node_bilinear_fusion",
                 )
                 if getattr(self, name)
             ]
@@ -2150,6 +2294,15 @@ class ModelConfig:
                     "lipid_only/protein_only cannot be used with double_attention"
                 )
             self.cross_attention = False
+        if self.node_bilinear_fusion and not self.cross_attention:
+            # node_bilinear_fusion reuses CrossAttention's own per-node lipid/protein
+            # pairing (see its docstring) -- with cross_attention off (explicitly, or
+            # forced off by lipid_only/protein_only just above) there is no such
+            # pairing left to reuse.
+            raise ValueError(
+                "node_bilinear_fusion requires cross_attention -- there is no lipid/"
+                "protein node pairing to reuse otherwise"
+            )
         # After cross_attention is final: a restriction on cross-attention keys means
         # nothing if there is no cross-attention, and silently keeping the flag on
         # would make the run report claim a restriction the model never applied.
@@ -2388,6 +2541,10 @@ SIMPLE_BOOL_FLAGS = {
     "--bilinear_fusion": "bilinear_fusion",
     "bilinear_pooled_norm": "bilinear_pooled_norm",
     "--bilinear_pooled_norm": "bilinear_pooled_norm",
+    "node_bilinear_fusion": "node_bilinear_fusion",
+    "--node_bilinear_fusion": "node_bilinear_fusion",
+    "cross_attention_forced_interaction": "cross_attention_forced_interaction",
+    "--cross_attention_forced_interaction": "cross_attention_forced_interaction",
     "hard_negative_mining": "hard_negative_mining",
     "--hard_negative_mining": "hard_negative_mining",
     "adversarial_grl": "adversarial_grl",
@@ -2426,6 +2583,14 @@ SIMPLE_BOOL_FLAGS = {
     "--two_pair_descriptors_paths": "two_pair_descriptors_paths",
     "thematical_paths": "thematical_paths",
     "--thematical_paths": "thematical_paths",
+    "thematical_single_norm": "thematical_single_norm",
+    "--thematical_single_norm": "thematical_single_norm",
+    "thematical_bn_scale": "thematical_bn_scale",
+    "--thematical_bn_scale": "thematical_bn_scale",
+    "thematical_orthogonal_init": "thematical_orthogonal_init",
+    "--thematical_orthogonal_init": "thematical_orthogonal_init",
+    "thematical_interaction_lr": "thematical_interaction_lr",
+    "--thematical_interaction_lr": "thematical_interaction_lr",
     "descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
     "--descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
     "descriptors_in_protein": "descriptors_in_protein",
@@ -2518,6 +2683,10 @@ SIMPLE_BOOL_FLAGS = {
     "--protein_edge_attention": "protein_edge_attention",
     "protein_edge_mlp": "protein_edge_mlp",
     "--protein_edge_mlp": "protein_edge_mlp",
+    "protein_edge_orientation_scalar": "protein_edge_orientation_scalar",
+    "--protein_edge_orientation_scalar": "protein_edge_orientation_scalar",
+    "protein_edge_raw3": "protein_edge_raw3",
+    "--protein_edge_raw3": "protein_edge_raw3",
     "protein_gine_residual": "protein_gine_residual",
     "--protein_gine_residual": "protein_gine_residual",
     "attention_residual_gates": "attention_residual_gates",
@@ -2753,6 +2922,9 @@ VALUE_HANDLERS = {
     "--protein_edge_mlp_lambda=": set_config_field(
         "protein_edge_mlp_lambda", float
     ),
+    "--protein_edge_rbf_count=": set_config_field(
+        "protein_edge_rbf_count", int
+    ),
     "--mlp_widths=": set_config_field("mlp_widths", read_mlp_widths),
     "--plm_compression_dims=": set_config_field(
         "plm_compression_dims", read_plm_compression_dims
@@ -2789,6 +2961,8 @@ VALUE_HANDLERS = {
     "--descriptor_names=": set_config_field("descriptor_names"),
     "--geometric_descriptors=": set_config_field("geometric_descriptors"),
     "--chemical_descriptors=": set_config_field("chemical_descriptors"),
+    "--geometric_pair_priors=": set_config_field("geometric_pair_priors"),
+    "--chemical_pair_priors=": set_config_field("chemical_pair_priors"),
     "--thematical_orth_weight=": set_config_field("thematical_orth_weight", float),
     "--pocket_descriptor_names=": set_config_field("pocket_descriptor_names"),
     "--protein_descriptors=": set_config_field("protein_descriptors"),

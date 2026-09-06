@@ -71,6 +71,30 @@ def test_tail_elongation_fit_guards_the_degenerate_zero_elongation_case():
     assert pair_descriptor_value("tail_elongation_fit", lipid, degenerate_pocket) == 3.0
 
 
+def test_new_shape_and_rim_pair_descriptors_are_in_the_catalog():
+    for name in ("hydropathy_rim_match", "elongation_shape_match", "flatness_shape_match"):
+        assert name in PAIR_DESCRIPTOR_NAMES
+        assert name in DESCRIPTOR_CATALOG
+
+
+def test_hydropathy_rim_match_is_the_product_of_rim_hydropathy_and_hbond():
+    lipid = {"hbond": 3.0}
+    protein = {"hydropathy_rim": -1.5}
+    assert pair_descriptor_value("hydropathy_rim_match", lipid, protein) == -4.5
+
+
+def test_elongation_shape_match_is_the_product_of_pocket_and_lipid_elongation():
+    lipid = {"npr1": 0.4}
+    protein = {"pocket_elongation": 1.5}
+    assert pair_descriptor_value("elongation_shape_match", lipid, protein) == pytest.approx(0.6)
+
+
+def test_flatness_shape_match_is_the_product_of_pocket_and_lipid_flatness():
+    lipid = {"npr2": 0.7}
+    protein = {"pocket_flatness": 1.2}
+    assert pair_descriptor_value("flatness_shape_match", lipid, protein) == pytest.approx(0.84)
+
+
 def test_parse_descriptor_token_bare_name():
     assert parse_descriptor_token("chain") == ("chain", None)
 
