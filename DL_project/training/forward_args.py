@@ -75,6 +75,9 @@ def build_forward_args(config, prot, lipid):
         forward_args["compat_input"] = prot.compat_input
     if getattr(config, "pair_descriptors", False):
         forward_args["pair_descriptor_input"] = prot.pair_descriptor_input
+    if getattr(config, "structural_pretrain", False):
+        forward_args["recon_index"] = prot.recon_index
+        forward_args["recon_target"] = prot.recon_target
     if full_catalog_order(config):
         # Covers --two_pair_descriptors_paths, --descriptor_names (under
         # descriptors_head or pair_descriptors), and --protein_descriptors/

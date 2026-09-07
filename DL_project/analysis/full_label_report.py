@@ -73,10 +73,25 @@ def label_coldsplit_params(label, families):
     the label; this makes full_label_report.py's defaults do the same instead of
     drifting from read_configuration.py's ModelConfig defaults over time.
     """
-    argv = ["full_label_report"] + arg_lines(label) + [
-        f"--excluded_groups={families[0]}",
-        "--seed=0",
-    ]
+    lines = arg_lines(label)
+    if "--lipid_coldsplit" in lines:
+        # A bare --lipid_coldsplit (no "=value") is how the arg_file marks that axis
+        # for the submitter, which then strips the bare flag and appends its own
+        # --lipid_coldsplit=<set> -- read_configuration requires a value and would
+        # otherwise reject the bare flag as unknown. Mirrors
+        # model_parameter_breakdown.py's ensure_split_flags. --excluded_groups is the
+        # OTHER axis and read_configuration rejects the two together, so it is left
+        # off here rather than appended as it is below.
+        lines = [line for line in lines if line != "--lipid_coldsplit"]
+        argv = ["full_label_report"] + lines + [
+            "--lipid_coldsplit=sphingolipids",
+            "--seed=0",
+        ]
+    else:
+        argv = ["full_label_report"] + lines + [
+            f"--excluded_groups={families[0]}",
+            "--seed=0",
+        ]
     conf = read_configuration(argv)
     return conf.coldsplit_share, conf.negatives_per_positive
 

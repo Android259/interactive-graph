@@ -1353,6 +1353,32 @@ class ModelConfig:
     # for the original "checkpoints read alongside the curves that explain them" use.
     save_dynamics: bool = False
     save_model_in_dynamics: bool = False
+    # Stage-1 structural pretraining: mask protein_mask_share of a protein pocket's
+    # residues (zero their node features) and train protein1 to reconstruct them from
+    # the rest of the graph. No Interaction label is read, so every family and lipid
+    # is pooled -- incompatible with excluded_groups/double_coldsplit/mixed_coldsplit/
+    # lipid_coldsplit, which all assume a label to hold out. See files/ plan
+    # "Структурное предобучение перед per-family дообучением".
+    structural_pretrain: bool = False
+    protein_recon_weight: float = 1.0
+    protein_mask_share: float = 0.15
+    # Stage-2: load protein1's weights from a stage-1 structural_pretrain checkpoint
+    # instead of random init. freeze_pretrained_encoders stops protein1 from updating
+    # further (requires_grad=False) so only the family-specific fusion/classifier
+    # trains on the family's own few positives. check_encoder_flags_match (training/
+    # new_train.py) refuses to load a checkpoint whose protein1-affecting flags do not
+    # match this run's -- protein1's weights are only meaningful for the exact module
+    # structure they were saved with.
+    pretrained_checkpoint: str = ""
+    freeze_pretrained_encoders: bool = False
+    # Per-article training (DeepCLIP/BERT-RBP: one model per protein, trained ONLY
+    # on that protein's own data). --excluded_groups pulls named groups OUT of train
+    # into eval, so excluding the other 8 families would leave THIS family with zero
+    # valid/test rows of its own -- the opposite of what's needed. family_only
+    # instead filters the whole table down to one family's rows before any split, so
+    # the normal 85/15 random split (Dataloader._split_interactions' no-
+    # excluded_groups branch) runs inside just that family.
+    family_only: str = ""
 
     def validate(self):
         """Validate dependent model dimensions and implied options."""
@@ -1430,6 +1456,49 @@ class ModelConfig:
                 "train, which is a one-axis split on the other axis rather than the "
                 "two-axis one it looks like, and there is no held-out family to derive "
                 "the classes from. Pass --excluded_groups as well."
+            )
+
+        if self.structural_pretrain and (
+            self.excluded_groups
+            or self.double_coldsplit
+            or self.mixed_coldsplit
+            or self.lipid_coldsplit
+        ):
+            raise ValueError(
+                "structural_pretrain never reads the Interaction label, so there is "
+                "nothing for a coldsplit axis to hold out -- pass none of "
+                "excluded_groups/double_coldsplit/mixed_coldsplit/lipid_coldsplit "
+                "alongside it"
+            )
+        if self.family_only and (
+            self.excluded_groups
+            or self.double_coldsplit
+            or self.mixed_coldsplit
+            or self.lipid_coldsplit
+            or self.cold_split
+        ):
+            raise ValueError(
+                "family_only already restricts the whole table to one family "
+                "before any split runs -- it cannot be combined with "
+                "excluded_groups/double_coldsplit/mixed_coldsplit/lipid_coldsplit/"
+                "cold_split, which all assume other families are present to hold "
+                "out from"
+            )
+        if self.structural_pretrain and self.no_protein_geometry:
+            raise ValueError(
+                "structural_pretrain masks and reconstructs the geometric residue "
+                "features no_protein_geometry removes -- there would be nothing left "
+                "to mask"
+            )
+        if not 0.0 < self.protein_mask_share < 1.0:
+            raise ValueError(
+                "protein_mask_share is the fraction of a pocket's residues masked "
+                f"per pass and belongs in (0, 1); got {self.protein_mask_share}"
+            )
+        if self.freeze_pretrained_encoders and not self.pretrained_checkpoint:
+            raise ValueError(
+                "freeze_pretrained_encoders has nothing to freeze without "
+                "pretrained_checkpoint"
             )
 
         if self.test_group:
@@ -2805,6 +2874,10 @@ SIMPLE_BOOL_FLAGS = {
     "--save_dynamics": "save_dynamics",
     "save_model_in_dynamics": "save_model_in_dynamics",
     "--save_model_in_dynamics": "save_model_in_dynamics",
+    "structural_pretrain": "structural_pretrain",
+    "--structural_pretrain": "structural_pretrain",
+    "freeze_pretrained_encoders": "freeze_pretrained_encoders",
+    "--freeze_pretrained_encoders": "freeze_pretrained_encoders",
     "balance_excluded_group_negatives": "balance_excluded_group_negatives",
     "--balance_excluded_group_negatives": "balance_excluded_group_negatives",
     "balance_negatives_by_family": "balance_negatives_by_family",
@@ -2898,6 +2971,10 @@ VALUE_HANDLERS = {
     ),
     "--coldsplit_share=": set_config_field("coldsplit_share", float),
     "--lipid_coldsplit=": set_config_field("lipid_coldsplit", read_lipid_coldsplit),
+    "--protein_recon_weight=": set_config_field("protein_recon_weight", float),
+    "--protein_mask_share=": set_config_field("protein_mask_share", float),
+    "--pretrained_checkpoint=": set_config_field("pretrained_checkpoint"),
+    "--family_only=": set_config_field("family_only"),
     "--test_group=": set_config_field("test_group", read_test_group),
     "--batch=": set_config_field("batch", int),
     "--num_workers=": set_config_field("num_workers", int),

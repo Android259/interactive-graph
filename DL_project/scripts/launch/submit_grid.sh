@@ -280,6 +280,17 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_output_root="script_logs/${this_variant}_lipidsets"
         this_groups=("${LIPID_COLDSPLIT_SETS_LIST[@]}")
     fi
+    if (( this_lipid_coldsplit )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
+        # Same rule as scripts/run_local.sh's --groups/--no_groups check: GROUPS_OVERRIDE
+        # (run_cluster.sh's --groups/--no_groups) names protein families, which is the
+        # OTHER axis for a --lipid_coldsplit label. Applying it here would silently
+        # replace LIPID_COLDSPLIT_SETS_LIST with family names and submit
+        # --lipid_coldsplit=<family>, which read_lipid_coldsplit rejects at run time for
+        # every single job -- caught here instead of 35 crashed jobs later.
+        printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
+'--groups/--no_groups do not apply (%s).\n' "${args_file}" >&2
+        exit 2
+    fi
     [[ -z "${GROUPS_OVERRIDE}" ]] || read -r -a this_groups <<< "${GROUPS_OVERRIDE}"
     [[ -z "${SEEDS_OVERRIDE}" ]] || read -r -a this_seeds <<< "${SEEDS_OVERRIDE}"
 

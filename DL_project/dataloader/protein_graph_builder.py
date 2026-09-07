@@ -279,6 +279,13 @@ class ProteinGraphData(Data):
         # numbers that identify nothing.
         if key in ("pair_id", "candidate_group"):
             return 0
+        if key == "recon_index":
+            # recon_index (--structural_pretrain) names positions into x/prot1 within
+            # THIS graph -- an actual node index, unlike pair_id/candidate_group above
+            # -- so it must shift by the node count of the preceding graphs in the
+            # batch, same as edge_index. Explicit rather than relying on PyG's default
+            # name-based inference to reach the same answer.
+            return self.num_nodes
         return super().__inc__(key, value, *args, **kwargs)
 
 
@@ -487,6 +494,14 @@ class ProteinGraphBuilder:
             # [1, D] per protein, so PyG concatenates it to [num_graphs, D] -- one row
             # per sample, aligned with the pooled partners rather than with nodes.
             graph_kwargs["pocket_descriptor"] = parts["pocket_descriptor"]
+        if "recon_target" in parts:
+            # Only present under --structural_pretrain, uniformly for every sample in
+            # the run (Dataloader._mask_residue_features), so this never mixes a real
+            # tensor and a missing one for one key across a batch. recon_index's name
+            # contains "index", so ProteinGraphData's __inc__ falls through to PyG's
+            # default and offsets it by num_nodes when batching -- no override needed.
+            graph_kwargs["recon_target"] = parts["recon_target"]
+            graph_kwargs["recon_index"] = parts["recon_index"]
         return ProteinGraphData(**graph_kwargs)
 
     @staticmethod

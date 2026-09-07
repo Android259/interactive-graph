@@ -39,6 +39,21 @@ class InteractionClassification(torch.nn.Module):
                 self.cross_attention2 = CrossAttention(
                     self.config.hiddim, self.config.hiddim, self.config
                 )
+            if self.config.structural_pretrain:
+                # Stage-1 structural pretraining: reconstruct the masked residues'
+                # own (pre-zero) node features from protein1's PRE-pool, pre-cross-
+                # attention per-node output -- same isolation rationale as
+                # compute_adversary (Final_Layer), just one level up, since pooling
+                # happens inside Final_Layer and this needs a specific node's vector,
+                # not the pooled whole-pocket one. Small on purpose: BERT-RBP's own
+                # masked-token head is a single linear layer too -- depth belongs in
+                # the backbone (protein1), not here.
+                hiddim = self.config.hiddim
+                self.protein_recon_head = torch.nn.Sequential(
+                    torch.nn.Linear(hiddim, hiddim),
+                    torch.nn.GELU(),
+                    torch.nn.Linear(hiddim, self.config.protein_node_feature_count),
+                )
         self.final_layer = Final_Layer(self.config)
 
     def lipid_branch_parameters(self):
@@ -258,7 +273,9 @@ class InteractionClassification(torch.nn.Module):
         compat_input=None,
         pair_descriptor_input=None,
         descriptor_catalog_input=None,
-        chain_rank=None):
+        chain_rank=None,
+        recon_index=None,
+        recon_target=None):
         """Encode a batched protein-lipid input and return binary logits."""
 
         if (
@@ -351,6 +368,14 @@ class InteractionClassification(torch.nn.Module):
             edge_node_pairs=prot_edge_node_pairs,
             edge_node_degree=prot_edge_node_degree)
 
+        self._recon_prediction = None
+        if config.structural_pretrain:
+            # Pre-cross-attention prot1, same isolation as the adversary below: this
+            # asks what protein1 alone captured about the masked residues, before the
+            # lipid side is mixed in. One prediction row per masked node in the
+            # batch, gathered by the global (batch-offset) node index recon_index
+            # already carries -- see ProteinGraphData.__inc__.
+            self._recon_prediction = self.protein_recon_head(prot1[recon_index])
 
         if getattr(config, "lipid_graph_isomers", False):
             lip1 = self.lipid1(

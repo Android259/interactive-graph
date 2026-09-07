@@ -105,6 +105,45 @@ if conf.pair_descriptor_pocket_shares_split:
         train_dataset.pocket_descriptor_stats()
     )
 model = model.to(device)
+if conf.pretrained_checkpoint:
+    # protein1's weights are only meaningful for the exact module structure they were
+    # saved with (backend, hiddim, HEADS, single_gat_layer, protein_extra_node_
+    # features, ...). Rather than re-deriving and comparing that flag list by hand
+    # (easy to leave one out), lean on load_state_dict's own checks: a same-named,
+    # differently-shaped parameter (e.g. a different hiddim) raises RuntimeError even
+    # under strict=False, and a structural change (e.g. --geometric_transformer on
+    # one side only) renames parameters, which shows up as protein1.* keys missing
+    # below -- between the two, no silent partial/corrupted load gets through.
+    pretrained_state = torch.load(conf.pretrained_checkpoint, map_location=device)
+    args_path = re.sub(r"\.pt$", ".args.json", conf.pretrained_checkpoint)
+    try:
+        load_result = model.load_state_dict(pretrained_state, strict=False)
+    except RuntimeError as shape_error:
+        raise RuntimeError(
+            f"pretrained_checkpoint={conf.pretrained_checkpoint} does not match "
+            f"this run's protein1 architecture. Compare encoder flags against "
+            f"{args_path} (written alongside the checkpoint by --save_model) if it "
+            f"exists.\n{shape_error}"
+        ) from shape_error
+    missing_protein1 = [
+        key for key in load_result.missing_keys if key.startswith("protein1.")
+    ]
+    if missing_protein1:
+        raise RuntimeError(
+            f"pretrained_checkpoint={conf.pretrained_checkpoint} is missing "
+            f"protein1 weights this run's architecture needs (e.g. "
+            f"{missing_protein1[0]}); the checkpoint likely used different "
+            f"protein-encoder flags. Compare against {args_path} if it exists."
+        )
+    print(
+        f"Loaded pretrained protein1 from {conf.pretrained_checkpoint} "
+        f"({len(load_result.missing_keys)} missing / "
+        f"{len(load_result.unexpected_keys)} unexpected keys overall, none of the "
+        f"missing ones under protein1.)"
+    )
+if conf.freeze_pretrained_encoders:
+    for parameter in model.protein1.parameters():
+        parameter.requires_grad = False
 number_of_parameters=sum(p.numel() for p in model.parameters() if p.requires_grad)
 print(f"number of parameters : {number_of_parameters}")
 common_weights_parts = []
@@ -1212,7 +1251,16 @@ def epoch(idx,counttrain,countval):
                     else outl
                 )
 
-                if conf.grab_loss:
+                if conf.structural_pretrain:
+                    # No Interaction label is read here -- outl/interaction_labels
+                    # below are computed by the same forward pass but are not this
+                    # run's objective; see model._recon_prediction (Interaction
+                    # Classification.forward), stashed from protein1's pre-pool
+                    # output at the residues _mask_residue_features zeroed.
+                    los = conf.protein_recon_weight * F.mse_loss(
+                        model._recon_prediction, prot.recon_target
+                    )
+                elif conf.grab_loss:
                     batch_pair_ids = prot.pair_id.view(-1)[:sample_count]
                     grab_label_coefficients = train_dataset.get_grab_batch_inputs(batch_pair_ids, device)
                     sample_weights = batch_sample_weights(prot, sample_count)
@@ -1439,7 +1487,11 @@ def epoch(idx,counttrain,countval):
             )
             # print(f"valid batch : {i+1}/{valid_batches_to_run}")
 
-            if conf.pu_loss:
+            if conf.structural_pretrain:
+                los = conf.protein_recon_weight * F.mse_loss(
+                    model._recon_prediction, prot.recon_target
+                )
+            elif conf.pu_loss:
                 los = Non_Negative_Positive_Unlabeled_loss(
                     outl,
                     interaction_labels.long(),
@@ -1837,7 +1889,7 @@ epoch_number = 0
 EPOCHS = conf.ep
 countrain =0
 countval =0
-best_valid_balanced_acc = None
+best_valid_selection_metric = None
 best_epoch = None
 best_model_state = None
 epoch_history = []
@@ -1884,6 +1936,11 @@ for eepoch in range(EPOCHS):
     # numbered with.
     train_dataset.set_epoch(epoch_number)
     model.train(True)
+    if conf.freeze_pretrained_encoders:
+        # requires_grad=False stops protein1's weights from updating, but train(True)
+        # above still leaves its own dropout/batchnorm submodules stochastic -- eval()
+        # here keeps it acting exactly as it did when structural_pretrain saved it.
+        model.protein1.eval()
     countrain, countval, train_metrics, valid_metrics = epoch(epoch_number,countrain,countval)
     if conf.save_dynamics:
         # After the epoch's own validation, so the ablated passes are compared against a
@@ -1901,25 +1958,38 @@ for eepoch in range(EPOCHS):
             fit_progress,
             conf.adv_fit_progress(train_metrics.get("balanced_accuracy")),
         )
-    rolling_valid_balanced_acc = rolling_metric_mean(
+    # structural_pretrain has no Interaction label, so balanced_accuracy is undefined
+    # (whatever the untrained classifier head outputs) -- checkpoint selection tracks
+    # the lowest rolling reconstruction loss instead of the highest rolling BA.
+    # valid_metrics["loss"] already IS the mean reconstruction MSE in this mode (see
+    # the structural_pretrain branch in the validation loop above), so this needs no
+    # new metric, only the opposite comparison direction.
+    selection_metric_name = "loss" if conf.structural_pretrain else "balanced_accuracy"
+    rolling_valid_selection_metric = rolling_metric_mean(
         [
             *epoch_history,
             {"train": train_metrics, "valid": valid_metrics},
         ],
         "valid",
-        "balanced_accuracy",
+        selection_metric_name,
         window=checkpoint_window,
     )
-    valid_metrics["checkpoint_balanced_accuracy"] = rolling_valid_balanced_acc
+    valid_metrics["checkpoint_selection_metric"] = rolling_valid_selection_metric
     epoch_history.append({"train": train_metrics, "valid": valid_metrics})
-    if best_model_state is None or (
-        rolling_valid_balanced_acc is not None
+    is_new_best_metric = (
+        rolling_valid_selection_metric is not None
+        and best_valid_selection_metric is not None
         and (
-            best_valid_balanced_acc is None
-            or rolling_valid_balanced_acc > best_valid_balanced_acc
+            rolling_valid_selection_metric < best_valid_selection_metric
+            if conf.structural_pretrain
+            else rolling_valid_selection_metric > best_valid_selection_metric
         )
+    )
+    if best_model_state is None or (
+        rolling_valid_selection_metric is not None
+        and (best_valid_selection_metric is None or is_new_best_metric)
     ):
-        best_valid_balanced_acc = rolling_valid_balanced_acc
+        best_valid_selection_metric = rolling_valid_selection_metric
         best_epoch = epoch_number
         best_model_state = copy.deepcopy(model.state_dict())
         epochs_without_checkpoint_improvement = 0
