@@ -30,6 +30,15 @@ Data sources, in order:
    to these labels. RANK BY TEST METRICS PER EXCLUDED GROUP, never validation
    -- validation is for early stopping/model selection only, per this
    project's own convention.
+   ON A --lipid_coldsplit LABEL the test metric to rank by is
+   `AUC_within_protein` (with `AUC_within_protein_proteins` beside it), NOT
+   pooled balanced_accuracy/AUC. Every protein stays in training under that
+   split, so "which protein is this" is free and the pooled figure is largely
+   that marginal: measured on the same rows, pooled AUC 0.568 against 0.480
+   within protein, and chance (0.460/0.457) on the two sets with enough
+   protein blocks to read. Full argument and numbers:
+   files/lipid_coldsplit_architecture_direction.md, the RULE box at the top
+   and section 7j. Columns are empty for runs before 2026-09-08.
 2. `graphics/<label>/<label>.md` — already-generated per-label writeup from
    `--graphics --summarize`. Read it, but verify its numbers against
    metrics_summary.csv rather than trusting it blind.

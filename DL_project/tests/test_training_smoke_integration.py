@@ -2063,3 +2063,129 @@ def test_family_dann_rejects_a_sample_with_no_family_set():
             model.final_layer.family_adversaries,
             True,
         )
+
+
+# --- --protein_hiddim / --lipid_hiddim -------------------------------------------
+# Three properties, because the flags' whole promise is "you can widen ONE branch and
+# nothing else moves": a default run must be untouched, an asymmetric run must actually
+# train, and the widened branch must be the only one that grew.
+
+def _width_config(**overrides):
+    config = ModelConfig(hiddim=8, HEADS=2, m=2, batch=2, num_workers=0,
+                         pool_type="mean", **overrides)
+    config.validate()
+    return config
+
+
+def test_branch_widths_default_to_hiddim_and_build_no_adapter():
+    """Setting the flags to hiddim must be indistinguishable from not setting them.
+
+    number_of_parameters names run directories and is a column of metrics_summary.csv,
+    so a default run that silently gained an adapter would corrupt the identity of
+    every past run rather than just its memory use.
+    """
+    plain = InteractionClassification(_width_config())
+    explicit = InteractionClassification(
+        _width_config(protein_hiddim=8, lipid_hiddim=8)
+    )
+    assert plain.protein_width_adapter is None
+    assert plain.lipid_width_adapter is None
+    assert explicit.protein_width_adapter is None
+    assert explicit.lipid_width_adapter is None
+    count = lambda model: sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert count(plain) == count(explicit)
+
+
+@pytest.mark.parametrize(
+    "overrides,widened,untouched",
+    [
+        ({"lipid_hiddim": 16}, "lipid", "protein"),
+        ({"protein_hiddim": 16}, "protein", "lipid"),
+    ],
+)
+def test_one_branch_widens_alone_and_still_trains(overrides, widened, untouched):
+    config = _width_config(**overrides)
+    model = InteractionClassification(config)
+    assert getattr(model, f"{widened}_width_adapter") is not None
+    assert getattr(model, f"{untouched}_width_adapter") is None
+    # The adapter lands the widened tower back on config.hiddim, which is what
+    # cross-attention, the fusion and the classifier are all built at.
+    assert getattr(model, f"{widened}_width_adapter").out_features == config.hiddim
+    one_training_step(config)
+
+
+def test_asymmetric_width_is_rejected_with_double_attention():
+    """Its second encoder pass reads cross-attention output, always hiddim wide."""
+    with pytest.raises(ValueError, match="double_attention"):
+        _width_config(lipid_hiddim=16, double_attention=True)
+
+
+# --- --lipid_edge_mlp / --lipid_edge_attention / --lipid_edge_mlp_lambda ----------
+# The lipid graph gets its own conv choice and its own EdgeMLPConv divisor. The
+# property that matters most is the boring one: an arg file that names only the protein
+# flag must build exactly what it built before these flags existed.
+
+def _graph_config(**overrides):
+    config = ModelConfig(hiddim=8, HEADS=2, m=2, batch=2, num_workers=0,
+                         pool_type="mean", lipid_graph_isomers=True,
+                         lipid_fragments_treatment="concat", **overrides)
+    config.validate()
+    return config
+
+
+@pytest.mark.parametrize(
+    "protein_flag,expected",
+    [
+        ({"protein_edge_mlp": True}, "mlp"),
+        ({"protein_edge_attention": True}, "attention"),
+        ({}, "gatv2"),
+    ],
+)
+def test_lipid_edge_mode_inherits_the_protein_flag_when_unset(protein_flag, expected):
+    from architecture.mlp_utils import lipid_edge_mode
+    assert lipid_edge_mode(_graph_config(**protein_flag)) == expected
+
+
+def test_lipid_edge_flags_override_the_protein_choice_independently():
+    """--protein_edge_mlp with --lipid_edge_attention must give the LIPID graph
+    attention only -- not both, which would take EdgeMLPConv's narrow conv_out_dim
+    while building EdgeAttentionConv layers."""
+    from architecture.mlp_utils import lipid_edge_mode
+    config = _graph_config(protein_edge_mlp=True, lipid_edge_attention=True)
+    assert lipid_edge_mode(config) == "attention"
+    model = InteractionClassification(config)
+    assert not model.lipid1.use_edge_mlp
+    one_training_step(config)
+
+
+def test_lipid_lambda_defaults_to_the_protein_one_and_can_be_set_apart():
+    from architecture.mlp_utils import lipid_edge_mlp_lambda
+    inherited = _graph_config(protein_edge_mlp=True)
+    assert lipid_edge_mlp_lambda(inherited) == inherited.protein_edge_mlp_lambda == 30.0
+    own = _graph_config(protein_edge_mlp=True, lipid_edge_mlp_lambda=2.0)
+    assert lipid_edge_mlp_lambda(own) == 2.0
+    assert own.protein_edge_mlp_lambda == 30.0
+    assert InteractionClassification(own).lipid1.encodin1.lam == 2.0
+    one_training_step(own)
+
+
+@pytest.mark.parametrize(
+    "overrides,match",
+    [
+        ({"lipid_edge_mlp": True, "lipid_edge_attention": True}, "mutually exclusive"),
+        ({"protein_edge_attention": True, "lipid_edge_mlp_lambda": 2.0}, "no effect"),
+        ({"lipid_edge_mlp_lambda": -1.0, "protein_edge_mlp": True}, "greater than zero"),
+    ],
+)
+def test_lipid_edge_flag_misuse_is_rejected(overrides, match):
+    with pytest.raises(ValueError, match=match):
+        _graph_config(**overrides)
+
+
+def test_lipid_edge_flags_need_the_lipid_graph():
+    """Without --lipid_graph_isomers there are no lipid edges, so these would be
+    recorded in the run report as if they had shaped the model while changing nothing."""
+    config = ModelConfig(hiddim=8, HEADS=2, m=2, batch=2, num_workers=0,
+                         protein_edge_mlp=True, lipid_edge_mlp_lambda=2.0)
+    with pytest.raises(ValueError, match="lipid_graph_isomers"):
+        config.validate()

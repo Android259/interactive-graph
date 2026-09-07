@@ -854,6 +854,38 @@ class ModelConfig:
     protein_edge_attention: bool = False
     protein_edge_mlp: bool = False
     protein_edge_mlp_lambda: float = 30.0
+    # The lipid graph's own conv choice and its own EdgeMLPConv divisor. None means
+    # "whatever the protein flag above says", which is what the code did unconditionally
+    # before these existed -- so every arg file and every past run reproduces exactly,
+    # and setting nothing here changes nothing.
+    #
+    # Why they exist. The two graphs are not the same object. The protein graph is a
+    # Voronota contact tessellation with ~30 neighbours per residue and 25-dimensional
+    # SE(3) frame edges; the lipid graph is a molecule, 2-4 bonds per atom, with
+    # 22-dimensional bond features (LIPID_ISOMER_EDGE_DIM). Two consequences of sharing
+    # one switch, both visible in architecture/lipid_encoder.py:
+    #
+    #   lambda. EdgeMLPConv divides the summed messages by a CONSTANT (Dauparas et al.
+    #   found 30 for protein graphs, where it makes the sum roughly a mean). On a
+    #   molecular graph the sum is over 2-4 messages, so dividing by 30 delivers a node
+    #   update about an order of magnitude smaller than the layer was tuned for. The
+    #   graph's real mean degree is what this should be set to -- measure it with
+    #   analysis/lipid_graph_degree.py rather than guessing.
+    #
+    #   width. conv_out_dim is `hiddim` under edge_mlp and `hiddim * HEADS` under
+    #   attention/GATv2, so picking edge_mlp for the protein graph also made the LIPID
+    #   graph 8x narrower, on the branch that is already the bottleneck under
+    #   --lipid_coldsplit (files/lipid_coldsplit_architecture_direction.md).
+    #
+    # What the past runs therefore were, and why it is not obviously a bug: every
+    # --lipid_graph_isomers run so far took the protein's conv AND lambda=30 on its
+    # lipid graph. The one direct ablation of lipid graphs is flat in BOTH conv
+    # variants (section 7d of the file above), including the attention arm that has
+    # neither the lambda nor the width problem -- so the mis-scaled divisor is a real
+    # code fact but is not what made lipid graphs useless there.
+    lipid_edge_attention: bool | None = None
+    lipid_edge_mlp: bool | None = None
+    lipid_edge_mlp_lambda: float | None = None
     # Width of the distance RBF expansion inside the 25-dim structured edge
     # vector (architecture/protein_edge_geometry.py); default 16 reproduces the
     # original width unchanged. Only meaningful under protein_edge_attention/mlp.
@@ -916,6 +948,34 @@ class ModelConfig:
     lr: float = 0.0001
     weight_decay: float = 0.00001
     hiddim: int = 64
+    # Per-branch widths. None means "same as hiddim", which is what every run before
+    # these existed did and what keeps a default run byte-for-byte the model it was.
+    #
+    # Why they exist. The two branches are not symmetric in what they have to carry.
+    # The protein side is 35 objects whose identity fits in about one real dimension
+    # (files/signal_state.md section 4.5), and the lipid side is the whole of a
+    # molecule's chemistry squeezed through ONE torch.nn.Linear(768, hiddim) over a
+    # MolFormer embedding (architecture/lipid_encoder.py). Under --lipid_coldsplit that
+    # projection is the only route a never-seen head-group class has into the model,
+    # while the protein side is fully in-distribution and free to memorise. Raising
+    # --hiddim raises both at once, and measured on that split it bought only
+    # memorisation: 8 -> 64 moved test BA 0.5530 -> 0.5511 (nothing) while train
+    # sensitivity went 0.837 -> 0.897 (files/lipid_coldsplit_architecture_direction.md
+    # section 3). These let the two move apart.
+    #
+    # What the width does and does not reach. It is the width of the branch's OWN
+    # tower -- its conv/embedding input projection, its self-attention, its MLPs, its
+    # norms. Where the branch hands over to cross-attention, the fusion and the
+    # classifier, everything stays at `hiddim`: a branch whose width differs gets one
+    # Linear(branch_width, hiddim) adapter at that boundary
+    # (architecture/interaction_classification.py). It is deliberately not full
+    # asymmetry through cross-attention, which would need
+    # nn.MultiheadAttention(kdim=, vdim=) and is refused outright by the fast path
+    # (architecture/fast_attention.py's _check_supported: "needs kdim == vdim ==
+    # embed_dim") that every current config runs under. The adapter is built ONLY when
+    # the width differs from hiddim, so a default run gains no module and no parameter.
+    protein_hiddim: int | None = None
+    lipid_hiddim: int | None = None
     ep: int = 150
     checkpoint_window: int = 5
     seed: int = 0
@@ -1769,6 +1829,36 @@ class ModelConfig:
             raise ValueError(
                 f"hiddim ({self.hiddim}) must be divisible by HEADS ({self.HEADS})"
             )
+        # Same two constraints hiddim itself carries, for the same reasons: each branch
+        # width is the embed_dim of that branch's own self-attention, and a conv's
+        # per-head output width.
+        for field_name in ("protein_hiddim", "lipid_hiddim"):
+            width = getattr(self, field_name)
+            if width is None:
+                continue
+            if width <= 0:
+                raise ValueError(f"{field_name} must be greater than zero")
+            if width % self.HEADS != 0:
+                raise ValueError(
+                    f"{field_name} ({width}) must be divisible by HEADS ({self.HEADS})"
+                )
+        asymmetric = [
+            name for name in ("protein_hiddim", "lipid_hiddim")
+            if getattr(self, name) is not None and getattr(self, name) != self.hiddim
+        ]
+        if asymmetric and self.double_attention:
+            # --double_attention feeds each branch's SECOND encoder pass with the
+            # output of cross-attention, which is config.hiddim wide, while that
+            # encoder is built at the branch width -- the two only line up when they
+            # are equal. Rejected rather than silently adapted a second time: a
+            # second squeeze in the middle of the tower is a different architecture
+            # from the one these flags are meant to test, not an implementation
+            # detail. Nothing currently sets --double_attention.
+            raise ValueError(
+                f"{'/'.join(asymmetric)} differs from hiddim ({self.hiddim}), which "
+                "--double_attention does not support: its second encoder pass reads "
+                "cross-attention output, always hiddim wide"
+            )
         protein_conv_modes = (
             self.geometric_transformer,
             self.transformer_conv,
@@ -1780,6 +1870,35 @@ class ModelConfig:
             raise ValueError(
                 "geometric_transformer, transformer_conv, gine_conv, "
                 "protein_edge_attention and protein_edge_mlp are mutually exclusive"
+            )
+        if self.lipid_edge_attention and self.lipid_edge_mlp:
+            raise ValueError(
+                "lipid_edge_attention and lipid_edge_mlp are mutually exclusive"
+            )
+        lipid_edge_fields = (
+            self.lipid_edge_attention,
+            self.lipid_edge_mlp,
+            self.lipid_edge_mlp_lambda,
+        )
+        if any(value is not None for value in lipid_edge_fields) and not self.lipid_graph_isomers:
+            # There is no lipid graph without it, so these would be recorded in the run
+            # report as if they had shaped the model while changing nothing at all.
+            raise ValueError(
+                "lipid_edge_attention/lipid_edge_mlp/lipid_edge_mlp_lambda only apply "
+                "to the chemical graph --lipid_graph_isomers builds; without that flag "
+                "the lipid branch is a MolFormer projection with no edges"
+            )
+        if self.lipid_edge_mlp_lambda is not None and self.lipid_edge_mlp_lambda <= 0:
+            raise ValueError("lipid_edge_mlp_lambda must be greater than zero")
+        if self.lipid_edge_mlp_lambda is not None and not (
+            self.lipid_edge_mlp
+            or (self.lipid_edge_mlp is None and self.protein_edge_mlp)
+        ):
+            # Only EdgeMLPConv divides by it; under attention or GATv2 it is inert.
+            raise ValueError(
+                "lipid_edge_mlp_lambda has no effect unless the lipid graph uses "
+                "EdgeMLPConv -- set --lipid_edge_mlp, or leave it inheriting "
+                "--protein_edge_mlp"
             )
         if self.geometric_transformer and any(rnabang_modes):
             raise ValueError(
@@ -2752,6 +2871,15 @@ SIMPLE_BOOL_FLAGS = {
     "--protein_edge_attention": "protein_edge_attention",
     "protein_edge_mlp": "protein_edge_mlp",
     "--protein_edge_mlp": "protein_edge_mlp",
+    # Bare flags, so they only ever turn a lipid conv ON. Leaving both unset keeps the
+    # field None, which means "inherit the protein flag" -- the pre-existing behaviour.
+    # There is deliberately no way to spell "lipid graph uses plain GATv2 while the
+    # protein graph uses EdgeMLPConv": nothing has asked for it, and an extra negative
+    # flag would be a third state to reason about in every arg file.
+    "lipid_edge_attention": "lipid_edge_attention",
+    "--lipid_edge_attention": "lipid_edge_attention",
+    "lipid_edge_mlp": "lipid_edge_mlp",
+    "--lipid_edge_mlp": "lipid_edge_mlp",
     "protein_edge_orientation_scalar": "protein_edge_orientation_scalar",
     "--protein_edge_orientation_scalar": "protein_edge_orientation_scalar",
     "protein_edge_raw3": "protein_edge_raw3",
@@ -2950,6 +3078,9 @@ VALUE_HANDLERS = {
     "--weight_decay=": set_config_field("weight_decay", float),
     "--bilinear_weight_decay=": set_config_field("bilinear_weight_decay", float),
     "--hiddim=": set_config_field("hiddim", int),
+    "--protein_hiddim=": set_config_field("protein_hiddim", int),
+    "--lipid_hiddim=": set_config_field("lipid_hiddim", int),
+    "--lipid_edge_mlp_lambda=": set_config_field("lipid_edge_mlp_lambda", float),
     "--sparsity_mode=": set_config_field("sparsity_mode", str),
     "--sparsity_lambda=": set_config_field("sparsity_lambda", float),
     "--bilevel_lr=": set_config_field("bilevel_lr", float),

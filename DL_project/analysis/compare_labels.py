@@ -30,6 +30,17 @@ METRICS = (
     ("max_valid_balanced_accuracy", "max valid BA", True),
     ("best_valid_F1", "best valid F1", True),
     ("balanced_accuracy", "test BA", True),
+    # Threshold-free companion to test BA: on the cold splits sensitivity runs at
+    # 0.2-0.35 against specificity 0.77, where BA at the fixed 0.5 threshold cannot
+    # tell "learned nothing" from "learned something, threshold in the wrong place".
+    # Blank for runs written before new_train.py reported it (see build_metrics_table).
+    ("AUC", "test AUC", True),
+    # Read this one FIRST on a --lipid_coldsplit label. Pooled AUC there is largely the
+    # protein marginal (measured: pooled 0.568 against 0.480 within protein), which this
+    # cannot express -- comparisons never cross a protein boundary. See
+    # files/lipid_coldsplit_architecture_direction.md section 7j.
+    ("AUC_within_protein", "test AUC in-protein", True),
+    ("AUC_within_protein_proteins", "  (proteins averaged)", True),
     ("F1", "test F1", True),
     ("sensitivity", "test sensitivity", True),
     ("specificity", "test specificity", True),
@@ -95,7 +106,15 @@ def paired_values_for_metric(
     common: list[tuple[str, str]],
     metric: str,
 ) -> tuple[list[float], list[float], list[float]]:
-    idx = column_index(header, metric)
+    # A metric column the table predates is "no pairs to compare", not an error --
+    # both callers already skip an empty result. column_index stays strict where it
+    # is used for the identity fields (label/exclusion_set/seed), whose absence
+    # really is a broken table. AUC is the current case: rows written before
+    # new_train.py reported it have no such column at all.
+    try:
+        idx = column_index(header, metric)
+    except ValueError:
+        return [], [], []
     baseline_values = []
     candidate_values = []
     diffs = []

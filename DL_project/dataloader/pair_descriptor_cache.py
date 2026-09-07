@@ -47,6 +47,7 @@ contents).
 """
 
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -63,7 +64,7 @@ from dataloader.pocket_lipid_compatibility import (
 )
 from dataloader.protein_graph_tensor_cache import _source_record
 
-CACHE_FORMAT_VERSION = 1
+CACHE_FORMAT_VERSION = 2
 
 # Modules whose source defines what a cache entry MEANS: longest_acyl_chain,
 # _MEASURES' formulas (unsaturation/hbond/heavy_atoms/tail_count/the three
@@ -78,17 +79,122 @@ _CODE_MODULES = (pair_descriptors, pocket_lipid_compatibility)
 
 
 def _code_fingerprint():
-    """Short hash of every module in _CODE_MODULES' source, in a fixed order."""
+    """Short hash of every module in _CODE_MODULES' source, in a fixed order.
+
+    Kept for `store_is_current` -- "does a rebuild have anything to do" -- and no
+    longer in the filename or on the read path. See `_measure_fingerprints` for why a
+    whole-module hash cannot decide what a READER may still serve.
+    """
     hasher = hashlib.sha256()
     for module in _CODE_MODULES:
         hasher.update(Path(module.__file__).read_bytes())
     return hasher.hexdigest()[:16]
 
 
+# Functions the conformer-based measures all route through: a change in any of them
+# changes those measures' values without touching the measures' own source.
+# CONFORMER_COUNT/CONFORMER_SEED are folded in for the same reason -- the ensemble is a
+# pure function of (smiles, count, seed), so moving either moves every value built on it.
+_SHARED_CONFORMER_FUNCTIONS = (
+    "generate_conformer_ensemble",
+    "_cached_conformer_ensemble",
+    "_mean_over_conformers",
+)
+
+# Helpers a measure's value depends on without naming them in its own body's hash: a
+# measure that delegates its real work is only as fixed as what it delegates to. Keyed
+# by the helper, valued by the measures that route through it, because that is the way
+# round which stays readable as measures are added.
+#
+# Missing one of these is a silent staleness bug of exactly the kind per-measure
+# fingerprints exist to prevent -- the measure's own source would be unchanged, its
+# fingerprint would match, and the cache would keep serving values the current code no
+# longer produces. `_acyl_chain_component_lengths`/`_acyl_chain_components` are the
+# case that made this concrete: `chain`, `tail_count` and every tail_* descriptor do
+# nothing but read them.
+_SHARED_HELPERS = {
+    "_acyl_chain_component_lengths": ("chain", "tail_count"),
+    "_acyl_chain_components": (
+        "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
+        "tail_unsaturation_density", "tail_double_bond_position",
+        "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
+    ),
+    "_qualifying_tails": (
+        "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
+        "tail_unsaturation_density", "tail_double_bond_position",
+        "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
+    ),
+    "_tail_fragment": ("tail_logp", "tail_molar_refractivity", "tail_heavy_atoms"),
+}
+
+
+def _measure_functions():
+    """{measure name: the function that computes it}, chain included.
+
+    `chain` comes from longest_acyl_chain rather than _MEASURES (which does not carry
+    it), and _compute_one writes it into every entry, so it needs a fingerprint like
+    the rest or it would be the one measure nothing could invalidate.
+    """
+    return {"chain": longest_acyl_chain, **_MEASURES}
+
+
+def _measure_fingerprints():
+    """{measure name: short hash of the code that produces THAT measure}.
+
+    The fix for the failure this module used to have. Validity was one hash over the
+    whole of pair_descriptors.py + pocket_lipid_compatibility.py, embedded in the cache
+    FILENAME, so any edit anywhere in either file -- a new descriptor, a docstring, a
+    renamed local -- made every previously cached value unreachable at once. Nothing
+    was wrong with the values; the reader simply could not find a file under the new
+    name, and every consumer silently recomputed from scratch until somebody happened
+    to rerun the builder. Measured consequence: an edit to pair_descriptors.py on
+    2026-09-06 orphaned five cache files holding 1226 lipids' conformer measures, and
+    every reader after it paid a fresh 10-conformer ETKDG+MMFF embed per lipid.
+
+    Per measure, the question is answerable honestly: `npr1`'s cached value is valid
+    exactly while the code computing `npr1` is unchanged, whatever else moved in the
+    module. So an unrelated edit now invalidates nothing, and a real change to one
+    formula invalidates that formula only.
+
+    inspect.getsource, not the whole module: that IS the granularity being bought.
+    """
+    conformer_shared = b""
+    for name in _SHARED_CONFORMER_FUNCTIONS:
+        conformer_shared += inspect.getsource(getattr(pair_descriptors, name)).encode()
+    conformer_shared += (
+        f"{pair_descriptors.CONFORMER_COUNT}:{pair_descriptors.CONFORMER_SEED}".encode()
+    )
+
+    # Inverted once, so the per-measure loop below stays a lookup: measure -> the
+    # helpers whose source its value also depends on.
+    helpers_by_measure = {}
+    for helper, measures in _SHARED_HELPERS.items():
+        for measure in measures:
+            helpers_by_measure.setdefault(measure, []).append(helper)
+
+    fingerprints = {}
+    for name, function in _measure_functions().items():
+        blob = inspect.getsource(function).encode()
+        if name in pair_descriptors.CONFORMER_MEASURE_NAMES:
+            blob += conformer_shared
+        for helper in sorted(helpers_by_measure.get(name, ())):
+            blob += inspect.getsource(getattr(pair_descriptors, helper)).encode()
+        fingerprints[name] = hashlib.sha256(blob).hexdigest()[:16]
+    return fingerprints
+
+
 def cache_path(root_dir, isomeric):
+    """One stable path per (isomeric) variant.
+
+    The code fingerprint used to be in this name, which is what made a code change
+    orphan the file rather than invalidate the part of it that actually changed. Only
+    the FORMAT version is in the name now; what is still valid inside is decided per
+    measure, on read. The `_v2` suffix keeps `_previous_cache_values`' glob (which
+    matches `..._*.json`) able to find v1 files to seed a rebuild from.
+    """
     root_dir = Path(root_dir).resolve()
     stem = "isomeric" if isomeric else "deterministic"
-    return root_dir / f"pair_descriptor_cache_{stem}_{_code_fingerprint()}.json"
+    return root_dir / f"pair_descriptor_cache_{stem}_v{CACHE_FORMAT_VERSION}.json"
 
 
 def _protein_source_paths(root_dir, protein_names):
@@ -251,6 +357,10 @@ def build_pair_descriptor_cache(root_dir, csv, protein_names, csv_path, isomeric
         # this): a copy or manual rename could carry the fingerprint-tagged
         # name to code it no longer matches, and this catches that too.
         "code_fingerprint": _code_fingerprint(),
+        # What the READ path validates against, one entry per measure. The whole-module
+        # fingerprint above stays only as `store_is_current`'s "is a rebuild worth
+        # running" signal -- it must never again decide what a reader may serve.
+        "measure_fingerprints": _measure_fingerprints(),
         "isomeric": bool(isomeric),
         "sources": [_source_record(path, root_dir) for path in source_paths],
         "raw_to_canonical": raw_to_canonical,
@@ -286,25 +396,83 @@ def store_is_current(root_dir, isomeric):
 
 
 def load_pair_descriptor_cache(root_dir, isomeric):
-    """{"raw_to_canonical", "values", "proteins"} if current, else None (fall back).
+    """{"raw_to_canonical", "values", "proteins"} -- everything still valid, or None.
 
-    None is a normal answer, not an error -- a checkout that never ran the builder, a
-    regenerated interaction table, an added protein or a stale run all end up here, and
-    the caller (Dataloader._compute_pair_descriptors) computes exactly as it did
-    before this module existed.
+    Deliberately NOT `store_is_current`. That question is "should the builder run"; this
+    one is "what may I serve", and the two have different answers. Serving used to be
+    gated on the strict one, so a single changed byte in pair_descriptors.py, or a
+    regenerated interaction table, threw away every cached value at once and sent every
+    reader back to RDKit -- which is exactly what happened after 2026-09-06 and is what
+    `_measure_fingerprints` exists to end.
+
+    What is checked, and against what it is actually keyed:
+
+      values / raw_to_canonical  keyed by canonical SMILES, so they depend on NEITHER
+                                  the interaction table nor any protein file. A
+                                  regenerated table can only ADD candidates, and a
+                                  candidate absent from raw_to_canonical already falls
+                                  back to direct computation per miss. Filtered per
+                                  measure: an entry keeps the measures whose recorded
+                                  fingerprint still matches the code, and drops the
+                                  rest, so `measure in entry` -- what every caller
+                                  already tests -- stays the exact question of validity.
+      proteins                   keyed by protein, computed FROM pocketness.pdb /
+                                  coarse_graph_nodes.csv, so it is dropped when any of
+                                  those moved. Callers see an empty dict and recompute,
+                                  as they did for a full miss.
+
+    Returns None only when there is no readable cache of this format at all.
     """
-    if not store_is_current(root_dir, isomeric):
-        return None
-    path = cache_path(Path(root_dir).resolve(), isomeric)
+    root_dir = Path(root_dir).resolve()
+    path = cache_path(root_dir, isomeric)
     try:
         manifest = json.loads(path.read_text())
     except (OSError, ValueError, json.JSONDecodeError):
         return None
+    if manifest.get("format_version") != CACHE_FORMAT_VERSION:
+        return None
+    if bool(manifest.get("isomeric")) != bool(isomeric):
+        return None
+
+    current = _measure_fingerprints()
+    recorded = manifest.get("measure_fingerprints") or {}
+    # A measure the manifest has no fingerprint for cannot be shown to be current, so it
+    # is dropped rather than trusted -- the conservative direction, and only reachable
+    # for a hand-edited manifest since every v2 build writes all of them.
+    valid = {name for name, fp in current.items() if recorded.get(name) == fp}
+    values = {
+        key: {name: value for name, value in entry.items() if name in valid}
+        for key, entry in manifest["values"].items()
+    }
+
+    proteins = manifest["proteins"]
+    if not _protein_sources_unchanged(root_dir, manifest):
+        proteins = {}
+
     return {
         "raw_to_canonical": manifest["raw_to_canonical"],
-        "values": manifest["values"],
-        "proteins": manifest["proteins"],
+        "values": values,
+        "proteins": proteins,
     }
+
+
+def _protein_sources_unchanged(root_dir, manifest):
+    """True when every recorded protein source still matches on disk.
+
+    Only the protein files: `sources` also records the interaction table, which the
+    per-SMILES values do not depend on (see load_pair_descriptor_cache).
+    """
+    for source in manifest.get("sources", []):
+        relative = source["path"]
+        if not relative.startswith("graphs" + os.sep) and not relative.startswith("graphs/"):
+            continue
+        try:
+            stat = (root_dir / relative).stat()
+        except OSError:
+            return False
+        if stat.st_size != source["size"] or stat.st_mtime_ns != source["mtime_ns"]:
+            return False
+    return True
 
 
 # --- pair-level (PAIR_DESCRIPTOR_NAMES) cache -------------------------------------

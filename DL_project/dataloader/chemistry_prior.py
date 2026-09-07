@@ -529,6 +529,47 @@ def null_scores(train, held_species, similarity, index, neighbours,
     return np.array(scores)
 
 
+def null_scores_within_protein(train, held, similarity, index, neighbours,
+                                entity_column="FullIdentityOfLipid",
+                                protein_column="LTPProtein"):
+    """`null_scores`, but each held row asks only about ITS OWN protein.
+
+    The difference is the whole comparison. `null_scores` above averages the training
+    positive rate of the nearest entities over EVERY protein at once -- "are lipids like
+    this one generally bound" -- so it is a lipid-only predictor: two held rows sharing a
+    lipid get the same score however different their proteins are. This one restricts
+    the reference rows to the held row's own protein first: "did THIS protein bind the
+    lipids most like this one". It is the stronger competitor of the two, and the one a
+    network has to beat before "it learned the pair" means anything, because a network
+    also sees both sides.
+
+    Read them as a pair, not one instead of the other. Lipid-only above the pair version
+    says the signal is in the chemistry alone; the reverse says the protein matters;
+    both near chance says neither is enough on this split.
+
+    A protein with no training rows left (possible on a narrow feature granularity or a
+    small block) scores nan for its held rows rather than silently borrowing another
+    protein's rate; `auc` already ignores nan-free blocks only, so callers filter.
+    """
+    train_by_protein = {
+        name: frame.groupby(entity_column)["Interaction"].mean()
+        for name, frame in train.groupby(protein_column)
+    }
+    scores = []
+    for entity, protein in zip(held[entity_column], held[protein_column]):
+        rate = train_by_protein.get(protein)
+        if rate is None or rate.empty:
+            scores.append(float("nan"))
+            continue
+        train_positions = np.array([index[name] for name in rate.index])
+        rates = rate.to_numpy()
+        similarities = similarity[index[entity], train_positions]
+        nearest = np.argsort(-similarities)[:neighbours]
+        weights = np.clip(similarities[nearest], 0.0, None)
+        scores.append(float((weights * rates[nearest]).sum() / max(weights.sum(), 1e-9)))
+    return np.array(scores)
+
+
 def fit_prior_calibration(design_train, labels_train, steps=400, learning_rate=0.5):
     """Intercept and one weight per column of `label ~ standardised(design)`.
 

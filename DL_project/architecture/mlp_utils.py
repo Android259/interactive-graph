@@ -280,6 +280,74 @@ def insert_hidden_gate(layers, num_units, config):
     return layers
 
 
+def branch_width(config, branch):
+    """The width of one encoder tower: --protein_hiddim/--lipid_hiddim, else --hiddim.
+
+    Read here rather than at each use site because each encoder binds its width ONCE at
+    the top of __init__ and uses the local everywhere after, so one call per tower is
+    the whole of it. `branch` is "protein" or "lipid".
+
+    None (the default) means "same as hiddim": a run that sets neither flag builds the
+    identical modules it built before these existed, down to the parameter count, which
+    names its run directory and is a column of metrics_summary.csv.
+
+    See ModelConfig.protein_hiddim for what the width does and does not reach -- in
+    short, the tower only; the hand-off to cross-attention stays at config.hiddim via an
+    adapter that exists only when the two differ.
+    """
+    if branch not in ("protein", "lipid"):
+        raise ValueError(f"branch must be 'protein' or 'lipid', got {branch!r}")
+    width = getattr(config, f"{branch}_hiddim", None)
+    return config.hiddim if width is None else int(width)
+
+
+def lipid_edge_mode(config):
+    """Which conv the LIPID graph uses: "mlp", "attention" or "gatv2".
+
+    Inheritance is all-or-nothing on purpose. If NEITHER --lipid_edge_mlp nor
+    --lipid_edge_attention is set, the lipid graph takes the protein graph's choice --
+    what architecture/lipid_encoder.py did unconditionally before these flags existed,
+    and the compatibility guarantee that keeps every past run's architecture and
+    parameter count intact. If EITHER is set, the lipid graph is decided by the lipid
+    flags alone and the unset one counts as off.
+
+    Per-kind fallback would be wrong here, and wrong silently: --protein_edge_mlp with
+    --lipid_edge_attention would inherit mlp=True from the protein AND read
+    attention=True from the lipid flag, and lipid_encoder's `conv_out_dim = hiddim if
+    use_edge_mlp else hiddim * HEADS` would then take the narrow width while building
+    attention convs. One function returning one mode makes that unrepresentable.
+    """
+    own_mlp = getattr(config, "lipid_edge_mlp", None)
+    own_attention = getattr(config, "lipid_edge_attention", None)
+    if own_mlp is None and own_attention is None:
+        if getattr(config, "protein_edge_mlp", False):
+            return "mlp"
+        if getattr(config, "protein_edge_attention", False):
+            return "attention"
+        return "gatv2"
+    if own_mlp:
+        return "mlp"
+    if own_attention:
+        return "attention"
+    return "gatv2"
+
+
+def lipid_edge_mlp_lambda(config):
+    """EdgeMLPConv's divisor for the LIPID graph: --lipid_edge_mlp_lambda, else the
+    protein one, else Dauparas et al.'s 30.
+
+    The constant divides the SUM of a node's incoming messages, so the value that makes
+    the layer behave as its authors intended is the graph's mean degree. 30 is that for
+    a protein contact graph and roughly ten times too large for a molecular one -- see
+    ModelConfig.lipid_edge_attention, and analysis/lipid_graph_degree.py for the
+    measured degree of this project's own lipid graphs.
+    """
+    own = getattr(config, "lipid_edge_mlp_lambda", None)
+    if own is not None:
+        return float(own)
+    return float(getattr(config, "protein_edge_mlp_lambda", 30.0))
+
+
 def mlp_hidden_dims(config, site, default_hidden):
     """Return the (first hidden, pre-output) widths of one gated MLP block.
 

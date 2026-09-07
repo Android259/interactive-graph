@@ -595,6 +595,20 @@ if conf.lipid_coldsplit:
     # build_metrics_table, the plotting scripts), and what the directory really names is
     # the exclusion set, whichever axis it lies on.
     excluded_set_parts.append("groups_" + conf.lipid_coldsplit)
+if conf.family_only:
+    # Third axis, same argument as --lipid_coldsplit just above. --family_only excludes
+    # nothing, it RESTRICTS training to one family, so without this every family landed
+    # in the same "random" directory under one label: nine runs sharing one
+    # test_metrics folder, one models/<label>/random/seed0.pt that each family
+    # overwrote in turn, and nine metrics_summary.csv rows that
+    # analysis/compare_labels.py's latest_rows_for_label -- keyed on
+    # (exclusion_set, seed) -- collapsed to whichever finished last. Eight of the nine
+    # families were invisible to every summary.
+    # "groups_" and not "family_" because that prefix is what every consumer of this
+    # path keys on (the progress table's dirs_by_set, list_completed_experiments,
+    # build_metrics_table, the plotting scripts); as with the lipid sets above, what
+    # the directory names is the run's own axis, not necessarily a held-OUT group.
+    excluded_set_parts.append("groups_" + conf.family_only)
 if conf.excluded_subgroups:
     excluded_set_parts.append("subgroups_" + "-".join(conf.excluded_subgroups))
 excluded_set_name = "_".join(excluded_set_parts) if excluded_set_parts else "random"
@@ -632,8 +646,96 @@ def format_metric(value):
     """Format an optional metric for logs and report files."""
     return "undefined" if value is None else f"{value:.6f}"
 
-def metric_values(tp, fp, tn, fn, total_loss, total_loss_count):
-    """Compute aggregate binary-classification metrics from confusion counts."""
+def binary_auc(scores, labels):
+    """Rank-based ROC AUC over one binary split, or None when a class is missing.
+
+    The only metric in this file that is NOT a function of the confusion counts:
+    everything else answers "how good is the split at threshold 0.5", this one answers
+    "how good is the ordering, whatever the threshold". That distinction is the reason
+    it exists here -- on the cold splits sensitivity sits at 0.2-0.35 against
+    specificity 0.77, so a fixed 0.5 threshold cannot separate "learned nothing" from
+    "learned something, threshold in the wrong place", and balanced_accuracy alone
+    reports both as the same number.
+
+    Mann-Whitney U over midranks:
+        AUC = (sum of positive midranks - n_pos*(n_pos+1)/2) / (n_pos * n_neg)
+    Tied scores share the average of the ranks they span, which is what makes this
+    agree with the trapezoidal ROC integral instead of depending on input order --
+    it matters here because a collapsed model emits long runs of identical scores.
+
+    Written out rather than imported: scikit-learn is not a dependency of this project
+    anywhere, and this is the whole of what would be taken from it. `scores` may be any
+    monotone function of the model's confidence (probability or logit margin) -- only
+    their order is read.
+    """
+    pairs = sorted(zip(scores, labels), key=lambda item: item[0])
+    positives = sum(1 for _, label in pairs if label == 1)
+    negatives = len(pairs) - positives
+    if positives == 0 or negatives == 0:
+        return None
+    positive_rank_sum = 0.0
+    start = 0
+    while start < len(pairs):
+        stop = start
+        while stop + 1 < len(pairs) and pairs[stop + 1][0] == pairs[start][0]:
+            stop += 1
+        # One 1-based midrank shared by the whole tie group [start, stop].
+        midrank = (start + stop) / 2.0 + 1.0
+        for position in range(start, stop + 1):
+            if pairs[position][1] == 1:
+                positive_rank_sum += midrank
+        start = stop + 1
+    return (
+        positive_rank_sum - positives * (positives + 1) / 2.0
+    ) / (positives * negatives)
+
+# per_protein_auc's own bar (analysis/null_model.py): a protein with fewer rows, or with
+# only one class present, carries no ranking to read.
+WITHIN_PROTEIN_MINIMUM_ROWS = 6
+
+
+def within_protein_auc(subgroup_stats):
+    """(mean AUC inside a protein, how many proteins that mean is over).
+
+    THE metric for a lipid cold split, and the reason it is computed by the run itself
+    rather than only post-hoc: under --lipid_coldsplit every protein is in training, so
+    the pooled AUC can be won outright by "which protein is this" -- a protein marginal
+    that says nothing about which lipid it binds. Measured on
+    ..._lcs_esm3_balanced_lipid_classes: pooled AUC 0.568 while this number is 0.480, and
+    on the two sets with enough protein blocks to read (11 and 10) it is 0.460 and 0.457
+    -- chance. The pooled figure was almost entirely the marginal
+    (files/lipid_coldsplit_architecture_direction.md section 7j).
+
+    Comparisons never cross a protein boundary here, so that marginal cannot contribute:
+    a protein is ranked only against its own candidate lipids. It is the quantity a
+    ranking objective (--rank_within_protein) optimises, and the one to read first on
+    this split.
+
+    The block count travels with the value on purpose -- a mean over two proteins is not
+    the same claim as a mean over eleven, and both occur across the four lipid sets.
+    """
+    values = []
+    for stats in subgroup_stats.values():
+        labels = stats.get("labels") or []
+        if len(labels) < WITHIN_PROTEIN_MINIMUM_ROWS or len(set(labels)) < 2:
+            continue
+        value = binary_auc(stats["scores"], labels)
+        if value is not None:
+            values.append(value)
+    if not values:
+        return None, 0
+    return sum(values) / len(values), len(values)
+
+
+def metric_values(tp, fp, tn, fn, total_loss, total_loss_count, auc=None):
+    """Compute aggregate binary-classification metrics from confusion counts.
+
+    `auc` is passed in rather than computed here because it is the one metric the
+    counts do not determine -- it needs the per-sample scores, which only the test
+    path keeps. Callers that have no scores (the per-epoch train/valid aggregates)
+    leave it None and it reports as "undefined", exactly like precision on an empty
+    predicted-positive set.
+    """
     sensitivity = safe_div(tp, tp + fn)
     specificity = safe_div(tn, tn + fp)
     return {
@@ -654,6 +756,7 @@ def metric_values(tp, fp, tn, fn, total_loss, total_loss_count):
         "FAR": safe_div(fp, fp + tn),
         "F1": safe_div(2 * tp, 2 * tp + fp + fn),
         "balanced_accuracy": None if sensitivity is None or specificity is None else (sensitivity + specificity) / 2,
+        "AUC": auc,
         "loss": safe_div(total_loss, total_loss_count),
     }
 
@@ -1539,7 +1642,20 @@ def epoch(idx,counttrain,countval):
     log_adversary_metrics(writer_tb, idx, adversary_stats)
     if (idx + 1) % TENSORBOARD_FLUSH_EVERY_EPOCHS == 0:
         writer_tb.flush()
-    print(f"valid epoch balanced_accuracy: {format_metric(valid_metrics['balanced_accuracy'])}")
+    if conf.structural_pretrain:
+        # This run has no Interaction label, so the balanced_accuracy printed here was
+        # whatever the untrained classifier head happened to emit -- a constant 0.500
+        # for all 120 epochs, which reads in the log exactly like a collapsed run and
+        # says nothing about whether the pretraining objective made progress. The
+        # reconstruction MSE is what the run is actually minimising and what selects
+        # its checkpoint (`selection_metric_name` below), and it was already computed
+        # into valid_metrics["loss"] -- it was simply never printed.
+        print(
+            f"valid epoch reconstruction_loss: {format_metric(valid_metrics['loss'])}"
+            f" | train {format_metric(train_metrics['loss'])}"
+        )
+    else:
+        print(f"valid epoch balanced_accuracy: {format_metric(valid_metrics['balanced_accuracy'])}")
     
     return counttrain, countval, train_metrics, valid_metrics
 
@@ -1592,6 +1708,10 @@ def _score_averaged_block(accumulator):
     averaged probability where the run's loss decomposes per row, and the block loss
     spread evenly over the rows where it does not -- the same substitution the per-batch
     path makes for the ranking and positive-unlabelled losses.
+
+    The AUC scores are read off the SAME averaged `outl` the confusion counts come
+    from, so both describe one prediction per pair. Taking them per candidate instead
+    would make AUC and balanced_accuracy describe different objects on the same run.
     """
     outl, labels, protein_ids = accumulator.averaged()
     labels = labels.long()
@@ -1610,16 +1730,24 @@ def _score_averaged_block(accumulator):
     total_tn = int((correct & ~positive).sum())
     total_fn = int((~correct & ~positive).sum())
 
+    label_values = labels.cpu().tolist()
+    score_values = torch.softmax(outl.float(), dim=1)[:, 1].detach().cpu().tolist()
+
     subgroup_stats = {}
     if protein_ids is not None:
-        for protein_id, prediction, label, sample_loss in zip(
+        for protein_id, prediction, label, sample_loss, score in zip(
             protein_ids.view(-1).cpu().tolist(),
             predictions.cpu().tolist(),
-            labels.cpu().tolist(),
+            label_values,
             sample_losses.detach().cpu().tolist(),
+            score_values,
         ):
             stats = subgroup_stats.setdefault(
-                protein_id, {"TP": 0, "FP": 0, "TN": 0, "FN": 0, "loss": 0.0, "count": 0}
+                protein_id,
+                {
+                    "TP": 0, "FP": 0, "TN": 0, "FN": 0, "loss": 0.0, "count": 0,
+                    "scores": [], "labels": [],
+                },
             )
             if prediction == label and prediction == 1:
                 stats["TP"] += 1
@@ -1631,6 +1759,8 @@ def _score_averaged_block(accumulator):
                 stats["FN"] += 1
             stats["loss"] += sample_loss
             stats["count"] += 1
+            stats["scores"].append(score)
+            stats["labels"].append(label)
 
     return (
         total_tp,
@@ -1640,6 +1770,8 @@ def _score_averaged_block(accumulator):
         block_loss * labels.shape[0],
         int(labels.shape[0]),
         subgroup_stats,
+        score_values,
+        label_values,
     )
 
 
@@ -1655,6 +1787,12 @@ def run_test(run_summary):
     total_loss = 0.0
     total_loss_count = 0
     subgroup_stats = {}
+    # Per-sample positive-class probabilities and their labels, kept only for AUC --
+    # the confusion counts above throw the ordering away, and it cannot be recovered
+    # afterwards from a written report. Two flat lists over the whole test split, in
+    # loader order; binary_auc sorts them itself.
+    test_scores = []
+    test_labels = []
 
     # Expanded split: one row per candidate structure. The pass collects them and the
     # block is scored once, below, so a pair contributes one prediction to the totals and
@@ -1723,19 +1861,35 @@ def run_test(run_summary):
             labels = interaction_labels.long()
             protein_ids = prot.protein_id.view(-1)[:sample_count].detach().cpu().tolist()
             sample_loss_values = sample_losses.detach().cpu().tolist()
+            # Sliced to sample_count for the same reason protein_ids above is: the
+            # forward pass can return more rows than the batch has labels.
+            batch_scores = (
+                torch.softmax(outl.float(), dim=1)[:sample_count, 1]
+                .detach().cpu().tolist()
+            )
+            batch_labels = labels.detach().cpu().tolist()[:sample_count]
+            test_scores.extend(batch_scores)
+            test_labels.extend(batch_labels)
             total_tp += int(((pred_class == labels) & (pred_class == 1)).sum().item())
             total_fp += int(((pred_class != labels) & (pred_class == 1)).sum().item())
             total_tn += int(((pred_class == labels) & (pred_class == 0)).sum().item())
             total_fn += int(((pred_class != labels) & (pred_class == 0)).sum().item())
             total_loss += (los.item() if isinstance(los, torch.Tensor) else los) * sample_count
             total_loss_count += sample_count
-            for protein_id, pred_value, label_value, sample_loss in zip(
+            for protein_id, pred_value, label_value, sample_loss, score_value in zip(
                 protein_ids,
                 pred_class.detach().cpu().tolist(),
                 labels.detach().cpu().tolist(),
                 sample_loss_values,
+                batch_scores,
             ):
-                stats = subgroup_stats.setdefault(protein_id, {"TP": 0, "FP": 0, "TN": 0, "FN": 0, "loss": 0.0, "count": 0})
+                stats = subgroup_stats.setdefault(
+                    protein_id,
+                    {
+                        "TP": 0, "FP": 0, "TN": 0, "FN": 0, "loss": 0.0, "count": 0,
+                        "scores": [], "labels": [],
+                    },
+                )
                 if pred_value == label_value and pred_value == 1:
                     stats["TP"] += 1
                 elif pred_value != label_value and pred_value == 1:
@@ -1746,6 +1900,8 @@ def run_test(run_summary):
                     stats["FN"] += 1
                 stats["loss"] += sample_loss
                 stats["count"] += 1
+                stats["scores"].append(score_value)
+                stats["labels"].append(label_value)
 
     if test_accumulator is not None:
         (
@@ -1756,9 +1912,19 @@ def run_test(run_summary):
             total_loss,
             total_loss_count,
             subgroup_stats,
+            test_scores,
+            test_labels,
         ) = _score_averaged_block(test_accumulator)
 
-    metrics = metric_values(total_tp, total_fp, total_tn, total_fn, total_loss, total_loss_count)
+    metrics = metric_values(
+        total_tp,
+        total_fp,
+        total_tn,
+        total_fn,
+        total_loss,
+        total_loss_count,
+        auc=binary_auc(test_scores, test_labels),
+    )
 
     print(f"accuracy: {format_metric(metrics['accuracy'])}")
     print(f"sensitivity: {format_metric(metrics['sensitivity'])}")
@@ -1768,6 +1934,12 @@ def run_test(run_summary):
     print(f"FAR: {format_metric(metrics['FAR'])}")
     print(f"F1: {format_metric(metrics['F1'])}")
     print(f"balanced_accuracy: {format_metric(metrics['balanced_accuracy'])}")
+    print(f"AUC: {format_metric(metrics['AUC'])}")
+    within_auc, within_blocks = within_protein_auc(subgroup_stats)
+    metrics["AUC_within_protein"] = within_auc
+    metrics["AUC_within_protein_proteins"] = within_blocks
+    print(f"AUC_within_protein: {format_metric(within_auc)}")
+    print(f"AUC_within_protein_proteins: {within_blocks}")
     print(f"loss: {format_metric(metrics['loss'])}")
 
     test_metrics_path = os.path.join(test_metrics_dir, f"test_metrics_{timestamp}_{number_of_parameters}parameters_{conf.m}_{conf.HEADS}_{conf.seed}_{conf.lr}_{conf.batch}_{conf.hiddim}.txt")
@@ -1790,11 +1962,18 @@ def run_test(run_summary):
         "FAR",
         "F1",
         "balanced_accuracy",
+        "AUC",
         "loss",
     ]
     subgroup_rows = []
     for protein_id, stats in sorted(subgroup_stats.items(), key=lambda item: train_dataset.protein_id_to_name[item[0]]):
-        subgroup_metrics = metric_values(stats["TP"], stats["FP"], stats["TN"], stats["FN"], stats["loss"], stats["count"])
+        # "undefined" for every protein whose test rows are all one class -- common
+        # here (a protein with no positive in its held-out block), same convention
+        # precision already follows on an empty predicted-positive set.
+        subgroup_metrics = metric_values(
+            stats["TP"], stats["FP"], stats["TN"], stats["FN"], stats["loss"], stats["count"],
+            auc=binary_auc(stats["scores"], stats["labels"]),
+        )
         subgroup_name = train_dataset.protein_id_to_name[protein_id]
         subgroup_rows.append([
             subgroup_name,
@@ -1815,6 +1994,7 @@ def run_test(run_summary):
             format_metric(subgroup_metrics["FAR"]),
             format_metric(subgroup_metrics["F1"]),
             format_metric(subgroup_metrics["balanced_accuracy"]),
+            format_metric(subgroup_metrics["AUC"]),
             format_metric(subgroup_metrics["loss"]),
         ])
     subgroup_widths = [
@@ -1868,8 +2048,10 @@ def run_test(run_summary):
         f.write(f"discovered_dropout: {discovered_dropout_value}\n")
         for key in ["total", "real_positive", "real_negative", "predicted_positive", "predicted_negative", "TP", "FP", "TN", "FN"]:
             f.write(f"{key}: {metrics[key]}\n")
-        for key in ["accuracy", "sensitivity", "precision", "specificity", "IoU", "FAR", "F1", "balanced_accuracy", "loss"]:
+        for key in ["accuracy", "sensitivity", "precision", "specificity", "IoU", "FAR", "F1", "balanced_accuracy", "AUC", "AUC_within_protein", "loss"]:
             f.write(f"{key}: {format_metric(metrics[key])}\n")
+        # An integer count, not a rate -- format_metric would print it as 11.000000.
+        f.write(f"AUC_within_protein_proteins: {metrics['AUC_within_protein_proteins']}\n")
         f.write("\nper_protein_subgroup_metrics:\n")
         f.write(format_subgroup_row(subgroup_columns) + "\n")
         f.write(format_subgroup_row(["-" * width for width in subgroup_widths]) + "\n")

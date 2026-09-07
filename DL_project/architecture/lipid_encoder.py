@@ -9,7 +9,7 @@ from .mlp_utils import (
     make_activation, make_dropout, make_extra_hidden_layer,
     make_norm_layer, apply_norm, HeadGate, insert_hidden_gate,
     insert_input_gate, insert_output_gate, mlp_hidden_dims,
-    link_concrete_dropouts
+    link_concrete_dropouts, branch_width, lipid_edge_mode, lipid_edge_mlp_lambda
 )
 
 LIPID_ISOMER_EDGE_DIM = 22
@@ -20,7 +20,11 @@ class Lipid_encoder(torch.nn.Module):
         """Initialize an embedding or chemical-graph lipid encoder block."""
         super(Lipid_encoder, self).__init__()
         self.config = config
-        hiddim = self.config.hiddim
+        # --lipid_hiddim, defaulting to --hiddim. This is the branch the flag exists
+        # for: everything a never-seen lipid chemistry can express has to pass through
+        # the Linear(768, hiddim) built below, and under --lipid_coldsplit that is the
+        # model's only route to it. Bound once; see branch_width's docstring.
+        hiddim = branch_width(self.config, "lipid")
         enlarged, last = mlp_hidden_dims(self.config, "lipid_mlp", hiddim * config.m)
         extra = make_extra_hidden_layer(enlarged, last, self.config, act_fn)
         post_enlarged, post_last = mlp_hidden_dims(
@@ -40,11 +44,17 @@ class Lipid_encoder(torch.nn.Module):
 
         if getattr(config, "lipid_graph_isomers", False):
             indim = 11 if start else hiddim
-            # Same conv choice as architecture/protein_encoder.py's _make_protein_conv
-            # -- protein_edge_attention/protein_edge_mlp swap GATv2Conv here too, one
-            # switch for both graphs rather than a separate lipid-only flag.
-            self.use_edge_mlp = bool(getattr(config, "protein_edge_mlp", False))
-            use_edge_attention = bool(getattr(config, "protein_edge_attention", False))
+            # --lipid_edge_attention/--lipid_edge_mlp/--lipid_edge_mlp_lambda, each
+            # falling back to its protein counterpart when unset. That fallback IS the
+            # behaviour this block had unconditionally before the lipid flags existed
+            # (one switch for both graphs), so an arg file that sets none of them builds
+            # exactly the modules it built before -- which is what keeps the 11 existing
+            # --lipid_graph_isomers arg files and the 202 runs behind them reproducible.
+            # See ModelConfig.lipid_edge_attention for why the two graphs want different
+            # answers: 2-4 bonds per atom against ~30 contacts per residue.
+            edge_mode = lipid_edge_mode(config)
+            self.use_edge_mlp = edge_mode == "mlp"
+            use_edge_attention = edge_mode == "attention"
             conv_out_dim = hiddim if self.use_edge_mlp else hiddim * config.HEADS
             gat_out = conv_out_dim
             if use_edge_attention:
@@ -55,13 +65,12 @@ class Lipid_encoder(torch.nn.Module):
                     gat_out, hiddim, config.HEADS, LIPID_ISOMER_EDGE_DIM
                 )
             elif self.use_edge_mlp:
+                lam = lipid_edge_mlp_lambda(config)
                 self.encodin1 = EdgeMLPConv(
-                    indim, hiddim, LIPID_ISOMER_EDGE_DIM,
-                    lam=getattr(config, "protein_edge_mlp_lambda", 30.0),
+                    indim, hiddim, LIPID_ISOMER_EDGE_DIM, lam=lam,
                 )
                 self.encodin2 = EdgeMLPConv(
-                    gat_out, hiddim, LIPID_ISOMER_EDGE_DIM,
-                    lam=getattr(config, "protein_edge_mlp_lambda", 30.0),
+                    gat_out, hiddim, LIPID_ISOMER_EDGE_DIM, lam=lam,
                 )
             else:
                 self.encodin1 = torch_geometric.nn.conv.GATv2Conv(

@@ -107,16 +107,53 @@ def split(csvt, family, seed, lipid_classes=(), double=False):
             lipid_class_series(excluded).str.lower().isin(held)
             & (excluded["ProteinDomain"].str.lower() == family.lower())
         ]
-    # Stratified by label, matching `_split_interactions`: an undivided draw fixes only
-    # the total, so the positives fall where the seed puts them (measured there: 23 of
-    # scp2's 36 positives in test, 13 in valid), and valid/test then measure different
-    # quantities. Splitting each label in half separately keeps the same positive rate
-    # in both, which is what makes them agree row for row with the loader's own split.
+    return (train,) + halve_excluded_block(excluded, seed)
+
+
+def halve_excluded_block(excluded, seed):
+    """(valid, test) from one excluded block, exactly as `_split_interactions` halves it.
+
+    Stratified by label: an undivided draw fixes only the total, so the positives fall
+    where the seed puts them (measured there: 23 of scp2's 36 positives in test, 13 in
+    valid), and valid/test then measure different quantities. Splitting each label in
+    half separately keeps the same positive rate in both, which is what makes them agree
+    row for row with the loader's own split.
+
+    Shared by `split` (protein-family axis) and `lipid_split` (lipid-class axis) so the
+    one piece both axes have in common cannot drift between them.
+    """
     positive_validate = excluded[excluded["Interaction"] == 1].sample(frac=0.5, random_state=seed)
     negative_validate = excluded[excluded["Interaction"] == 0].sample(frac=0.5, random_state=seed)
     valid = pandas.concat([positive_validate, negative_validate]).sample(frac=1, random_state=seed)
     test = excluded.drop(valid.index).sample(frac=1)
-    return train, valid, test
+    return valid, test
+
+
+def lipid_split(csvt, lipid_classes, seed):
+    """The loader's `--lipid_coldsplit`, valid/test halves included.
+
+    The OTHER axis from `split` above, and the reason it needs its own function rather
+    than a `family=None` branch there: that one starts by removing a protein family from
+    train unconditionally, and here no family is removed at all. Every protein stays in
+    training; whole head-group classes leave it, for all of them
+    (dataloader/Dataloader.py's `_split_interactions`, the
+    `excluded_subgroups or lipid_coldsplit` branch). What the two axes share -- the
+    halving of the excluded block -- is `halve_excluded_block`.
+
+    `lipid_classes` is a fixed set of class names (one entry of
+    dataloader.sampler.LIPID_COLDSPLIT_SETS), NOT derived from a family the way
+    `lipid_classes_for_holdout` derives them for the two-axis split: under this split
+    there is no held-out family to derive anything from.
+
+    There is deliberately no `double` equivalent. --double_coldsplit's extra restriction
+    keeps only rows whose PROTEIN is also held out, and here none is.
+    """
+    held = {name.lower() for name in lipid_classes}
+    if not held:
+        raise ValueError("lipid_split needs a non-empty lipid class set")
+    train = csvt[~lipid_class_series(csvt).str.lower().isin(held)]
+    excluded = csvt.drop(train.index)
+    return (train,) + halve_excluded_block(excluded, seed)
 
 
 def balanced_accuracy(truth, prediction):

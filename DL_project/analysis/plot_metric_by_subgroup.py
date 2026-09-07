@@ -36,7 +36,18 @@ SUBGROUP_COLUMNS = (
     "FAR",
     "F1",
     "balanced_accuracy",
+    "AUC",
     "loss",
+)
+# Reports written before AUC was added to new_train.py's per-protein table have every
+# other column in the same order and place, so both layouts are read rather than only
+# the current one -- the alternative is that adding one column retroactively makes
+# every report already on disk unreadable. Same reasoning as CONFIG_DEFAULTS below,
+# which backfills configuration fields that did not exist when a report was written;
+# a row from a legacy report simply has no "AUC" key, and _finite_number reports the
+# metric as missing for it.
+LEGACY_SUBGROUP_COLUMNS = tuple(
+    column for column in SUBGROUP_COLUMNS if column != "AUC"
 )
 # Reports only list the configuration fields that existed when they were written, so a
 # field added later is absent from older reports. Backfilling its dataclass default keeps
@@ -145,7 +156,7 @@ def parse_report(path: Path, reports_root: Path) -> dict[str, object]:
     if marker_index + 2 >= len(lines):
         raise ValueError(f"Incomplete subgroup table in {path}")
     header = re.split(r"\s{2,}", lines[marker_index + 1].strip())
-    if tuple(header) != SUBGROUP_COLUMNS:
+    if tuple(header) not in (SUBGROUP_COLUMNS, LEGACY_SUBGROUP_COLUMNS):
         raise ValueError(f"Unexpected subgroup columns in {path}")
 
     subgroup_rows = []
@@ -222,7 +233,10 @@ def aggregate_subgroups(
     for report in reports:
         config = report["config"]
         for row in report["subgroups"]:
-            value = _finite_number(row[metric])
+            # .get, not [metric]: a row parsed from a legacy report has no "AUC" key,
+            # and _finite_number turns the missing value into "skip this row" rather
+            # than a KeyError that would kill a mixed-vintage plot.
+            value = _finite_number(row.get(metric))
             if value is None:
                 continue
             subgroup = row["subgroup"]

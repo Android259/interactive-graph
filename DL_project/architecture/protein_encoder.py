@@ -17,7 +17,7 @@ from .mlp_utils import (
     make_optional_projection, make_norm_layer, apply_norm,
     build_sequential_compression, HeadGate, insert_hidden_gate,
     insert_input_gate, insert_output_gate, mlp_hidden_dims,
-    link_concrete_dropouts
+    link_concrete_dropouts, branch_width
 )
 
 
@@ -31,7 +31,11 @@ class Protein_encoder(torch.nn.Module):
         """Initialize a protein GATv2 encoder block."""
         super(Protein_encoder, self).__init__()
         self.config = config
-        hiddim = self.config.hiddim
+        # --protein_hiddim, defaulting to --hiddim. Bound once here; every use below is
+        # this local, so the whole tower -- convs, self-attention, MLPs, norms -- moves
+        # with it. The hand-off to cross-attention does NOT: see branch_width's
+        # docstring and the adapter in architecture/interaction_classification.py.
+        hiddim = branch_width(self.config, "protein")
         self.rnabang_full_encoder = bool(
             start and getattr(self.config, "rnabang_full_protein_encoder", False)
         )

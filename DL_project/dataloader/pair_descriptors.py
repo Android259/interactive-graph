@@ -539,6 +539,236 @@ def _acyl_chain_component_lengths(smiles):
     return lengths
 
 
+def _acyl_chain_components(smiles):
+    """Per-tail structure, not just per-tail length: the shared read every tail-only
+    descriptor below draws on.
+
+    Same skeleton `_acyl_chain_component_lengths` walks -- non-aromatic, non-ring
+    carbons, connected components -- but keeps the LONGEST PATH ITSELF rather than only
+    its length, because the tail descriptors need positions along it (where the double
+    bonds sit relative to the methyl terminus), not a count.
+
+    Returns a list, one entry per component, of
+        {"carbons": int, "atoms": [mol atom indices along the longest path],
+         "double_bonds": int, "position_from_end": int | None}
+    or None when RDKit cannot parse `smiles`, [] when it has no qualifying carbon --
+    the same two "missing" conventions the length helper already uses, so every caller
+    keeps testing the same thing.
+
+    `position_from_end` is the (n-x) convention of lipid shorthand notation: carbons
+    counted from the METHYL end of the chain to the nearest double bond (Liebisch et
+    al., J Lipid Res 2020). It is the double bond CLOSEST to that end, and None for a
+    fully saturated tail -- absent rather than zero, since zero is a real position.
+    The methyl end is taken as whichever endpoint of the longest path is further from
+    the rest of the molecule, i.e. the endpoint whose terminal carbon has no neighbour
+    outside the component; with both or neither qualifying the lower-index endpoint is
+    used, so the value is at least deterministic where the chain is ambiguous.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    carbons = [
+        atom.GetIdx() for atom in mol.GetAtoms()
+        if atom.GetSymbol() == "C" and not atom.GetIsAromatic() and not atom.IsInRing()
+    ]
+    if not carbons:
+        return []
+    carbon_set = set(carbons)
+    neighbours = {atom: [] for atom in carbons}
+    for bond in mol.GetBonds():
+        a, b = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        if a in carbon_set and b in carbon_set:
+            neighbours[a].append(b)
+            neighbours[b].append(a)
+
+    def breadth_first(start):
+        parent = {start: None}
+        order = [start]
+        queue = [start]
+        while queue:
+            node = queue.pop(0)
+            for neighbour in neighbours[node]:
+                if neighbour not in parent:
+                    parent[neighbour] = node
+                    order.append(neighbour)
+                    queue.append(neighbour)
+        return parent, order
+
+    def longest_path(start):
+        parent, order = breadth_first(start)
+        end = order[-1]
+        parent, order = breadth_first(end)
+        far = order[-1]
+        path = [far]
+        while parent[path[-1]] is not None:
+            path.append(parent[path[-1]])
+        return path, set(parent)
+
+    def attached_outside(atom):
+        """True when this carbon bonds to anything that is not a component carbon --
+        an ester oxygen, an amide nitrogen. The chain's own methyl end does not."""
+        return any(
+            neighbour.GetIdx() not in carbon_set
+            for neighbour in mol.GetAtomWithIdx(atom).GetNeighbors()
+        )
+
+    components = []
+    unvisited = set(neighbours)
+    while unvisited:
+        path, seen = longest_path(next(iter(unvisited)))
+        unvisited -= seen
+        # Orient the path so index 0 is the methyl end.
+        head_attached, tail_attached = attached_outside(path[0]), attached_outside(path[-1])
+        if head_attached and not tail_attached:
+            path = list(reversed(path))
+        elif head_attached == tail_attached and path[-1] < path[0]:
+            path = list(reversed(path))
+        double_bonds = 0
+        position_from_end = None
+        for step, (a, b) in enumerate(zip(path, path[1:])):
+            bond = mol.GetBondBetweenAtoms(a, b)
+            if bond is not None and bond.GetBondType() == Chem.BondType.DOUBLE:
+                double_bonds += 1
+                if position_from_end is None:
+                    position_from_end = step + 1
+        components.append({
+            "carbons": len(path),
+            "atoms": path,
+            "double_bonds": double_bonds,
+            "position_from_end": position_from_end,
+        })
+    return components
+
+
+def _qualifying_tails(smiles):
+    """Only the components long enough to be a tail, [] / None otherwise.
+
+    `acyl_chain_count`'s own >= _MINIMUM_TAIL_CARBONS bar, applied once here so every
+    tail descriptor counts the same set of tails that flag already reports.
+    """
+    components = _acyl_chain_components(smiles)
+    if not components:
+        return components
+    return [c for c in components if c["carbons"] >= _MINIMUM_TAIL_CARBONS]
+
+
+def tail_length_asymmetry(smiles):
+    """Longest tail minus shortest, in carbons; 0.0 for a single-tailed lipid.
+
+    Class-neutral BY CONSTRUCTION, which is the point: PC 16:0/18:1 and PE 16:0/18:1
+    carry the same asymmetry under different head groups, so this cannot act as the
+    head-group label the whole-molecule descriptors turned out to be
+    (files/lipid_coldsplit_architecture_direction.md section 7f). Not a nuisance
+    quantity either -- acyl chain asymmetry, with polyunsaturation, is what lets brain
+    phospholipid membranes vesiculate without leaking (Manni et al., eLife 2018).
+    """
+    tails = _qualifying_tails(smiles)
+    if not tails:
+        return None
+    lengths = [tail["carbons"] for tail in tails]
+    return float(max(lengths) - min(lengths))
+
+
+def tail_length_mean(smiles):
+    """Mean tail length in carbons -- `chain` reports the longest one only."""
+    tails = _qualifying_tails(smiles)
+    if not tails:
+        return None
+    return float(sum(tail["carbons"] for tail in tails) / len(tails))
+
+
+def tail_double_bonds(smiles):
+    """Double bonds lying IN the tails, not anywhere in the molecule.
+
+    `unsaturation` counts every non-aromatic C=C the molecule has, so a head group's
+    own unsaturation lands in it. This one cannot see the head at all.
+    """
+    tails = _qualifying_tails(smiles)
+    if not tails:
+        return None
+    return float(sum(tail["double_bonds"] for tail in tails))
+
+
+def tail_unsaturation_density(smiles):
+    """Tail double bonds per tail carbon.
+
+    A ratio for the same reason npr1/npr2 are ratios: dividing by the tails' own size
+    removes the length scale, which is the part that still tracks class (classes differ
+    systematically in typical chain length), and leaves how unsaturated those carbons
+    are. Chain length and unsaturation move membrane thickness and fluidity through
+    different mechanisms, so separating them is not only a statistical convenience
+    (Kucerka et al. on sphingomyelin bilayers).
+    """
+    tails = _qualifying_tails(smiles)
+    if not tails:
+        return None
+    carbons = sum(tail["carbons"] for tail in tails)
+    if carbons == 0:
+        return None
+    return float(sum(tail["double_bonds"] for tail in tails) / carbons)
+
+
+def tail_double_bond_position(smiles):
+    """Carbons from the methyl end to the nearest double bond, minimum over tails.
+
+    The (n-x) of lipid shorthand notation. Physically load-bearing rather than
+    descriptive: the further a double bond sits from the tail terminus the weaker the
+    inter-leaflet attraction, and the position sets domain registration
+    (Zhang et al., JACS 2019). None for a fully saturated lipid -- the quantity does not
+    exist there, the same way `precision` does not exist with no predicted positives.
+    """
+    tails = _qualifying_tails(smiles)
+    if not tails:
+        return None
+    positions = [
+        tail["position_from_end"] for tail in tails
+        if tail["position_from_end"] is not None
+    ]
+    if not positions:
+        return None
+    return float(min(positions))
+
+
+def _tail_fragment(smiles):
+    """The tails alone, as one molecule, or None.
+
+    Everything outside the qualifying components -- head group, backbone, linkers -- is
+    dropped, so a descriptor computed on this cannot encode which head group the lipid
+    had. The fragment is a bare hydrocarbon skeleton (the components are carbon-only by
+    construction), which is exactly the intent: the same RDKit measure, restricted to
+    the part of the molecule the cold split does NOT hold out.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    tails = _qualifying_tails(smiles)
+    if not tails:
+        return None
+    atoms = sorted({atom for tail in tails for atom in tail["atoms"]})
+    if not atoms:
+        return None
+    fragment_smiles = Chem.MolFragmentToSmiles(mol, atomsToUse=atoms, canonical=True)
+    return Chem.MolFromSmiles(fragment_smiles)
+
+
+def tail_logp(smiles):
+    """Crippen logP of the tails alone -- `logp`'s head-blind counterpart."""
+    fragment = _tail_fragment(smiles)
+    return None if fragment is None else float(Descriptors.MolLogP(fragment))
+
+
+def tail_molar_refractivity(smiles):
+    """Molar refractivity of the tails alone -- `molar_refractivity`'s counterpart."""
+    fragment = _tail_fragment(smiles)
+    return None if fragment is None else float(Descriptors.MolMR(fragment))
+
+
+def tail_heavy_atoms(smiles):
+    """Heavy atoms in the tails alone -- `heavy`'s counterpart."""
+    fragment = _tail_fragment(smiles)
+    return None if fragment is None else float(fragment.GetNumHeavyAtoms())
+
+
 def longest_acyl_chain(smiles):
     """Carbons in the longest unbranched aliphatic run of a molecule.
 
@@ -832,7 +1062,28 @@ _MEASURES = {
     "rotatable_bond_count": rotatable_bond_count,
     "aromatic_ring_count": aromatic_ring_count,
     "ring_count": ring_count,
+    # Candidate head-group-neutral set (files/lipid_coldsplit_architecture_direction.md
+    # section 7g). Cached and measurable, deliberately NOT added to
+    # LIPID_DESCRIPTOR_NAMES: nothing model-facing changes until their eta^2 by
+    # head-group class has actually been read.
+    "tail_length_asymmetry": tail_length_asymmetry,
+    "tail_length_mean": tail_length_mean,
+    "tail_double_bonds": tail_double_bonds,
+    "tail_unsaturation_density": tail_unsaturation_density,
+    "tail_double_bond_position": tail_double_bond_position,
+    "tail_logp": tail_logp,
+    "tail_molar_refractivity": tail_molar_refractivity,
+    "tail_heavy_atoms": tail_heavy_atoms,
 }
+
+# Measured in section 7f/7g, not yet an input to any network. Kept next to _MEASURES so
+# analysis/lipid_descriptor_class_identity.py can name them without either duplicating
+# the list or widening LIPID_DESCRIPTOR_NAMES, which would change what the model sees.
+CANDIDATE_LIPID_DESCRIPTOR_NAMES = (
+    "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
+    "tail_unsaturation_density", "tail_double_bond_position",
+    "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
+)
 
 
 def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):

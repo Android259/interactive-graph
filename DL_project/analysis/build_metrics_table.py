@@ -74,6 +74,12 @@ REPORT_FIELDS = (
     "FAR",
     "F1",
     "balanced_accuracy",
+    # parse_report drops any "key: value" line whose key is not in here, so a metric
+    # new_train.py writes but this tuple omits never reaches the table at all -- which
+    # is what kept the AUC column empty even for runs that reported it.
+    "AUC",
+    "AUC_within_protein",
+    "AUC_within_protein_proteins",
     "loss",
 )
 
@@ -137,6 +143,17 @@ CSV_FIELDS = (
     "FAR",
     "F1",
     "balanced_accuracy",
+    # Empty for every run written before new_train.py started reporting it: the test
+    # reports on disk store confusion counts only, and AUC cannot be reconstructed
+    # from them -- it needs the per-sample scores, which those runs did not keep.
+    "AUC",
+    # THE metric for --lipid_coldsplit (files/lipid_coldsplit_architecture_direction.md
+    # section 7j): AUC inside each protein, averaged over proteins, so "which protein is
+    # this" -- free under that split, since every protein is in training -- cannot
+    # contribute. Empty for runs written before it existed. The block count travels with
+    # it because a mean over 2 proteins is not the claim a mean over 11 is.
+    "AUC_within_protein",
+    "AUC_within_protein_proteins",
     "loss",
     "tb_status",
     "tb_train_points",

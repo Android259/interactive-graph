@@ -42,8 +42,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from checkpoint_scores import (  # noqa: E402
     DEFAULT_EPOCHS,
     arg_lines,
+    default_groups_for_label,
     label_descriptor_features,
     score_checkpoints,
+    split_argv,
 )
 from read_configuration import read_configuration  # noqa: E402
 from null_model import (  # noqa: E402
@@ -73,25 +75,15 @@ def label_coldsplit_params(label, families):
     the label; this makes full_label_report.py's defaults do the same instead of
     drifting from read_configuration.py's ModelConfig defaults over time.
     """
-    lines = arg_lines(label)
-    if "--lipid_coldsplit" in lines:
-        # A bare --lipid_coldsplit (no "=value") is how the arg_file marks that axis
-        # for the submitter, which then strips the bare flag and appends its own
-        # --lipid_coldsplit=<set> -- read_configuration requires a value and would
-        # otherwise reject the bare flag as unknown. Mirrors
-        # model_parameter_breakdown.py's ensure_split_flags. --excluded_groups is the
-        # OTHER axis and read_configuration rejects the two together, so it is left
-        # off here rather than appended as it is below.
-        lines = [line for line in lines if line != "--lipid_coldsplit"]
-        argv = ["full_label_report"] + lines + [
-            "--lipid_coldsplit=sphingolipids",
-            "--seed=0",
-        ]
-    else:
-        argv = ["full_label_report"] + lines + [
-            f"--excluded_groups={families[0]}",
-            "--seed=0",
-        ]
+    # split_argv (checkpoint_scores.py) owns the bare-"--lipid_coldsplit" strip and the
+    # choice between --lipid_coldsplit=/--excluded_groups=, so the two readers that
+    # rebuild a configuration from an arg file cannot drift apart -- they did, and the
+    # half that lacked the strip is what made every --lipid_coldsplit label's report
+    # die on `Unknown parameter: --lipid_coldsplit`. `families[0]` is a dummy held-out
+    # group; neither returned value varies by which one it is.
+    argv = ["full_label_report"] + split_argv(arg_lines(label), families[0]) + [
+        "--seed=0",
+    ]
     conf = read_configuration(argv)
     return conf.coldsplit_share, conf.negatives_per_positive
 
@@ -166,7 +158,12 @@ def main():
     parser.add_argument("--label", required=True, help="sweep label, also the arg-file name")
     parser.add_argument("--epochs", default=DEFAULT_EPOCHS)
     parser.add_argument("--seeds", default="0,1,2,3,4")
-    parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
+    parser.add_argument(
+        "--families",
+        default=None,
+        help="held-out group names; default follows the label's own axis "
+             "(protein families, or the lipid-class sets under --lipid_coldsplit)",
+    )
     parser.add_argument("--batch", type=int, default=16, help="only affects the split's sampler")
     parser.add_argument("--neighbours", type=int, default=15, help="k for the null model")
     parser.add_argument(
@@ -210,7 +207,13 @@ def main():
 
     epochs = [int(e) for e in args.epochs.split(",")]
     seeds = [int(s) for s in args.seeds.split(",")]
-    families = [f for f in args.families.split(",") if f]
+    # A --lipid_coldsplit label's runs are named by lipid-class set, not by protein
+    # family, so the seven-family default would look for checkpoints that do not exist.
+    families = (
+        [f for f in args.families.split(",") if f]
+        if args.families is not None
+        else default_groups_for_label(args.label)
+    )
     splits = ("valid", "test") if args.split == "both" else (args.split,)
 
     share, ratio = args.share, args.ratio

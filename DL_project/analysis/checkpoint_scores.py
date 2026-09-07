@@ -54,6 +54,7 @@ from architecture.interaction_classification import InteractionClassification  #
 from dataloader.Dataloader import PLIDataset  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.pair_descriptors import resolve_similarity_feature_names  # noqa: E402
+from dataloader.sampler import LIPID_COLDSPLIT_SETS  # noqa: E402
 from forward_args import build_forward_args  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 
@@ -67,6 +68,11 @@ DEFAULT_FAMILIES = (
     "lipocalin",
     "scp2",
 )
+# The other held-out axis. A --lipid_coldsplit sweep varies these instead of families:
+# one run per lipid-class set, every protein in train. Its checkpoints and test reports
+# sit under the same "groups_<name>" directory name, so `families` throughout this file
+# is really "the excluded-group axis", whichever axis the label holds out.
+DEFAULT_LIPID_SETS = tuple(LIPID_COLDSPLIT_SETS)
 # training/new_train.py:DYNAMICS_CHECKPOINT_EPOCHS
 DEFAULT_EPOCHS = "1,10,49,51,120"
 
@@ -113,6 +119,40 @@ def arg_lines(label):
     return lines
 
 
+def split_argv(lines, group):
+    """`lines` with the bare split marker removed, plus the flag that names `group`.
+
+    A --lipid_coldsplit sweep's arg file carries the flag with NO value: it marks the
+    axis for the submitter, which strips the bare line and appends its own
+    --lipid_coldsplit=<set> per run. read_configuration requires a value and rejects
+    the bare line as an unknown parameter, which is why every reader that rebuilds a
+    configuration from an arg file has to do this strip itself -- the same one
+    analysis/full_label_report.py's label_coldsplit_params already does, and the reason
+    the "AUC vs chemistry null model" section of every --lipid_coldsplit label's report
+    used to fail with `ValueError: Unknown parameter: --lipid_coldsplit`.
+
+    The two axes are mutually exclusive (read_configuration rejects them together), so
+    --excluded_groups is not appended for a lipid label -- `group` is a lipid-class set
+    name there, not a family.
+    """
+    if "--lipid_coldsplit" in lines:
+        kept = [line for line in lines if line != "--lipid_coldsplit"]
+        return kept + [f"--lipid_coldsplit={group}"]
+    return list(lines) + [f"--excluded_groups={group}"]
+
+
+def default_groups_for_label(label):
+    """The excluded-group names a sweep of this label actually ran, by its own axis.
+
+    Without this a --lipid_coldsplit label reached here with the seven protein
+    families, looked for models/<label>/groups_CRAL-TRIO/ that no such run ever wrote,
+    reported every checkpoint missing and ended in "no checkpoints scored".
+    """
+    if "--lipid_coldsplit" in arg_lines(label):
+        return list(DEFAULT_LIPID_SETS)
+    return list(DEFAULT_FAMILIES)
+
+
 def label_descriptor_features(label, families):
     """--good_descriptors/--bad_descriptors/--descriptor_names resolved off `label`'s
     own args file, as a sorted comma-separated base-name list for null_model.py's
@@ -127,14 +167,14 @@ def label_descriptor_features(label, families):
     at most one of the two pairs is ever non-empty for a given label, so passing all
     three here always resolves to exactly whichever one that label actually set.
 
-    `families[0]` is a dummy --excluded_groups (read_configuration requires one; the
-    result does not vary by family) -- same trick full_label_report.py's
+    `families[0]` is a dummy held-out group (read_configuration requires one; the
+    result does not vary by group) -- same trick full_label_report.py's
     label_coldsplit_params uses for --coldsplit_share/--negatives_per_positive.
+    split_argv turns it into whichever flag this label's axis actually takes.
     """
-    argv = ["label_descriptor_features"] + arg_lines(label) + [
-        f"--excluded_groups={families[0]}",
-        "--seed=0",
-    ]
+    argv = ["label_descriptor_features"] + split_argv(
+        arg_lines(label), families[0]
+    ) + ["--seed=0"]
     conf = read_configuration(argv)
     names = resolve_similarity_feature_names(
         conf.good_descriptors, conf.bad_descriptors, conf.descriptor_names
@@ -207,8 +247,7 @@ def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, ver
     frames = []
     for family in families:
         for seed in seeds:
-            argv = ["checkpoint_scores"] + base + [
-                f"--excluded_groups={family}",
+            argv = ["checkpoint_scores"] + split_argv(base, family) + [
                 f"--seed={seed}",
                 f"--batch={batch}",
                 "--num_workers=0",
@@ -287,16 +326,26 @@ def main():
     parser.add_argument("--label", required=True, help="sweep label, also the arg-file name")
     parser.add_argument("--epochs", default=DEFAULT_EPOCHS)
     parser.add_argument("--seeds", default="0,1")
-    parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
+    parser.add_argument(
+        "--families",
+        default=None,
+        help="held-out group names; default follows the label's own axis "
+             "(protein families, or the lipid-class sets under --lipid_coldsplit)",
+    )
     parser.add_argument("--batch", type=int, default=16, help="only affects the split's sampler")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
+    families = (
+        [f for f in args.families.split(",") if f]
+        if args.families is not None
+        else default_groups_for_label(args.label)
+    )
     table = score_checkpoints(
         args.label,
         epochs=[int(e) for e in args.epochs.split(",")],
         seeds=[int(s) for s in args.seeds.split(",")],
-        families=[f for f in args.families.split(",") if f],
+        families=families,
         batch=args.batch,
     )
     table.to_csv(args.out, index=False)

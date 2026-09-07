@@ -54,6 +54,7 @@ from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.sampler import (  # noqa: E402
     lipid_class_series,
     lipid_classes_for_holdout,
+    split_and_sample_lipid_class_balanced_interactions,
     split_and_sample_protein_balanced_interactions,
 )
 
@@ -150,7 +151,7 @@ def resolve_similarity(csv, data_dir, features, label=None, zscore=False):
     return similarity, index, entity_column, resolved_label, feature_list
 
 
-def working_set(csv, seed, ratio, lipid_classes):
+def working_set(csv, seed, ratio, lipid_classes, balanced_lipid_classes=False):
     """The loader's `csvt`, carrying the loader's `pair_id`.
 
     `lipid_marginal_baseline.working_set` builds the same rows in the same order but
@@ -159,12 +160,23 @@ def working_set(csv, seed, ratio, lipid_classes):
     `Dataloader.__init__` *before* that renumbering. Matching rows against the
     scores `analysis/checkpoint_scores.py` writes needs that id, so the two lines are
     reproduced here rather than in the baseline, whose own numbers do not use it.
+
+    `balanced_lipid_classes` picks the SAMPLER, and it has to match the run being
+    compared against or the rebuilt pool is a different set of rows. Dataloader.py tests
+    that flag FIRST in its own if/elif chain, so a run setting it never reaches the
+    protein-balanced sampler at all -- reproducing it here with the default would
+    silently compare a network's scores to a null model built on other rows.
     """
     held = {name.lower() for name in lipid_classes}
     strata = lipid_class_series(csv).str.lower().isin(held) if held else None
-    positives, negatives = split_and_sample_protein_balanced_interactions(
-        csv, seed, ratio, strata
-    )
+    if balanced_lipid_classes:
+        positives, negatives = split_and_sample_lipid_class_balanced_interactions(
+            csv, seed, ratio=ratio
+        )
+    else:
+        positives, negatives = split_and_sample_protein_balanced_interactions(
+            csv, seed, ratio, strata
+        )
     positives = positives.copy()
     negatives = negatives.copy()
     positives["pair_id"] = positives.index

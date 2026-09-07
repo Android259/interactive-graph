@@ -13,6 +13,7 @@ from dataloader.pair_descriptor_cache import (
     load_pair_descriptor_cache,
     store_is_current,
 )
+import dataloader.pair_descriptors as pair_descriptors
 from dataloader.pair_descriptors import descriptor_values_by_row
 from dataloader.pocket_lipid_compatibility import (
     chain_lengths_by_row,
@@ -108,8 +109,19 @@ def test_store_goes_stale_when_source_csv_changes(fixture_csv, csv_path, clean_c
     # recorded, same discipline protein_graph_tensor_cache's own staleness check uses.
     with open(csv_path, "a") as handle:
         handle.write("\n")
+    # A rebuild is still due: a regenerated table may name candidates the cache has
+    # never seen, and only a build can add them.
     assert store_is_current(DATA_DIR, isomeric=False) is False
-    assert load_pair_descriptor_cache(DATA_DIR, isomeric=False) is None
+    # But the per-SMILES values survive it. They are keyed by canonical SMILES and
+    # depend on no table at all, so throwing them away here bought nothing and cost a
+    # full RDKit recompute in every reader until somebody reran the builder -- the
+    # failure this split (strict for "rebuild?", per-measure for "serve?") removes.
+    cache = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
+    assert cache is not None
+    assert len(cache["values"]) == 2
+    # And a candidate the cache has never seen still falls back per miss, which is what
+    # makes serving the old values safe rather than merely cheap.
+    assert "totally-new-smiles" not in cache["raw_to_canonical"]
 
 
 def test_cached_values_match_uncached_computation(fixture_csv, csv_path, clean_cache_files):
@@ -174,10 +186,29 @@ def test_compute_one_reuses_seeded_measures_and_only_computes_missing_ones():
 
 
 def test_compute_one_computes_everything_fresh_without_a_seed():
-    key = "CCO"
-    _, entry = _compute_one(key, seed_entry=None)
+    # Ethanol: two carbons, so it has no acyl tail at all. Every measure must still be
+    # a KEY -- that is the invariant the cache rests on, since a reader tests
+    # `measure in entry` and a silently absent one would read as "not cached" forever.
+    _, entry = _compute_one("CCO", seed_entry=None)
     assert set(entry) == {"chain", *pair_descriptor_cache._MEASURES}
-    assert all(value is not None for value in entry.values())
+    tail_only = set(pair_descriptors.CANDIDATE_LIPID_DESCRIPTOR_NAMES)
+    assert all(
+        value is not None for name, value in entry.items() if name not in tail_only
+    )
+
+    # A real lipid: now the tail measures have values too. tail_double_bond_position is
+    # the one that stays None even here when the tails are fully saturated -- the
+    # position of a double bond that does not exist, absent rather than zero.
+    _, lipid = _compute_one(
+        "CCCCCCCCCCCCCCCC(=O)OCC(O)COP(=O)(O)OCC[N+](C)(C)C", seed_entry=None
+    )
+    assert set(lipid) == {"chain", *pair_descriptor_cache._MEASURES}
+    assert lipid["tail_double_bond_position"] is None
+    assert all(
+        lipid[name] is not None
+        for name in tail_only
+        if name != "tail_double_bond_position"
+    )
 
 
 def test_previous_cache_values_reads_most_recent_file_regardless_of_fingerprint(tmp_path):
@@ -245,3 +276,68 @@ def test_json_payload_has_no_non_serialisable_values(fixture_csv, csv_path, clea
     # float64, as opposed to plain int/float) would have made json.dumps raise inside
     # build_pair_descriptor_cache itself, before this point.
     json.loads(path.read_text())
+
+
+# --- per-measure validity ----------------------------------------------------------
+# The regression these guard: validity used to be ONE hash over the whole of
+# pair_descriptors.py, embedded in the cache filename, so any edit anywhere in that
+# module orphaned every cached value at once and every reader silently went back to
+# RDKit. Measured on 2026-09-06: five cache files holding 1226 lipids' 10-conformer
+# measures became unreachable because of one unrelated edit.
+
+def test_unrelated_module_change_invalidates_nothing(
+    fixture_csv, csv_path, clean_cache_files, monkeypatch
+):
+    """A changed module fingerprint must not cost the reader a single value."""
+    from dataloader import pair_descriptor_cache
+
+    build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
+    before = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
+    assert before is not None
+
+    monkeypatch.setattr(
+        pair_descriptor_cache, "_code_fingerprint", lambda: "0" * 16
+    )
+    after = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
+    assert after is not None
+    assert after["values"] == before["values"]
+    assert after["proteins"] == before["proteins"]
+
+
+def test_changing_one_measure_invalidates_only_that_measure(
+    fixture_csv, csv_path, clean_cache_files, monkeypatch
+):
+    from dataloader import pair_descriptor_cache
+
+    build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
+    before = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
+    assert any("npr1" in entry for entry in before["values"].values())
+
+    real = pair_descriptor_cache._measure_fingerprints()
+    monkeypatch.setattr(
+        pair_descriptor_cache,
+        "_measure_fingerprints",
+        lambda: {**real, "npr1": "changed"},
+    )
+    after = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
+    for key, entry in after["values"].items():
+        assert "npr1" not in entry
+        # Everything else, including npr2 off the SAME conformer ensemble, is untouched.
+        assert entry == {
+            name: value for name, value in before["values"][key].items() if name != "npr1"
+        }
+
+
+def test_conformer_measures_depend_on_the_shared_ensemble_code(monkeypatch):
+    """npr1 does not compute its own conformers -- a change in the shared ensemble
+    routine changes its value without touching npr1's own source, so the fingerprint
+    has to cover it."""
+    from dataloader import pair_descriptor_cache
+
+    before = pair_descriptor_cache._measure_fingerprints()
+    monkeypatch.setattr(pair_descriptor_cache.pair_descriptors, "CONFORMER_SEED", 12345)
+    after = pair_descriptor_cache._measure_fingerprints()
+    for name in pair_descriptor_cache.pair_descriptors.CONFORMER_MEASURE_NAMES:
+        assert after[name] != before[name], name
+    assert after["chain"] == before["chain"]
+    assert after["hbond"] == before["hbond"]

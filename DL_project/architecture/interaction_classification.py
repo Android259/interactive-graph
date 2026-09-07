@@ -4,7 +4,7 @@ from .cross_attention import CrossAttention
 from .final_layer import Final_Layer
 from .lipid_encoder import Lipid_encoder
 from .protein_encoder import Protein_encoder
-from .mlp_utils import ConcreteDropout
+from .mlp_utils import ConcreteDropout, branch_width
 from .fast_attention import make_grouped_attention_layout
 from training.read_configuration import ModelConfig
 
@@ -29,6 +29,20 @@ class InteractionClassification(torch.nn.Module):
             # reaches the code that would use them.
             self.lipid1 = Lipid_encoder(self.config)
             self.protein1 = Protein_encoder(self.config)
+            # --protein_hiddim/--lipid_hiddim: one Linear per branch whose width differs
+            # from config.hiddim, applied where the tower hands over to cross-attention,
+            # the adversary and the classifier -- all of which are built at
+            # config.hiddim and stay there. Built ONLY on a difference, so a run that
+            # sets neither flag (every run so far) constructs exactly the modules it
+            # constructed before and reports the same number_of_parameters, which names
+            # its run directory and is a column of metrics_summary.csv.
+            #
+            # No activation and no norm on purpose: this is a width change at a
+            # boundary, not another layer of the tower. Adding depth here would make
+            # "--lipid_hiddim=64" mean two things at once and stop the flag measuring
+            # the one thing it is for.
+            self.protein_width_adapter = self._width_adapter("protein")
+            self.lipid_width_adapter = self._width_adapter("lipid")
             if self.config.cross_attention:
                 self.cross_attention1 = CrossAttention(
                     self.config.hiddim, self.config.hiddim, self.config
@@ -48,13 +62,24 @@ class InteractionClassification(torch.nn.Module):
                 # not the pooled whole-pocket one. Small on purpose: BERT-RBP's own
                 # masked-token head is a single linear layer too -- depth belongs in
                 # the backbone (protein1), not here.
-                hiddim = self.config.hiddim
+                # branch_width, not config.hiddim: this head reads protein1's own
+                # per-node output BEFORE the width adapter above, so that stage 1
+                # reconstructs from what the tower actually produced rather than from
+                # a squeezed copy of it.
+                hiddim = branch_width(self.config, "protein")
                 self.protein_recon_head = torch.nn.Sequential(
                     torch.nn.Linear(hiddim, hiddim),
                     torch.nn.GELU(),
                     torch.nn.Linear(hiddim, self.config.protein_node_feature_count),
                 )
         self.final_layer = Final_Layer(self.config)
+
+    def _width_adapter(self, branch):
+        """Linear(branch width -> config.hiddim), or None when they already match."""
+        width = branch_width(self.config, branch)
+        if width == self.config.hiddim:
+            return None
+        return torch.nn.Linear(width, self.config.hiddim)
 
     def lipid_branch_parameters(self):
         """The lipid stream's own parameters, from the encoder through its pooling.
@@ -377,6 +402,13 @@ class InteractionClassification(torch.nn.Module):
             # already carries -- see ProteinGraphData.__inc__.
             self._recon_prediction = self.protein_recon_head(prot1[recon_index])
 
+        # Width hand-off, after the reconstruction head (which reads the tower's own
+        # output) and before the adversary and cross-attention (both built at
+        # config.hiddim). None whenever --protein_hiddim matches --hiddim, which is
+        # every run that does not set it: no module, no call, no change.
+        if self.protein_width_adapter is not None:
+            prot1 = self.protein_width_adapter(prot1)
+
         if getattr(config, "lipid_graph_isomers", False):
             lip1 = self.lipid1(
                 lip,
@@ -398,6 +430,12 @@ class InteractionClassification(torch.nn.Module):
                 pair_descriptor_input=pair_descriptor_input,
                 descriptor_catalog_input=descriptor_catalog_input,
             )
+
+        # The lipid side's own hand-off, placed after all three branches above have
+        # produced lip1 so it applies once whichever one ran. Same None-when-equal rule
+        # as the protein adapter.
+        if self.lipid_width_adapter is not None:
+            lip1 = self.lipid_width_adapter(lip1)
 
         # Adversarial anti-shortcut: run the per-partner adversaries on the
         # PRE-cross-attention representations, the only point where each partner is
