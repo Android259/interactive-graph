@@ -326,8 +326,18 @@ def aggregate_label_rho(records, group_counts, balance_by_family):
 
 
 def run_label_mode(label, models_root, pool_name, device):
-    """Run every models/<label>/*/seed*.pt checkpoint and report rho + SE."""
-    checkpoints = sorted(glob.glob(os.path.join(models_root, label, "*", "seed*.pt")))
+    """Run every models/<label>/*/seed*.pt checkpoint and report rho + SE.
+
+    seed<N>_final.pt is skipped: --save_model writes the last epoch's weights next to the
+    tested pick, under one shared seed<N>.args.json. Both would match the glob, but only
+    the tested pick is the run's own result, and the second file has no args.json of its
+    own to reconstruct the split from.
+    """
+    checkpoints = sorted(
+        path
+        for path in glob.glob(os.path.join(models_root, label, "*", "seed*.pt"))
+        if not path.endswith("_final.pt")
+    )
     if not checkpoints:
         raise SystemExit(
             f"No checkpoints under {os.path.join(models_root, label)!r} "

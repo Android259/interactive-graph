@@ -520,10 +520,29 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
     # The environment has to be activated exactly as the jobs do it below: the
     # login shell's bare python3 has no torch, so without this the build always
     # failed and every job silently fell back to the pickle.
-    printf 'Building shared embedding store on %s via OAR (skipped if current).\n' "${remote}"
-    if ! run_prep_job "embed_store" \
-        "python3 data/build_lipid_embedding_store.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")"; then
-        printf 'WARNING: could not build the embedding store; jobs will read the pickle instead.\n' >&2
+    # Check on the login node, escalate to a job only on a real mismatch -- exactly what
+    # the pair descriptor cache below already does, and for a sharper reason here.
+    # run_prep_job has to request a GPU (GRICAD rejects a CPU-only resource request on
+    # this project, see its comment), and it BLOCKS until that job leaves the queue. So
+    # an unconditional submit made every launch queue for a GPU slot before it could
+    # queue any training at all -- once per label, serially. With several labels in one
+    # command, or any long job already holding the GPUs, the grid never reached the
+    # queue and `wait_and_sync.sh` showed only `embed_store (waiting)`. The build itself
+    # is a no-op when the store is current, which is the common case, so almost all of
+    # that waiting bought nothing. store_is_current is a manifest read plus a few stat()
+    # calls, cheap enough for the shared login node the way --check_only is for the
+    # pair cache.
+    embed_store_cmd="python3 data/build_lipid_embedding_store.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")"
+    if ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
+        "cd '${REMOTE_PROJECT}' && source $(printf '%q' "${CONDA_SH}") && conda activate $(printf '%q' "${CONDA_ENV}") && OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 ${embed_store_cmd} --check_only" \
+        2>&1 | sed 's/^/  /'
+    then
+        : # already current, table absent, or not needed by this config
+    else
+        printf 'Building shared embedding store on %s via OAR (stale store).\n' "${remote}"
+        if ! run_prep_job "embed_store" "${embed_store_cmd}"; then
+            printf 'WARNING: could not build the embedding store; jobs will read the pickle instead.\n' >&2
+        fi
     fi
 
     # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values

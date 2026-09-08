@@ -14,6 +14,7 @@ current: launching a grid must not rebuild a 267 MiB archive every time.
 
 Usage:
     python3 data/build_lipid_embedding_store.py [--args_file=PATH] [--force] [--quiet]
+                                                [--check_only]
 
     --args_file=PATH  Pick the table the way PLIDataset does, from that run's flags:
                        --lipid_graph_isomers needs no table at all, --lipid_isomers
@@ -21,6 +22,15 @@ Usage:
                        Without this, the deterministic table is assumed.
     --force           Rebuild even when the store is already current.
     --quiet           Print nothing when there was nothing to do.
+    --check_only      Report whether a rebuild is needed (exit 0: nothing to do: not
+                       needed, table absent, or already current; exit 1: a rebuild would
+                       run) without writing the 267 MiB archive. Same contract as
+                       data/build_pair_descriptor_cache.py's flag of the same name, and
+                       for the same caller: a cluster launcher that wants to know
+                       cheaply, on the login node, whether it must hand the real build
+                       off to a job. store_is_current is a manifest read plus a handful
+                       of stat() calls, so the check is safe there while the build is
+                       not.
 """
 
 import sys
@@ -62,6 +72,7 @@ def main(argv):
     args_file = None
     force = False
     quiet = False
+    check_only = False
     for argument in argv:
         if argument.startswith("--args_file="):
             args_file = argument.split("=", 1)[1]
@@ -69,6 +80,8 @@ def main(argv):
             force = True
         elif argument == "--quiet":
             quiet = True
+        elif argument == "--check_only":
+            check_only = True
         else:
             print(f"Unknown option: {argument}", file=sys.stderr)
             print(__doc__, file=sys.stderr)
@@ -93,6 +106,13 @@ def main(argv):
         if not quiet:
             print(f"lipid embedding store: {table} already current")
         return 0
+
+    # After the "already current" check, so --check_only reports a rebuild exactly when
+    # one would run -- including under --force, where it would.
+    if check_only:
+        if not quiet:
+            print(f"lipid embedding store: {table} needs a rebuild")
+        return 1
 
     store_path, manifest_path, count = build_lipid_embedding_store(data_dir, table)
     print(

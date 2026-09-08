@@ -61,17 +61,21 @@ set -euo pipefail
 # arm's seed-to-seed spread measures stage-2 variance only, while the scratch
 # arm's measures the whole pipeline's.
 #
-# Runtime: stage 2 is 9 families x |STAGE2_SEEDS| x 2 arms. The 2026-09-07 run
+# 4. TWO ARMS COULD NOT SEPARATE PRETRAINING FROM FINE-TUNING DEPTH. Added a third
+#    (see STAGE2_UNFROZEN_LABEL below).
+#
+# Runtime: stage 2 is 9 families x |STAGE2_SEEDS| x 3 arms. The 2026-09-07 run
 # took 1-3 min per family-run (21 min for all nine at one seed), so the default
-# 90 runs is ~3.5 h, plus ~4 min for stage 1 and the GPU wait below. WALLTIME is
-# set accordingly; cut STAGE2_SEEDS if the queue makes 6 h expensive.
+# 135 runs is ~5.2 h, plus ~4 min for stage 1 and the GPU wait below. WALLTIME is
+# set accordingly; cut STAGE2_SEEDS if the queue makes 8 h expensive. Note the
+# unfrozen arm trains the encoders too, so its runs are the slower ones of the three.
 
 PROJECT="${PROJECT:-pr-molgen}"
 PROJECT_DIR="${PROJECT_DIR:-$(pwd)}"
 CONDA_SH="${CONDA_SH:-/home/kalinina/miniconda3/etc/profile.d/conda.sh}"
 CONDA_ENV="${CONDA_ENV:-Kalinin_project_LP}"
 GPU_PROPERTY="${GPU_PROPERTY:-(gpumodel='A100' OR gpumodel='V100')}"
-WALLTIME="${WALLTIME:-6:00:00}"
+WALLTIME="${WALLTIME:-8:00:00}"
 BATCH="${BATCH:-16}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
 SEED="${SEED:-0}"
@@ -85,6 +89,14 @@ STAGE2_ARGS_FILE="${PROJECT_DIR}/scripts/arg_files/bbp_dcs_rand_fa_nps3mlp_dpt01
 # metrics_summary.csv label, the models/ directory and the summarize_label target.
 STAGE2_PRETRAINED_LABEL="${STAGE2_PRETRAINED_LABEL:-structural_pretrain_family}"
 STAGE2_SCRATCH_LABEL="${STAGE2_SCRATCH_LABEL:-structural_pretrain_family_scratch}"
+# Third arm, added 2026-09-08: pretrained encoders LOADED but not frozen. The first two
+# arms differ in two things at once -- whether stage 1 contributed weights AND whether
+# the encoders train at all -- so between them they cannot say what pretraining is worth.
+# On a warm split of 100-400 rows, training everything beats training a head, which is
+# very likely all the 6-of-9 win for `scratch` measured (files/lcs_marginal_removal_and_
+# solo_on_one_metric.md 7, files/geometric_edge_and_solo_next_architecture.md 5.1). This
+# arm differs from `scratch` in exactly one thing: where the encoder weights started.
+STAGE2_UNFROZEN_LABEL="${STAGE2_UNFROZEN_LABEL:-structural_pretrain_family_unfrozen}"
 # scripts/settings.sh's PROTEIN_GROUPS, all 9 families.
 PROTEIN_GROUPS=(
     "CRAL-TRIO" "START" "lipocalin" "GLTP" "IP_trans"
@@ -107,6 +119,20 @@ if [[ "${stage2_scratch_args}" == "${stage2_args}" ]]; then
         "${STAGE2_ARGS_FILE}" >&2
     exit 2
 fi
+# The unfreezing arm: only --freeze_pretrained_encoders goes, --pretrained_checkpoint stays.
+stage2_unfrozen_args="$(printf '%s' "${stage2_args}" \
+    | sed -E 's/--freeze_pretrained_encoders//')"
+if [[ "${stage2_unfrozen_args}" == "${stage2_args}" ]]; then
+    printf 'Refusing to submit: the unfrozen arm is identical to the pretrained arm.\n' >&2
+    printf -- '--freeze_pretrained_encoders was not found in %s\n' "${STAGE2_ARGS_FILE}" >&2
+    exit 2
+fi
+if [[ "${stage2_unfrozen_args}" == "${stage2_scratch_args}" ]]; then
+    printf 'Refusing to submit: the unfrozen arm is identical to the scratch arm.\n' >&2
+    printf -- '--pretrained_checkpoint was not found in %s, so nothing distinguishes them.\n' \
+        "${STAGE2_ARGS_FILE}" >&2
+    exit 2
+fi
 
 mkdir -p "${LOG_ROOT}"
 
@@ -116,14 +142,21 @@ log1="${LOG_ROOT}/structural_pretrain_seed${SEED}_batch${BATCH}.log"
 # (arm, family, seed), all needing the same %q-safe quoting as everything else in
 # train_command.
 family_commands=""
-for arm in pretrained scratch; do
-    if [[ "${arm}" == "pretrained" ]]; then
-        arm_args="${stage2_args}"
-        arm_label="${STAGE2_PRETRAINED_LABEL}"
-    else
-        arm_args="${stage2_scratch_args}"
-        arm_label="${STAGE2_SCRATCH_LABEL}"
-    fi
+for arm in pretrained scratch unfrozen; do
+    case "${arm}" in
+        pretrained)
+            arm_args="${stage2_args}"
+            arm_label="${STAGE2_PRETRAINED_LABEL}"
+            ;;
+        scratch)
+            arm_args="${stage2_scratch_args}"
+            arm_label="${STAGE2_SCRATCH_LABEL}"
+            ;;
+        unfrozen)
+            arm_args="${stage2_unfrozen_args}"
+            arm_label="${STAGE2_UNFROZEN_LABEL}"
+            ;;
+    esac
     for family in "${PROTEIN_GROUPS[@]}"; do
         for stage2_seed in ${STAGE2_SEEDS}; do
             log_fam="${LOG_ROOT}/${arm_label}_${family}_seed${stage2_seed}_batch${BATCH}.log"

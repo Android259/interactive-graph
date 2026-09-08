@@ -2274,6 +2274,14 @@ for eepoch in range(EPOCHS):
 
 training_duration_sec = time.perf_counter() - training_started_at
 run_summary = summarize_training_run(epoch_history, training_duration_sec, run_status="complete")
+# The weights as the last epoch left them, captured before the line below overwrites them
+# with the selected ones. Both are written out by --save_checkpoint/--save_model:
+# seed<N>.pt is what run_test actually measures, seed<N>_final.pt is where training was
+# still heading. Keeping only one of the two has already cost this project a result --
+# files/lcs_marginal_removal_and_solo_on_one_metric.md section 2 had to score the baseline
+# and rankprot off epoch-120 milestones because their selected weights were never saved,
+# and every comparison against them then carried a weights-rule mismatch as a caveat.
+final_model_state = copy.deepcopy(model.state_dict())
 if conf.swa and swa_model.n_averaged > 0:
     print(f"SWA: using weights averaged over {int(swa_model.n_averaged)} epochs")
     model.load_state_dict(swa_model.module.state_dict())
@@ -2293,21 +2301,32 @@ if discovered_dropout_report:
     for site_name, p in discovered_dropout_report.items():
         print(f"  {site_name}: {p:.4f}")
 if conf.save_checkpoint:
+    # Two files, both under checkpoints/<label>/<excluded_set>/: seed<N>.pt holds the
+    # weights this run is judged on (the rolling-valid-BA pick loaded just above, or the
+    # SWA average when --swa is on), seed<N>_final.pt the last epoch's.
     checkpoint_dir = os.path.join(checkpoints_root, label_name, excluded_set_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
     checkpoint_path = os.path.join(checkpoint_dir, f"seed{conf.seed}.pt")
     torch.save(model.state_dict(), checkpoint_path)
     print(f"Saved checkpoint to {checkpoint_path}")
+    final_checkpoint_path = os.path.join(checkpoint_dir, f"seed{conf.seed}_final.pt")
+    torch.save(final_model_state, final_checkpoint_path)
+    print(f"Saved end-of-training weights to {final_checkpoint_path}")
 if conf.save_model:
-    # Persist the final weights under models/<label>/<excluded_set>/seed<seed>.pt
-    # so they can later be replayed for rho estimation (see
-    # analysis/estimate_rho_elkan_noto.py). The CLI args are stored alongside as
-    # args.json so the exact model + dataset split can be reconstructed.
+    # Persist the weights under models/<label>/<excluded_set>/ so they can later be
+    # replayed for rho estimation (see analysis/estimate_rho_elkan_noto.py) or rescored
+    # for a metric added after the run (analysis/checkpoint_scores.py). seed<seed>.pt is
+    # the tested pick; seed<seed>_final.pt is the last epoch. The CLI args are stored
+    # alongside as args.json so the exact model + dataset split can be reconstructed --
+    # one args.json covers both, the weights differ but the run does not.
     model_dir = os.path.join(models_root, label_name, excluded_set_name)
     os.makedirs(model_dir, exist_ok=True)
     model_path = os.path.join(model_dir, f"seed{conf.seed}.pt")
     torch.save(model.state_dict(), model_path)
+    final_model_path = os.path.join(model_dir, f"seed{conf.seed}_final.pt")
+    torch.save(final_model_state, final_model_path)
     with open(os.path.join(model_dir, f"seed{conf.seed}.args.json"), "w") as f:
         json.dump(sys.argv[1:], f)
     print(f"Saved model to {model_path}")
+    print(f"Saved end-of-training weights to {final_model_path}")
 run_test(run_summary)
