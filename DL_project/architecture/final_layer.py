@@ -14,6 +14,7 @@ from .mlp_utils import (
 )
 from .pair_descriptor_head import PairDescriptorHead
 from .named_descriptor_head import NamedDescriptorHead, pool_descriptor_head_outputs
+from .thematic_descriptor_head import ForcedInteraction
 from .thematic_descriptor_head import ThematicDescriptorHead
 
 
@@ -496,6 +497,36 @@ class Final_Layer(torch.nn.Module):
                 self.pair_descriptor_head = PairDescriptorHead(self.config, act_fn)
             classifier_input_dim += self.pair_descriptor_head.output_dim
 
+        # --lipid_head_descriptors: the head half of the two-branch lipid split. One
+        # extra channel, ForcedInteraction(head vector, pooled protein) -- product only,
+        # no skip -- so these columns cannot reach the classifier without the protein.
+        # See ModelConfig.lipid_head_descriptors for why this half is treated
+        # differently from --lipid_descriptors' ordinary broadcast.
+        self.lipid_head_tokens = parse_descriptor_list(
+            getattr(self.config, "lipid_head_descriptors", "")
+        )
+        self.lipid_head_interaction = None
+        if self.lipid_head_tokens:
+            catalog_index = {
+                name: position
+                for position, name in enumerate(full_catalog_order(self.config))
+            }
+            self.register_buffer(
+                "lipid_head_columns",
+                torch.tensor(
+                    [catalog_index[name] for name in self.lipid_head_tokens],
+                    dtype=torch.long,
+                ),
+                persistent=False,
+            )
+            # Lifted to the protein's own width first: ForcedInteraction multiplies two
+            # projections elementwise and needs one shared dim.
+            self.lipid_head_lift = torch.nn.Linear(
+                len(self.lipid_head_tokens), prot_dim
+            )
+            self.lipid_head_interaction = ForcedInteraction(prot_dim, self.config, act_fn)
+            classifier_input_dim += prot_dim
+
         if self.config.attention_pooling:
             # Learned-query attention pooling replaces the fixed reduction; the protein
             # pool optionally biases pocket residues (attention_pooling_pocket_bias).
@@ -783,6 +814,19 @@ class Final_Layer(torch.nn.Module):
             common_out = self.bilinear(lip_outs, prot_outs)
         else:
             common_out = torch.cat([lip_outs, prot_outs], dim=1)
+
+        if self.lipid_head_interaction is not None:
+            if descriptor_catalog_input is None:
+                raise ValueError(
+                    "lipid_head_descriptors requires descriptor_catalog_input"
+                )
+            head_values = descriptor_catalog_input.view(
+                common_out.shape[0], -1
+            ).index_select(1, self.lipid_head_columns).to(common_out.dtype)
+            head_channel = self.lipid_head_interaction(
+                self.lipid_head_lift(head_values), prot_outs
+            )
+            common_out = torch.cat([common_out, head_channel], dim=1)
 
         if self.compat_width:
             # Variant B (files/pocket_lipid_compatibility.md): the standardised,

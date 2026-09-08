@@ -52,6 +52,16 @@ LIPID_DESCRIPTOR_NAMES = (
     "chain", "unsaturation", "hbond", "heavy", "tail_count", "npr1", "npr2",
     "logp", "tpsa", "molar_refractivity", "rotatable_bond_count",
     "aromatic_ring_count", "ring_count",
+    # Tail-only quantities, promoted from CANDIDATE_LIPID_DESCRIPTOR_NAMES once their
+    # eta^2 against head-group class had actually been read (files/lipid_coldsplit_
+    # architecture_direction.md sections 7f-7h): they are the least class-specific of
+    # everything measured -- tail_double_bonds 0.31 and tail_length_mean 0.34 against
+    # tpsa 0.98 and hbond 0.99 -- and they are the chain half of the two-branch split
+    # section 7q proposes. Measuring first, wiring second, was the point of keeping them
+    # out until now.
+    "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
+    "tail_unsaturation_density", "tail_double_bond_position",
+    "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
 )
 # See pair_descriptor_value below for what each one actually computes.
 PAIR_DESCRIPTOR_NAMES = (
@@ -385,7 +395,8 @@ def full_catalog_order(config):
     --pair_descriptors -- architecture/final_layer.py builds a NamedDescriptorHead instead
     of PairDescriptorHead/the fixed head-only descriptor head under either), the two
     node-broadcast lists --protein_descriptors/--lipid_descriptors (architecture/
-    protein_encoder.py, architecture/lipid_encoder.py), --geometric_descriptors/
+    protein_encoder.py, architecture/lipid_encoder.py), --lipid_head_descriptors
+    (architecture/final_layer.py's forced-interaction channel), --geometric_descriptors/
     --chemical_descriptors, and --geometric_pair_priors/--chemical_pair_priors
     (--thematical_paths, architecture/thematic_descriptor_head.py).
     Every one of those call sites uses THIS function rather than assembling its own tuple,
@@ -402,6 +413,7 @@ def full_catalog_order(config):
         named_descriptor_names,
         getattr(config, "protein_descriptors", ""),
         getattr(config, "lipid_descriptors", ""),
+        getattr(config, "lipid_head_descriptors", ""),
         getattr(config, "geometric_descriptors", ""),
         getattr(config, "chemical_descriptors", ""),
         getattr(config, "geometric_pair_priors", ""),

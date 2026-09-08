@@ -80,6 +80,8 @@ REPORT_FIELDS = (
     "AUC",
     "AUC_within_protein",
     "AUC_within_protein_proteins",
+    "AUC_within_protein_pairs",
+    "AUC_within_protein_pairs_proteins",
     "loss",
 )
 
@@ -154,6 +156,8 @@ CSV_FIELDS = (
     # it because a mean over 2 proteins is not the claim a mean over 11 is.
     "AUC_within_protein",
     "AUC_within_protein_proteins",
+    "AUC_within_protein_pairs",
+    "AUC_within_protein_pairs_proteins",
     "loss",
     "tb_status",
     "tb_train_points",

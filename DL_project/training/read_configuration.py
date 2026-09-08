@@ -1255,6 +1255,24 @@ class ModelConfig:
     # string via parse_descriptor_list, so there is nothing here that could drift from it.
     protein_descriptors: str = ""
     lipid_descriptors: str = ""
+    # The HEAD half of the two-branch lipid split (files/lipid_coldsplit_architecture_
+    # direction.md section 7q). Named DESCRIPTOR_CATALOG columns that reach the
+    # classifier ONLY through a product with the pooled protein -- ForcedInteraction,
+    # no skip path -- while --lipid_descriptors' own list keeps its ordinary broadcast
+    # into the lipid tower.
+    #
+    # The asymmetry IS the proposal, not an implementation detail. Measured: chain
+    # quantities carry 0.31-0.43 eta^2 against head-group class and transfer across the
+    # split (the sets whose within-block variation is chain-dominated are the two where
+    # within-protein signal exists at all); head quantities carry 0.98-0.99 and are the
+    # class label itself. So the chain half should act on its own and the head half must
+    # not -- a head descriptor free to reach the classifier alone is a lookup key for a
+    # class that is absent from training by construction. In a product with the protein
+    # it can still carry real pair signal, which is the open question section 7h left.
+    #
+    # Splitting the lipid input and treating BOTH halves the same would be a capacity
+    # change, and capacity changes on this split measured flat (section 7k).
+    lipid_head_descriptors: str = ""
     # Width of the protein node vector, derived in validate(). Single source of truth
     # for the loader that builds it and the encoder that sizes its input layer, so the
     # two cannot drift; also recorded in metrics_summary, where a run's node width is
@@ -3081,6 +3099,7 @@ VALUE_HANDLERS = {
     "--protein_hiddim=": set_config_field("protein_hiddim", int),
     "--lipid_hiddim=": set_config_field("lipid_hiddim", int),
     "--lipid_edge_mlp_lambda=": set_config_field("lipid_edge_mlp_lambda", float),
+    "--lipid_head_descriptors=": set_config_field("lipid_head_descriptors"),
     "--sparsity_mode=": set_config_field("sparsity_mode", str),
     "--sparsity_lambda=": set_config_field("sparsity_lambda", float),
     "--bilevel_lr=": set_config_field("bilevel_lr", float),

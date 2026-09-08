@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas
 
+import dataloader.pair_descriptors as pair_descriptors
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.pair_descriptors import (
     LIPID_DESCRIPTOR_NAMES,
@@ -109,7 +110,10 @@ def _lipid_descriptor_table(csv, data_dir=None):
         if source and table_path.exists():
             try:
                 manifest = json.loads(table_path.read_text())
-                if manifest.get("format_version") == 1 and manifest.get("source") == source:
+                # Bumped to 2 when the tail-only columns joined LIPID_DESCRIPTOR_NAMES:
+                # a version-1 table was built without them and would be served missing
+                # exactly the columns a caller now asks for.
+                if manifest.get("format_version") == 2 and manifest.get("source") == source:
                     return manifest["values"]
             except (OSError, ValueError, json.JSONDecodeError, KeyError):
                 pass
@@ -145,6 +149,16 @@ def _lipid_descriptor_table(csv, data_dir=None):
         "ring_count": ring_count,
         "npr1": lambda smiles: _cached_npr("npr1", _compute_npr1, smiles),
         "npr2": lambda smiles: _cached_npr("npr2", _compute_npr2, smiles),
+        # Tail-only, see LIPID_DESCRIPTOR_NAMES. All cheap (one RDKit parse and a walk
+        # over the carbon skeleton), so unlike npr they need no cache lookup.
+        "tail_length_asymmetry": pair_descriptors.tail_length_asymmetry,
+        "tail_length_mean": pair_descriptors.tail_length_mean,
+        "tail_double_bonds": pair_descriptors.tail_double_bonds,
+        "tail_unsaturation_density": pair_descriptors.tail_unsaturation_density,
+        "tail_double_bond_position": pair_descriptors.tail_double_bond_position,
+        "tail_logp": pair_descriptors.tail_logp,
+        "tail_molar_refractivity": pair_descriptors.tail_molar_refractivity,
+        "tail_heavy_atoms": pair_descriptors.tail_heavy_atoms,
     }
     per_species_values = {}
     smiles_cache = {}

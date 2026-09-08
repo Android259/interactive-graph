@@ -727,6 +727,48 @@ def within_protein_auc(subgroup_stats):
     return sum(values) / len(values), len(values)
 
 
+def within_protein_pair_auc(subgroup_stats):
+    """Same question as within_protein_auc, counted over PAIRS instead of proteins.
+
+    The per-protein average needs a protein to carry a readable ranking on its own
+    (>= WITHIN_PROTEIN_MINIMUM_ROWS rows, both classes), and on this data most do not:
+    on the sphingolipids and phosphorus_free blocks only about two proteins qualify per
+    run, so that column came out empty for half the seeds and its per-group means were
+    over one to five runs. A number that absent cannot be the metric a split is judged
+    by.
+
+    This pools the comparisons themselves: every (positive, negative) pair of rows
+    SHARING a protein, concordant pairs over total pairs, ties counted as half -- the
+    rank-based AUC identity, applied to the union of the per-protein pair sets. A
+    protein contributes as soon as it has one row of each class, so nearly every protein
+    in the block contributes, and a protein with more candidates weighs more, which is
+    what "how well are this block's within-protein comparisons ordered" should mean.
+
+    Comparisons still never cross a protein boundary, so the protein marginal cannot
+    contribute -- the property the whole metric exists for is unchanged.
+    """
+    concordant = 0.0
+    total = 0
+    proteins = 0
+    for stats in subgroup_stats.values():
+        scores, labels = stats.get("scores") or [], stats.get("labels") or []
+        positives = [s for s, y in zip(scores, labels) if y == 1]
+        negatives = [s for s, y in zip(scores, labels) if y != 1]
+        if not positives or not negatives:
+            continue
+        proteins += 1
+        for positive in positives:
+            for negative in negatives:
+                if positive > negative:
+                    concordant += 1.0
+                elif positive == negative:
+                    concordant += 0.5
+                total += 1
+    if total == 0:
+        return None, 0
+    return concordant / total, proteins
+
+
 def metric_values(tp, fp, tn, fn, total_loss, total_loss_count, auc=None):
     """Compute aggregate binary-classification metrics from confusion counts.
 
@@ -1307,6 +1349,8 @@ def save_dynamics_milestone(epoch_1based):
 
 
 def epoch(idx,counttrain,countval):
+    # Batches whose loss carried no gradient (see the skip below).
+    skipped_no_gradient = 0
     """Run one training epoch followed by full validation."""
     if conf.pu_loss:
         reset_pu_loss_diagnostics()
@@ -1517,7 +1561,21 @@ def epoch(idx,counttrain,countval):
                     adversary_stats["thematical_orth"] += float(orth_penalty.detach())
                     adversary_stats["thematical_orth_batches"] += 1
 
-            if use_amp:
+            # A batch whose loss carries no gradient is a real, documented outcome, not
+            # a bug to crash on: pairwise_ranking_loss returns a plain zero when the
+            # batch holds no rankable pair (under --rank_within_protein, no two rows of
+            # the same protein with opposite labels), and
+            # Non_Negative_Positive_Unlabeled_loss does the same with no labeled
+            # positives. Both docstrings promise that degradation -- and calling
+            # .backward() on it unconditionally defeated the promise one level up:
+            # "element 0 of tensors does not require grad and does not have a grad_fn",
+            # which killed the first --rank_within_protein run under --lipid_coldsplit
+            # at epoch 1. Skipping the step is what those docstrings already describe;
+            # the count is printed at the end of the epoch, because a run skipping most
+            # of its batches is training on almost nothing and must not look healthy.
+            if not getattr(los, "requires_grad", False):
+                skipped_no_gradient += 1
+            elif use_amp:
                 scaler.scale(los).backward()
                 if conf.save_dynamics:
                     # Before the norms are read, never after: scaler.step() would have
@@ -1537,6 +1595,12 @@ def epoch(idx,counttrain,countval):
             counttrain+=1
         else:
             break
+    if skipped_no_gradient:
+        print(
+            f"batches skipped for having no gradient: {skipped_no_gradient}/{counttrain} "
+            "-- under --rank_within_protein this is batches with no same-protein pair; "
+            "a large share means the run is training on almost nothing, raise --batch"
+        )
     if conf.pu_loss:
         pu_diag = get_pu_loss_diagnostics()
         if pu_diag["calls"] > 0:
@@ -1938,8 +2002,13 @@ def run_test(run_summary):
     within_auc, within_blocks = within_protein_auc(subgroup_stats)
     metrics["AUC_within_protein"] = within_auc
     metrics["AUC_within_protein_proteins"] = within_blocks
+    pair_auc, pair_proteins = within_protein_pair_auc(subgroup_stats)
+    metrics["AUC_within_protein_pairs"] = pair_auc
+    metrics["AUC_within_protein_pairs_proteins"] = pair_proteins
     print(f"AUC_within_protein: {format_metric(within_auc)}")
     print(f"AUC_within_protein_proteins: {within_blocks}")
+    print(f"AUC_within_protein_pairs: {format_metric(pair_auc)}")
+    print(f"AUC_within_protein_pairs_proteins: {pair_proteins}")
     print(f"loss: {format_metric(metrics['loss'])}")
 
     test_metrics_path = os.path.join(test_metrics_dir, f"test_metrics_{timestamp}_{number_of_parameters}parameters_{conf.m}_{conf.HEADS}_{conf.seed}_{conf.lr}_{conf.batch}_{conf.hiddim}.txt")
@@ -2048,10 +2117,11 @@ def run_test(run_summary):
         f.write(f"discovered_dropout: {discovered_dropout_value}\n")
         for key in ["total", "real_positive", "real_negative", "predicted_positive", "predicted_negative", "TP", "FP", "TN", "FN"]:
             f.write(f"{key}: {metrics[key]}\n")
-        for key in ["accuracy", "sensitivity", "precision", "specificity", "IoU", "FAR", "F1", "balanced_accuracy", "AUC", "AUC_within_protein", "loss"]:
+        for key in ["accuracy", "sensitivity", "precision", "specificity", "IoU", "FAR", "F1", "balanced_accuracy", "AUC", "AUC_within_protein", "AUC_within_protein_pairs", "loss"]:
             f.write(f"{key}: {format_metric(metrics[key])}\n")
         # An integer count, not a rate -- format_metric would print it as 11.000000.
         f.write(f"AUC_within_protein_proteins: {metrics['AUC_within_protein_proteins']}\n")
+        f.write(f"AUC_within_protein_pairs_proteins: {metrics['AUC_within_protein_pairs_proteins']}\n")
         f.write("\nper_protein_subgroup_metrics:\n")
         f.write(format_subgroup_row(subgroup_columns) + "\n")
         f.write(format_subgroup_row(["-" * width for width in subgroup_widths]) + "\n")

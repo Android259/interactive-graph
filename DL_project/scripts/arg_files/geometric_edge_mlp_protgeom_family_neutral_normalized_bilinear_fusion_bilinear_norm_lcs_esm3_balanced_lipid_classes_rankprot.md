@@ -51,3 +51,13 @@
 --lipid_coldsplit
 --loss_type=pairwise_rank
 --rank_within_protein
+# REQUIRED, and its absence is what killed the first attempt at this label: at batch=16
+# a batch rarely holds two rows of the SAME protein with opposite labels, so
+# pairwise_ranking_loss returns a plain zero with no grad_fn and the run died at epoch 1
+# with "element 0 of tensors does not require grad". bbp_dcs_smd_fa_nps_rankprot_...
+# carries the same flag for the same reason, with its own measurement in the file:
+# "batch=16 leaves only 3.95 same-protein pairs per batch and 10% of batches with none
+# at all; 32 gives 16.9 pairs and no empty batch". 64 rather than 32 because that
+# measurement was on a PROTEIN cold split, where one family is out of train; here all 35
+# proteins stay in, so the same batch is spread over more of them and pairs are rarer.
+--batch=64

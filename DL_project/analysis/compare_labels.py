@@ -41,6 +41,11 @@ METRICS = (
     # files/lipid_coldsplit_architecture_direction.md section 7j.
     ("AUC_within_protein", "test AUC in-protein", True),
     ("AUC_within_protein_proteins", "  (proteins averaged)", True),
+    # Pair-pooled version of the same question -- read THIS one: the
+    # per-protein average above is empty for runs where no protein block
+    # clears 6 rows with both classes, which is most of them on the small sets.
+    ("AUC_within_protein_pairs", "test AUC in-protein (pairs)", True),
+    ("AUC_within_protein_pairs_proteins", "  (proteins contributing)", True),
     ("F1", "test F1", True),
     ("sensitivity", "test sensitivity", True),
     ("specificity", "test specificity", True),

@@ -2189,3 +2189,51 @@ def test_lipid_edge_flags_need_the_lipid_graph():
                          protein_edge_mlp=True, lipid_edge_mlp_lambda=2.0)
     with pytest.raises(ValueError, match="lipid_graph_isomers"):
         config.validate()
+
+
+# --- --lipid_head_descriptors: the head half of the two-branch lipid split ----------
+# The property that matters is the asymmetry: chain columns keep their ordinary
+# broadcast into the lipid tower, head columns reach the classifier ONLY multiplied by
+# the pooled protein. A head column able to reach it alone would be a lookup key for a
+# class the split removes from training by construction.
+
+def _branch_config(**overrides):
+    config = ModelConfig(hiddim=8, HEADS=2, m=2, batch=2, num_workers=0,
+                         pool_type="mean", **overrides)
+    config.validate()
+    return config
+
+
+def test_lipid_head_descriptors_build_a_forced_interaction_channel():
+    plain = InteractionClassification(_branch_config())
+    assert plain.final_layer.lipid_head_interaction is None
+
+    split = _branch_config(
+        lipid_descriptors="tail_length_mean,tail_double_bonds",
+        lipid_head_descriptors="tpsa,hbond",
+    )
+    model = InteractionClassification(split)
+    assert model.final_layer.lipid_head_interaction is not None
+    # Two head tokens lifted to the protein width, then multiplied -- never concatenated
+    # raw, which is what would give the classifier the class label directly.
+    assert model.final_layer.lipid_head_lift.in_features == 2
+    assert model.final_layer.lipid_head_lift.out_features == split.hiddim
+    one_training_step(split)
+
+
+def test_lipid_head_descriptors_change_nothing_when_unset():
+    """Default runs must not gain a module or a parameter: number_of_parameters names
+    run directories and is a column of metrics_summary.csv."""
+    count = lambda m: sum(p.numel() for p in m.parameters() if p.requires_grad)
+    assert count(InteractionClassification(_branch_config())) == count(
+        InteractionClassification(_branch_config(lipid_head_descriptors=""))
+    )
+
+
+def test_chain_half_alone_is_the_ordinary_broadcast():
+    """--lipid_descriptors on its own must stay exactly what it was -- the asymmetry
+    comes from the head flag, not from a change to the chain path."""
+    chain_only = _branch_config(lipid_descriptors="tail_length_mean,tail_double_bonds")
+    model = InteractionClassification(chain_only)
+    assert model.final_layer.lipid_head_interaction is None
+    one_training_step(chain_only)
