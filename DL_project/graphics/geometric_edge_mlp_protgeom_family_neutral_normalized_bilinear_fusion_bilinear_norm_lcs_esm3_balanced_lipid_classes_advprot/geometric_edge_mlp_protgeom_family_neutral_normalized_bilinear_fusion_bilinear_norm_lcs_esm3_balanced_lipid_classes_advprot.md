@@ -3,6 +3,8 @@
 ## Summary (analysis/summarize_label.py)
 
 ```
+conda is not available in this environment.
+Could not activate Kalinin_project_LP (create it with: source /home/andrei/DL_project_5/DL_project/scripts/tools/enter_project_env.sh); using current python3: /usr/bin/python3
 Summary: 'geometric_edge_mlp_protgeom_family_neutral_normalized_bilinear_fusion_bilinear_norm_lcs_esm3_balanced_lipid_classes_advprot'
 rows: 20
 

@@ -43,7 +43,10 @@ data from.
 The manifest guards staleness the same way protein_graph_tensor_cache.py does: every
 source file's size and nanosecond mtime must still match what the cache was built from,
 checked freshly on every load (cheap -- a few dozen stat() calls, not a hash of file
-contents).
+contents). The CODE side of staleness is checked at the granularity a value is actually
+produced at -- per lipid measure, and once for the protein half -- so an edit to either
+module invalidates what it changed and nothing else. Neither question is answered by a
+hash over the modules as wholes any more; `_code_fingerprint` says why.
 """
 
 import hashlib
@@ -62,7 +65,12 @@ from dataloader.pocket_lipid_compatibility import (
     pocket_extent_by_protein,
     pocket_rim_core_aromatic_share_by_protein,
 )
-from dataloader.protein_graph_tensor_cache import _source_record
+from dataloader.protein_graph_builder import (
+    AROMATIC_RESIDUE_TYPES,
+    pocket_atom_coordinates,
+    pocket_shape,
+)
+from dataloader.protein_graph_tensor_cache import _pocket_tensor, _source_record
 
 CACHE_FORMAT_VERSION = 2
 
@@ -81,9 +89,20 @@ _CODE_MODULES = (pair_descriptors, pocket_lipid_compatibility)
 def _code_fingerprint():
     """Short hash of every module in _CODE_MODULES' source, in a fixed order.
 
-    Kept for `store_is_current` -- "does a rebuild have anything to do" -- and no
-    longer in the filename or on the read path. See `_measure_fingerprints` for why a
-    whole-module hash cannot decide what a READER may still serve.
+    Provenance only, plus the pair-VALUE cache's filename (`_pair_value_cache_path`,
+    whose contents are cheap arithmetic over this cache and never RDKit). It no longer
+    decides anything about THIS cache, in either direction:
+
+      what a reader may serve   `_measure_fingerprints`, per measure
+      whether to rebuild        `store_is_current`, per measure + `_protein_fingerprint`
+
+    It stopped deciding "rebuild?" because at that granularity it is wrong in the
+    expensive direction: a docstring edit anywhere in either module -- and both are
+    edited constantly for reasons that touch no formula -- made a cache whose every
+    value was still correct report itself stale. A cluster launch acts on that report
+    by queueing an OAR job that asks for a GPU and BLOCKS the launch until it drains,
+    once per label, so the cost of a false alarm here is not a recompute, it is a grid
+    that does not reach the queue.
     """
     hasher = hashlib.sha256()
     for module in _CODE_MODULES:
@@ -181,6 +200,40 @@ def _measure_fingerprints():
             blob += inspect.getsource(getattr(pair_descriptors, helper)).encode()
         fingerprints[name] = hashlib.sha256(blob).hexdigest()[:16]
     return fingerprints
+
+
+# The protein half of the cache. `values` above is covered measure by measure; these
+# are the two functions that fill `proteins`, plus everything their values route through
+# without naming it in their own body -- the same reason _SHARED_HELPERS exists for the
+# lipid measures, and the same silent-staleness bug if one is left out (an edit to
+# pocket_shape would move every cached extent while both entry points' own source, and
+# therefore their hash, stayed put).
+_PROTEIN_VALUE_FUNCTIONS = (
+    pocket_extent_by_protein,
+    pocket_rim_core_aromatic_share_by_protein,
+    pocket_atom_coordinates,
+    pocket_shape,
+    _pocket_tensor,
+)
+
+
+def _protein_fingerprint():
+    """Short hash of the code producing the cache's per-protein values.
+
+    Not per protein-measure the way `_measure_fingerprints` is per lipid measure: the
+    three protein values are computed together, from the same two parses, and the read
+    path already drops them together when a protein's own files move
+    (`load_pair_descriptor_cache`). One hash for the three is the granularity that
+    matches how they are produced and invalidated.
+    """
+    blob = b""
+    for function in _PROTEIN_VALUE_FUNCTIONS:
+        blob += inspect.getsource(function).encode()
+    # A constant, not a function: the aromatic mask is data the rim/core shares are
+    # computed against, so moving it moves every share without changing a line of the
+    # source hashed above.
+    blob += repr(tuple(sorted(AROMATIC_RESIDUE_TYPES))).encode()
+    return hashlib.sha256(blob).hexdigest()[:16]
 
 
 def cache_path(root_dir, isomeric):
@@ -353,14 +406,14 @@ def build_pair_descriptor_cache(root_dir, csv, protein_names, csv_path, isomeric
     ]
     payload = {
         "format_version": CACHE_FORMAT_VERSION,
-        # Belt and suspenders alongside the filename (cache_path already embeds
-        # this): a copy or manual rename could carry the fingerprint-tagged
-        # name to code it no longer matches, and this catches that too.
+        # Provenance: which whole-module state this file happened to be built under.
+        # Nothing reads it back for a decision -- see `_code_fingerprint`.
         "code_fingerprint": _code_fingerprint(),
-        # What the READ path validates against, one entry per measure. The whole-module
-        # fingerprint above stays only as `store_is_current`'s "is a rebuild worth
-        # running" signal -- it must never again decide what a reader may serve.
+        # What decides validity, at the granularity each half is actually produced and
+        # invalidated at: one entry per lipid measure (the READ path filters on these,
+        # and so does `store_is_current`), one hash for the protein half.
         "measure_fingerprints": _measure_fingerprints(),
+        "protein_fingerprint": _protein_fingerprint(),
         "isomeric": bool(isomeric),
         "sources": [_source_record(path, root_dir) for path in source_paths],
         "raw_to_canonical": raw_to_canonical,
@@ -373,7 +426,20 @@ def build_pair_descriptor_cache(root_dir, csv, protein_names, csv_path, isomeric
 
 
 def store_is_current(root_dir, isomeric):
-    """True when a cache exists and every recorded source still matches on disk."""
+    """True when a cache exists, its sources still match, and no VALUE it holds moved.
+
+    "Should the builder run", and it must answer that on the same terms the reader
+    answers "what may I serve": a rebuild has something to do exactly when some value
+    in this file would come out different now. That is per lipid measure
+    (`measure_fingerprints`) plus the protein half (`_protein_fingerprint`) plus the
+    source files' size/mtime -- and deliberately NOT a hash over the two modules as
+    wholes, which is what this used to compare and which reported "rebuild" for a
+    renamed local or an edited docstring in code no cached value depends on.
+
+    Manifests written before the protein fingerprint existed have no way to say which
+    protein-side code they were built under, so they read as stale once: one rebuild,
+    and every later launch answers honestly.
+    """
     root_dir = Path(root_dir).resolve()
     path = cache_path(root_dir, isomeric)
     if not path.exists():
@@ -382,7 +448,9 @@ def store_is_current(root_dir, isomeric):
         manifest = json.loads(path.read_text())
         if manifest.get("format_version") != CACHE_FORMAT_VERSION:
             return False
-        if manifest.get("code_fingerprint") != _code_fingerprint():
+        if manifest.get("measure_fingerprints") != _measure_fingerprints():
+            return False
+        if manifest.get("protein_fingerprint") != _protein_fingerprint():
             return False
         if bool(manifest.get("isomeric")) != bool(isomeric):
             return False

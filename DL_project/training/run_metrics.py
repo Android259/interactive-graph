@@ -25,6 +25,20 @@ RUN_METRIC_FIELDS = (
     "mean_valid_balanced_accuracy",
     "auc_valid_balanced_accuracy",
     "valid_balanced_accuracy_std",
+    # The same five questions asked of validation AUC instead of validation balanced
+    # accuracy. Both are needed and neither replaces the other: balanced accuracy is the
+    # quality of the split AT the 0.5 threshold (and stays the checkpoint-selection
+    # metric), AUC is the quality of the ORDER whatever the threshold. They come apart
+    # exactly where this project keeps landing -- under --adversarial_grl valid balanced
+    # accuracy sits at 0.49-0.51 for entire runs, which reads as "learned nothing" and
+    # cannot be told apart from "learned something, threshold elsewhere" without this.
+    # Empty for every run before the validation pass started collecting per-row scores.
+    "checkpoint_valid_AUC",
+    "max_valid_AUC_epoch",
+    "max_valid_AUC",
+    "final_valid_AUC",
+    "mean_valid_AUC",
+    "valid_AUC_std",
     "min_train_loss",
     "final_train_loss",
     "min_valid_loss",
@@ -99,6 +113,7 @@ def summarize_training_run(epoch_history, training_duration_sec, run_status="com
         return summary
 
     valid_balanced = _series(epoch_history, "valid", "balanced_accuracy")
+    valid_auc = _series(epoch_history, "valid", "AUC")
     valid_f1 = _series(epoch_history, "valid", "F1")
     train_loss = _series(epoch_history, "train", "loss")
     valid_loss = _series(epoch_history, "valid", "loss")
@@ -141,6 +156,11 @@ def summarize_training_run(epoch_history, training_duration_sec, run_status="com
         summary["checkpoint_train_specificity"] = epoch_history[checkpoint_index][
             "train"
         ].get("specificity")
+        # The ordering quality of the weights the run actually keeps. Reported, not used
+        # for selection: which epoch is kept is still decided by balanced accuracy above.
+        summary["checkpoint_valid_AUC"] = epoch_history[checkpoint_index]["valid"].get(
+            "AUC"
+        )
         if selection_metric == "checkpoint_balanced_accuracy":
             summary["checkpoint_rolling_valid_balanced_accuracy"] = checkpoint_score
 
@@ -153,6 +173,24 @@ def summarize_training_run(epoch_history, training_duration_sec, run_status="com
         max_index, max_value = max(max_candidates, key=lambda item: item[1])
         summary["max_valid_balanced_accuracy_epoch"] = max_index + 1
         summary["max_valid_balanced_accuracy"] = max_value
+
+    auc_max_candidates = [
+        (index, epoch["valid"].get("AUC"))
+        for index, epoch in enumerate(epoch_history)
+        if _finite(epoch["valid"].get("AUC"))
+    ]
+    if auc_max_candidates:
+        auc_max_index, auc_max_value = max(auc_max_candidates, key=lambda item: item[1])
+        summary["max_valid_AUC_epoch"] = auc_max_index + 1
+        summary["max_valid_AUC"] = auc_max_value
+
+    if valid_auc:
+        final_valid_auc = epoch_history[-1]["valid"].get("AUC")
+        summary["final_valid_AUC"] = final_valid_auc if _finite(final_valid_auc) else None
+        summary["mean_valid_AUC"] = statistics.fmean(valid_auc)
+        summary["valid_AUC_std"] = (
+            statistics.pstdev(valid_auc) if len(valid_auc) > 1 else 0.0
+        )
 
     if valid_f1:
         summary["best_valid_F1"] = max(valid_f1)

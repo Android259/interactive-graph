@@ -124,6 +124,40 @@ def test_store_goes_stale_when_source_csv_changes(fixture_csv, csv_path, clean_c
     assert "totally-new-smiles" not in cache["raw_to_canonical"]
 
 
+def test_rebuild_is_decided_per_value_not_by_a_whole_module_hash(
+    fixture_csv, csv_path, clean_cache_files, monkeypatch
+):
+    """Only a change that would move a cached VALUE may report the cache stale.
+
+    The check used to compare one hash over the whole of pair_descriptors.py +
+    pocket_lipid_compatibility.py, so a renamed local or an edited docstring in code no
+    cached value depends on reported "needs a rebuild". A cluster launch acts on that
+    report by queueing an OAR prep job that asks for a GPU and blocks the grid until it
+    drains, once per label -- so a false alarm here costs a launch, not a recompute.
+    """
+    build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
+    assert store_is_current(DATA_DIR, isomeric=False) is True
+
+    # An edit that moves the whole-module hash and no formula: still current.
+    monkeypatch.setattr(pair_descriptor_cache, "_code_fingerprint", lambda: "0" * 16)
+    assert store_is_current(DATA_DIR, isomeric=False) is True
+    monkeypatch.undo()
+
+    # One lipid measure's own code moved: a rebuild is due.
+    moved_measures = dict(pair_descriptor_cache._measure_fingerprints())
+    moved_measures["chain"] = "f" * 16
+    monkeypatch.setattr(
+        pair_descriptor_cache, "_measure_fingerprints", lambda: moved_measures
+    )
+    assert store_is_current(DATA_DIR, isomeric=False) is False
+    monkeypatch.undo()
+
+    # The protein half's code moved (pocket parse, pocket_shape, the aromatic mask):
+    # its values are not covered by any per-measure fingerprint, so it needs its own.
+    monkeypatch.setattr(pair_descriptor_cache, "_protein_fingerprint", lambda: "a" * 16)
+    assert store_is_current(DATA_DIR, isomeric=False) is False
+
+
 def test_cached_values_match_uncached_computation(fixture_csv, csv_path, clean_cache_files):
     build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
     cache = load_pair_descriptor_cache(DATA_DIR, isomeric=False)

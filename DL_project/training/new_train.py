@@ -809,10 +809,28 @@ def update_aggregate(
     loss,
     sample_count,
     loss_count=None,
+    scores=None,
 ):
-    """Accumulate confusion counts and sample-weighted loss for one batch."""
+    """Accumulate confusion counts and sample-weighted loss for one batch.
+
+    `scores` is the per-row positive-class probability, and it is optional because the
+    confusion counts below throw the ordering away: everything the counts answer is a
+    question about the 0.5 threshold, and AUC is the one question about the ORDER. A
+    caller that wants a per-epoch AUC (the validation pass does; see the epoch print and
+    RUN_METRIC_FIELDS' *_valid_AUC entries) passes them and gets `stats["scores"]`/
+    `stats["score_labels"]` filled; a caller that does not passes nothing and pays no
+    memory for lists it will not read.
+    """
     if loss_count is None:
         loss_count = sample_count
+    if scores is not None:
+        # Sliced the same way the caller sliced the scores: a forward pass can return
+        # more rows than the batch has labels (validate_prediction_label_shapes), and a
+        # score paired with the wrong label would be a silently wrong AUC, not a crash.
+        stats["scores"].extend(scores)
+        stats["score_labels"].extend(
+            int(value) for value in labels[: len(scores)].detach().cpu().tolist()
+        )
     # Two comparisons and three reductions instead of eight and four. Predictions come
     # from argmax over two classes, so "predicted positive" and "correct" each split the
     # batch in two and the four cells are fixed by three of them:
@@ -838,7 +856,12 @@ def update_aggregate(
 
 
 def aggregate_values(stats):
-    """Convert accumulated counts and loss into aggregate metrics."""
+    """Convert accumulated counts and loss into aggregate metrics.
+
+    AUC only when `update_aggregate` was given scores (the validation pass) -- otherwise
+    `metric_values` leaves the field None exactly as before, so train-side callers and
+    the branch-dynamics passes are unchanged.
+    """
     return metric_values(
         stats["TP"],
         stats["FP"],
@@ -846,6 +869,11 @@ def aggregate_values(stats):
         stats["FN"],
         stats["loss"],
         stats["loss_count"],
+        auc=(
+            binary_auc(stats["scores"], stats["score_labels"])
+            if stats.get("scores")
+            else None
+        ),
     )
 
 
@@ -1628,7 +1656,18 @@ def epoch(idx,counttrain,countval):
         "loss": 0.0,
         "count": 0,
         "loss_count": 0,
+        # Per-row positive-class probabilities and their labels, for this epoch's AUC.
+        # Only the validation pass keeps them: it is the one pass whose per-epoch number
+        # is read as a curve (checkpoint selection, early stopping, "is it still
+        # learning"), and balanced accuracy alone cannot separate "learned nothing" from
+        # "learned something, threshold in the wrong place" -- under --adversarial_grl it
+        # sits at 0.500 for whole runs while the ordering underneath does move.
+        "scores": [],
+        "score_labels": [],
     }
+    # No Interaction label in this mode, so an AUC over the classifier head's output
+    # would be a number about nothing, the way balanced_accuracy already is here.
+    collect_valid_scores = not conf.structural_pretrain
     valid_accumulator = (
         CandidateAccumulator() if conf.eval_average_candidates else None
     )
@@ -1681,7 +1720,19 @@ def epoch(idx,counttrain,countval):
             # log_tb(writer_tb, countval, los,"valid",outl,interaction_labels.to(torch.float))
             pred_class = outl.argmax(dim=1)
             labels = interaction_labels.long()
-            update_aggregate(valid_stats, pred_class, labels, los, sample_count)
+            update_aggregate(
+                valid_stats,
+                pred_class,
+                labels,
+                los,
+                sample_count,
+                scores=(
+                    torch.softmax(outl.float(), dim=1)[:sample_count, 1]
+                    .detach().cpu().tolist()
+                    if collect_valid_scores
+                    else None
+                ),
+            )
             countval +=1
     if valid_accumulator is not None:
         outl, interaction_labels, averaged_protein_ids = valid_accumulator.averaged()
@@ -1697,6 +1748,12 @@ def epoch(idx,counttrain,countval):
             interaction_labels.long(),
             los,
             sample_count,
+            scores=(
+                torch.softmax(outl.float(), dim=1)[:sample_count, 1]
+                .detach().cpu().tolist()
+                if collect_valid_scores
+                else None
+            ),
         )
         countval += 1
     train_metrics = aggregate_values(train_stats)
@@ -1720,6 +1777,10 @@ def epoch(idx,counttrain,countval):
         )
     else:
         print(f"valid epoch balanced_accuracy: {format_metric(valid_metrics['balanced_accuracy'])}")
+        # Its own line rather than appended to the one above: scripts/lib/progress_table.sh
+        # parses that line by field position, and the summarize/graphics path reads the
+        # epoch history, not this print.
+        print(f"valid epoch AUC: {format_metric(valid_metrics['AUC'])}")
     
     return counttrain, countval, train_metrics, valid_metrics
 
