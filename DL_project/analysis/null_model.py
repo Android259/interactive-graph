@@ -41,8 +41,8 @@ import numpy as np
 import pandas
 
 from dataloader.chemistry_prior import (  # noqa: E402
-    LIPID_DESCRIPTOR_NAMES, PAIR_DESCRIPTOR_NAMES, feature_similarity, null_scores,
-    species_similarity,
+    LIPID_DESCRIPTOR_NAMES, PAIR_DESCRIPTOR_NAMES, feature_similarity,
+    molformer_species_similarity, null_scores, species_similarity,
 )
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -68,6 +68,13 @@ WORKING = ("LBP_BPI_CETP", "scp2", "IP_trans")
 # model (species_similarity) rather than a named scalar descriptor set --
 # feature_similarity has no entry for "the whole structure", only named columns.
 TANIMOTO = "tanimoto"
+
+# Reserved --features value: the whole-molecule MolFormer-embedding null model
+# (molformer_species_similarity), reading the matrix
+# preprocessing/build_molformer_similarity_matrix.py precomputes -- same idea as
+# TANIMOTO (one entity per lipid species, whole-structure similarity rather than a
+# named scalar subset) but from the learned embedding instead of a Morgan fingerprint.
+MOLFORMER = "molformer"
 
 # Persisted null-model-only results (never the network's own AUC, which depends on
 # that label's own checkpoints and must always be scored fresh): one process building
@@ -140,6 +147,10 @@ def resolve_similarity(csv, data_dir, features, label=None, zscore=False):
         similarity, index = species_similarity(csv, data_dir)
         entity_column = "FullIdentityOfLipid"
         feature_list = [TANIMOTO]
+    elif features == MOLFORMER:
+        similarity, index = molformer_species_similarity(data_dir)
+        entity_column = "FullIdentityOfLipid"
+        feature_list = [MOLFORMER]
     else:
         feature_list = sorted(name for name in features.split(",") if name)
         similarity, index, entity_column = feature_similarity(
@@ -664,6 +675,9 @@ def main():
         help=(
             f'"{TANIMOTO}" (default): full-structure Morgan-fingerprint similarity, '
             "one null-model entity per lipid species -- the original null model. "
+            f'"{MOLFORMER}": full-structure MolFormer-embedding similarity (same '
+            "per-species granularity, see "
+            "preprocessing/build_molformer_similarity_matrix.py). "
             "Otherwise a comma-separated list of descriptor names, any mix of "
             f"lipid-only ({','.join(LIPID_DESCRIPTOR_NAMES)}), protein-only "
             "(dataloader.protein_graph_builder.POCKET_DESCRIPTOR_NAMES, e.g. "

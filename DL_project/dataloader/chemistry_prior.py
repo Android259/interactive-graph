@@ -80,6 +80,29 @@ def species_similarity(csv, data_dir):
     return similarity, index
 
 
+def molformer_species_similarity(data_dir):
+    """Species x species similarity from MolFormer's mean-pooled per-lipid embedding,
+    precomputed by preprocessing/build_molformer_similarity_matrix.py into
+    data/molformer_species_similarity_matrix.npy (already the same
+    1/(1+euclidean-distance) transform feature_similarity applies to every named
+    descriptor set, see _standardised_similarity) and data/molformer_species_index.json
+    (the row/column order, one species name per row).
+
+    Same (similarity, index) 2-tuple contract as species_similarity, so
+    analysis/null_model.py's --features=molformer branch is a drop-in third option
+    beside tanimoto (Morgan-fingerprint) and named hand-built descriptors -- this one
+    is keyed per species like species_similarity, not per structure, because
+    build_molformer_similarity_matrix.py already reduces each species' candidate
+    isomers to one mean-pooled vector before this file is written.
+    """
+    import json
+    similarity = np.load(os.path.join(data_dir, "molformer_species_similarity_matrix.npy"))
+    with open(os.path.join(data_dir, "molformer_species_index.json")) as handle:
+        species = json.load(handle)
+    index = {name: position for position, name in enumerate(species)}
+    return similarity, index
+
+
 def _lipid_descriptor_table_path(data_dir):
     return Path(data_dir) / "lipid_descriptor_table.json"
 
