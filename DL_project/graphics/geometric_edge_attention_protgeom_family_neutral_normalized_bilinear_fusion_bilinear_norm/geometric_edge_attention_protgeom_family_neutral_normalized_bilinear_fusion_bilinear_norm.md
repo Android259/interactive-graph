@@ -137,3 +137,89 @@ groups_scp2 (n=5):
 
 ## AUC vs chemistry null model, in-sample increment
 
+```
+########## split = valid ##########
+
+--- null model (null_model.py), features = lipid4 (chain,hbond,heavy,unsaturation), epoch 120 ---
+=== mean over seeds ===
+              sim_to_train_pos  null_AUC_k15  net_AUC  proteins  null_AUC_prot_k15  net_AUC_prot  lipids  null_AUC_lipid_k15  net_AUC_lipid  null_AUC_pair_k15  net_AUC_pair
+fam                                                                                                                                                                         
+CRAL-TRIO                0.630         0.484    0.518       4.0              0.369         0.479     5.0               0.458          0.482              0.432         0.503
+GLTP                     0.605         0.521    0.497       2.0              0.512         0.486     3.0               0.523          0.500              0.526         0.516
+IP_trans                 0.722         0.680    0.592       3.0              0.677         0.584     2.4               0.590          0.587              0.669         0.535
+LBP_BPI_CETP             0.719         0.798    0.555       2.0              0.798         0.546     1.6               0.784          0.510              0.821         0.538
+START                    0.576         0.508    0.503       3.0              0.474         0.478     4.0               0.536          0.559              0.524         0.533
+lipocalin                0.565         0.331    0.428       5.0              0.246         0.304     2.2               0.646          0.547              0.622         0.601
+scp2                     0.651         0.489    0.578       2.8              0.593         0.574     2.6               0.642          0.610              0.577         0.596
+
+=== mean AUC (files/signal_state.md 6.4: fam column in the raw table/cache carries the WORKING-three/other-four split) ===
+              all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+null_AUC_k15      0.545               0.503                  0.065                     0.151
+net_AUC           0.524               0.514                  0.091                     0.056
+
+=== the same rows ranked INSIDE each protein ===
+109 protein blocks across 35 family-seed splits carry a usable ranking (median 3 protein groups per split)
+                   all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+null_AUC_prot_k15      0.524               0.493                  0.065                     0.186
+net_AUC_prot           0.493               0.488                  0.111                     0.095
+
+=== the same rows ranked INSIDE each lipid class ===
+104 lipid class blocks across 35 family-seed splits carry a usable ranking (median 3 lipid class groups per split)
+                    all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+null_AUC_lipid_k15      0.597               0.581                  0.085                     0.106
+net_AUC_lipid           0.542               0.560                  0.141                     0.047
+
+=== the same rows ranked INSIDE each protein AND inside each lipid class jointly (per_pair_auc) ===
+                   all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+null_AUC_pair_k15      0.596               0.561                  0.058                     0.125
+net_AUC_pair           0.546               0.559                  0.121                     0.038
+
+--- increment over chemistry (interaction_increment.py) ---
+=== valid block, k=15, null-model entity = FullIdentityOfLipid ===
+
+1. Each score on its own, mean over family+seed, by epoch
+        chem    net  chem_prot  net_prot
+epoch                                   
+1      0.545  0.527      0.524     0.524
+10     0.545  0.558      0.524     0.555
+49     0.545  0.552      0.524     0.544
+51     0.545  0.557      0.524     0.556
+120    0.545  0.524      0.524     0.493
+
+2. Increment of the network over chemistry (in-sample fit = UPPER BOUND), mean over family+seed, by epoch
+       fit_chem  fit_chem_net  increment  fit_chem_prot  fit_chem_net_prot  increment_prot
+epoch                                                                                     
+1         0.618         0.648      0.030          0.653              0.684           0.030
+10        0.618         0.648      0.030          0.653              0.679           0.025
+49        0.618         0.649      0.031          0.653              0.687           0.033
+51        0.618         0.652      0.034          0.653              0.684           0.031
+120       0.618         0.642      0.024          0.653              0.681           0.027
+
+3. mean over seeds, epoch 120
+               chem    net  chem_prot  net_prot  fit_chem  fit_chem_net  increment  fit_chem_prot  fit_chem_net_prot  increment_prot
+fam                                                                                                                                 
+CRAL-TRIO     0.484  0.518      0.369     0.479     0.539         0.567      0.028          0.613              0.656           0.042
+GLTP          0.521  0.497      0.512     0.486     0.543         0.580      0.037          0.565              0.585           0.020
+IP_trans      0.680  0.592      0.677     0.584     0.680         0.703      0.023          0.693              0.727           0.034
+LBP_BPI_CETP  0.798  0.555      0.798     0.546     0.798         0.798     -0.001          0.801              0.806           0.004
+START         0.508  0.503      0.474     0.478     0.536         0.575      0.039          0.606              0.642           0.036
+lipocalin     0.331  0.428      0.246     0.304     0.669         0.668     -0.001          0.673              0.678           0.005
+scp2          0.489  0.578      0.593     0.574     0.562         0.606      0.044          0.622              0.671           0.049
+
+=== mean AUC + increment, epoch 120 (files/signal_state.md 6.4: fam column in the raw table carries the WORKING-three/other-four split) ===
+              all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+chem              0.545               0.503                  0.065                     0.151
+net               0.524               0.514                  0.091                     0.056
+fit_chem          0.618               0.590                  0.052                     0.101
+fit_chem_net      0.642               0.611                  0.055                     0.085
+increment         0.024               0.011                  0.028                     0.019
+
+=== the same rows ranked INSIDE each protein, epoch 120 ===
+109 protein blocks across 35 family-seed splits carry a usable ranking (median 3 protein groups per split)
+                   all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+chem_prot              0.524               0.493                  0.065                     0.186
+net_prot               0.493               0.488                  0.111                     0.095
+fit_chem_prot          0.653               0.662                  0.055                     0.078
+fit_chem_net_prot      0.681               0.668                  0.057                     0.070
+increment_prot         0.027               0.010                  0.033                     0.018
+```

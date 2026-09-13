@@ -44,16 +44,17 @@ from analysis.null_model import (  # noqa: E402
     TANIMOTO,
     _group_stats,
     auc,
+    held_classes_for,
     null_scores,
     per_lipid_auc,
     per_pair_auc,
     per_protein_auc,
     resolve_similarity,
+    split_held_block,
     working_set,
 )
-from lipid_marginal_baseline import split as split_func  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.sampler import lipid_class_series, lipid_classes_for_holdout  # noqa: E402
+from dataloader.sampler import lipid_class_series  # noqa: E402
 
 
 def standardise(values):
@@ -86,8 +87,11 @@ def logistic_auc(design, labels, groups=None, steps=400, learning_rate=0.5):
 
 def increment_table(csv, similarity, index, network, families, seeds, neighbours,
                      share=0.7, ratio=2, split="valid", epochs=None,
-                     entity_column="FullIdentityOfLipid"):
+                     entity_column="FullIdentityOfLipid", balanced_lipid_classes=False):
     """One row per (family, seed, epoch): the increment measurement.
+
+    `balanced_lipid_classes` must match whether `--label`'s own run set
+    --balanced_lipid_classes -- see null_model.null_model_table's own note.
 
     `network` is the RAW (unfiltered) scores DataFrame from
     analysis/checkpoint_scores.py; filtered here by `split`, matching
@@ -104,10 +108,13 @@ def increment_table(csv, similarity, index, network, families, seeds, neighbours
 
     rows = []
     for family in families:
-        held_classes = lipid_classes_for_holdout(csv, family, share)[0]
+        held_classes = held_classes_for(csv, family, share)
         for seed in seeds:
-            csvt = working_set(csv, seed, ratio, held_classes)
-            train, valid, test = split_func(csvt, family, seed, held_classes, double=True)
+            csvt = working_set(
+                csv, seed, ratio, held_classes,
+                balanced_lipid_classes=balanced_lipid_classes,
+            )
+            train, valid, test = split_held_block(csvt, family, seed, held_classes)
             block = valid if split == "valid" else test
             # per_lipid_auc's default grouping -- attached once here so every epoch's
             # merge (below) carries it, same as null_model_table does for `held`.

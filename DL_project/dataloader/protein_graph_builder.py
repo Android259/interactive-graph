@@ -195,6 +195,17 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
         # proof of transferable pair signal).
         float(numpy.percentile(site["residue_mean_ev28"].to_numpy(dtype=float), 10)),
         float(aromatic[rim].mean()) if rim.any() else float(aromatic.mean()),
+        # Third promotion (same section 7 catalog): whole-pocket hydropathy, not split
+        # by the core/rim burial median the way hydropathy_core/hydropathy_rim above
+        # are. eta^2=0.611 against family -- above the neutral floor, unlike the two
+        # entries just above -- so this one is deliberately excluded from
+        # POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES; see PROTEIN_DESCRIPTOR_NAMES's own
+        # comment in dataloader/pair_descriptors.py for where it is safe to use.
+        float(hydropathy.mean()),
+        # Fourth promotion (same batch): ev14's own shallow decile, the same recipe
+        # ev28_q10 above already uses on the sibling column. eta^2=0.238, at the
+        # no-structure floor -- see PROTEIN_DESCRIPTOR_NAMES's own comment.
+        float(numpy.percentile(site["residue_mean_ev14"].to_numpy(dtype=float), 10)),
     )
     if len(values) != len(POCKET_DESCRIPTOR_NAMES):
         raise ValueError("pocket descriptor list and name list disagree")

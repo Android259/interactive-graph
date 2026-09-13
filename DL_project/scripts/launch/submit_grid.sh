@@ -195,6 +195,21 @@ read -r -a REQUESTED_ARGS_FILES <<< "$*"
 # rejected at parse time.
 LIPID_COLDSPLIT_SETS_LIST=(sphingolipids phosphorus_free choline anionic)
 
+# --family_only, bare (no value), in the args file switches the grid to a third axis:
+# one model per family, trained AND validated on that family's own rows only (a warm,
+# row-level random split inside the family -- dataloader/Dataloader.py:147-150,1461 --
+# NOT a held-out-family cold split; see files/structural_pretrain_family_diagnosis.md's
+# "central correction" for why this is a different regime from --double_coldsplit/
+# --cold_split, not a variant of either). The grid still iterates PROTEIN_GROUPS (one
+# job per family x seed, --groups/--no_groups apply normally, same group spelling as
+# every other protein-side axis), but no protein is EXCLUDED from training -- the
+# family named by the group IS the entire training pool -- so --excluded_groups is
+# never appended; --family_only=<group> is appended instead. Originally only reachable
+# through scripts/submit/structural_pretrain_solo.sh's bespoke per-family bash loop
+# (needed there to chain a fresh stage-1 pretrain run before stage 2); once stage 1's
+# checkpoint already exists on disk, each stage-2 (family, seed) job is an ordinary
+# independent run and needs no chaining, which is what this grid path assumes.
+
 # --- per-label setup ----------------------------------------------------------
 # Parallel arrays, one entry per requested label (index order == command-line
 # order). experiment_record/job_name/submit_one below take a label index and
@@ -203,6 +218,7 @@ LABEL_VARIANT=()
 LABEL_ARGS_TEMPLATE=()
 LABEL_COLD_SPLIT=()
 LABEL_LIPID_COLDSPLIT=()
+LABEL_FAMILY_ONLY=()
 LABEL_OUTPUT_ROOT=()
 LABEL_WALLTIME=()
 # One line per (label_index, group, seed), across ALL labels -- the combined
@@ -268,6 +284,18 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
             | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
     fi
 
+    this_family_only=0
+    if args_file_has_flag "${args_file}" --family_only; then
+        this_family_only=1
+        if (( this_cold_split )) || (( this_lipid_coldsplit )); then
+            printf -- '--family_only is a warm per-family split, not a cold-split axis; '\
+'it cannot combine with --cold_split/--lipid_coldsplit (%s).\n' "${args_file}" >&2
+            exit 2
+        fi
+        this_args_template="$(printf '%s' "${this_args_template}" \
+            | sed -E 's/(^|[[:space:]])--family_only([[:space:]]|$)/\1/g')"
+    fi
+
     if (( this_cold_split )); then
         this_output_root="script_logs/${this_variant}_coldval_seeds01234"
         this_groups=("${COLD_TEST_GROUPS[@]}")
@@ -279,6 +307,10 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     if (( this_lipid_coldsplit )); then
         this_output_root="script_logs/${this_variant}_lipidsets"
         this_groups=("${LIPID_COLDSPLIT_SETS_LIST[@]}")
+    fi
+    if (( this_family_only )); then
+        this_output_root="script_logs/${this_variant}_familyonly"
+        this_groups=("${PROTEIN_GROUPS[@]}")
     fi
     if (( this_lipid_coldsplit )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
         # Same rule as scripts/run_local.sh's --groups/--no_groups check: GROUPS_OVERRIDE
@@ -302,6 +334,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     LABEL_ARGS_TEMPLATE+=("${this_args_template}")
     LABEL_COLD_SPLIT+=("${this_cold_split}")
     LABEL_LIPID_COLDSPLIT+=("${this_lipid_coldsplit}")
+    LABEL_FAMILY_ONLY+=("${this_family_only}")
     LABEL_OUTPUT_ROOT+=("${this_output_root}")
     LABEL_WALLTIME+=("${this_walltime}")
 
@@ -346,6 +379,7 @@ experiment_record() {
     local args_template="${LABEL_ARGS_TEMPLATE[label_index]}"
     local cold_split="${LABEL_COLD_SPLIT[label_index]}"
     local lipid_coldsplit="${LABEL_LIPID_COLDSPLIT[label_index]}"
+    local family_only="${LABEL_FAMILY_ONLY[label_index]}"
     local output_root="${LABEL_OUTPUT_ROOT[label_index]}"
     local val_group excluded output_dir stem header extra=""
 
@@ -364,6 +398,16 @@ experiment_record() {
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="LIPID SET: ${group} | VARIANT: ${variant} | SEED: ${seed}"
+    elif (( family_only )); then
+        # "group" is the one family the whole table is restricted to (warm split
+        # inside it, dataloader/Dataloader.py:147-150) -- nothing is EXCLUDED from
+        # training, so excluded stays empty and --family_only carries the group
+        # instead of --excluded_groups.
+        excluded=""
+        extra=" --family_only=${group}"
+        output_dir="${output_root}/${group}"
+        stem="${variant}_seed${seed}"
+        header="FAMILY_ONLY: ${group} | VARIANT: ${variant} | SEED: ${seed}"
     else
         excluded="${group}"
         output_dir="${output_root}/${group}"

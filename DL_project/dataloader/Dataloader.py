@@ -148,6 +148,22 @@ class PLIDataset(
             csv = csv[
                 csv["ProteinDomain"].str.lower() == config.family_only.lower()
             ]
+            # Every other path through this constructor gets `csv` fresh off
+            # pandas.read_csv, whose default RangeIndex already equals row position --
+            # that equality is load-bearing (see train_orig_indexes's own comment
+            # below: 11018 rows, 11018 distinct pair_ids, none missing) because
+            # pair_id is later read straight off `.index` (self.csvtrue["pair_id"] =
+            # self.csvtrue.index, a few lines down) while arrays built from `csv`
+            # inside _compute_pair_descriptors (extent, chain, unsaturation, ...) go
+            # through `.to_numpy()`, which is purely positional and ignores index
+            # labels entirely. The boolean mask above breaks that equality: it keeps
+            # each surviving row's ORIGINAL label from the full table (e.g. 7901),
+            # not its position within this now-smaller frame (e.g. 2 of 2547) --
+            # so a later `extent[train_rows]` indexes a length-2547 positional array
+            # with a label from the 11018-row table and raises IndexError. Resetting
+            # here restores the position-equals-label invariant for this filtered
+            # frame, the same way a fresh read already gives it for every other run.
+            csv = csv.reset_index(drop=True)
         self.excluded_groups = {group.lower() for group in excluded_groups or []}
         self.excluded_subgroups = set(excluded_subgroups)
         self.protein_names = sorted(csv["LTPProtein"].dropna().unique().tolist())

@@ -163,6 +163,50 @@ def format_class_recall_gap(
     )
 
 
+def format_seed_variability(
+    header: list[str],
+    rows: dict[tuple[str, str], list[str]],
+    keys: list[tuple[str, str]],
+) -> str:
+    """How much a group's own sensitivity/specificity typically jumps from seed
+    to seed, not (unlike format_class_recall_gap above) how far sensitivity sits
+    from specificity within one run. Per group: std of that group's seeds'
+    sensitivity values, and separately of specificity; then mean/median of
+    those per-group stds across groups -- std first, only then averaged, same
+    per-group-first order as the rest of this project's "not by pool" rule.
+    """
+    by_group: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for key in keys:
+        by_group[key[0]].append(key)
+
+    sens_stds = []
+    spec_stds = []
+    for group_keys in by_group.values():
+        sens_values = values_for_metric(header, rows, group_keys, "sensitivity")
+        spec_values = values_for_metric(header, rows, group_keys, "specificity")
+        if len(sens_values) > 1:
+            sens_stds.append(stddev(sens_values))
+        if len(spec_values) > 1:
+            spec_stds.append(stddev(spec_values))
+
+    lines = []
+    if sens_stds:
+        lines.append(
+            f"sensitivity std across seeds (by group): mean={statistics.mean(sens_stds):.4f} "
+            f"median={statistics.median(sens_stds):.4f} n={len(sens_stds)}"
+        )
+    else:
+        lines.append("sensitivity std across seeds (by group): no group with >1 seed")
+    if spec_stds:
+        lines.append(
+            f"specificity std across seeds (by group): mean={statistics.mean(spec_stds):.4f} "
+            f"median={statistics.median(spec_stds):.4f} n={len(spec_stds)}"
+        )
+    else:
+        lines.append("specificity std across seeds (by group): no group with >1 seed")
+    return "\n".join(lines)
+
+
 def format_sens_spec_by_group(
     header: list[str],
     rows: dict[tuple[str, str], list[str]],
@@ -256,6 +300,7 @@ def main() -> None:
     print(format_metrics_table(header, rows, keys))
     print()
     print("===", format_class_recall_gap(header, rows, keys), "===")
+    print(format_seed_variability(header, rows, keys))
     if args.by_groups:
         print()
         print("=== By group ===")

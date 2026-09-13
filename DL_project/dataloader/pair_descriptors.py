@@ -155,6 +155,24 @@ PROTEIN_DESCRIPTOR_NAMES = (
     # descriptors.md section 7's eta^2 check.
     "ev28_q10",
     "aromatic_share_rim",
+    # Third promotion, same section 7 catalog: whole-pocket mean hydropathy (unlike
+    # hydropathy_core/hydropathy_rim above, not split by the burial median). eta^2
+    # against family is 0.611 -- well above the family-neutral floor, so this one is
+    # NOT part of POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES and is not a safe default
+    # under --double_coldsplit/--protein_edge_*'s cross-family generalisation test.
+    # Kept anyway: under --lipid_coldsplit the protein axis is not the held-out one
+    # (files/lipid_coldsplit_architecture_direction.md section 4), so family eta^2 is
+    # not a leak risk there, and section 7's partial-correlation ranking against
+    # head-group-class diversity placed it ahead of the already-promoted ev28_q10.
+    "hydropathy_mean",
+    # Fourth promotion, same batch: shallow decile of the ev14 enclosure column (the
+    # ev28 analogue already has both its q10 and q50 in production -- ev14 previously
+    # had only q50). eta^2=0.238, right at the no-structure floor (~0.235-0.25) --
+    # unlike hydropathy_mean above, this one WOULD be family-neutral-safe, but it is
+    # new alongside hydropathy_mean in the same session so it is appended here rather
+    # than inserted into POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES sight-unseen; add it
+    # there once a real run confirms it behaves as advertised.
+    "ev14_q10",
 )
 
 # Not raw pocket_descriptor() output, so not in PROTEIN_DESCRIPTOR_NAMES itself --

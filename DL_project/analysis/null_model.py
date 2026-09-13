@@ -50,8 +50,10 @@ sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
 from lipid_marginal_baseline import split as split_func  # noqa: E402
+from lipid_marginal_baseline import lipid_split as lipid_split_func  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.sampler import (  # noqa: E402
+    LIPID_COLDSPLIT_SETS,
     lipid_class_series,
     lipid_classes_for_holdout,
     split_and_sample_lipid_class_balanced_interactions,
@@ -357,11 +359,48 @@ def proximity_to_train_positives(train, held, similarity, index,
     return float(held_positives.map(per_entity).mean())
 
 
+def held_classes_for(csv, family, share):
+    """The held-out lipid classes for one entry of `families`, either axis.
+
+    Under `--lipid_coldsplit`, `families` is lipid-class-set names (dataloader.sampler.
+    LIPID_COLDSPLIT_SETS keys, e.g. "sphingolipids"), fixed in advance -- there is no
+    family to derive anything from, every protein stays in train. Under
+    `--double_coldsplit`, `families` is protein-family names and the classes to hold out
+    alongside that family are derived per-family by `lipid_classes_for_holdout`. Calling
+    the derivation on a lipid-set name looks up a `ProteinDomain` that does not exist and
+    silently returns `[]` -- every `--lipid_coldsplit` label's null-model section used to
+    hit exactly that, always on the FIRST (family, seed) pair checked (dict insertion
+    order: "sphingolipids" first, seed 0 first), which raised before the other three
+    families were ever reached.
+    """
+    if family in LIPID_COLDSPLIT_SETS:
+        return list(LIPID_COLDSPLIT_SETS[family])
+    return lipid_classes_for_holdout(csv, family, share)[0]
+
+
+def split_held_block(csvt, family, seed, held_classes):
+    """train/valid/test for one entry of `families`, matching held_classes_for's axis.
+
+    `lipid_split` (no family removed, every protein stays in train) for a
+    `--lipid_coldsplit` label; `split(..., double=True)` (the family's rows dropped,
+    same as `_split_interactions`) otherwise -- see held_classes_for.
+    """
+    if family in LIPID_COLDSPLIT_SETS:
+        return lipid_split_func(csvt, held_classes, seed)
+    return split_func(csvt, family, seed, held_classes, double=True)
+
+
 def null_model_table(csv, similarity, index, families, seeds, neighbour_counts,
                       share=0.7, ratio=2, split="valid", network=None, epoch=None,
                       entity_column="FullIdentityOfLipid", label=None, features=None,
-                      cache_path=CACHE_PATH):
+                      cache_path=CACHE_PATH, balanced_lipid_classes=False):
     """One row per (family, seed): null-model AUC(s) and, if `network` is given, its AUC.
+
+    `balanced_lipid_classes` must match whether `--label`'s own run set
+    `--balanced_lipid_classes`: it picks working_set's negative sampler, and a
+    mismatch there reproduces a different set of rows than the checkpoint was
+    actually scored on (working_set's own docstring), which fails the pair_id
+    check below just as surely as a wrong held_classes does.
 
     `network` is the RAW (unfiltered) scores DataFrame from
     analysis/checkpoint_scores.py; filtered here by `epoch`/`split` rather than by the
@@ -394,10 +433,13 @@ def null_model_table(csv, similarity, index, families, seeds, neighbour_counts,
 
     rows = []
     for family in families:
-        held_classes = lipid_classes_for_holdout(csv, family, share)[0]
+        held_classes = held_classes_for(csv, family, share)
         for seed in seeds:
-            csvt = working_set(csv, seed, ratio, held_classes)
-            train, valid, test = split_func(csvt, family, seed, held_classes, double=True)
+            csvt = working_set(
+                csv, seed, ratio, held_classes,
+                balanced_lipid_classes=balanced_lipid_classes,
+            )
+            train, valid, test = split_held_block(csvt, family, seed, held_classes)
             held = valid if split == "valid" else test
             # per_lipid_auc's default grouping -- attached once here so both the
             # null-model call below and the network call further down see it.

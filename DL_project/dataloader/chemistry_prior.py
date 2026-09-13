@@ -206,7 +206,7 @@ def _lipid_descriptor_table(csv, data_dir=None):
     return per_species_values
 
 
-_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 2
+_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 3
 
 
 def _protein_descriptor_table_path(data_dir):

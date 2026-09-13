@@ -88,9 +88,24 @@ def label_coldsplit_params(label, families):
     return conf.coldsplit_share, conf.negatives_per_positive
 
 
+def label_balanced_lipid_classes(label, families):
+    """Whether `label`'s own args file trains with --balanced_lipid_classes.
+
+    null_model_table/increment_table's working_set reproduction has to use the SAME
+    sampler the training run used or it silently scores a null model built on
+    different rows than the checkpoint actually saw (working_set's own docstring) --
+    same "read it off the label, don't guess" reasoning as label_coldsplit_params.
+    """
+    argv = ["full_label_report"] + split_argv(arg_lines(label), families[0]) + [
+        "--seed=0",
+    ]
+    conf = read_configuration(argv)
+    return bool(conf.balanced_lipid_classes)
+
+
 def run_report(label, epochs, seeds, families, batch, neighbours, share, ratio, splits,
                 scores=None, verbose=True, features=TANIMOTO, features_label=None,
-                cache=True, zscore=False):
+                cache=True, zscore=False, balanced_lipid_classes=False):
     """Everything this file does, minus argument parsing -- importable on its own.
 
     `scores`, if given, is a pre-scored DataFrame (checkpoint_scores.score_checkpoints'
@@ -135,6 +150,7 @@ def run_report(label, epochs, seeds, families, batch, neighbours, share, ratio, 
             neighbour_counts=[neighbours], share=share, ratio=ratio, split=split,
             network=scores, epoch=last_epoch, entity_column=entity_column,
             label=(resolved_label if cache else None), features=feature_list,
+            balanced_lipid_classes=balanced_lipid_classes,
         )
         print_null_model_report(null_table, split, last_epoch, entity_column=entity_column)
         null_tables[split] = null_table
@@ -143,7 +159,7 @@ def run_report(label, epochs, seeds, families, batch, neighbours, share, ratio, 
         increment = increment_table(
             csv, similarity, index, scores, families=families, seeds=seeds,
             neighbours=neighbours, share=share, ratio=ratio, split=split, epochs=epochs,
-            entity_column=entity_column,
+            entity_column=entity_column, balanced_lipid_classes=balanced_lipid_classes,
         )
         print_increment_report(increment, split, neighbours, entity_column=entity_column)
         increment_tables[split] = increment
@@ -222,6 +238,8 @@ def main():
         share = label_share if share is None else share
         ratio = label_ratio if ratio is None else ratio
 
+    balanced_lipid_classes = label_balanced_lipid_classes(args.label, families)
+
     features, features_label = args.features, args.features_label
     if features is None:
         features = label_descriptor_features(args.label, families)
@@ -236,6 +254,7 @@ def main():
         args.label, epochs, seeds, families, args.batch, args.neighbours,
         share, ratio, splits, scores=scores, features=features,
         features_label=features_label, cache=args.cache, zscore=args.zscore,
+        balanced_lipid_classes=balanced_lipid_classes,
     )
 
     if args.out:
