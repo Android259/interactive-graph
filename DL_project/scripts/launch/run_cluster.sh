@@ -61,6 +61,10 @@ usage() {
     printf '  --no_groups=LIST Drop these groups from the list above, so leaving one\n' >&2
     printf '                   group out of a full run does not mean spelling out\n' >&2
     printf '                   the other 8.\n' >&2
+    printf '                   Both name PROTEIN families, so a --lipid_coldsplit\n' >&2
+    printf '                   label (which runs over lipid sets instead) ignores\n' >&2
+    printf '                   them with a notice and runs all four of its sets --\n' >&2
+    printf '                   mixing both kinds of label in one call is fine.\n' >&2
     printf '  --complete       Submit only group/seed pairs without final test_metrics.\n' >&2
     printf '  --graphics       After every submitted OAR job on this cluster drains,\n' >&2
     printf '                   sync once more and run scripts/generate_config_graphics.sh\n' >&2

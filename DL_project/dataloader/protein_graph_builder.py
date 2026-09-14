@@ -133,6 +133,62 @@ def pocket_shape(coordinates):
     return extent, float(spans[0] / spans[1]), float(spans[1] / spans[2])
 
 
+def pocket_shape_lambda_sqrt(coordinates, min_robust_points=10):
+    """The same three axes measured the other way: sqrt(eigenvalue) on a ROBUST covariance.
+
+    pocket_shape() above measures each axis by the percentile span of the projections and
+    takes the ratios between those spans. This is the alternative the research catalog
+    (analysis/pocket_shape_descriptors.py) has always used for the ratios -- sqrt(lambda),
+    i.e. the axis' standard deviation -- computed here on a MinCovDet robust covariance
+    rather than the ordinary one. That combination is the one of seven measured in
+    files/pocket_shape_metric_comparison.md that keeps its sign inside BOTH large families
+    as well as pooled, against the head-group-class target family does not determine
+    (+0.115 CRAL-TRIO / +0.312 lipocalin / +0.401 pooled, CI [0.061, 0.658]). The
+    production span formula reverses sign inside both families on that same target
+    (-0.071 / -0.156 against pooled +0.288) -- the between-family artifact pattern
+    files/pocket_shape_descriptors.md section 4a used to disqualify pocket_volume_per_sasa.
+
+    Robust for the DIRECTIONS too, not only the eigenvalues: pocket_shape()'s own docstring
+    notes covariance is not robust, but percentile-trims only the LENGTH, leaving the axes
+    themselves free to be tilted by one rim atom. MinCovDet fits the densest subset, so
+    directions and eigenvalues both come from it.
+
+    eta^2 against the 9-family split (35 proteins, floor 0.235): extent 0.737,
+    elongation 0.479, flatness 0.256. All three sit ABOVE the floor, so none is added to
+    POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES -- they are opt-in by name only, exactly as
+    ev14_q10 was left out until a real run had been seen.
+
+    Falls back to the ordinary covariance below min_robust_points atoms, or if the robust
+    fit fails on a degenerate cloud -- a small pocket still gets a number, just not a robust
+    one. Zeros below 4 atoms, the same floor pocket_shape() uses.
+    """
+    if len(coordinates) < 4:
+        return 0.0, 0.0, 0.0
+    covariance = None
+    if len(coordinates) >= min_robust_points:
+        try:
+            # Imported here rather than at module scope: the dataloader is imported by
+            # every training run, sklearn is not otherwise one of its dependencies, and
+            # this value is computed once per protein and then cached in
+            # data/protein_descriptor_table.json, never per sample.
+            from sklearn.covariance import MinCovDet
+
+            covariance = MinCovDet(random_state=0).fit(coordinates).covariance_
+        except Exception:
+            covariance = None
+    if covariance is None:
+        covariance = numpy.cov(coordinates - coordinates.mean(axis=0), rowvar=False)
+    eigenvalues = numpy.clip(
+        numpy.sort(numpy.linalg.eigvalsh(covariance))[::-1], 1e-9, None
+    )
+    lengths = numpy.sqrt(eigenvalues)
+    return (
+        float(lengths[0]),
+        float(lengths[0] / lengths[1]),
+        float(lengths[1] / lengths[2]),
+    )
+
+
 def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
     """Aggregate one cavity descriptor from a protein's residue table and pocket mask.
 
@@ -160,10 +216,14 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
     # threshold: burial is not comparable across proteins, the split within one is.
     core = burial >= numpy.median(burial)
     rim = ~core
-    extent, elongation, flatness = pocket_shape(
+    atom_coordinates = (
         pocket_atom_coordinates(pocketness_path)
         if pocketness_path is not None
         else numpy.empty((0, 3))
+    )
+    extent, elongation, flatness = pocket_shape(atom_coordinates)
+    extent_lambda_sqrt, elongation_lambda_sqrt, flatness_lambda_sqrt = (
+        pocket_shape_lambda_sqrt(atom_coordinates)
     )
     values = (
         len(site) / max(len(vertices), 1),
@@ -206,6 +266,17 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
         # ev28_q10 above already uses on the sibling column. eta^2=0.238, at the
         # no-structure floor -- see PROTEIN_DESCRIPTOR_NAMES's own comment.
         float(numpy.percentile(site["residue_mean_ev14"].to_numpy(dtype=float), 10)),
+        # The three shape entries measured the other way -- sqrt(eigenvalue) on a robust
+        # covariance instead of percentile-span ratios. Not replacements: the span-based
+        # pocket_extent/elongation/flatness above keep their positions (load-bearing, see
+        # the comment on the first appended block), and these three are separate names an
+        # arg file opts into by swapping them in. Full comparison of the two formulas over
+        # seven variants, two lipid targets and the within-family sign check:
+        # files/pocket_shape_metric_comparison.md; the values come from
+        # pocket_shape_lambda_sqrt() above, which carries the measured numbers.
+        extent_lambda_sqrt,
+        elongation_lambda_sqrt,
+        flatness_lambda_sqrt,
     )
     if len(values) != len(POCKET_DESCRIPTOR_NAMES):
         raise ValueError("pocket descriptor list and name list disagree")

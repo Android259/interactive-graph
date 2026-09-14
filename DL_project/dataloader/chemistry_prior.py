@@ -206,7 +206,11 @@ def _lipid_descriptor_table(csv, data_dir=None):
     return per_species_values
 
 
-_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 3
+# Bumped to 4 when pocket_extent/elongation/flatness_lambda_sqrt were appended to
+# PROTEIN_DESCRIPTOR_NAMES: the cache keys on source-file mtime/size, not on this code,
+# so a table written before those three existed would still validate and be served back
+# three columns short.
+_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 4
 
 
 def _protein_descriptor_table_path(data_dir):

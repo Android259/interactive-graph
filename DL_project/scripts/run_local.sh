@@ -368,9 +368,15 @@ for requested in "${POSITIONALS[@]}"; do
     this_is_lipid_coldsplit=0
     if args_file_has_flag "${this_args_file}" --lipid_coldsplit; then
         if [[ -n "${GROUPS_ARG:-}${SKIP_GROUPS_ARG:-}" ]]; then
+            # Ignored, not fatal, and kept in step with scripts/launch/submit_grid.sh's
+            # copy of this rule: --groups/--no_groups name protein families, the other
+            # axis for this label, so one command can mix protein-axis and lipid-axis
+            # labels and have the flag apply to the former and pass over the latter.
+            # Nothing has to be undone here -- whatever the protein-group filtering above
+            # left in this_excl_groups is overwritten by the four lipid sets just below.
             printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
-'--groups/--no_groups do not apply (%s).\n' "${this_args_file}" >&2
-            exit 2
+'ignoring --groups/--no_groups for %s -- all four lipid sets will run.\n' \
+                "${this_args_file}" >&2
         fi
         # Keep in step with LIPID_COLDSPLIT_SETS (dataloader/sampler.py) and
         # LIPID_COLDSPLIT_NAMES (training/read_configuration.py); a name absent from either

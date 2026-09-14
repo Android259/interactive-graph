@@ -173,6 +173,27 @@ PROTEIN_DESCRIPTOR_NAMES = (
     # than inserted into POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES sight-unseen; add it
     # there once a real run confirms it behaves as advertised.
     "ev14_q10",
+    # The three cavity-axis entries computed the OTHER way: sqrt(eigenvalue) ratios on a
+    # MinCovDet robust covariance, instead of the percentile-span ratios pocket_extent/
+    # pocket_elongation/pocket_flatness above use. Not replacements -- both formulas are
+    # nameable, and an arg file picks one by name. Measured in
+    # files/pocket_shape_metric_comparison.md over seven variants: against the
+    # head-group-class target (the one family does not determine, eta^2 0.22),
+    # pocket_elongation_lambda_sqrt is the only variant of the seven whose sign holds in
+    # all three slices -- CRAL-TRIO +0.115, lipocalin +0.312, pooled +0.401
+    # [0.061, 0.658] -- while the span-based pocket_elongation reverses inside both
+    # families (-0.071/-0.156 against pooled +0.288), the between-family artifact pattern
+    # section 4a of files/pocket_shape_descriptors.md used to reject
+    # pocket_volume_per_sasa. eta^2 against family: extent 0.737, elongation 0.479,
+    # flatness 0.256 -- all above the 0.235 floor, so none of the three is in
+    # POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES (dataloader/protein_graph_builder.py); under
+    # --double_coldsplit they are a deliberate opt-in, not a vetted-safe default. Note
+    # the two formulas disagree in OPPOSITE directions per entry: the lambda_sqrt
+    # elongation is MORE family-correlated than its span twin (0.479 vs 0.189) and the
+    # lambda_sqrt flatness LESS (0.256 vs 0.481).
+    "pocket_extent_lambda_sqrt",
+    "pocket_elongation_lambda_sqrt",
+    "pocket_flatness_lambda_sqrt",
 )
 
 # Not raw pocket_descriptor() output, so not in PROTEIN_DESCRIPTOR_NAMES itself --

@@ -315,15 +315,23 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     if (( this_lipid_coldsplit )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
         # Same rule as scripts/run_local.sh's --groups/--no_groups check: GROUPS_OVERRIDE
         # (run_cluster.sh's --groups/--no_groups) names protein families, which is the
-        # OTHER axis for a --lipid_coldsplit label. Applying it here would silently
-        # replace LIPID_COLDSPLIT_SETS_LIST with family names and submit
-        # --lipid_coldsplit=<family>, which read_lipid_coldsplit rejects at run time for
-        # every single job -- caught here instead of 35 crashed jobs later.
+        # OTHER axis for a --lipid_coldsplit label. It is IGNORED here rather than
+        # applied -- applying it would replace LIPID_COLDSPLIT_SETS_LIST with family
+        # names and submit --lipid_coldsplit=<family>, which read_lipid_coldsplit rejects
+        # at run time for every single job.
+        #
+        # Ignored rather than fatal so that one command can queue protein-axis and
+        # lipid-axis labels together: the flag narrows the protein-group labels and
+        # passes over the lipid-set ones, instead of the whole submission (the valid
+        # labels included) dying on the first --lipid_coldsplit label in the list. Said
+        # out loud on stderr, not silently, because the caller asked to narrow something
+        # and for this label nothing was narrowed.
         printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
-'--groups/--no_groups do not apply (%s).\n' "${args_file}" >&2
-        exit 2
+'ignoring --groups/--no_groups for %s -- all %d lipid sets will run.\n' \
+            "${args_file}" "${#this_groups[@]}" >&2
+    elif [[ -n "${GROUPS_OVERRIDE}" ]]; then
+        read -r -a this_groups <<< "${GROUPS_OVERRIDE}"
     fi
-    [[ -z "${GROUPS_OVERRIDE}" ]] || read -r -a this_groups <<< "${GROUPS_OVERRIDE}"
     [[ -z "${SEEDS_OVERRIDE}" ]] || read -r -a this_seeds <<< "${SEEDS_OVERRIDE}"
 
     mkdir -p "${this_output_root}"
