@@ -5,6 +5,8 @@ import random
 import torch
 from rdkit import Chem
 
+from .smiles_tokens import smiles_one_hot
+
 
 class LipidGraphBuilder:
     @staticmethod
@@ -190,6 +192,15 @@ class LipidGraphBuilder:
         return keys
 
     def _fragment_encoding(self, key):
+        if getattr(self.config, "lipid_smiles_tokens", False):
+            # --lipid_smiles_tokens: the canonical SMILES string IS the encoding.
+            # `key` is already what _canonical_smiles produced for the table lookup,
+            # so the characters encoded here are the deterministic spelling of this
+            # molecule -- the same one the MoLFormer table is keyed by -- and not
+            # whatever spelling the CSV happened to store. No embedding table is
+            # loaded at all in this mode (Dataloader.__init__ skips it), which is
+            # why this returns before touching self.smiles_encoding.
+            return smiles_one_hot(key)
         encoding = self.smiles_encoding.get(key)
         if encoding is None:
             # A cross-file mismatch, not a sample to skip: the embedding table was
@@ -263,7 +274,12 @@ class LipidGraphBuilder:
             )
         else:
             key = self._canonical_embedding_key(lipid_text)
-            encoding = self.smiles_encoding[key]
+            # Through _fragment_encoding rather than indexing smiles_encoding
+            # directly: that is the one place that knows a run may have no embedding
+            # table at all (--lipid_smiles_tokens builds the encoding from the key
+            # itself). For the MoLFormer path this is the same lookup it always was,
+            # with a KeyError that names the out-of-sync table instead of a bare one.
+            encoding = self._fragment_encoding(key)
             if self.config.lipid_fragments_mask:
                 fragment_batch = torch.zeros(
                     (encoding.shape[1],), dtype=torch.long

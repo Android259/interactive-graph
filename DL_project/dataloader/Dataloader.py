@@ -281,7 +281,13 @@ class PLIDataset(
         self.transform = None
 
         self.smiles_encoding = None
-        if not getattr(self.config, "lipid_graph_isomers", False):
+        # --lipid_smiles_tokens joins lipid_graph_isomers as a mode that never reads
+        # the MoLFormer table: its encoding is built from the canonical SMILES string
+        # itself (dataloader/smiles_tokens.py), so loading 267 MiB of per-token
+        # embeddings here would be pure startup cost with no reader.
+        if not getattr(self.config, "lipid_graph_isomers", False) and not getattr(
+            self.config, "lipid_smiles_tokens", False
+        ):
             # The non-isomeric table is the deterministic rebuild: 1226 entries, every
             # candidate of every row (the previous one held 434 and covered all
             # candidates of only 44% of rows), and all of them encoded with the

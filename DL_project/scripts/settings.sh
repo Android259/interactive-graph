@@ -76,6 +76,31 @@ DESCRIPTORS_HEAD_WALLTIME="${DESCRIPTORS_HEAD_WALLTIME:-0:20:00}"
 # and tuned on their own label's actual runs rather than sharing one number.
 THEMATICAL_PATHS_WALLTIME="${THEMATICAL_PATHS_WALLTIME:-0:20:00}"
 
+# --deepclip budget: the fourth member of the same no-encoder-towers cost class.
+# InteractionClassification builds architecture/deepclip.py and NOTHING else under
+# this flag -- no protein encoder, no lipid encoder, no cross-attention, no
+# Final_Layer -- so the model is 1960 parameters at DeepCLIP's published settings
+# (600 of convolution + 1360 of BLSTM) and 8960 at the widest arm of the current
+# sweep (deepclip_f8_normal_mean_ep120). That whole 1960-8960 range sits between
+# --descriptors_head's ~1000 and --thematical_paths' ~4-5K, which is why one number
+# covers all five arm files rather than each getting its own: the parameter count
+# varies 4.6x across them, but what varies with it is a 5-to-40-channel LSTM input,
+# i.e. a few hundred extra multiply-accumulates per timestep on a model whose per
+# epoch cost is dominated by the dataloader, not by its matmuls.
+#
+# 20 minutes is BORROWED from DESCRIPTORS_HEAD_WALLTIME's measured budget (385
+# completed runs, 2.75-5.96 s/epoch, ~12 min of training at 120 epochs), not measured
+# on deepclip runs -- none exist yet. Kept as its own variable for exactly the reason
+# THEMATICAL_PATHS_WALLTIME above is: so it can be retuned on its own label's real
+# runs. The specific reason it might NOT hold, and the thing to check first if these
+# jobs hit the wall: DeepCLIP is the only member of this cost class with a recurrent
+# layer, and its BLSTM is sequential over the molecule's characters (26-165 of them,
+# up to 165 kernel launches per direction per batch that cannot be parallelised away).
+# A --family_only job trains on one family's 240-2400 rows, so at batch 16 that is
+# 15-150 batches per epoch; the arithmetic says this stays well inside 20 minutes, but
+# arithmetic is not a measurement.
+DEEPCLIP_WALLTIME="${DEEPCLIP_WALLTIME:-0:20:00}"
+
 # How many jobs may sit WAITING in OAR at once. The cluster's own copy of this
 # (<queue>/max_waiting) wins when it exists, so two computers draining the same
 # queue cannot use two different limits.

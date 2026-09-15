@@ -2,6 +2,7 @@ import torch
 import torch_geometric
 
 from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
+from dataloader.smiles_tokens import SMILES_VOCABULARY
 
 from .self_attention import SelfAttention
 from .edge_geometric_conv import EdgeAttentionConv, EdgeMLPConv
@@ -162,7 +163,18 @@ class Lipid_encoder(torch.nn.Module):
                     lipid_descriptor_broadcast_count = len(lipid_descriptor_tokens)
                 else:
                     self.lipid_descriptor_columns = None
-                base_dim = 0 if no_embeddings else 768
+                # --lipid_smiles_tokens: a lipid node is one CHARACTER of its own
+                # canonical SMILES, one-hot over SMILES_VOCABULARY, instead of one
+                # MoLFormer token embedded in 768 dimensions. Only the input width
+                # changes here -- everything after encodin is the same tower. (The
+                # DeepCLIP network reads the same one-hot input but does not come
+                # through this module at all; see architecture/deepclip.py.)
+                if no_embeddings:
+                    base_dim = 0
+                elif getattr(config, "lipid_smiles_tokens", False):
+                    base_dim = len(SMILES_VOCABULARY)
+                else:
+                    base_dim = 768
                 self.encodin = torch.nn.Linear(
                     base_dim + self.lipid_pair_descriptor_broadcast_count
                     + lipid_descriptor_broadcast_count,

@@ -13,6 +13,7 @@ from architecture.protein_edge_geometry import (
     STRUCTURED_EDGE_DIM, rbf, structured_edge_features,
 )
 from architecture.thematic_descriptor_head import thematical_orthogonality_loss
+from dataloader.smiles_tokens import SMILES_VOCABULARY
 from training.read_configuration import ModelConfig
 
 
@@ -110,7 +111,16 @@ def synthetic_forward_args(config):
         if getattr(config, "cross_attention_chain_bias", False):
             args["chain_rank"] = torch.rand(4)
     else:
-        args["lip"] = torch.randn(4, 768)
+        # --lipid_smiles_tokens narrows a lipid node from MoLFormer's 768 to one
+        # one-hot column per SMILES character; randn rather than a real one-hot is
+        # enough here, since nothing in the forward path reads the values as a
+        # distribution -- only the width has to match what Lipid_encoder built.
+        args["lip"] = torch.randn(
+            4,
+            len(SMILES_VOCABULARY)
+            if getattr(config, "lipid_smiles_tokens", False)
+            else 768,
+        )
 
     if config.lipid_fragments_mask:
         args["lipid_batch"] = torch.tensor([0, 0, 1, 1], dtype=torch.long)
@@ -290,6 +300,29 @@ def test_fast_attention_with_mlp_in_place_of_sa_builds_no_layouts_and_real_masks
     ],
 )
 def test_one_cpu_training_step_for_core_modes(config):
+    one_training_step(config)
+
+
+def test_smiles_token_lipid_branch_completes_one_cpu_training_step():
+    """The character input on this project's own tower (not DeepCLIP).
+
+    DeepCLIP is a separate network and is covered by tests/test_deepclip.py; this
+    only checks that swapping MolFormer's 768 for the one-hot alphabet leaves the
+    existing lipid branch trainable.
+    """
+    config = ModelConfig(
+        hiddim=8,
+        HEADS=2,
+        m=2,
+        batch=2,
+        num_workers=0,
+        pool_type="mean",
+        lipid_self_attention=True,
+        lipid_smiles_tokens=True,
+    )
+    config.lipid_fragments_treatment = "random_choice"
+    config.validate()
+
     one_training_step(config)
 
 

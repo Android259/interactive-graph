@@ -1,6 +1,7 @@
 import torch
 
 from .cross_attention import CrossAttention
+from .deepclip import DeepCLIP
 from .final_layer import Final_Layer
 from .lipid_encoder import Lipid_encoder
 from .protein_encoder import Protein_encoder
@@ -16,6 +17,17 @@ class InteractionClassification(torch.nn.Module):
         super(InteractionClassification, self).__init__()
         config.validate()
         self.config = config
+
+        if self.config.deepclip:
+            # DeepCLIP is a whole network, not a branch of this one: one-hot SMILES
+            # -> convolutions -> BLSTM -> per-position profile -> sum (architecture/
+            # deepclip.py). Nothing else is built -- no protein encoder, no
+            # cross-attention, no Final_Layer -- because none of it is part of that
+            # architecture, and a module built here but unreachable would take
+            # gradient from nothing while still naming the run directory through
+            # number_of_parameters. forward() returns before any of it is read.
+            self.deepclip = DeepCLIP(self.config)
+            return
 
         if not (
             self.config.descriptors_head or self.config.two_pair_descriptors_paths
@@ -302,6 +314,11 @@ class InteractionClassification(torch.nn.Module):
         recon_index=None,
         recon_target=None):
         """Encode a batched protein-lipid input and return binary logits."""
+
+        if config.deepclip:
+            # The lipid is the whole input. Every other argument belongs to modules
+            # __init__ did not build under this flag.
+            return self.deepclip(lip, lip_batch)
 
         if (
             config.descriptors_head or config.two_pair_descriptors_paths

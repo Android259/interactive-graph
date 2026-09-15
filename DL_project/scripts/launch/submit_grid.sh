@@ -263,6 +263,18 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_walltime="${THEMATICAL_PATHS_WALLTIME}"
         printf "Detected --thematical_paths in %s; per-experiment walltime=%s.\n" \
             "${args_file}" "${this_walltime}"
+    elif args_file_has_flag "${args_file}" --deepclip; then
+        # Fourth sibling of the same no-towers shape, and the most extreme of them:
+        # under --deepclip, InteractionClassification builds architecture/deepclip.py
+        # and nothing else at all (1960 parameters at DeepCLIP's published settings,
+        # 8960 at the widest sweep arm). Checked ahead of --fast_attention below for
+        # the same reason --descriptors_head is: that branch's budget is sized for a
+        # real protein/lipid encoder this config never constructs. See
+        # DEEPCLIP_WALLTIME's own comment in settings.sh for why one number covers
+        # every arm of the sweep despite their 4.6x spread in parameter count.
+        this_walltime="${DEEPCLIP_WALLTIME}"
+        printf "Detected --deepclip in %s; per-experiment walltime=%s.\n" \
+            "${args_file}" "${this_walltime}"
     elif args_file_has_flag "${args_file}" --fast_attention; then
         this_walltime="${FAST_ATTENTION_WALLTIME}"
         printf "Detected --fast_attention in %s; per-experiment walltime=%s.\n" \

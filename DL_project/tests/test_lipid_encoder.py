@@ -3,6 +3,7 @@ import torch
 
 from architecture.lipid_encoder import Lipid_encoder
 from architecture.self_attention import SelfAttention
+from dataloader.smiles_tokens import SMILES_VOCABULARY
 from training.read_configuration import ModelConfig
 
 
@@ -38,6 +39,16 @@ def test_embedding_lipid_encoder_forward_shape():
     out = encoder(lipids, None, attn_mask)
 
     assert out.shape == (3, config.hiddim)
+
+
+def test_smiles_token_lipid_encoder_reads_the_one_hot_width():
+    config = make_config(lipid_smiles_tokens=True)
+    encoder = Lipid_encoder(config)
+    lipids = torch.zeros(5, len(SMILES_VOCABULARY))
+    attn_mask = torch.zeros((5, 5), dtype=torch.bool)
+
+    assert encoder.encodin.in_features == len(SMILES_VOCABULARY)
+    assert encoder(lipids, None, attn_mask).shape == (5, config.hiddim)
 
 
 def test_lipid_post_sa_mlp_can_be_disabled():

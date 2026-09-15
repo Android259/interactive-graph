@@ -49,6 +49,39 @@ FROZEN_PROTEIN_EMBEDDINGS = (
 ACT_FNS = ("leakyrelu", "gelu", "prelu")
 
 
+def parse_deepclip_widths(widths):
+    """--deepclip_widths as a tuple of positive ints, in the order given.
+
+    Here rather than in architecture/deepclip.py so validate() can reject a bad
+    value at configuration time without this module importing torch (see the
+    POCKET_DESCRIPTOR_NAMES comment at the top for why that matters); deepclip.py
+    imports it back, the same direction architecture/interaction_classification.py
+    already takes for ModelConfig. Order is preserved because it fixes which
+    convolution owns which slice of the LSTM's input, so a checkpoint is only
+    meaningful against the order it trained with.
+    """
+    parsed = []
+    for part in str(widths).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            width = int(part)
+        except ValueError:
+            raise ValueError(
+                f"deepclip_widths must be comma-separated integers, got {part!r}"
+            ) from None
+        if width <= 0:
+            raise ValueError(f"deepclip_widths must be positive, got {width}")
+        parsed.append(width)
+    if not parsed:
+        raise ValueError(
+            "deepclip_widths is empty -- give at least one window width, e.g. "
+            '"4,5,6,7,8" (DeepCLIP\'s own FILTER_SIZES)'
+        )
+    return tuple(parsed)
+
+
 EXCLUDED_SUBGROUPS_BY_NAME = {
     "CRAL-TRIO": [
         "ATCAY",
@@ -725,6 +758,51 @@ class ModelConfig:
     # --no_protein_embeddings for the protein-only equivalent, which this flag also
     # implies (so it still drops ESM3 too, exactly as before).
     no_embeddings: bool = False
+    # Lipid side: a node is one CHARACTER of the lipid's own canonical SMILES string,
+    # one-hot over SMILES_VOCABULARY (dataloader/smiles_tokens.py, 20 columns),
+    # instead of one MoLFormer token embedded in 768 dimensions. The MoLFormer table
+    # is then never loaded at all (dataloader/Dataloader.py). This is DeepCLIP's input
+    # (Gronning et al., NAR 2020: one-hot sequence, no pretrained embedding) on the
+    # lipid side, and it is what --lipid_conv_filters below is meant to scan: a head
+    # group is a contiguous substring of canonical SMILES, which is exactly the object
+    # a sliding window can find. Distinct from --no_embeddings, which drops MoLFormer
+    # AND the per-token axis with it (one node per lipid, carrying descriptors only);
+    # this keeps a real sequence, just spelled in characters rather than in MoLFormer's
+    # learned chemistry. What it gives up is that chemistry: a one-hot column knows
+    # nothing about oxygen, so everything the branch learns must come out of this
+    # project's own ~1287 distinct structures.
+    lipid_smiles_tokens: bool = False
+    # Build DeepCLIP (architecture/deepclip.py) and nothing else -- no protein
+    # encoder, no cross-attention, no Final_Layer. This is a different network, not a
+    # branch or an ablation of this project's model: one-hot SMILES -> convolutions
+    # -> BLSTM -> per-position profile -> sum. Requires --lipid_smiles_tokens, which
+    # is its input. Every default below is DeepCLIP's own, from its constants.py.
+    deepclip: bool = False
+    # NUM_FILTERS: learned windows PER WIDTH, not in total. DeepCLIP's value is 1.
+    deepclip_filters: int = 1
+    # FILTER_SIZES: the window widths, in characters.
+    deepclip_widths: str = "4,5,6,7,8"
+    # LSTM_NODES: hidden units per direction of the single bidirectional LSTM.
+    deepclip_lstm: int = 10
+    # LSTM_DROPOUT and DROPOUT_OUT.
+    deepclip_lstm_dropout: float = 0.1
+    deepclip_out_dropout: float = 0.0
+    # Convolution weight init. "constant" is DeepCLIP's own (oned_convlayer_rectify.py:
+    # W=lasagne.init.Constant(0.01), b=None) and leaves every filter of one width
+    # identical forever -- fine at its NUM_FILTERS=1, useless above it, so validate()
+    # requires "normal" (same 0.01 scale, random) once deepclip_filters > 1.
+    deepclip_conv_init: str = "constant"
+    # How the per-position profile becomes one score. "sum" is DeepCLIP's literal
+    # readout (DenseLayer num_units=1, W=Constant(1.0), b=None). It is only
+    # length-neutral because DeepCLIP pads EVERY sequence to one fixed length and
+    # never masks (slice_n_pad.py), so its sum always runs over the same number of
+    # positions. This project's molecules are 26-165 characters, so the same sum is
+    # dominated by length: measured at initialisation, the score is 0.556 * length
+    # (26 chars -> 14.2, 165 chars -> 91.9) while the per-position profile is a near
+    # constant 0.556 +- 0.027, i.e. the score reads molecule size and nothing else.
+    # "mean" divides by that molecule's own length and is the default for that
+    # reason; "sum" is kept for reproducing the published readout exactly.
+    deepclip_readout: str = "mean"
     # Protein side only: turns --plmon off (no ESM3 contribution to protein nodes),
     # without touching MolFormer or the lipid graph at all -- the finer-grained sibling
     # --no_embeddings (which implies this too, for backward compatibility) does not
@@ -1686,6 +1764,76 @@ class ModelConfig:
                 "descriptors_in_lipid (or descriptors_in_protein_lipid) a lipid node "
                 "would have nothing left as a feature vector"
             )
+        if self.lipid_smiles_tokens and self.no_embeddings:
+            raise ValueError(
+                "lipid_smiles_tokens and no_embeddings are two different answers to "
+                "'what is a lipid node': one character of the canonical SMILES vs one "
+                "node per lipid carrying only descriptors_in_lipid's broadcast. Pick "
+                "one"
+            )
+        if self.lipid_smiles_tokens and self.lipid_graph_isomers:
+            raise ValueError(
+                "lipid_smiles_tokens and lipid_graph_isomers are two different lipid "
+                "inputs -- a character sequence vs an atom/bond graph -- and "
+                "Lipid_encoder builds one branch or the other, never both"
+            )
+        if self.deepclip:
+            if not self.lipid_smiles_tokens:
+                raise ValueError(
+                    "deepclip reads a one-hot character sequence -- add "
+                    "--lipid_smiles_tokens, which is its input (MolFormer's 768-wide "
+                    "per-token embedding is a different representation and its own "
+                    "experiment)"
+                )
+            if self.deepclip_filters <= 0:
+                raise ValueError("deepclip_filters must be positive")
+            if self.deepclip_conv_init not in ("constant", "normal"):
+                raise ValueError(
+                    "deepclip_conv_init must be 'constant' (DeepCLIP's own 0.01) or "
+                    "'normal'"
+                )
+            if self.deepclip_filters > 1 and self.deepclip_conv_init == "constant":
+                raise ValueError(
+                    "deepclip_conv_init='constant' sets every weight to the same "
+                    "0.01, so the filters of one width start identical and receive "
+                    "identical gradients -- they stay one filter in "
+                    "deepclip_filters copies forever. That is DeepCLIP's own init and "
+                    "is only safe at its own deepclip_filters=1. Use "
+                    "--deepclip_conv_init=normal to sweep the filter count"
+                )
+            if self.deepclip_readout not in ("sum", "mean"):
+                raise ValueError("deepclip_readout must be 'sum' or 'mean'")
+            if self.deepclip_lstm <= 0:
+                raise ValueError("deepclip_lstm must be positive")
+            # Parsed here so a bad --deepclip_widths fails at configuration time
+            # rather than inside DeepCLIP.__init__ half a startup later.
+            parse_deepclip_widths(self.deepclip_widths)
+            if self.lipid_concat or self.lipid_fragments_mask:
+                raise ValueError(
+                    "deepclip cannot be combined with "
+                    "--lipid_fragments_treatment=concat/fragments_mask: those lay "
+                    "several candidate STRUCTURES end to end on one sequence axis "
+                    "(dataloader/lipid_graph_builder.py), so a window would slide "
+                    "across the seam and read a motif spanning two different "
+                    "molecules. Use --lipid_fragments_treatment=random_choice (the "
+                    "default), which encodes one candidate per sample"
+                )
+            # DeepCLIP builds no protein encoder, no cross-attention and no
+            # Final_Layer, so every flag that configures those has nothing to act on
+            # and would silently read as if it had. Named individually rather than
+            # swept up, so the message says which one to drop.
+            for name in (
+                "lipid_only", "protein_only", "descriptors_head", "thematical_paths",
+                "two_pair_descriptors_paths", "lipid_graph_isomers", "no_embeddings",
+                "structural_pretrain", "adversarial_grl", "bilinear_fusion",
+                "double_attention", "attention_pooling", "swe_pooling",
+            ):
+                if getattr(self, name, False):
+                    raise ValueError(
+                        f"deepclip builds only architecture/deepclip.py -- no "
+                        f"protein encoder, no cross-attention, no Final_Layer -- so "
+                        f"--{name} has nothing to configure. Drop it"
+                    )
         if self.no_protein_geometry and not self.descriptors_in_protein:
             raise ValueError(
                 "no_protein_geometry drops residue_type/sas_area/volume from every "
@@ -2805,6 +2953,10 @@ SIMPLE_BOOL_FLAGS = {
     "--descriptors_in_lipid": "descriptors_in_lipid",
     "no_embeddings": "no_embeddings",
     "--no_embeddings": "no_embeddings",
+    "lipid_smiles_tokens": "lipid_smiles_tokens",
+    "--lipid_smiles_tokens": "lipid_smiles_tokens",
+    "deepclip": "deepclip",
+    "--deepclip": "deepclip",
     "no_protein_embeddings": "no_protein_embeddings",
     "--no_protein_embeddings": "no_protein_embeddings",
     "no_protein_geometry": "no_protein_geometry",
@@ -3129,6 +3281,13 @@ VALUE_HANDLERS = {
     "--batch=": set_config_field("batch", int),
     "--num_workers=": set_config_field("num_workers", int),
     "--lipid_fragments_treatment=": set_config_field("lipid_fragments_treatment"),
+    "--deepclip_filters=": set_config_field("deepclip_filters", int),
+    "--deepclip_widths=": set_config_field("deepclip_widths"),
+    "--deepclip_lstm=": set_config_field("deepclip_lstm", int),
+    "--deepclip_lstm_dropout=": set_config_field("deepclip_lstm_dropout", float),
+    "--deepclip_out_dropout=": set_config_field("deepclip_out_dropout", float),
+    "--deepclip_conv_init=": set_config_field("deepclip_conv_init"),
+    "--deepclip_readout=": set_config_field("deepclip_readout"),
     "--lipid_first_fragment_only=": set_config_field(
         "lipid_first_fragment_only", read_bool
     ),
