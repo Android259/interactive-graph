@@ -294,6 +294,8 @@ LABEL_ARGS_FILE=()
 LABEL_ARGS_TEMPLATE=()
 LABEL_OUTPUT_ROOT=()
 LABEL_IS_LIPID_COLDSPLIT=()
+LABEL_IS_RANDOM_SPLIT=()
+LABEL_LIPID_ISOLATION=()
 LABEL_SEEDS_CSV=()
 job_label_index=()
 job_groups=()
@@ -387,6 +389,54 @@ for requested in "${POSITIONALS[@]}"; do
             | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
     fi
 
+    # --random_split in the args file is the axis defined by holding NOTHING out: no
+    # protein family, no lipid class. It needs a marker of its own because every other
+    # axis is expressed by APPENDING a flag below, and an args file cannot suppress an
+    # appended one (flags are applied in argv order, the appended one comes last). With
+    # no split flag the loader takes its final branch -- 85% of the working set is
+    # train, the remaining 15% is halved label-by-label into validation and test -- and
+    # new_train.py files the run under exclusion_set "random". There is no group axis to
+    # rotate, so one pseudo-group named "random" runs against the seeds, and
+    # --groups/--no_groups are ignored for such a label exactly as they are above.
+    # --lipid_isolation=<key> is the lipid axis addressed by distance
+    # (dataloader/lipid_isolation_blocks.py). It already names its block, so there is
+    # nothing to expand: one pseudo-group, named the way new_train.py files the run.
+    # The flag itself stays in the template.
+    this_lipid_isolation=""
+    if args_file_has_flag "${this_args_file}" --lipid_isolation; then
+        this_lipid_isolation="$(args_file_flag_lines "${this_args_file}" \
+            | sed -nE 's/^--lipid_isolation=(.*)$/\1/p' | tail -1)"
+        if [[ -z "${this_lipid_isolation}" ]]; then
+            printf -- '--lipid_isolation needs a value (a key of LIPID_ISOLATION_BLOCKS) in %s.\n' \
+                "${this_args_file}" >&2
+            exit 2
+        fi
+        if (( this_is_lipid_coldsplit )); then
+            printf -- '--lipid_isolation and --lipid_coldsplit hold out different '\
+'things; pick one (%s).\n' "${this_args_file}" >&2
+            exit 2
+        fi
+        this_excl_groups=("iso${this_lipid_isolation}")
+    fi
+
+    this_is_random_split=0
+    if args_file_has_flag "${this_args_file}" --random_split; then
+        if (( this_is_lipid_coldsplit )); then
+            printf -- '--random_split holds nothing out and --lipid_coldsplit holds a '\
+'chemical set out; pick one (%s).\n' "${this_args_file}" >&2
+            exit 2
+        fi
+        if [[ -n "${GROUPS_ARG:-}${SKIP_GROUPS_ARG:-}" ]]; then
+            printf -- '--random_split holds no group out; ignoring --groups/--no_groups '\
+'for %s -- the single random-split grid will run.\n' "${this_args_file}" >&2
+        fi
+        this_is_random_split=1
+        this_excl_groups=(random)
+        # Stripped like the marker above: the trainer has no such flag.
+        this_args_template="$(printf '%s' "${this_args_template}" \
+            | sed -E 's/(^|[[:space:]])--random_split([[:space:]]|$)/\1/g')"
+    fi
+
     this_seeds=("${DEFAULT_SEEDS[@]}")
     if [[ -n "${SEEDS_ARG:-}" ]]; then
         read -r -a this_seeds <<< "${SEEDS_ARG//,/ }"
@@ -408,6 +458,8 @@ for requested in "${POSITIONALS[@]}"; do
     LABEL_ARGS_TEMPLATE+=("${this_args_template}")
     LABEL_OUTPUT_ROOT+=("script_logs/${this_variant}_seeds$(IFS=; echo "${this_seeds[*]}")")
     LABEL_IS_LIPID_COLDSPLIT+=("${this_is_lipid_coldsplit}")
+    LABEL_IS_RANDOM_SPLIT+=("${this_is_random_split}")
+    LABEL_LIPID_ISOLATION+=("${this_lipid_isolation}")
     LABEL_SEEDS_CSV+=("$(IFS=,; printf '%s' "${this_seeds[*]}")")
 
     while IFS=$'\t' read -r group seed; do
@@ -904,13 +956,24 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     # one in the same command reads its own axis correctly either way.
     if (( LABEL_IS_LIPID_COLDSPLIT[label_index] )); then
         split_flag=(--lipid_coldsplit="${group}")
+    elif [[ -n "${LABEL_LIPID_ISOLATION[label_index]}" ]]; then
+        # The block is named by the flag already in the template; nothing is appended.
+        split_flag=()
+    elif (( LABEL_IS_RANDOM_SPLIT[label_index] )); then
+        # Nothing is held out, so nothing is appended: the loader's own last branch
+        # does the split and names it. "${group}" is already the literal "random" the
+        # run will be filed under, which is why the log path needs no special case.
+        split_flag=()
     else
         split_flag=(--excluded_groups="${group}")
     fi
 
     printf '=== [%d/%d] %s: %s | VARIANT: %s | SEED: %s ===\n' \
         "$(( job_index + 1 ))" "${total_jobs}" \
-        "$( (( LABEL_IS_LIPID_COLDSPLIT[label_index] )) && printf 'LIPID SET' || printf 'GROUP')" \
+        "$( (( LABEL_IS_LIPID_COLDSPLIT[label_index] )) && printf 'LIPID SET' \
+            || { [[ -n "${LABEL_LIPID_ISOLATION[label_index]}" ]] && printf 'ISOLATION' \
+            || { (( LABEL_IS_RANDOM_SPLIT[label_index] )) && printf 'SPLIT' \
+            || printf 'GROUP'; }; } )" \
         "${group}" "${variant}" "${seed}"
 
     # read_configuration.py applies flags in argv order and the last one wins,

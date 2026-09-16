@@ -26,7 +26,14 @@ def main() -> int:
 
     label_root = Path(args.reports_root) / args.label
     completed: set[tuple[str, int]] = set()
-    for report in label_root.glob("groups_*/*.txt"):
+    # "random" alongside "groups_*": a --random_split label holds nothing out, so
+    # new_train.py files it under that name instead of a "groups_" directory, and a
+    # glob for the prefix alone would find none of its reports -- the run would never
+    # count as completed and --complete would relaunch it forever.
+    reports = sorted(label_root.glob("groups_*/*.txt")) + sorted(
+        label_root.glob("random/*.txt")
+    )
+    for report in reports:
         fields = read_fields(report)
         if fields.get("label") != args.label:
             continue
@@ -52,11 +59,20 @@ def main() -> int:
                     continue
                 group = str(excluded[0])
             else:
-                # --lipid_coldsplit holds a set of lipid classes out and no protein
-                # group at all, so excluded_groups is empty and the set name is what
-                # the grid iterates over. Without this the report is skipped, the run
-                # never counts as completed, and --complete relaunches it forever.
-                group = str(fields.get("lipid_coldsplit", ""))
+                # Three axes leave excluded_groups empty, and each names its grid
+                # position with a different field. --lipid_coldsplit holds a set of
+                # lipid classes out, --family_only restricts the table to one family,
+                # and --random_split holds nothing out at all -- for that last one the
+                # position is the single literal the grid iterates. Without this the
+                # report is skipped, the run never counts as completed, and --complete
+                # relaunches it forever.
+                isolation = str(fields.get("lipid_isolation", ""))
+                group = (
+                    str(fields.get("lipid_coldsplit", ""))
+                    or (f"iso{isolation}" if isolation else "")
+                    or str(fields.get("family_only", ""))
+                    or "random"
+                )
         if group:
             completed.add((group, seed))
 

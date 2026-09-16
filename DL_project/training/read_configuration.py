@@ -151,6 +151,30 @@ EXCLUDED_GROUP_ALIASES.update({
 # at parse time instead of after a job reaches a GPU. PLIDataset checks the two agree.
 LIPID_COLDSPLIT_NAMES = ("sphingolipids", "phosphorus_free", "choline", "anionic")
 
+# The same axis addressed by distance instead of by chemistry. The keys are the
+# requested isolation values, and they are read straight off the generated registry
+# rather than repeated here: that file IS the list, and a second copy is how the two
+# would drift (which is exactly what the comment above LIPID_COLDSPLIT_NAMES guards
+# against for the class sets, where the names and the classes live in two files).
+from dataloader.lipid_isolation_blocks import (  # noqa: E402
+    LIPID_ISOLATION_BLOCKS,
+)
+
+LIPID_ISOLATION_KEYS = tuple(LIPID_ISOLATION_BLOCKS)
+
+
+def read_lipid_isolation(value):
+    """Resolve the key of a held-out block chosen for its distance from training."""
+    name = str(value).strip()
+    if not name:
+        return ""
+    if name not in LIPID_ISOLATION_BLOCKS:
+        raise ValueError(
+            f"Unknown lipid_isolation block: {value}; "
+            f"expected one of {', '.join(LIPID_ISOLATION_KEYS)}"
+        )
+    return name
+
 
 def read_lipid_coldsplit(value):
     """Resolve the name of a lipid-class set held out of training."""
@@ -1083,6 +1107,16 @@ class ModelConfig:
     # panel grows rather than the protein list. Takes the name of one set; the launcher
     # expands a bare --lipid_coldsplit into one run per set.
     lipid_coldsplit: str = ""
+    # The same axis, addressed by how far the block sits from training rather than by
+    # which chemistry it is. Takes the key of a block in
+    # dataloader/lipid_isolation_blocks.py, each one a set of lipid SPECIES chosen by
+    # analysis/lipid_block_search.py so that its isolation -- the mean over the block's
+    # structures of the best Tanimoto similarity to a structure left in training --
+    # lands on that value. Exists because the named class sets only reach 0.46-0.88 and
+    # the rest of the axis cannot be measured with them; everything else about the split
+    # (every protein stays, the block is halved label-by-label into validation and test)
+    # is what --lipid_coldsplit already does.
+    lipid_isolation: str = ""
     # How much of the held-out family's positives the derived class set has to cover.
     #
     # 0.8 rather than 0.7: the value decides how many of a family's own classes leave
@@ -1553,6 +1587,18 @@ class ModelConfig:
         if self.protein_pooling not in PROTEIN_POOLINGS:
             raise ValueError(
                 f"protein_pooling must be one of {', '.join(PROTEIN_POOLINGS)}"
+            )
+        if self.lipid_isolation and (
+            self.lipid_coldsplit
+            or self.double_coldsplit
+            or self.mixed_coldsplit
+            or self.excluded_groups
+            or self.excluded_subgroups
+        ):
+            raise ValueError(
+                "lipid_isolation holds a fixed set of lipid species out with every "
+                "protein left in training -- the same axis lipid_coldsplit is on, and "
+                "it cannot be combined with another holdout on either axis"
             )
         if self.lipid_coldsplit and (self.double_coldsplit or self.mixed_coldsplit):
             raise ValueError(
@@ -3284,6 +3330,7 @@ VALUE_HANDLERS = {
     ),
     "--coldsplit_share=": set_config_field("coldsplit_share", float),
     "--lipid_coldsplit=": set_config_field("lipid_coldsplit", read_lipid_coldsplit),
+    "--lipid_isolation=": set_config_field("lipid_isolation", read_lipid_isolation),
     "--protein_recon_weight=": set_config_field("protein_recon_weight", float),
     "--protein_mask_share=": set_config_field("protein_mask_share", float),
     "--pretrained_checkpoint=": set_config_field("pretrained_checkpoint"),

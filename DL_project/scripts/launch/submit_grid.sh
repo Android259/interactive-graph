@@ -209,6 +209,22 @@ LIPID_COLDSPLIT_SETS_LIST=(sphingolipids phosphorus_free choline anionic)
 # (needed there to chain a fresh stage-1 pretrain run before stage 2); once stage 1's
 # checkpoint already exists on disk, each stage-2 (family, seed) job is an ordinary
 # independent run and needs no chaining, which is what this grid path assumes.
+#
+# --random_split, bare (no value), in the args file switches the grid to a fourth axis:
+# nothing is held out at all. Every other axis above answers its question by APPENDING a
+# flag (--excluded_groups, --lipid_coldsplit, --family_only); this one is defined by
+# appending none, which is why it needs a marker of its own -- an args file cannot
+# suppress the --excluded_groups this script would otherwise add, since flags are
+# applied in argv order and the appended one comes last. With no split flag,
+# Dataloader._split_interactions takes its final branch: csvt.sample(frac=0.85) is
+# train, the remaining 15% is halved label-by-label into validation and test, and
+# new_train.py files the run under exclusion_set "random". There is no group axis to
+# rotate, so the grid runs one pseudo-group ("random") x the seeds, and --groups/
+# --no_groups are ignored for such a label exactly as they are for --lipid_coldsplit.
+# What the runs are FOR: the warm end of the similarity-to-train axis, the anchor the
+# cold-split numbers are read against (analysis/split_similarity_vs_metric.py). They are
+# not a baseline to pick configurations on -- with every protein and every lipid in
+# training both label marginals are free.
 
 # --- per-label setup ----------------------------------------------------------
 # Parallel arrays, one entry per requested label (index order == command-line
@@ -219,6 +235,8 @@ LABEL_ARGS_TEMPLATE=()
 LABEL_COLD_SPLIT=()
 LABEL_LIPID_COLDSPLIT=()
 LABEL_FAMILY_ONLY=()
+LABEL_RANDOM_SPLIT=()
+LABEL_LIPID_ISOLATION=()
 LABEL_OUTPUT_ROOT=()
 LABEL_WALLTIME=()
 # One line per (label_index, group, seed), across ALL labels -- the combined
@@ -308,6 +326,41 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
             | sed -E 's/(^|[[:space:]])--family_only([[:space:]]|$)/\1/g')"
     fi
 
+    # --lipid_isolation=<key> in the args file is the lipid axis addressed by distance
+    # (dataloader/lipid_isolation_blocks.py). Unlike the bare --lipid_coldsplit marker
+    # it already names its block, so there is nothing for the grid to expand: it runs
+    # one pseudo-group, named the way new_train.py files the run, against the seeds. The
+    # flag stays in the template -- the trainer takes it as written.
+    this_lipid_isolation=""
+    if args_file_has_flag "${args_file}" --lipid_isolation; then
+        this_lipid_isolation="$(args_file_flag_lines "${args_file}" \
+            | sed -nE 's/^--lipid_isolation=(.*)$/\1/p' | tail -1)"
+        if [[ -z "${this_lipid_isolation}" ]]; then
+            printf -- '--lipid_isolation needs a value (a key of LIPID_ISOLATION_BLOCKS) in %s.\n' \
+                "${args_file}" >&2
+            exit 2
+        fi
+        if (( this_cold_split )) || (( this_lipid_coldsplit )); then
+            printf -- '--lipid_isolation and --cold_split/--lipid_coldsplit hold out '\
+'different things; pick one (%s).\n' "${args_file}" >&2
+            exit 2
+        fi
+    fi
+
+    this_random_split=0
+    if args_file_has_flag "${args_file}" --random_split; then
+        this_random_split=1
+        if (( this_cold_split )) || (( this_lipid_coldsplit )) || (( this_family_only )); then
+            printf -- '--random_split holds nothing out; it cannot combine with '\
+'--cold_split/--lipid_coldsplit/--family_only (%s).\n' "${args_file}" >&2
+            exit 2
+        fi
+        # Stripped like the other two markers: the trainer has no such flag, and must
+        # not be handed one.
+        this_args_template="$(printf '%s' "${this_args_template}" \
+            | sed -E 's/(^|[[:space:]])--random_split([[:space:]]|$)/\1/g')"
+    fi
+
     if (( this_cold_split )); then
         this_output_root="script_logs/${this_variant}_coldval_seeds01234"
         this_groups=("${COLD_TEST_GROUPS[@]}")
@@ -324,7 +377,24 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_output_root="script_logs/${this_variant}_familyonly"
         this_groups=("${PROTEIN_GROUPS[@]}")
     fi
-    if (( this_lipid_coldsplit )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
+    if (( this_random_split )); then
+        # One pseudo-group, named for the directory new_train.py will file the run
+        # under, so log path, run/ path and test_metrics/ path agree the way they do on
+        # every other axis.
+        this_output_root="script_logs/${this_variant}_random"
+        this_groups=("random")
+    fi
+    if [[ -n "${this_lipid_isolation}" ]]; then
+        this_output_root="script_logs/${this_variant}_iso${this_lipid_isolation}"
+        this_groups=("iso${this_lipid_isolation}")
+    fi
+    if (( this_random_split )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
+        # Same rule, same reason as the --lipid_coldsplit case just below: the override
+        # names protein families, which is not this label's axis. Ignored, not fatal, so
+        # one command can queue protein-axis and random-split labels together.
+        printf -- '--random_split holds no group out; ignoring --groups/--no_groups '\
+'for %s -- the single random-split grid will run.\n' "${args_file}" >&2
+    elif (( this_lipid_coldsplit )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
         # Same rule as scripts/run_local.sh's --groups/--no_groups check: GROUPS_OVERRIDE
         # (run_cluster.sh's --groups/--no_groups) names protein families, which is the
         # OTHER axis for a --lipid_coldsplit label. It is IGNORED here rather than
@@ -355,6 +425,8 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     LABEL_COLD_SPLIT+=("${this_cold_split}")
     LABEL_LIPID_COLDSPLIT+=("${this_lipid_coldsplit}")
     LABEL_FAMILY_ONLY+=("${this_family_only}")
+    LABEL_RANDOM_SPLIT+=("${this_random_split}")
+    LABEL_LIPID_ISOLATION+=("${this_lipid_isolation}")
     LABEL_OUTPUT_ROOT+=("${this_output_root}")
     LABEL_WALLTIME+=("${this_walltime}")
 
@@ -400,6 +472,8 @@ experiment_record() {
     local cold_split="${LABEL_COLD_SPLIT[label_index]}"
     local lipid_coldsplit="${LABEL_LIPID_COLDSPLIT[label_index]}"
     local family_only="${LABEL_FAMILY_ONLY[label_index]}"
+    local random_split="${LABEL_RANDOM_SPLIT[label_index]}"
+    local lipid_isolation="${LABEL_LIPID_ISOLATION[label_index]}"
     local output_root="${LABEL_OUTPUT_ROOT[label_index]}"
     local val_group excluded output_dir stem header extra=""
 
@@ -428,6 +502,21 @@ experiment_record() {
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="FAMILY_ONLY: ${group} | VARIANT: ${variant} | SEED: ${seed}"
+    elif [[ -n "${lipid_isolation}" ]]; then
+        # The block is named by the flag already in the template, so nothing is
+        # appended; "group" is the directory name new_train.py will use.
+        excluded=""
+        output_dir="${output_root}/${group}"
+        stem="${variant}_seed${seed}"
+        header="LIPID ISOLATION: ${lipid_isolation} | VARIANT: ${variant} | SEED: ${seed}"
+    elif (( random_split )); then
+        # The axis defined by appending nothing: no --excluded_groups, no split flag of
+        # any kind, so the loader's own last branch does the 85/7.5/7.5 random split and
+        # new_train.py names the run "random" -- which is what "group" already is here.
+        excluded=""
+        output_dir="${output_root}/${group}"
+        stem="${variant}_seed${seed}"
+        header="RANDOM SPLIT | VARIANT: ${variant} | SEED: ${seed}"
     else
         excluded="${group}"
         output_dir="${output_root}/${group}"

@@ -601,6 +601,11 @@ if conf.lipid_coldsplit:
     # build_metrics_table, the plotting scripts), and what the directory really names is
     # the exclusion set, whichever axis it lies on.
     excluded_set_parts.append("groups_" + conf.lipid_coldsplit)
+if conf.lipid_isolation:
+    # Same reasoning as --lipid_coldsplit just above, and the same "groups_" prefix
+    # every consumer of this path keys on. The key is the requested isolation, so the
+    # directory reads "groups_iso0.85" and says what the block is without a lookup.
+    excluded_set_parts.append("groups_iso" + conf.lipid_isolation)
 if conf.family_only:
     # Third axis, same argument as --lipid_coldsplit just above. --family_only excludes
     # nothing, it RESTRICTS training to one family, so without this every family landed
@@ -2195,11 +2200,42 @@ def run_test(run_summary):
         # An integer count, not a rate -- format_metric would print it as 11.000000.
         f.write(f"AUC_within_protein_proteins: {metrics['AUC_within_protein_proteins']}\n")
         f.write(f"AUC_within_protein_pairs_proteins: {metrics['AUC_within_protein_pairs_proteins']}\n")
+        # What --lipid_isolation actually removed from training. The flag's value is a
+        # key into a registry (dataloader/lipid_isolation_blocks.py), so the report
+        # would otherwise record "0.85" and nothing about which chemistry that was --
+        # and a report has to be readable years after the registry moved on. Taken from
+        # the dataset rather than re-read from the registry: this is what the run held
+        # out, not what a lookup says it should have.
+        held_species = sorted(getattr(train_dataset, "excluded_lipid_species", set()) or [])
+        if held_species:
+            f.write(f"lipid_isolation_species_count: {len(held_species)}\n")
+            # Counted on the run's own working set (positives plus the negatives its
+            # sampler drew), not on the full table: that is what this run actually
+            # removed from training, and it is also what the held-out block then holds.
+            pool = getattr(train_dataset, "csvt", None)
+            if pool is not None:
+                held_rows = pool["FullIdentityOfLipid"].isin(held_species)
+                f.write(f"lipid_isolation_rows: {int(held_rows.sum())}\n")
+                f.write(
+                    "lipid_isolation_positives: "
+                    f"{int(pool.loc[held_rows, 'Interaction'].sum())}\n"
+                )
         f.write("\nper_protein_subgroup_metrics:\n")
         f.write(format_subgroup_row(subgroup_columns) + "\n")
         f.write(format_subgroup_row(["-" * width for width in subgroup_widths]) + "\n")
         for row in subgroup_rows:
             f.write(format_subgroup_row(row) + "\n")
+        # After the per-protein table on purpose: analysis/build_metrics_table.py's
+        # parser stops reading key/value pairs at that heading, so a list this long
+        # cannot turn into a metrics_summary.csv column by accident. One name per line,
+        # because a species name carries commas and colons of its own.
+        if held_species:
+            f.write(
+                f"\nlipid_isolation_species ({len(held_species)} held out of "
+                "training for every protein):\n"
+            )
+            for name in held_species:
+                f.write(f"  {name}\n")
     writer_tb.flush()
     append_metric(
         test_metrics_path,
