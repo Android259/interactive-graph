@@ -1822,11 +1822,22 @@ class ModelConfig:
             # Final_Layer, so every flag that configures those has nothing to act on
             # and would silently read as if it had. Named individually rather than
             # swept up, so the message says which one to drop.
+            # The list is not "every flag this architecture ignores" -- it is every
+            # flag training/new_train.py acts on by reaching into a module --deepclip
+            # does not build (model.final_layer, model.protein1, model.lipid_branch_
+            # parameters(), model._recon_prediction, the normalisation setters), plus
+            # the alternative-architecture switches. Those are the ones that would
+            # otherwise fail at runtime rather than harmlessly do nothing; derived by
+            # walking every `model.<attr>` access in new_train.py and taking the flag
+            # that gates it.
             for name in (
                 "lipid_only", "protein_only", "descriptors_head", "thematical_paths",
                 "two_pair_descriptors_paths", "lipid_graph_isomers", "no_embeddings",
                 "structural_pretrain", "adversarial_grl", "bilinear_fusion",
                 "double_attention", "attention_pooling", "swe_pooling",
+                "dann_family", "chem_adversary", "lipid_path_handicap",
+                "pretrained_checkpoint", "freeze_pretrained_encoders",
+                "rnabang_frozen_node_adapter", "pair_descriptor_pocket_shares_split",
             ):
                 if getattr(self, name, False):
                     raise ValueError(

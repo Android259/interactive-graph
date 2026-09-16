@@ -373,7 +373,13 @@ dropout_logit_ids = {id(p) for p in dropout_logit_params}
 # whose output has no built-in ceiling, and whose size grows cubically with --hiddim
 # under bilinear_fusion) can be reined in harder without over-penalising the rest of
 # the network. Empty list, no-op group, when bilinear_fusion is off.
-bilinear_module = getattr(model.final_layer, "bilinear", None)
+# getattr on the MODEL, not just on final_layer: --deepclip builds architecture/
+# deepclip.py alone and has no Final_Layer at all (InteractionClassification.__init__
+# returns before building one), so this and the thematic lookup below have nothing to
+# read. Both resolve to None there, which is the same no-op empty optimizer group a
+# run with bilinear_fusion/thematical_paths off already gets.
+final_layer = getattr(model, "final_layer", None)
+bilinear_module = getattr(final_layer, "bilinear", None)
 bilinear_params = list(bilinear_module.parameters()) if bilinear_module is not None else []
 bilinear_param_ids = {id(p) for p in bilinear_params}
 # --thematical_interaction_lr (ModelConfig docstring, files/thematical_paths_dynamics_
@@ -383,7 +389,7 @@ bilinear_param_ids = {id(p) for p in bilinear_params}
 # higher lr instead of raising --lr globally. Empty list, no-op group, when off or
 # not a thematical_paths run.
 THEMATICAL_INTERACTION_LR_MULTIPLIER = 5.0
-thematic_head = getattr(model.final_layer, "thematical_head", None)
+thematic_head = getattr(final_layer, "thematical_head", None)
 thematic_interaction_params = (
     list(thematic_head.geom_interaction.parameters())
     + list(thematic_head.chem_interaction.parameters())
@@ -1215,7 +1221,13 @@ def _dynamics_valid_pass(collect_pooled=False):
             else:
                 loss = _eval_task_loss(outl, labels)
                 update_aggregate(stats, outl.argmax(dim=1), labels, loss, labels.shape[0])
-            partners = model.final_layer._pooled_partners
+            # None under --deepclip, which builds no Final_Layer to stash them on --
+            # and has no two pooled partners to stash either, the lipid being its whole
+            # input. Everything downstream of `partners is not None` (the pooled-vector
+            # diagnostics, _head_input_weight_norms) is skipped for it as a result.
+            partners = getattr(
+                getattr(model, "final_layer", None), "_pooled_partners", None
+            )
             if collect_pooled and partners is not None:
                 # One pooled vector per candidate on an expanded split; keeping the first
                 # row of each pair leaves this diagnostic one row per pair, as it is when
