@@ -235,6 +235,7 @@ LABEL_ARGS_TEMPLATE=()
 LABEL_COLD_SPLIT=()
 LABEL_LIPID_COLDSPLIT=()
 LABEL_FAMILY_ONLY=()
+LABEL_FAMILY_ONLY_FIXED=()
 LABEL_RANDOM_SPLIT=()
 LABEL_LIPID_ISOLATION=()
 LABEL_OUTPUT_ROOT=()
@@ -314,7 +315,18 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
             | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
     fi
 
+    # --family_only comes in two forms. BARE (no value) is the marker documented
+    # below: the grid expands it into one job per PROTEIN_GROUPS entry, appending
+    # --family_only=<group> itself. --family_only=<value>, spelled out in the file, is
+    # a FIXED family instead -- nothing to expand, the template already names it, and
+    # this is what a --lipid_isolation ladder scoped to one family (a "<family>__<key>"
+    # block in dataloader/lipid_isolation_blocks.py) has to use: a bare marker would
+    # let the grid iterate all nine groups and overwrite the fixed family with whichever
+    # one it is currently on, once appended after the template's own line (last flag
+    # wins). This grid still runs FIXED as one job x seed, not nine, and the flag stays
+    # in the template untouched either way.
     this_family_only=0
+    this_family_only_fixed=""
     if args_file_has_flag "${args_file}" --family_only; then
         this_family_only=1
         if (( this_cold_split )) || (( this_lipid_coldsplit )); then
@@ -322,8 +334,12 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
 'it cannot combine with --cold_split/--lipid_coldsplit (%s).\n' "${args_file}" >&2
             exit 2
         fi
-        this_args_template="$(printf '%s' "${this_args_template}" \
-            | sed -E 's/(^|[[:space:]])--family_only([[:space:]]|$)/\1/g')"
+        this_family_only_fixed="$(args_file_flag_lines "${args_file}" \
+            | sed -nE 's/^--family_only=(.+)$/\1/p' | tail -1)"
+        if [[ -z "${this_family_only_fixed}" ]]; then
+            this_args_template="$(printf '%s' "${this_args_template}" \
+                | sed -E 's/(^|[[:space:]])--family_only([[:space:]]|$)/\1/g')"
+        fi
     fi
 
     # --lipid_isolation=<key> in the args file is the lipid axis addressed by distance
@@ -375,7 +391,12 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     fi
     if (( this_family_only )); then
         this_output_root="script_logs/${this_variant}_familyonly"
-        this_groups=("${PROTEIN_GROUPS[@]}")
+        if [[ -n "${this_family_only_fixed}" ]]; then
+            # One job x seed, not nine: the family is already fixed in the template.
+            this_groups=("${this_family_only_fixed}")
+        else
+            this_groups=("${PROTEIN_GROUPS[@]}")
+        fi
     fi
     if (( this_random_split )); then
         # One pseudo-group, named for the directory new_train.py will file the run
@@ -411,6 +432,19 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
 'ignoring --groups/--no_groups for %s -- all %d lipid sets will run.\n' \
             "${args_file}" "${#this_groups[@]}" >&2
+    elif [[ -n "${this_lipid_isolation}" ]] && [[ -n "${GROUPS_OVERRIDE}" ]]; then
+        # A --lipid_isolation label runs one fixed group already named by its key (and,
+        # when combined with a fixed --family_only=<value>, one fixed family too); a
+        # protein-family override has nothing to narrow here.
+        printf -- '--lipid_isolation names its own block; ignoring --groups/--no_groups '\
+'for %s.\n' "${args_file}" >&2
+    elif (( this_family_only )) && [[ -n "${this_family_only_fixed}" ]] \
+        && [[ -n "${GROUPS_OVERRIDE}" ]]; then
+        # Same reason: the family is already fixed in the template, so overriding
+        # "groups" here would rename the output directory without changing what
+        # actually trains -- confusing, not narrowing.
+        printf -- '--family_only=%s is already fixed in %s; ignoring --groups/--no_groups.\n' \
+            "${this_family_only_fixed}" "${args_file}" >&2
     elif [[ -n "${GROUPS_OVERRIDE}" ]]; then
         read -r -a this_groups <<< "${GROUPS_OVERRIDE}"
     fi
@@ -425,6 +459,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     LABEL_COLD_SPLIT+=("${this_cold_split}")
     LABEL_LIPID_COLDSPLIT+=("${this_lipid_coldsplit}")
     LABEL_FAMILY_ONLY+=("${this_family_only}")
+    LABEL_FAMILY_ONLY_FIXED+=("${this_family_only_fixed}")
     LABEL_RANDOM_SPLIT+=("${this_random_split}")
     LABEL_LIPID_ISOLATION+=("${this_lipid_isolation}")
     LABEL_OUTPUT_ROOT+=("${this_output_root}")
@@ -472,6 +507,7 @@ experiment_record() {
     local cold_split="${LABEL_COLD_SPLIT[label_index]}"
     local lipid_coldsplit="${LABEL_LIPID_COLDSPLIT[label_index]}"
     local family_only="${LABEL_FAMILY_ONLY[label_index]}"
+    local family_only_fixed="${LABEL_FAMILY_ONLY_FIXED[label_index]}"
     local random_split="${LABEL_RANDOM_SPLIT[label_index]}"
     local lipid_isolation="${LABEL_LIPID_ISOLATION[label_index]}"
     local output_root="${LABEL_OUTPUT_ROOT[label_index]}"
@@ -492,6 +528,19 @@ experiment_record() {
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="LIPID SET: ${group} | VARIANT: ${variant} | SEED: ${seed}"
+    elif (( family_only )) && [[ -n "${family_only_fixed}" ]]; then
+        # The family is already spelled out in the template (--family_only=<value>);
+        # nothing is appended, and if --lipid_isolation is ALSO set it stays in the
+        # template too -- this is the "one fixed family, one fixed cold-lipid block"
+        # combination a --lipid_isolation ladder scoped to that family needs.
+        excluded=""
+        output_dir="${output_root}/${group}"
+        stem="${variant}_seed${seed}"
+        header="FAMILY_ONLY (fixed): ${family_only_fixed}"
+        if [[ -n "${lipid_isolation}" ]]; then
+            header+=" | LIPID ISOLATION: ${lipid_isolation}"
+        fi
+        header+=" | VARIANT: ${variant} | SEED: ${seed}"
     elif (( family_only )); then
         # "group" is the one family the whole table is restricted to (warm split
         # inside it, dataloader/Dataloader.py:147-150) -- nothing is EXCLUDED from

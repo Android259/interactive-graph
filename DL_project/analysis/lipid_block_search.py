@@ -90,9 +90,20 @@ class Units:
     one: which rows of the table it owns, how many positives those rows carry, and which
     structures of the compact matrix its candidates point at. Everything the search does
     afterwards is boolean algebra over these, so the table is touched once.
+
+    `family` restricts both the units AND the notion of "training" to one protein
+    family's own rows, mirroring --family_only (Dataloader.py:141-166): every OTHER
+    family's rows are simply absent, not merely excluded, so a unit's isolation is
+    measured against what THIS family's own panel would leave in training, not against
+    the whole table. `csv` keeps its ORIGINAL row index when this is set (no
+    reset_index), because that index is what `compact.row_ids` is expressed in --
+    candidates are matched by id, not by position, so the restriction and the lookup
+    stay consistent without renumbering anything.
     """
 
-    def __init__(self, csv, compact, granularity):
+    def __init__(self, csv, compact, granularity, family=None):
+        if family:
+            csv = csv[csv["ProteinDomain"].str.lower() == family.lower()]
         key = (
             csv["FullIdentityOfLipid"]
             if granularity == "species"
@@ -124,12 +135,24 @@ class Units:
         # a structure counts for a unit when any candidate of any of its rows is that
         # structure, so a structure shared by two units belongs to both -- which is what
         # makes such a block's isolation 1.0 for that structure, correctly.
-        row_to_unit = np.full(len(csv), -1, dtype=np.int64)
+        # Keyed by the ORIGINAL table row id rather than position, so a family
+        # restriction (whose rows are a scattered subset of 0..len(full table)-1, not a
+        # contiguous 0..len(this family)-1 range) still matches compact.row_ids
+        # correctly. A candidate whose row belongs to another family, or to no unit at
+        # all, is simply invisible here -- which is the whole point under a family
+        # restriction: another family's chemistry is not "training", it does not exist.
+        unit_of_row = {}
         for position, rows in enumerate(self.rows):
-            row_to_unit[rows] = position
+            for row in rows:
+                unit_of_row[int(row)] = position
         self.structure_mask = np.zeros((self.count, self.structures), dtype=bool)
-        units_of_candidates = row_to_unit[compact.row_ids]
-        self.structure_mask[units_of_candidates, compact.structure_index] = True
+        units_of_candidates = np.array(
+            [unit_of_row.get(int(row), -1) for row in compact.row_ids]
+        )
+        owned = units_of_candidates >= 0
+        self.structure_mask[
+            units_of_candidates[owned], compact.structure_index[owned]
+        ] = True
 
         self.matrix = np.asarray(compact.matrix, dtype=np.uint8)
         # How many units own each structure. The block grows one unit at a time, and
@@ -317,6 +340,17 @@ def main():
         "--granularity", default="class", choices=("class", "species")
     )
     parser.add_argument(
+        "--family",
+        default="",
+        help=(
+            "restrict both the candidate chemistry and the notion of training to one "
+            "protein family's own rows (case-insensitive ProteinDomain match), for a "
+            "--family_only + --lipid_isolation ladder: isolation is then measured "
+            "against what THAT family's own panel leaves in training, not the whole "
+            "table's"
+        ),
+    )
+    parser.add_argument(
         "--min_positives",
         type=int,
         default=40,
@@ -370,11 +404,12 @@ def main():
         )
 
     started = time.time()
-    units = Units(csv, compact, arguments.granularity)
+    units = Units(csv, compact, arguments.granularity, family=arguments.family or None)
     prepared = time.time() - started
+    scope = f" within {arguments.family}" if arguments.family else ""
     print(
         f"{units.count} {arguments.granularity} units over {units.structures} "
-        f"structures, prepared in {prepared:.1f}s\n"
+        f"structures{scope}, prepared in {prepared:.1f}s\n"
     )
 
     seeds = range(units.count)
@@ -456,7 +491,17 @@ def main():
                 f"{report['composition']}"
             )
             if printed == 0:
-                chosen[f"{target:.2f}"] = {"isolation": value, **report}
+                # "__" rather than ":" -- the key becomes a directory-name component
+                # (new_train.py's excluded_set_name), and a colon is legal on Linux but
+                # an unnecessary risk through shell quoting, OAR job names and any
+                # regex elsewhere that parses that path assuming no punctuation beyond
+                # "_"/"-". FAMILY names never contain "__" themselves.
+                key = (
+                    f"{arguments.family.lower()}__{target:.2f}"
+                    if arguments.family
+                    else f"{target:.2f}"
+                )
+                chosen[key] = {"isolation": value, **report}
             printed += 1
             if printed >= arguments.candidates:
                 break
@@ -472,13 +517,61 @@ def main():
         print(f"wrote {arguments.emit_module}")
 
 
+def load_existing_module(path):
+    """The registry's own two dicts, if `path` already holds one -- else empty.
+
+    --emit_module MERGES rather than overwrites: this file is regenerated by different
+    invocations for different targets and different --family scopes (bare keys "0.85"
+    for a global block, "cral-trio:0.85" for a family-scoped one), and each invocation
+    only knows about the keys it was just asked to find. Clobbering the file on every
+    call would silently delete whatever an earlier call put there -- including blocks
+    that finished runs already reference.
+    """
+    if not os.path.exists(path):
+        return {}, {}
+    namespace = {}
+    with open(path) as handle:
+        exec(compile(handle.read(), path, "exec"), namespace)  # noqa: S102
+    return (
+        dict(namespace.get("LIPID_ISOLATION_BLOCKS", {})),
+        dict(namespace.get("BLOCK_GEOMETRY", {})),
+    )
+
+
 def emit_module(path, chosen, arguments, csv):
-    """Write the registry --lipid_isolation reads, with how each block was produced."""
+    """Write the registry --lipid_isolation reads, merging with what is already there.
+
+    Merges rather than overwrites: this file is regenerated by different invocations
+    for different targets and different --family scopes (bare keys like "0.85" for a
+    global block, "cral-trio:0.85" for one scoped to a family), and each invocation only
+    knows about the keys it was just asked to find. Clobbering the file on every call
+    would silently delete whatever an earlier call put there -- including blocks that
+    finished runs already reference.
+    """
+    blocks, geometry = load_existing_module(path)
+    overwritten = sorted(set(blocks) & set(chosen))
+    if overwritten:
+        print(
+            f"  redefining {len(overwritten)} existing key(s) in {path}: "
+            f"{', '.join(overwritten)}"
+        )
+    for key, report in chosen.items():
+        blocks[key] = tuple(report["units"])
+        geometry[key] = (
+            report["isolation"],
+            report["positives"],
+            report["rows"],
+            len(report["units"]),
+            report["proteins"],
+        )
+
     command = (
         "python3 analysis/lipid_block_search.py "
         f"--granularity {arguments.granularity} --targets {arguments.targets} "
         f"--min_positives {arguments.min_positives} "
-        f"--max_positives {arguments.max_positives} --emit_module {path}"
+        f"--max_positives {arguments.max_positives}"
+        + (f" --family {arguments.family}" if arguments.family else "")
+        + f" --emit_module {path}"
     )
     lines = [
         '"""Held-out lipid blocks at requested distances from training -- generated.',
@@ -489,20 +582,30 @@ def emit_module(path, chosen, arguments, csv):
         "block's isolation -- the mean over its structures of the best Tanimoto",
         "similarity to a structure still in training -- lands on the requested value.",
         "",
+        "A bare key (0.85) is a global block, chosen against the whole table: any",
+        "protein may train on the chemistry left behind. A <family>__<value> key",
+        "(cral-trio__0.85) is scoped to one --family_only run: chosen so that",
+        "training on THAT family's own remaining rows alone reaches the requested",
+        "isolation, which a global block does not promise once every other family's",
+        "chemistry is unavailable.",
+        "",
         "The key is the REQUESTED isolation and the value --lipid_isolation takes;",
         "BLOCK_GEOMETRY below records what each block actually measures, which is what",
         "belongs on a plot -- and a run measures it again for itself anyway",
         "(analysis/split_similarity_vs_metric.py rebuilds every run's own split).",
         "",
-        "Regenerated with:",
+        "This file accumulates across separate `--emit_module` calls (see",
+        "load_existing_module): each call below regenerated or added the keys it names,",
+        "not necessarily every key present.",
+        "",
         f"    {command}",
-        f'"""',
+        '"""',
         "",
         "LIPID_ISOLATION_BLOCKS = {",
     ]
-    for key, report in chosen.items():
+    for key in sorted(blocks):
         lines.append(f'    "{key}": (')
-        for name in report["units"]:
+        for name in blocks[key]:
             lines.append(f'        "{name}",')
         lines.append("    ),")
     lines.append("}")
@@ -510,16 +613,23 @@ def emit_module(path, chosen, arguments, csv):
     lines.append("# What each block measures on the table it was chosen on:")
     lines.append("# key -> (isolation, positives, rows, species, proteins)")
     lines.append("BLOCK_GEOMETRY = {")
-    for key, report in chosen.items():
+    for key in sorted(geometry):
+        isolation_value, positives, rows, species, proteins = geometry[key]
         lines.append(
-            f'    "{key}": ({report["isolation"]:.3f}, {report["positives"]}, '
-            f'{report["rows"]}, {len(report["units"])}, {report["proteins"]}),'
+            f'    "{key}": ({isolation_value:.3f}, {positives}, {rows}, {species}, '
+            f"{proteins}),"
         )
     lines.append("}")
     lines.append("")
+    scope_csv = (
+        csv[csv["ProteinDomain"].str.lower() == arguments.family.lower()]
+        if arguments.family
+        else csv
+    )
+    scope = f"the {arguments.family} family's own rows" if arguments.family else "the whole table"
     lines.append(
-        f"# Table the blocks were chosen on: {len(csv)} rows, "
-        f"{int(csv['Interaction'].sum())} positives."
+        f"# This call's own chosen keys against {scope}: {len(scope_csv)} rows, "
+        f"{int(scope_csv['Interaction'].sum())} positives."
     )
     lines.append("")
     with open(path, "w") as handle:
