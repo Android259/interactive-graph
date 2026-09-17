@@ -20,11 +20,14 @@ from dataloader.pair_descriptors import npr1 as _compute_npr1
 from dataloader.pair_descriptors import npr2 as _compute_npr2
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.sampler import (
+    LIPID_COLDSPLIT_SETS,
     class_level_positive_labels,
     lipid_class_series,
     lipid_classes_for_holdout,
+    sample_protein_balanced_negatives,
 )
 from preprocessing.audit_lipid_identity_by_smiles import features as smiles_features
+from preprocessing.lipid_marginal_baseline import lipid_split
 
 try:
     from rdkit import Chem
@@ -176,6 +179,48 @@ def split_held_pairs(
     return held.loc[in_valid].copy(), held.loc[~in_valid].copy()
 
 
+def cold_split_pools(
+    table: pd.DataFrame, family: str, seed: int, split_mode: str, share: float = 0.8
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """(train, valid, test) for one cold-split block, shared by every non-neural baseline.
+
+    `split_mode`: "single"/"double" hold out a protein family (`family` names it,
+    --excluded_groups/--double_coldsplit parity); "lipid_coldsplit" holds out fixed
+    lipid head-group classes with every protein still in training (`family` is then a
+    LIPID_COLDSPLIT_SETS key, e.g. "sphingolipids" -- --lipid_coldsplit parity, via
+    preprocessing.lipid_marginal_baseline.lipid_split).
+    """
+    if split_mode == "lipid_coldsplit":
+        return lipid_split(table, LIPID_COLDSPLIT_SETS[family], seed)
+    if split_mode == "double":
+        train_pool, held_pool, _ = raw_double_cold_pool(table, family, share)
+    else:
+        train_pool, held_pool = raw_single_cold_pool(table, family)
+    valid_pool, test_pool = split_held_pairs(held_pool, seed)
+    return train_pool, valid_pool, test_pool
+
+
+def balance_pool_negatives(pool: pd.DataFrame, seed: int, ratio: int) -> pd.DataFrame:
+    """Keep every positive row, subsample negatives to `ratio` per positive per protein.
+
+    dataloader.sampler.sample_protein_balanced_negatives -- the same
+    negatives_per_positive convention every current arg file trains AND is scored
+    under (training/read_configuration.py's own default is 2; dataloader/Dataloader.
+    py's `_sample_interactions` applies this balancing to the working set BEFORE the
+    train/valid/test split, so the network's own valid/test rows are already this
+    1:2 pool, never the held-out block's raw positive rate).
+
+    A row-based classifier (unlike Kron-RLS's matrix-completion fit) may call this on
+    TRAIN too -- it has no completeness requirement to protect. `ratio` falsy (0/None)
+    returns `pool` unchanged.
+    """
+    if not ratio:
+        return pool
+    positives = pool[pool["Interaction"] == 1]
+    negatives = sample_protein_balanced_negatives(pool, seed, ratio)
+    return pd.concat([positives, negatives])
+
+
 def aggregate_pair_labels(
     table: pd.DataFrame, lipid_class_targets: bool = False
 ) -> pd.DataFrame:
@@ -223,6 +268,103 @@ def auc_p_vs_u(truth: np.ndarray | pd.Series, scores: np.ndarray | pd.Series) ->
         (ranks[truth == 1].sum() - positive_count * (positive_count + 1) / 2)
         / (positive_count * negative_count)
     )
+
+
+def best_threshold_for_metric(
+    truth: np.ndarray | pd.Series,
+    scores: np.ndarray | pd.Series,
+    metric: str = "balanced_accuracy",
+) -> tuple[float, float]:
+    """The score cut maximizing `metric` ("balanced_accuracy" or "F1") on the pool passed in.
+
+    Kron-RLS scores are ridge-regression outputs, not calibrated probabilities --
+    on a lipid_coldsplit test pool they were observed at roughly -0.11..0.22, nowhere
+    near a fixed 0.5. Thresholding at 0.5 (the network's convention, since its output
+    IS a calibrated sigmoid) would call every row negative here, exactly the
+    "threshold placement" pitfall analysis/null_model.py's docstring warns about for
+    fixed-cut BA on an uncalibrated score. So the cut is fit like protein_lambda/
+    lipid_lambda are: on the validation pool only, then applied unchanged to test --
+    never fit on the pool it will be reported on.
+
+    balanced_accuracy and F1 are NOT maximized by the same cut under class imbalance:
+    BA weighs sensitivity and specificity equally regardless of the tiny positive
+    rate, F1 weighs precision, which collapses fast as false positives pile up against
+    a small positive count. Picking `metric` up front makes that tradeoff explicit
+    instead of silently reporting a BA-optimal cut's F1 (which reads as "broken").
+    """
+    if metric not in ("balanced_accuracy", "F1"):
+        raise ValueError(f"unknown metric {metric!r}; expected balanced_accuracy or F1")
+    truth = np.asarray(truth, dtype=int)
+    scores = np.asarray(scores, dtype=float)
+    order = np.unique(scores)
+    if order.size == 0:
+        return 0.5, float("nan")
+    midpoints = (order[:-1] + order[1:]) / 2 if order.size > 1 else order
+    cuts = np.concatenate([[order[0] - 1e-9], midpoints, [order[-1] + 1e-9]])
+    best_cut, best_value = 0.5, float("-inf")
+    for cut in cuts:
+        predicted = scores >= cut
+        true_positive = int((predicted & (truth == 1)).sum())
+        false_negative = int((~predicted & (truth == 1)).sum())
+        true_negative = int((~predicted & (truth == 0)).sum())
+        false_positive = int((predicted & (truth == 0)).sum())
+        if metric == "balanced_accuracy":
+            if true_positive + false_negative == 0 or true_negative + false_positive == 0:
+                continue
+            value = 0.5 * (
+                true_positive / (true_positive + false_negative)
+                + true_negative / (true_negative + false_positive)
+            )
+        else:
+            denominator = 2 * true_positive + false_positive + false_negative
+            if denominator == 0:
+                continue
+            value = 2 * true_positive / denominator
+        if value > best_value:
+            best_value, best_cut = value, float(cut)
+    if best_value == float("-inf"):
+        return 0.5, float("nan")
+    return best_cut, best_value
+
+
+def binary_confusion_metrics(
+    truth: np.ndarray | pd.Series, scores: np.ndarray | pd.Series, threshold: float
+) -> dict:
+    """Sensitivity/specificity/precision/balanced_accuracy/F1 at a fixed threshold.
+
+    Same formulas as training/new_train.py's metric_values (F1 = 2TP/(2TP+FP+FN),
+    balanced_accuracy = (sensitivity+specificity)/2), so a Kron-RLS row is directly
+    comparable to a network's metrics_summary.csv row of the same names.
+    """
+    truth = np.asarray(truth, dtype=int)
+    predicted = np.asarray(scores, dtype=float) >= threshold
+    true_positive = int((predicted & (truth == 1)).sum())
+    false_negative = int((~predicted & (truth == 1)).sum())
+    true_negative = int((~predicted & (truth == 0)).sum())
+    false_positive = int((predicted & (truth == 0)).sum())
+    sensitivity = (
+        true_positive / (true_positive + false_negative)
+        if (true_positive + false_negative) else float("nan")
+    )
+    specificity = (
+        true_negative / (true_negative + false_positive)
+        if (true_negative + false_positive) else float("nan")
+    )
+    precision = (
+        true_positive / (true_positive + false_positive)
+        if (true_positive + false_positive) else float("nan")
+    )
+    denominator = 2 * true_positive + false_positive + false_negative
+    return {
+        "sensitivity": sensitivity,
+        "specificity": specificity,
+        "precision": precision,
+        "balanced_accuracy": (
+            float("nan") if np.isnan(sensitivity) or np.isnan(specificity)
+            else 0.5 * (sensitivity + specificity)
+        ),
+        "F1": (2 * true_positive / denominator) if denominator else float("nan"),
+    }
 
 
 def _pocket_mask(nodes: pd.DataFrame, pocket_path: Path) -> np.ndarray:
@@ -762,6 +904,9 @@ def build_lipid_kernel(
       the full, unfiltered, original-row-order interaction table (see
       `species_tanimoto_similarity` -- it is positionally aligned to the compact
       Tanimoto artefacts, not to any subset).
+    - "tanimoto_headgroup": the same, but on the head group only, acyl tails cut off
+      first (species_headgroup_tanimoto_similarity, preprocessing/build_tanimoto_
+      headgroup.py's artefacts) -- same positional-alignment requirement on `table`.
     - "explicit": the existing interpretable lipid descriptors, turned into a kernel
       via `kernel_type`.
     - "explicit_subset": the same explicit_lipid_features table, restricted to
@@ -781,6 +926,11 @@ def build_lipid_kernel(
     if kind == "tanimoto":
         similarity, index = species_tanimoto_similarity(table)
         kernel = _kernel_from_index(similarity.astype(float), index, entities, "tanimoto similarity")
+    elif kind == "tanimoto_headgroup":
+        similarity, index = species_headgroup_tanimoto_similarity(table)
+        kernel = _kernel_from_index(
+            similarity.astype(float), index, entities, "head-group tanimoto similarity"
+        )
     elif kind == "explicit":
         features = explicit_lipid_features(table)
         missing = sorted(set(entities) - set(features.index))
@@ -821,8 +971,8 @@ def build_lipid_kernel(
         kernel = _kernel_from_index(matrix, index, entities, str(kernel_path))
     else:
         raise ValueError(
-            f"unknown lipid kernel {kind!r}; expected tanimoto, explicit, explicit_subset, "
-            "custom_features, or custom_kernel"
+            f"unknown lipid kernel {kind!r}; expected tanimoto, tanimoto_headgroup, explicit, "
+            "explicit_subset, custom_features, or custom_kernel"
         )
     return kernel, {name: position for position, name in enumerate(entities)}
 
@@ -833,6 +983,51 @@ def species_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarray, dict[s
     matrix = np.load(data_dir / "Tanimoto_compact_isomeric_matrix_uint8.npy").astype(np.float32) / 255.0
     structure_index = np.load(data_dir / "Tanimoto_compact_isomeric_structure_index.npy")
     row_ids = np.load(data_dir / "Tanimoto_compact_isomeric_row_ids.npy")
+    structures_of_row: dict[int, set[int]] = {}
+    for row_id, structure in zip(row_ids, structure_index):
+        structures_of_row.setdefault(int(row_id), set()).add(int(structure))
+    structures_of_species: dict[str, set[int]] = {}
+    for row_position, species in enumerate(table["FullIdentityOfLipid"]):
+        structures_of_species.setdefault(species, set()).update(
+            structures_of_row.get(row_position, set())
+        )
+    names = sorted(structures_of_species)
+    index = {name: position for position, name in enumerate(names)}
+    similarity = np.empty((len(names), len(names)), dtype=np.float32)
+    for position, name in enumerate(names):
+        source = matrix[sorted(structures_of_species[name]), :].max(axis=0)
+        similarity[position] = [
+            source[sorted(structures_of_species[other])].max() for other in names
+        ]
+    return similarity, index
+
+
+def species_headgroup_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarray, dict[str, int]]:
+    """Species Tanimoto restricted to the head group -- acyl tails cut off first.
+
+    Same max-reduction-over-candidate-structures scheme as species_tanimoto_
+    similarity, over preprocessing/build_tanimoto_headgroup.py's artefacts instead
+    of build_tanimoto_compact.py's: every candidate SMILES has its qualifying acyl
+    tails removed (dataloader.pair_descriptors._qualifying_tails' rule) before the
+    Tanimoto matrix is built, so two species differing only in chain length/
+    unsaturation collapse onto the same head-group fingerprint. Answers "does
+    headgroup chemistry alone carry the signal", the direct chemical counterpart
+    of --lipid_coldsplit's own class-name-based holdout (LIPID_COLDSPLIT_SETS
+    groups by the same head-group boundary, just categorically instead of by
+    structure) -- a species-level Tanimoto lookup that does not need the class
+    name at all, so it can rank NOVEL head groups too, not just the four named
+    ones. Non-isomeric only (no *_isomeric* artefact has been built for this yet);
+    unlike species_tanimoto_similarity this does not require --lipid_isomers
+    parity, since head-group fingerprints normally do not depend on tail
+    stereochemistry.
+    """
+    data_dir = PROJECT_ROOT / "data"
+    matrix = (
+        np.load(data_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy").astype(np.float32)
+        / 255.0
+    )
+    structure_index = np.load(data_dir / "Tanimoto_headgroup_compact_structure_index.npy")
+    row_ids = np.load(data_dir / "Tanimoto_headgroup_compact_row_ids.npy")
     structures_of_row: dict[int, set[int]] = {}
     for row_id, structure in zip(row_ids, structure_index):
         structures_of_row.setdefault(int(row_id), set()).add(int(structure))
