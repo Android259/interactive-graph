@@ -96,6 +96,13 @@ from analysis.kronrls_baseline import (  # noqa: E402
     load_table,
     resolve_families,
 )
+from training.pair_baseline_common import (  # noqa: E402
+    balance_pool_negatives,
+    cold_split_pools,
+    csv_classes,
+    generate_lipid_isolation_groups,
+    resolve_excluded_lipids,
+)
 
 # analysis/summarize_label.py's own METRICS table, restricted to what a Kron-RLS row
 # actually has: (build_report() column, printed label, is_auc), same order/wording
@@ -167,6 +174,22 @@ CONFIG_ARG_FIELDS = (
     "lipid_lambda", "positive_weight", "eval_negatives_per_positive", "share",
     "lipid_class_targets", "select_metric", "threshold_metric",
 )
+
+
+def print_split_brief(table: pd.DataFrame, family: str, seed: int, args: argparse.Namespace) -> None:
+    """One line per group: lipid classes in valid/test, valid+test row count.
+    Uses seeds[0]'s pool as representative (train/class composition is fixed per
+    group; valid/test size barely moves across seeds) -- printed once per group,
+    not once per (group, seed), to avoid repeating the same line seeds times.
+    """
+    _, valid_pool, test_pool = cold_split_pools(
+        table, family, seed, args.split_mode, args.share,
+        excluded_lipids=getattr(args, "excluded_lipids_species", None),
+    )
+    valid_pool = balance_pool_negatives(valid_pool, seed, args.eval_negatives_per_positive)
+    test_pool = balance_pool_negatives(test_pool, seed, args.eval_negatives_per_positive)
+    classes = sorted(set(csv_classes(valid_pool)) | set(csv_classes(test_pool)))
+    print(f"{family}: classes={','.join(classes)} | valid+test rows={len(valid_pool) + len(test_pool)}")
 
 
 def _format(value) -> str:
@@ -488,6 +511,46 @@ def main() -> None:
         "--out_root", type=Path, default=PROJECT_ROOT / "test_metrics",
         help="parent of cron_<label>/ (default: the project's test_metrics/)",
     )
+    parser.add_argument(
+        "--families_number", type=int, default=None,
+        help=(
+            "generate this many --lipid_coldsplit species blocks via "
+            "training.pair_baseline_common.generate_lipid_isolation_groups (analysis/"
+            "lipid_block_search.py's search) instead of naming --families by hand -- "
+            "not forced disjoint (lipids may repeat across groups), but each pair "
+            "kept under 50% Jaccard overlap so groups stay genuinely different "
+            "chemistries, persisted into dataloader/lipid_isolation_blocks.py and "
+            "used as this run's --families. Only valid with --split_mode "
+            "lipid_coldsplit. A single bare --families value combined with this "
+            "names the target those groups cluster around, same as "
+            "--isolation_target."
+        ),
+    )
+    parser.add_argument(
+        "--isolation_target", default=None,
+        help=(
+            "ONE Tanimoto-isolation target applied to EVERY --families entry under "
+            "--split_mode double -- shorthand for suffixing each family with "
+            "\"__<target>\" by hand (--families=CRAL-TRIO,START "
+            "--isolation_target=0.8 is the same run as "
+            "--families=CRAL-TRIO__0.8,START__0.8). A family already carrying its "
+            "own \"__<target>\" is left alone. Combined with --families_number "
+            "instead, names the target those generated groups cluster around."
+        ),
+    )
+    parser.add_argument(
+        "--excluded_lipids", default=None,
+        help=(
+            "comma-separated FullIdentityOfLipid species names and/or bare "
+            "head-group class names (a class expands to every species in it) to "
+            "hold out of training directly, bypassing LIPID_COLDSPLIT_SETS/LIPID_"
+            "ISOLATION_BLOCKS entirely -- a hand-picked valid/test composition "
+            "instead of a named class set or a searched Tanimoto target. Implies the "
+            "lipid_coldsplit behaviour (every protein stays in training) on its "
+            "own: --split_mode need not be given (and is ignored if it is). Runs "
+            "as one group, labeled \"custom\"."
+        ),
+    )
     args = parser.parse_args()
 
     if args.pair_features:
@@ -503,9 +566,77 @@ def main() -> None:
     run_label = run_label or "adhoc"
     _resolve_descriptor_shorthand(args)
 
+    args.excluded_lipids_species = None
+    if args.excluded_lipids:
+        if args.families or args.families_number:
+            parser.error(
+                "--excluded_lipids gives its own species list directly -- combining "
+                "it with --families/--families_number is ambiguous, drop one"
+            )
+        args.excluded_lipids_species = tuple(
+            name.strip() for name in args.excluded_lipids.split(",") if name.strip()
+        )
+
+    families_number_target = 0.0
+    if args.families_number:
+        if args.split_mode != "lipid_coldsplit":
+            parser.error("--families_number only applies to --split_mode lipid_coldsplit")
+        if args.isolation_target and args.families:
+            parser.error(
+                "--isolation_target and --families both name a target for "
+                "--families_number -- give only one"
+            )
+        if args.isolation_target:
+            families_number_target = float(args.isolation_target)
+        elif args.families:
+            # --families=0.6 --families_number=3: the bare target those 3 groups
+            # should cluster around, the same role --isolation_target plays --
+            # exactly what a user reaching for --families to name ONE group
+            # naturally tries when asking for several around it instead.
+            given = [name for name in args.families.split(",") if name]
+            if len(given) != 1:
+                parser.error(
+                    "--families_number combined with --families needs exactly ONE "
+                    "value -- the target isolation those groups should cluster "
+                    "around (e.g. --families=0.6 --families_number=3), not a list "
+                    "of groups to run (that is what --families_number itself "
+                    "generates)"
+                )
+            try:
+                families_number_target = float(given[0])
+            except ValueError:
+                parser.error(
+                    f"--families_number combined with --families needs a numeric "
+                    f"target, got {given[0]!r}"
+                )
+    if args.isolation_target and args.split_mode not in ("double", "lipid_coldsplit"):
+        parser.error("--isolation_target only applies to --split_mode double/lipid_coldsplit")
+
     table = load_table(args)
-    families = resolve_families(args)
+    if args.excluded_lipids_species:
+        try:
+            args.excluded_lipids_species = resolve_excluded_lipids(
+                table, list(args.excluded_lipids_species)
+            )
+        except ValueError as error:
+            parser.error(str(error))
+        families = ["custom"]
+    elif args.families_number:
+        families = generate_lipid_isolation_groups(
+            table, args.families_number, target=families_number_target
+        )
+    else:
+        families = resolve_families(args)
+    if args.isolation_target and args.split_mode == "double":
+        families = [
+            family if "__" in family else f"{family}__{args.isolation_target}"
+            for family in families
+        ]
     seeds = [int(value) for value in args.seeds.split(",")]
+
+    for family in families:
+        print_split_brief(table, family, seeds[0], args)
+    print()
 
     report = build_report(table, families, seeds, args)
     print_standard_summary(report, run_label, complete=args.complete)

@@ -156,6 +156,27 @@ def lipid_split(csvt, lipid_classes, seed):
     return (train,) + halve_excluded_block(excluded, seed)
 
 
+def lipid_isolation_split(csvt, species, seed):
+    """The loader's `--lipid_isolation`, valid/test halves included.
+
+    `lipid_split`'s counterpart keyed by SPECIES (FullIdentityOfLipid) instead of
+    head-group class -- dataloader/Dataloader.py's `_cold_chemistry` treats the two
+    the same way (`held |= frame["FullIdentityOfLipid"].isin(self.excluded_lipid_
+    species)` there, vs. `lipid_class_series(...).isin(...)` for `--lipid_coldsplit`),
+    so this mirrors `lipid_split` exactly with that one substitution. `species` is a
+    fixed set of FullIdentityOfLipid values (one entry of dataloader.
+    lipid_isolation_blocks.LIPID_ISOLATION_BLOCKS, chosen by analysis/
+    lipid_block_search.py to land at a REQUESTED Tanimoto isolation from training),
+    not derived from a family the way the two-axis split derives its classes.
+    """
+    held = set(species)
+    if not held:
+        raise ValueError("lipid_isolation_split needs a non-empty species set")
+    train = csvt[~csvt["FullIdentityOfLipid"].isin(held)]
+    excluded = csvt.drop(train.index)
+    return (train,) + halve_excluded_block(excluded, seed)
+
+
 def balanced_accuracy(truth, prediction):
     positive = truth == 1
     negative = ~positive

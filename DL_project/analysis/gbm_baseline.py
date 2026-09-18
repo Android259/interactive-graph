@@ -60,6 +60,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from dataloader.chemistry_prior import null_scores, null_scores_leave_one_row_out  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
+from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES, pair_descriptor_value  # noqa: E402
 from dataloader.sampler import LIPID_COLDSPLIT_SETS, lipid_class_series  # noqa: E402
 from null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
 from training.pair_baseline_common import (  # noqa: E402
@@ -70,27 +71,104 @@ from training.pair_baseline_common import (  # noqa: E402
     cold_split_pools,
     explicit_lipid_features,
     protein_pocket_features,
+    resolve_lipid_feature_subset,
+    resolve_protein_feature_subset,
     species_headgroup_tanimoto_similarity,
     species_tanimoto_similarity,
 )
 
 DEFAULT_FAMILIES = ("CRAL-TRIO", "GLTP", "IP_trans", "LBP_BPI_CETP", "START", "lipocalin", "scp2")
 DEFAULT_LIPID_COLDSPLIT_GROUPS = tuple(LIPID_COLDSPLIT_SETS.keys())
+# dataloader.pair_descriptors.pair_descriptor_value's own lipid_values/protein_values
+# dict keys, across every PAIR_DESCRIPTOR_NAMES entry -- the fixed set of columns
+# build_pair_feature_inputs needs from explicit_lipid_features/protein_pocket_
+# features (via resolve_protein_feature_subset) regardless of which pair names are
+# actually requested, so one small lookup table serves all of them.
+PAIR_DESCRIPTOR_LIPID_INPUTS = ("chain", "unsaturation", "hbond", "heavy", "tail_count", "npr1", "npr2")
+PAIR_DESCRIPTOR_PROTEIN_INPUTS = (
+    "pocket_extent", "aromatic_share", "polar_share", "pocket_volume_per_sasa",
+    "buriedness_q50", "depth_q10", "hydropathy_core", "hydropathy_rim",
+    "pocket_elongation", "pocket_flatness",
+)
 DEFAULT_NEIGHBOURS = 15
 
 
-def build_feature_tables(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def build_feature_tables(
+    table: pd.DataFrame,
+    protein_descriptor_names: list[str] | None = None,
+    lipid_descriptor_names: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Protein and lipid feature tables, built once over the whole interaction table.
 
     Fixed columns regardless of which pool (train/valid/test) later indexes into
     them, so a held-out lipid's row is just another lookup, never a retrain of the
     feature space -- the mechanism that lets this model score a genuinely novel
     lipid at all.
+
+    `protein_descriptor_names`/`lipid_descriptor_names`: None (default) keeps every
+    column protein_pocket_features/explicit_lipid_features produce, same as before
+    this parameter existed. A list restricts to those names -- protein names
+    resolved through resolve_protein_feature_subset and lipid names through
+    resolve_lipid_feature_subset (the SAME resolution analysis/kronrls_baseline.py's
+    --protein_kernel=pocket_subset/--lipid_kernel=explicit_subset use: protein_
+    pocket_features'/explicit_lipid_features' own columns first, dataloader.
+    pair_descriptors.PROTEIN_DESCRIPTOR_NAMES/LIPID_DESCRIPTOR_NAMES for anything
+    they do not hand-implement, "molformer" for the network's own raw lipid
+    embedding) -- so this baseline's --lipid_features/--protein_features shorthand
+    (scripts/run_gbm.py) can never resolve a name differently than Kron-RLS's does.
     """
     proteins = sorted(table["LTPProtein"].unique())
-    protein_features = protein_pocket_features(proteins).add_prefix("protein__")
-    lipid_features = explicit_lipid_features(table).add_prefix("lipid__")
+    if protein_descriptor_names:
+        protein_features = resolve_protein_feature_subset(proteins, list(protein_descriptor_names))
+    else:
+        protein_features = protein_pocket_features(proteins)
+    protein_features = protein_features.add_prefix("protein__")
+
+    if lipid_descriptor_names:
+        lipid_features = resolve_lipid_feature_subset(table, lipid_descriptor_names)
+    else:
+        lipid_features = explicit_lipid_features(table)
+    lipid_features = lipid_features.add_prefix("lipid__")
     return protein_features, lipid_features
+
+
+def build_pair_feature_inputs(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(lipid_inputs, protein_inputs): the fixed columns dataloader.pair_descriptors.
+    pair_descriptor_value reads off its lipid_values/protein_values dicts, built once
+    over the whole table/every protein -- the row-classifier counterpart of
+    build_feature_tables, feeding pair_feature_columns below instead of the model
+    directly (a --pair_descriptor_names name is a FUNCTION of these, not a column of
+    either raw table).
+    """
+    lipid_inputs = explicit_lipid_features(table).loc[:, list(PAIR_DESCRIPTOR_LIPID_INPUTS)]
+    proteins = sorted(table["LTPProtein"].unique())
+    protein_inputs = resolve_protein_feature_subset(proteins, list(PAIR_DESCRIPTOR_PROTEIN_INPUTS))
+    return lipid_inputs, protein_inputs
+
+
+def pair_feature_columns(
+    pool: pd.DataFrame,
+    lipid_inputs: pd.DataFrame,
+    protein_inputs: pd.DataFrame,
+    names: list[str],
+) -> pd.DataFrame:
+    """One column per requested PAIR_DESCRIPTOR_NAMES entry, index-aligned to `pool`
+    (row order, reset to a plain RangeIndex like row_features' own protein/lipid
+    parts) -- --pair_features' actual values, unlike Kron-RLS (see run_cron.py's own
+    module docstring for why that one structurally cannot take one at all): a row
+    classifier has no separable-kernel constraint, so a joint (protein, lipid) value
+    is just one more feature column here.
+    """
+    lipid_rows = lipid_inputs.loc[pool["FullIdentityOfLipid"]].to_dict("records")
+    protein_rows = protein_inputs.loc[pool["LTPProtein"]].to_dict("records")
+    values = {
+        f"pair__{name}": [
+            pair_descriptor_value(name, lipid_row, protein_row)
+            for lipid_row, protein_row in zip(lipid_rows, protein_rows)
+        ]
+        for name in names
+    }
+    return pd.DataFrame(values).reset_index(drop=True)
 
 
 def build_similarity(table: pd.DataFrame, kind: str) -> tuple[np.ndarray, dict[str, int]] | None:
@@ -137,6 +215,7 @@ def row_features(
     protein_features: pd.DataFrame,
     lipid_features: pd.DataFrame,
     similarity_column: pd.DataFrame | None = None,
+    pair_columns: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """One feature row per (protein, lipid) pair in `pool`, index-aligned to it."""
     proteins = protein_features.loc[pool["LTPProtein"]].reset_index(drop=True)
@@ -144,6 +223,8 @@ def row_features(
     parts = [proteins, lipids]
     if similarity_column is not None:
         parts.append(similarity_column.reset_index(drop=True))
+    if pair_columns is not None:
+        parts.append(pair_columns.reset_index(drop=True))
     return pd.concat(parts, axis=1)
 
 
@@ -155,10 +236,12 @@ def evaluate_block(
     protein_features: pd.DataFrame,
     lipid_features: pd.DataFrame,
     similarity: tuple[np.ndarray, dict[str, int]] | None,
+    pair_feature_inputs: tuple[pd.DataFrame, pd.DataFrame] | None = None,
 ) -> dict:
     """Fit and score one (family, seed) cold-split block."""
     train_pool, valid_pool, test_pool = cold_split_pools(
-        table, family, seed, args.split_mode, args.share
+        table, family, seed, args.split_mode, args.share,
+        excluded_lipids=getattr(args, "excluded_lipids_species", None),
     )
     train_pool = balance_pool_negatives(train_pool, seed, args.train_negatives_per_positive)
     valid_pool = balance_pool_negatives(valid_pool, seed, args.eval_negatives_per_positive)
@@ -176,11 +259,30 @@ def evaluate_block(
             test_pool, train_pool, similarity, args.similarity_neighbours, is_train=False
         )
 
-    x_train = row_features(train_pool, protein_features, lipid_features, train_similarity_column)
+    train_pair = valid_pair = test_pair = None
+    if pair_feature_inputs is not None and args.pair_descriptor_names:
+        lipid_inputs, protein_inputs = pair_feature_inputs
+        train_pair = pair_feature_columns(
+            train_pool, lipid_inputs, protein_inputs, args.pair_descriptor_names
+        )
+        valid_pair = pair_feature_columns(
+            valid_pool, lipid_inputs, protein_inputs, args.pair_descriptor_names
+        )
+        test_pair = pair_feature_columns(
+            test_pool, lipid_inputs, protein_inputs, args.pair_descriptor_names
+        )
+
+    x_train = row_features(
+        train_pool, protein_features, lipid_features, train_similarity_column, train_pair
+    )
     y_train = train_pool["Interaction"].to_numpy()
-    x_valid = row_features(valid_pool, protein_features, lipid_features, valid_similarity_column)
+    x_valid = row_features(
+        valid_pool, protein_features, lipid_features, valid_similarity_column, valid_pair
+    )
     y_valid = valid_pool["Interaction"].to_numpy()
-    x_test = row_features(test_pool, protein_features, lipid_features, test_similarity_column)
+    x_test = row_features(
+        test_pool, protein_features, lipid_features, test_similarity_column, test_pair
+    )
     y_test = test_pool["Interaction"].to_numpy()
 
     model = HistGradientBoostingClassifier(
@@ -239,16 +341,41 @@ def evaluate_block(
         "train_lipids": train_pool["FullIdentityOfLipid"].nunique(),
         "valid_rows": len(valid_pool),
         "test_rows": len(test_pool),
+        # Full test-block confusion matrix at `threshold` -- same bare keys
+        # kronrls_baseline.py's own evaluate_block returns, so scripts/run_gbm.py's
+        # report-file writer (mirroring scripts/run_cron.py's) can share the same
+        # METRIC_FIELD_MAP shape.
+        "total": test_metrics["total"],
+        "real_positive": test_metrics["real_positive"],
+        "real_negative": test_metrics["real_negative"],
+        "predicted_positive": test_metrics["predicted_positive"],
+        "predicted_negative": test_metrics["predicted_negative"],
+        "TP": test_metrics["TP"],
+        "FP": test_metrics["FP"],
+        "TN": test_metrics["TN"],
+        "FN": test_metrics["FN"],
+        "accuracy": test_metrics["accuracy"],
+        "precision": test_metrics["precision"],
+        "IoU": test_metrics["IoU"],
+        "FAR": test_metrics["FAR"],
     }
 
 
 def build_report(
     table: pd.DataFrame, families: list[str], seeds: list[int], args: argparse.Namespace
 ) -> pd.DataFrame:
-    protein_features, lipid_features = build_feature_tables(table)
+    protein_features, lipid_features = build_feature_tables(
+        table, args.protein_descriptor_names, args.lipid_descriptor_names
+    )
     similarity = build_similarity(table, args.lipid_similarity_feature)
+    pair_feature_inputs = (
+        build_pair_feature_inputs(table) if args.pair_descriptor_names else None
+    )
     rows = [
-        evaluate_block(table, family, seed, args, protein_features, lipid_features, similarity)
+        evaluate_block(
+            table, family, seed, args, protein_features, lipid_features, similarity,
+            pair_feature_inputs,
+        )
         for family in families
         for seed in seeds
     ]
@@ -297,7 +424,7 @@ def print_report(report: pd.DataFrame, args: argparse.Namespace) -> None:
     )
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -390,18 +517,68 @@ def main() -> None:
         "--show_per_block", action="store_true",
         help="also print the full per-family/per-seed row table (hidden by default)",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--protein_descriptor_names", default=None,
+        type=lambda text: [name for name in text.split(",") if name],
+        help=(
+            "restrict protein features to this comma-separated subset of "
+            "POCKET_ALL_NAMES (default: every column protein_pocket_features "
+            "produces). scripts/run_gbm.py's --protein_features is a convenience "
+            "alias that sets this."
+        ),
+    )
+    parser.add_argument(
+        "--lipid_descriptor_names", default=None,
+        type=lambda text: [name for name in text.split(",") if name],
+        help=(
+            "restrict lipid features to this comma-separated subset, resolved via "
+            "training.pair_baseline_common.resolve_lipid_feature_subset -- the SAME "
+            "name resolution analysis/kronrls_baseline.py's --lipid_kernel="
+            "explicit_subset uses (explicit_lipid_features' own columns, "
+            "dataloader.pair_descriptors.LIPID_DESCRIPTOR_NAMES for the rest, plus "
+            "the special name 'molformer'). Default: every column "
+            "explicit_lipid_features produces. scripts/run_gbm.py's --lipid_features "
+            "is a convenience alias that sets this."
+        ),
+    )
+    parser.add_argument(
+        "--pair_descriptor_names", default=None,
+        type=lambda text: [name for name in text.split(",") if name],
+        help=(
+            "add one feature column per named dataloader.pair_descriptors."
+            "PAIR_DESCRIPTOR_NAMES entry (occupancy, aromatic_contact, ...), computed "
+            "via pair_descriptor_value from build_pair_feature_inputs' fixed lipid/"
+            "protein input columns -- unlike Kron-RLS (see run_cron.py's own module "
+            "docstring for why that one structurally cannot), a row classifier has "
+            "no separable-kernel constraint, so a joint (protein, lipid) value is "
+            "just one more feature here. Default: none (no pair features). scripts/"
+            "run_gbm.py's --pair_features is a convenience alias that sets this."
+        ),
+    )
+    return parser
 
+
+def load_table(args: argparse.Namespace) -> pd.DataFrame:
     csv_path = args.csv or interaction_csv_path(os.path.join(PROJECT_ROOT, "data"))
     table = pd.read_csv(csv_path)
     table["pair_id"] = table.index.astype(int)
+    return table
 
+
+def resolve_families(args: argparse.Namespace) -> list[str]:
     if args.families:
-        families = [name for name in args.families.split(",") if name]
-    elif args.split_mode == "lipid_coldsplit":
-        families = list(DEFAULT_LIPID_COLDSPLIT_GROUPS)
-    else:
-        families = list(DEFAULT_FAMILIES)
+        return [name for name in args.families.split(",") if name]
+    if args.split_mode == "lipid_coldsplit":
+        return list(DEFAULT_LIPID_COLDSPLIT_GROUPS)
+    return list(DEFAULT_FAMILIES)
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+
+    table = load_table(args)
+    families = resolve_families(args)
     seeds = [int(value) for value in args.seeds.split(",")]
 
     report = build_report(table, families, seeds, args)

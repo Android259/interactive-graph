@@ -226,8 +226,16 @@ def test_compute_one_computes_everything_fresh_without_a_seed():
     _, entry = _compute_one("CCO", seed_entry=None)
     assert set(entry) == {"chain", *pair_descriptor_cache._MEASURES}
     tail_only = set(pair_descriptors.CANDIDATE_LIPID_DESCRIPTOR_NAMES)
+    # experimental_lipid_volume is a data/Lipid_Volumes.xlsx lookup, not an RDKit
+    # formula -- unlike every other name here, it is legitimately None for anything
+    # RDKit parses fine but the sheet never measured (ethanol included), so it does
+    # not share this test's "always resolves" invariant even though it is promoted
+    # into LIPID_DESCRIPTOR_NAMES.
+    always_resolves = {"experimental_lipid_volume"} | tail_only
     assert all(
-        value is not None for name, value in entry.items() if name not in tail_only
+        value is not None
+        for name, value in entry.items()
+        if name not in always_resolves
     )
 
     # A real lipid: now the tail measures have values too. tail_double_bond_position is

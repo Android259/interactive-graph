@@ -219,7 +219,8 @@ def evaluate_block(
     preserves the old always-rebuild behaviour for any other caller.
     """
     train_pool, valid_pool, test_pool = cold_split_pools(
-        table, family, seed, args.split_mode, args.share
+        table, family, seed, args.split_mode, args.share,
+        excluded_lipids=getattr(args, "excluded_lipids_species", None),
     )
 
     # Score against the same 1:2 pool the network is scored against, not the held-out

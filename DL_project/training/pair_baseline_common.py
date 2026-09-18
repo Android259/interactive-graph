@@ -8,6 +8,7 @@ not download annotations, structures, or assays, and they never modify the data 
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 from pathlib import Path
@@ -23,6 +24,8 @@ from dataloader.pair_descriptors import heavy_atom_count as _heavy_atom_count
 from dataloader.pair_descriptors import longest_acyl_chain as _longest_acyl_chain
 from dataloader.pair_descriptors import unsaturation_count as _unsaturation_count
 from dataloader.pair_descriptors import LIPID_DESCRIPTOR_NAMES
+from dataloader.pair_descriptors import PROTEIN_DERIVED_DESCRIPTOR_NAMES
+from dataloader.pair_descriptors import PROTEIN_DESCRIPTOR_NAMES
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.sampler import (
     LIPID_COLDSPLIT_SETS,
@@ -32,7 +35,7 @@ from dataloader.sampler import (
     sample_protein_balanced_negatives,
 )
 from preprocessing.audit_lipid_identity_by_smiles import features as smiles_features
-from preprocessing.lipid_marginal_baseline import lipid_split
+from preprocessing.lipid_marginal_baseline import lipid_isolation_split, lipid_split
 
 try:
     from rdkit import Chem
@@ -139,6 +142,82 @@ def csv_classes(table: pd.DataFrame) -> pd.Series:
     return lipid_class_series(table)
 
 
+def _article_subclass_lookup() -> dict[str, set[str]]:
+    """{article subclass (lowercase, e.g. "pc") -> species set}, from
+    data/lipid_article_classification.json (preprocessing/classify_lipids_by_
+    article.py's own output: Titeca et al. 2023 Figure 3a's LTP-lipid subclass
+    scheme -- see files/data_source.md). Empty (not an error) when that file has
+    never been generated -- resolve_excluded_lipids then simply finds no match for
+    an article-subclass name, same as any other genuinely unknown one.
+    """
+    path = PROJECT_ROOT / "data" / "lipid_article_classification.json"
+    if not path.exists():
+        return {}
+    import json
+
+    mapping = json.loads(path.read_text())
+    by_subclass: dict[str, set[str]] = {}
+    for species, subclass in mapping.items():
+        by_subclass.setdefault(subclass.lower(), set()).add(species)
+    return by_subclass
+
+
+def resolve_excluded_lipids(table: pd.DataFrame, names: list[str]) -> tuple[str, ...]:
+    """--excluded_lipids' own name resolution: each entry in `names` is one of
+    three things, tried in this order --
+
+    1. an EXACT FullIdentityOfLipid species name (e.g. "Phosphatidylcholine (34:1)")
+    2. a bare head-group CLASS name (csv_classes' own value, e.g.
+       "Phosphatidylcholine", case-insensitive) -- expands to every species
+       csv_classes assigns to it
+    3. an article LTP-lipid subclass abbreviation (Titeca et al. 2023 Figure 3a,
+       e.g. "PC", "Cer", "HexCer" -- files/data_source.md's own table, resolved via
+       data/lipid_article_classification.json) -- expands to every species that
+       classification assigns to it, coarser than (2) for classes the article
+       lumps together (PC and PC-O, for instance, both become PC's "Phosphatidyl-
+       choline" project class already, so this mostly matters for FA/FAL, which
+       collapse many distinct project classes into one article subclass)
+
+    Mixing all three kinds in one list is fine; they never collide (a species name
+    always carries chain composition in parentheses, or a semicolon-joined
+    ambiguity list, which neither class form has, and this project's class names
+    and article abbreviations do not share a spelling).
+
+    Raises ValueError naming whichever entries matched none of the three, rather
+    than silently excluding nothing for them (a bare class name used to slip
+    through as an unmatched species, producing an empty held-out block and an
+    all-NaN report instead of an error).
+    """
+    known_species = set(table["FullIdentityOfLipid"])
+    classes = csv_classes(table)
+    class_lookup = {name.lower(): name for name in classes.unique()}
+    article_lookup: dict[str, set[str]] | None = None
+    species: set[str] = set()
+    unknown: list[str] = []
+    for name in names:
+        if name in known_species:
+            species.add(name)
+        elif name.lower() in class_lookup:
+            species.update(table.loc[classes == class_lookup[name.lower()], "FullIdentityOfLipid"])
+        else:
+            if article_lookup is None:
+                article_lookup = _article_subclass_lookup()
+            if name.lower() in article_lookup:
+                species.update(article_lookup[name.lower()])
+            else:
+                unknown.append(name)
+    if unknown:
+        raise ValueError(
+            f"--excluded_lipids: {unknown} match neither a FullIdentityOfLipid "
+            "species (e.g. \"Phosphatidylcholine (34:1)\"), a head-group class "
+            f"(e.g. \"Phosphatidylcholine\" -- known: {sorted(class_lookup.values())}), "
+            "nor an article LTP-lipid subclass (e.g. \"PC\", \"Cer\" -- see "
+            "files/data_source.md; run preprocessing/classify_lipids_by_article.py "
+            "first if data/lipid_article_classification.json does not exist yet)"
+        )
+    return tuple(sorted(species))
+
+
 def raw_double_cold_pool(
     table: pd.DataFrame, family: str, share: float
 ) -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...]]:
@@ -160,6 +239,33 @@ def raw_double_cold_pool(
     if train.empty or evaluation.empty:
         raise ValueError(f"{family}: empty train or held-out block")
     return train, evaluation, held_classes
+
+
+def raw_double_isolation_pool(
+    table: pd.DataFrame, family: str, target: str
+) -> tuple[pd.DataFrame, pd.DataFrame, tuple[str, ...]]:
+    """raw_double_cold_pool's counterpart keyed by a numeric Tanimoto-isolation
+    target (species, via resolve_lipid_isolation_species) instead of lipid_classes_
+    for_holdout's derived named class set.
+
+    Exactly the combination dataloader/Dataloader.py's `_split_interactions`
+    produces when --excluded_groups + --lipid_isolation + --double_coldsplit run
+    together (see its own comment on `double_coldsplit and _has_cold_chemistry`):
+    the family leaves train (protein axis), the target's species block leaves
+    train for EVERY protein (lipid axis, computed once against the WHOLE table --
+    the same global block a bare --lipid_coldsplit=<target> run would use, not
+    re-searched against this family's own reduced training set), and the reported
+    pool is exactly their intersection: the family's own rows on that species block.
+    """
+    species = resolve_lipid_isolation_species(target, table)
+    held = set(species)
+    domain = table["ProteinDomain"].str.lower()
+    in_species = table["FullIdentityOfLipid"].isin(held)
+    train = table[(domain != family.lower()) & ~in_species].copy()
+    evaluation = table[(domain == family.lower()) & in_species].copy()
+    if train.empty or evaluation.empty:
+        raise ValueError(f"{family}__{target}: empty train or held-out block")
+    return train, evaluation, tuple(sorted(held))
 
 
 def raw_single_cold_pool(
@@ -194,21 +300,273 @@ def split_held_pairs(
     return held.loc[in_valid].copy(), held.loc[~in_valid].copy()
 
 
+def _isolation_key(target) -> str:
+    """dataloader.lipid_isolation_blocks.LIPID_ISOLATION_BLOCKS' own key format --
+    "%.2f" of the requested isolation, e.g. "0.8"/"0.80"/0.8 all normalize to "0.80".
+    """
+    return f"{float(target):.2f}"
+
+
+def _looks_like_isolation_target(family: str) -> bool:
+    """A --lipid_coldsplit family name is a LIPID_COLDSPLIT_SETS key (a chemistry
+    name: "sphingolipids", "choline", ...) or a --lipid_isolation-style numeric
+    target ("0.8", "0.90"). Numbers never collide with the named set's keys, so a
+    bare float-parse is enough to tell the two apart.
+    """
+    try:
+        float(family)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _lipid_isolation_units(table: pd.DataFrame, context: str):
+    """analysis.lipid_block_search.Units at species granularity over the whole
+    table -- the shared setup step resolve_lipid_isolation_species and
+    generate_lipid_isolation_groups both need before they can search for a block.
+    `context` names what asked for it, only used in the error message on a
+    missing/stale compact matrix.
+    """
+    from analysis.lipid_block_search import Units
+    from dataloader.tanimoto_compact import load_compact
+
+    compact = load_compact(str(PROJECT_ROOT / "data"))
+    if compact is None or len(np.unique(compact.row_ids)) != len(table):
+        raise ValueError(
+            f"{context}: the compact Tanimoto artifacts needed to generate an "
+            "isolation block are missing or stale -- rebuild with "
+            "preprocessing/build_tanimoto_compact.py"
+        )
+    return Units(table, compact, "species", family=None)
+
+
+def generate_lipid_isolation_groups(
+    table: pd.DataFrame,
+    count: int,
+    target: float = 0.0,
+    minimum_positives: int = 40,
+    maximum_positives: int = 140,
+) -> list[str]:
+    """`count` --lipid_coldsplit=<key> blocks, each independently AS CLOSE TO
+    `target` AS POSSIBLE within the size window -- --families_number's own
+    mechanism. `target=0.0` (the default) asks for "as cold as achievable", since
+    isolation is 0 at the fully-novel extreme; --isolation_target lets a run instead
+    ask for `count` DIVERSE blocks clustered AROUND one chosen isolation level (e.g.
+    "3 blocks near 0.6") rather than only ever the coldest extreme.
+
+    NOT forced disjoint: an earlier version took blocks one at a time via analysis.
+    lipid_block_search.search_groups, each restricted to species no earlier group
+    already claimed. That constraint only matters when several folds must be held
+    out AT ONCE in one combined run -- --families_number instead runs each group as
+    its OWN separate (family, seed) evaluate_block, one train/valid/test built and
+    scored independently, so a later group being unable to reuse an earlier group's
+    species bought nothing but a shrinking pool to search -- smaller, less-isolated
+    blocks the more groups were asked for, with nothing to show for the loss. Lipids
+    repeating across groups is fine; a single analysis.lipid_block_search.search
+    pass already tries every unit as a starting point and returns them ranked by
+    closeness to `target`, so the top `count` DISTINCT candidates from that ONE pass
+    is this function's whole job.
+
+    Each block's key is its own ACHIEVED isolation ("%.2f", extra decimal digits
+    added only on a genuine collision with a DIFFERENT existing/sibling block).
+    Persisted into dataloader/lipid_isolation_blocks.py via analysis.
+    lipid_block_search.emit_module, same reviewable-in-a-diff reasoning as
+    resolve_lipid_isolation_species. Returns the keys closest-to-target-first, ready
+    to use as --families.
+    """
+    import importlib
+
+    from analysis.lipid_block_search import describe, emit_module, search
+    import dataloader.lipid_isolation_blocks as isolation_blocks
+
+    units = _lipid_isolation_units(table, f"--families_number={count}")
+    best, _ = search(
+        units, target=target, minimum_positives=minimum_positives,
+        maximum_positives=maximum_positives, seeds=range(units.count),
+    )
+    # A tight target + a narrow size window can leave only ONE real chemistry in
+    # range (e.g. target=0.6 on this table: sphingolipids/ceramides is close to the
+    # only cluster there), so ranking by mere set-inequality accepted near-duplicates
+    # that differed by one or two borderline species while sharing the same
+    # backbone -- not the diversity --families_number groups are for. Reject a
+    # candidate that shares more than half its species (Jaccard) with any block
+    # already chosen, so a genuinely different chemistry is required, not just a
+    # different SET.
+    max_overlap = 0.5
+    chosen_sets: list[set[str]] = []
+    distinct: list[tuple[float, np.ndarray]] = []
+    for _, value, block, _ in best:
+        members = {units.names[position] for position in np.flatnonzero(block)}
+        if any(
+            len(members & chosen) / len(members | chosen) > max_overlap
+            for chosen in chosen_sets
+        ):
+            continue
+        chosen_sets.append(members)
+        distinct.append((value, block))
+        if len(distinct) >= count:
+            break
+    if len(distinct) < count:
+        raise ValueError(
+            f"--families_number={count}: only {len(distinct)} sufficiently distinct "
+            f"species block(s) (<= {max_overlap:.0%} Jaccard overlap with each "
+            f"other) fit the {minimum_positives}-{maximum_positives} positives "
+            f"window around target={target} -- lower --families_number, move "
+            "--isolation_target, or widen the window"
+        )
+
+    existing = isolation_blocks.LIPID_ISOLATION_BLOCKS
+    chosen: dict[str, dict] = {}
+    keys: list[str] = []
+    for value, block in distinct:
+        report = describe(units, block)
+        members = tuple(report["units"])
+        precision = 2
+        key = f"{value:.{precision}f}"
+        while (key in chosen and tuple(chosen[key]["units"]) != members) or (
+            key in existing and tuple(existing[key]) != members
+        ):
+            precision += 1
+            key = f"{value:.{precision}f}"
+        chosen[key] = {"isolation": value, **report}
+        keys.append(key)
+
+    search_args = argparse.Namespace(
+        granularity="species", targets=",".join(keys), family="",
+        min_positives=minimum_positives, max_positives=maximum_positives,
+    )
+    emit_module(
+        str(PROJECT_ROOT / "dataloader" / "lipid_isolation_blocks.py"),
+        chosen, search_args, table,
+    )
+    importlib.reload(isolation_blocks)
+    print(
+        f"--families_number={count}: generated {len(keys)} species block(s), not "
+        f"forced disjoint ({', '.join(keys)}) -- written to "
+        "dataloader/lipid_isolation_blocks.py"
+    )
+    return keys
+
+
+def resolve_lipid_isolation_species(target: str, table: pd.DataFrame) -> tuple[str, ...]:
+    """Species set for one --lipid_coldsplit=<target> block, keyed by a REQUESTED
+    Tanimoto isolation level (e.g. "0.8") rather than a named LIPID_COLDSPLIT_SETS
+    chemistry -- the --lipid_isolation axis the network itself already supports
+    (dataloader/Dataloader.py, dataloader/lipid_isolation_blocks.py).
+
+    Looks up dataloader.lipid_isolation_blocks.LIPID_ISOLATION_BLOCKS first, trying
+    `target` VERBATIM (as a string) before falling back to _isolation_key(target)'s
+    2-decimal rounding: generate_lipid_isolation_groups disambiguates a same-2-
+    decimal collision between two DIFFERENT sibling blocks with extra digits
+    ("0.600" vs "0.596" both rounding to "0.60"), and rounding on lookup here would
+    silently collapse those distinct keys back onto whichever one happened to be
+    stored under the rounded form -- exactly the bug that let two supposedly-
+    different --families_number groups resolve to the same species set. A target
+    that does not have EITHER form yet is generated AND PERSISTED by calling
+    analysis.lipid_block_search's own species-granularity search in-process (the
+    same algorithm a hand-run `--emit_module` uses) and writing the result into
+    dataloader/lipid_isolation_blocks.py under its _isolation_key(...) form (e.g.
+    "0.80"), so it stays reviewable in a git diff and fixed for every later run that
+    asks for the same target -- exactly the guarantee that module's own docstring
+    says a silently-regenerated-on-a-whim file would break. Re-imports the module
+    after writing so this process sees its own freshly written block without a
+    restart.
+    """
+    import dataloader.lipid_isolation_blocks as isolation_blocks
+
+    species = isolation_blocks.LIPID_ISOLATION_BLOCKS.get(str(target))
+    key = _isolation_key(target)
+    if species is None:
+        species = isolation_blocks.LIPID_ISOLATION_BLOCKS.get(key)
+    if species is not None:
+        return species
+
+    import importlib
+
+    from analysis.lipid_block_search import describe, emit_module, search
+
+    units = _lipid_isolation_units(table, f"--lipid_coldsplit={target}")
+    best, _ = search(
+        units, float(key), minimum_positives=40, maximum_positives=140,
+        seeds=range(units.count),
+    )
+    if not best:
+        raise ValueError(
+            f"--lipid_coldsplit={target}: no species block hits {key!r} within the "
+            "default 40-140 positives window -- generate one by hand with a wider "
+            "--min_positives/--max_positives via analysis/lipid_block_search.py "
+            f"--targets {key} --granularity species --emit_module "
+            "dataloader/lipid_isolation_blocks.py"
+        )
+    _, value, block, _ = best[0]
+    report = describe(units, block)
+    print(
+        f"--lipid_coldsplit={target}: no existing LIPID_ISOLATION_BLOCKS entry, "
+        f"generated one now (isolation {value:.3f} vs requested {key}, "
+        f"{report['positives']} positives, {len(report['units'])} species) -- "
+        "writing it to dataloader/lipid_isolation_blocks.py for reuse"
+    )
+    search_args = argparse.Namespace(
+        granularity="species", targets=key, family="", min_positives=40, max_positives=140,
+    )
+    emit_module(
+        str(PROJECT_ROOT / "dataloader" / "lipid_isolation_blocks.py"),
+        {key: {"isolation": value, **report}},
+        search_args,
+        table,
+    )
+    importlib.reload(isolation_blocks)
+    return isolation_blocks.LIPID_ISOLATION_BLOCKS[key]
+
+
 def cold_split_pools(
-    table: pd.DataFrame, family: str, seed: int, split_mode: str, share: float = 0.8
+    table: pd.DataFrame,
+    family: str,
+    seed: int,
+    split_mode: str,
+    share: float = 0.8,
+    excluded_lipids: tuple[str, ...] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """(train, valid, test) for one cold-split block, shared by every non-neural baseline.
 
-    `split_mode`: "single"/"double" hold out a protein family (`family` names it,
-    --excluded_groups/--double_coldsplit parity); "lipid_coldsplit" holds out fixed
-    lipid head-group classes with every protein still in training (`family` is then a
-    LIPID_COLDSPLIT_SETS key, e.g. "sphingolipids" -- --lipid_coldsplit parity, via
-    preprocessing.lipid_marginal_baseline.lipid_split).
+    `excluded_lipids`, when given (a non-empty tuple of FullIdentityOfLipid names),
+    takes priority over everything below: every protein stays in training and
+    exactly this species set leaves it (preprocessing.lipid_marginal_baseline.
+    lipid_isolation_split) -- --excluded_lipids' own mechanism, a hand-picked
+    species list instead of a LIPID_COLDSPLIT_SETS name or a searched Tanimoto-
+    isolation target, needing no --split_mode at all (ignored when this is given).
+
+    Otherwise, `split_mode`: "single"/"double" hold out a protein family (`family`
+    names it, --excluded_groups/--double_coldsplit parity); "lipid_coldsplit" holds
+    out lipid chemistry with every protein still in training (--lipid_coldsplit/
+    --lipid_isolation parity) -- `family` is either a LIPID_COLDSPLIT_SETS key (a
+    named class set, e.g. "sphingolipids", via preprocessing.lipid_marginal_
+    baseline.lipid_split) or a numeric Tanimoto-isolation target (e.g. "0.8",
+    resolved through resolve_lipid_isolation_species + preprocessing.
+    lipid_marginal_baseline.lipid_isolation_split), told apart by whether `family`
+    parses as a float.
+
+    "double" additionally accepts a combined "<family>__<target>" name (e.g.
+    "CRAL-TRIO__0.8", the family names never containing "__" themselves): the
+    family leaves train same as ever, and the lipid side is a numeric isolation
+    target (raw_double_isolation_pool) instead of lipid_classes_for_holdout's
+    derived class set (raw_double_cold_pool) -- exactly the combination
+    dataloader/Dataloader.py's own --excluded_groups + --lipid_isolation +
+    --double_coldsplit produces.
     """
+    if excluded_lipids:
+        return lipid_isolation_split(table, excluded_lipids, seed)
     if split_mode == "lipid_coldsplit":
+        if _looks_like_isolation_target(family):
+            species = resolve_lipid_isolation_species(family, table)
+            return lipid_isolation_split(table, species, seed)
         return lipid_split(table, LIPID_COLDSPLIT_SETS[family], seed)
     if split_mode == "double":
-        train_pool, held_pool, _ = raw_double_cold_pool(table, family, share)
+        if "__" in family:
+            protein_family, target = family.split("__", 1)
+            train_pool, held_pool, _ = raw_double_isolation_pool(table, protein_family, target)
+        else:
+            train_pool, held_pool, _ = raw_double_cold_pool(table, family, share)
     else:
         train_pool, held_pool = raw_single_cold_pool(table, family)
     valid_pool, test_pool = split_held_pairs(held_pool, seed)
@@ -977,13 +1335,8 @@ def build_protein_kernel(
     elif kind == "pocket_subset":
         if not descriptor_names:
             raise ValueError("descriptor_names is required for protein_kernel=pocket_subset")
-        unknown = sorted(set(descriptor_names) - set(POCKET_ALL_NAMES))
-        if unknown:
-            raise ValueError(f"unknown pocket descriptor names: {unknown}")
-        features = protein_pocket_features(entities, graphs)
-        kernel = _feature_kernel(
-            kernel_type, features.loc[:, list(descriptor_names)], entities, train_names
-        )
+        features = resolve_protein_feature_subset(entities, list(descriptor_names), graphs)
+        kernel = _feature_kernel(kernel_type, features, entities, train_names)
     elif kind == "custom_features":
         if features_path is None:
             raise ValueError("--protein_features is required for protein_kernel=custom_features")
@@ -1075,46 +1428,7 @@ def build_lipid_kernel(
     elif kind == "explicit_subset":
         if not descriptor_names:
             raise ValueError("descriptor_names is required for lipid_kernel=explicit_subset")
-        # "molformer" inside descriptor_names is special: unlike tanimoto/tanimoto_
-        # headgroup (a pairwise SIMILARITY artefact, no per-entity vector to
-        # concatenate), molformer_lipid_features is already a raw per-species
-        # feature table -- the same shape as explicit_lipid_features' own columns --
-        # so it genuinely can sit alongside named descriptors in one feature table,
-        # not just as a whole separate --lipid_kernel.
-        requested = list(descriptor_names)
-        include_molformer = "molformer" in requested
-        named = [name for name in requested if name != "molformer"]
-        features = explicit_lipid_features(table)
-        unknown = sorted(set(named) - set(features.columns))
-        # explicit_lipid_features hand-implements only PART of dataloader.pair_
-        # descriptors.LIPID_DESCRIPTOR_NAMES (the network's own descriptor catalog)
-        # -- it is not that catalog's source of truth. Any requested name this run
-        # does not already carry as a column but that IS in that catalog (e.g.
-        # experimental_lipid_volume, the tail_* measures) is pulled straight from
-        # dataloader.chemistry_prior._lipid_descriptor_table -- the SAME cached,
-        # mean-over-candidates per-species table the network's own --descriptor_names
-        # reads -- instead of being rejected or hand-reimplemented here yet again.
-        catalog_only = sorted(set(unknown) & set(LIPID_DESCRIPTOR_NAMES))
-        unknown = sorted(set(unknown) - set(catalog_only))
-        if unknown:
-            kernel_keywords = sorted(set(unknown) & {"tanimoto", "tanimoto_headgroup", "explicit"})
-            hint = (
-                f" {kernel_keywords} name a whole different --lipid_kernel (a "
-                "fingerprint SIMILARITY, not a descriptor column) -- explicit_subset "
-                "cannot mix one in alongside named descriptors; pick a single "
-                "--lipid_kernel."
-                if kernel_keywords else ""
-            )
-            raise ValueError(
-                f"unknown explicit lipid descriptor names: {unknown}.{hint} "
-                f"Known: {sorted(set(features.columns) | set(LIPID_DESCRIPTOR_NAMES))} "
-                "(plus the special name 'molformer')"
-            )
-        if catalog_only:
-            features = features.join(_lipid_catalog_features(table, catalog_only), how="left")
-        subset = features.loc[:, named] if named else pd.DataFrame(index=features.index)
-        if include_molformer:
-            subset = subset.join(molformer_lipid_features(table).add_prefix("molformer_"), how="inner")
+        subset = resolve_lipid_feature_subset(table, descriptor_names)
         missing = sorted(set(entities) - set(subset.index))
         if missing:
             raise ValueError(f"explicit lipid features are missing: {missing}")
@@ -1206,6 +1520,60 @@ def molformer_lipid_features(table: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(matrix, index=pd.Index(names, name="FullIdentityOfLipid"))
 
 
+_PROTEIN_DESCRIPTOR_TABLE_CACHE: dict | None = None
+
+
+def _protein_catalog_features(proteins: list[str], names: list[str]) -> pd.DataFrame:
+    """Per-protein feature columns for `names` (a subset of dataloader.pair_
+    descriptors.PROTEIN_DESCRIPTOR_NAMES/PROTEIN_DERIVED_DESCRIPTOR_NAMES), read
+    straight from dataloader.chemistry_prior.protein_descriptor_table -- the
+    network's own cached, self-persisting per-protein table for the FULL descriptor
+    catalog (data/protein_descriptor_table.json) -- rather than reimplementing each
+    one by hand the way protein_pocket_features does for its own (partial) column
+    set (POCKET_ALL_NAMES: pocket23 plus the four family_neutral promotions, not the
+    three lambda_sqrt shape variants or anything newer). Mirrors
+    _lipid_catalog_features' role on the lipid side. Used by build_protein_kernel's
+    pocket_subset branch, the only caller: for any requested name protein_pocket_
+    features does not already carry as a column.
+    """
+    global _PROTEIN_DESCRIPTOR_TABLE_CACHE
+    if _PROTEIN_DESCRIPTOR_TABLE_CACHE is None:
+        from dataloader.chemistry_prior import protein_descriptor_table
+
+        _PROTEIN_DESCRIPTOR_TABLE_CACHE = protein_descriptor_table(str(PROJECT_ROOT / "data"))
+    return pd.DataFrame.from_dict(_PROTEIN_DESCRIPTOR_TABLE_CACHE, orient="index").loc[
+        list(proteins), names
+    ]
+
+
+def resolve_protein_feature_subset(
+    proteins: list[str], names: list[str], graphs: Path | str = DEFAULT_GRAPHS
+) -> pd.DataFrame:
+    """Per-protein feature columns for `names` -- shared resolution behind
+    build_protein_kernel's pocket_subset branch, mirroring resolve_lipid_feature_
+    subset on the lipid side.
+
+    Resolution order: protein_pocket_features' own (partial) columns (POCKET_ALL_
+    NAMES) first; anything not there but in dataloader.pair_descriptors.
+    PROTEIN_DESCRIPTOR_NAMES/PROTEIN_DERIVED_DESCRIPTOR_NAMES (e.g. the three
+    *_lambda_sqrt shape variants) from _protein_catalog_features instead of being
+    rejected. Raises ValueError on any other unknown name.
+    """
+    features = protein_pocket_features(proteins, graphs)
+    unknown = sorted(set(names) - set(features.columns))
+    catalog_names = set(PROTEIN_DESCRIPTOR_NAMES) | set(PROTEIN_DERIVED_DESCRIPTOR_NAMES)
+    catalog_only = sorted(set(unknown) & catalog_names)
+    unknown = sorted(set(unknown) - set(catalog_only))
+    if unknown:
+        raise ValueError(
+            f"unknown pocket descriptor names: {unknown}. Known: "
+            f"{sorted(set(features.columns) | catalog_names)}"
+        )
+    if catalog_only:
+        features = features.join(_protein_catalog_features(proteins, catalog_only), how="left")
+    return features.loc[:, list(names)]
+
+
 _LIPID_DESCRIPTOR_TABLE_CACHE: dict[int, dict] = {}
 
 
@@ -1232,6 +1600,52 @@ def _lipid_catalog_features(table: pd.DataFrame, names: list[str]) -> pd.DataFra
         table_by_species = _lipid_descriptor_table(table, PROJECT_ROOT / "data")
         _LIPID_DESCRIPTOR_TABLE_CACHE[id(table)] = table_by_species
     return pd.DataFrame.from_dict(table_by_species, orient="index").loc[:, names]
+
+
+def resolve_lipid_feature_subset(table: pd.DataFrame, names: list[str]) -> pd.DataFrame:
+    """Per-species feature columns for `names` -- shared by build_lipid_kernel's
+    explicit_subset branch and analysis/gbm_baseline.py's row-feature builder, so
+    the two baselines' --lipid_features shorthand can never silently drift on what a
+    name resolves to.
+
+    Resolution order: explicit_lipid_features' own (partial, median-aggregated)
+    columns first; anything not there but IN dataloader.pair_descriptors.
+    LIPID_DESCRIPTOR_NAMES (the network's own descriptor catalog -- e.g.
+    experimental_lipid_volume, the tail_* measures) from _lipid_catalog_features
+    instead of being rejected; the special name "molformer" (the network's own raw
+    768-dim embedding, molformer_lipid_features -- a genuine per-species feature
+    table, unlike a pairwise similarity artefact, so it CAN sit alongside named
+    descriptors) joined in last. Raises ValueError on any other unknown name, with a
+    hint when it actually names a whole different --lipid_kernel/
+    --lipid_similarity_feature (e.g. "tanimoto" -- a pairwise similarity, not a
+    per-entity column, so it cannot be mixed in here).
+    """
+    requested = list(names)
+    include_molformer = "molformer" in requested
+    named = [name for name in requested if name != "molformer"]
+    features = explicit_lipid_features(table)
+    unknown = sorted(set(named) - set(features.columns))
+    catalog_only = sorted(set(unknown) & set(LIPID_DESCRIPTOR_NAMES))
+    unknown = sorted(set(unknown) - set(catalog_only))
+    if unknown:
+        kernel_keywords = sorted(set(unknown) & {"tanimoto", "tanimoto_headgroup", "explicit"})
+        hint = (
+            f" {kernel_keywords} name a whole different --lipid_kernel/--lipid_"
+            "similarity_feature (a fingerprint SIMILARITY, not a descriptor column) "
+            "-- cannot mix one in alongside named descriptors; pick a single one."
+            if kernel_keywords else ""
+        )
+        raise ValueError(
+            f"unknown explicit lipid descriptor names: {unknown}.{hint} "
+            f"Known: {sorted(set(features.columns) | set(LIPID_DESCRIPTOR_NAMES))} "
+            "(plus the special name 'molformer')"
+        )
+    if catalog_only:
+        features = features.join(_lipid_catalog_features(table, catalog_only), how="left")
+    subset = features.loc[:, named] if named else pd.DataFrame(index=features.index)
+    if include_molformer:
+        subset = subset.join(molformer_lipid_features(table).add_prefix("molformer_"), how="inner")
+    return subset
 
 
 def species_headgroup_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarray, dict[str, int]]:
