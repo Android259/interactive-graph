@@ -18,6 +18,11 @@ import pandas as pd
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.pair_descriptors import npr1 as _compute_npr1
 from dataloader.pair_descriptors import npr2 as _compute_npr2
+from dataloader.pair_descriptors import hbond_capacity as _hbond_capacity
+from dataloader.pair_descriptors import heavy_atom_count as _heavy_atom_count
+from dataloader.pair_descriptors import longest_acyl_chain as _longest_acyl_chain
+from dataloader.pair_descriptors import unsaturation_count as _unsaturation_count
+from dataloader.pair_descriptors import LIPID_DESCRIPTOR_NAMES
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.sampler import (
     LIPID_COLDSPLIT_SETS,
@@ -77,6 +82,16 @@ POCKET_CHEMISTRY_NAMES = (
     "hbond_acceptor_share_rim",
 )
 POCKET23_NAMES = POCKET13_NAMES + POCKET_CHEMISTRY_NAMES
+
+# The four names dataloader/pair_descriptors.py's PROTEIN_DESCRIPTOR_NAMES has beyond
+# POCKET23_NAMES -- e.g. protunion14 (protbind6's 13 plus protgeom8's pocket_extent)
+# is NOT a subset of pocket23 without these. Exact same formulas as dataloader/
+# protein_graph_builder.py's pocket_descriptor(), computed here from the same
+# site/hydropathy/aromatic/rim locals protein_pocket_features already builds for the
+# 13+10 above -- not a separate reimplementation, so this cannot drift from the
+# network's own values the way an independently-derived formula could.
+POCKET_EXTRA_NAMES = ("ev28_q10", "aromatic_share_rim", "hydropathy_mean", "ev14_q10")
+POCKET_ALL_NAMES = POCKET23_NAMES + POCKET_EXTRA_NAMES
 
 RESIDUE_ORDER = "A R N D C Q E G H I L K M F P S T W Y V".split()
 KYTE_DOOLITTLE = np.array(
@@ -330,11 +345,13 @@ def best_threshold_for_metric(
 def binary_confusion_metrics(
     truth: np.ndarray | pd.Series, scores: np.ndarray | pd.Series, threshold: float
 ) -> dict:
-    """Sensitivity/specificity/precision/balanced_accuracy/F1 at a fixed threshold.
+    """Confusion-matrix metrics at a fixed threshold, training/new_train.py-compatible.
 
-    Same formulas as training/new_train.py's metric_values (F1 = 2TP/(2TP+FP+FN),
-    balanced_accuracy = (sensitivity+specificity)/2), so a Kron-RLS row is directly
-    comparable to a network's metrics_summary.csv row of the same names.
+    Same formulas and key names as training/new_train.py's metric_values (F1 =
+    2TP/(2TP+FP+FN), balanced_accuracy = (sensitivity+specificity)/2, IoU =
+    TP/(TP+FP+FN), FAR = FP/(FP+TN)) -- so a Kron-RLS row's dict is a drop-in match
+    for a network test_metrics_*.txt report's own bare metric keys (see analysis/
+    run_cron.py, which writes exactly these keys out under that convention).
     """
     truth = np.asarray(truth, dtype=int)
     predicted = np.asarray(scores, dtype=float) >= threshold
@@ -342,6 +359,7 @@ def binary_confusion_metrics(
     false_negative = int((~predicted & (truth == 1)).sum())
     true_negative = int((~predicted & (truth == 0)).sum())
     false_positive = int((predicted & (truth == 0)).sum())
+    total = true_positive + false_negative + true_negative + false_positive
     sensitivity = (
         true_positive / (true_positive + false_negative)
         if (true_positive + false_negative) else float("nan")
@@ -354,16 +372,32 @@ def binary_confusion_metrics(
         true_positive / (true_positive + false_positive)
         if (true_positive + false_positive) else float("nan")
     )
-    denominator = 2 * true_positive + false_positive + false_negative
+    iou_denominator = true_positive + false_positive + false_negative
+    far_denominator = false_positive + true_negative
     return {
+        "TP": true_positive,
+        "FP": false_positive,
+        "TN": true_negative,
+        "FN": false_negative,
+        "total": total,
+        "real_positive": true_positive + false_negative,
+        "real_negative": true_negative + false_positive,
+        "predicted_positive": true_positive + false_positive,
+        "predicted_negative": true_negative + false_negative,
+        "accuracy": (true_positive + true_negative) / total if total else float("nan"),
         "sensitivity": sensitivity,
         "specificity": specificity,
         "precision": precision,
+        "IoU": (true_positive / iou_denominator) if iou_denominator else float("nan"),
+        "FAR": (false_positive / far_denominator) if far_denominator else float("nan"),
         "balanced_accuracy": (
             float("nan") if np.isnan(sensitivity) or np.isnan(specificity)
             else 0.5 * (sensitivity + specificity)
         ),
-        "F1": (2 * true_positive / denominator) if denominator else float("nan"),
+        "F1": (
+            2 * true_positive / (2 * true_positive + false_positive + false_negative)
+            if (2 * true_positive + false_positive + false_negative) else float("nan")
+        ),
     }
 
 
@@ -441,6 +475,18 @@ def protein_pocket_features(
             "aromatic_share": float(aromatic.mean()),
             "hydropathy_core": float(hydropathy[core].mean()),
             "hydropathy_rim": float(hydropathy[rim].mean()),
+            # POCKET_EXTRA_NAMES -- same formulas as dataloader/protein_graph_
+            # builder.py's pocket_descriptor(), same `rim` (already patched to the
+            # whole site when the burial median split leaves it empty, so no
+            # separate rim.any() fallback is needed here either).
+            "ev28_q10": float(
+                np.percentile(site["residue_mean_ev28"].to_numpy(dtype=float), 10)
+            ),
+            "aromatic_share_rim": float(aromatic[rim].mean()),
+            "hydropathy_mean": float(hydropathy.mean()),
+            "ev14_q10": float(
+                np.percentile(site["residue_mean_ev14"].to_numpy(dtype=float), 10)
+            ),
         }
         for name, allowed in (
             ("basic", BASIC),
@@ -492,6 +538,16 @@ def _chain_composition(chain_fragments: object, lipid_name: object) -> tuple[flo
     )
 
 
+def _fallback_nan(value: float | None) -> float:
+    """None -> NaN, anything else (0.0 included) passed through unchanged.
+
+    `value or np.nan` would be wrong here: 0.0 is a real, common answer for chain/
+    unsaturation/hbond/heavy (a sterol with no acyl tail, a fully saturated chain)
+    and is falsy, so `or` would silently turn a real zero into a missing value.
+    """
+    return np.nan if value is None else value
+
+
 def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> dict[str, float]:
     """`npr_cache`, when given, is a dataloader.pair_descriptor_cache load result
     ({"raw_to_canonical", "values", ...}) -- npr1/npr2 are looked up there first (a
@@ -534,6 +590,10 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
     # for the median-over-conformers rationale.
     npr1_value = np.nan
     npr2_value = np.nan
+    chain_value = np.nan
+    unsaturation_value = np.nan
+    hbond_value = np.nan
+    heavy_value = np.nan
     if mol is not None:
         charges = [atom.GetFormalCharge() for atom in mol.GetAtoms()]
         formal_charge = float(sum(charges))
@@ -568,6 +628,32 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
             npr2_value = _compute_npr2(smiles)
             npr1_value = np.nan if npr1_value is None else npr1_value
             npr2_value = np.nan if npr2_value is None else npr2_value
+        # data/build_pair_descriptor_cache.py's own cache already stores these four
+        # (built specifically "for --pair_descriptors'/--two_pair_descriptors_paths'
+        # shared per-candidate ... base values (chain/unsaturation/hbond/heavy ...)"
+        # -- see that script's module docstring) under "chain"/"unsaturation"/
+        # "hbond"/"heavy_atoms" (dataloader/pair_descriptor_cache.py's own
+        # build_pair_value_cache renames "heavy_atoms" -> "heavy" at its own call
+        # site; same rename applied here). A cache hit is a dict lookup instead of
+        # re-parsing the SMILES with RDKit -- the same discipline npr1/npr2 already
+        # get above, now extended to these four instead of always computing them
+        # live regardless of whether a current cache exists.
+        if cached_entry is not None and "chain" in cached_entry:
+            chain_value = _fallback_nan(cached_entry["chain"])
+        else:
+            chain_value = _fallback_nan(_longest_acyl_chain(smiles))
+        if cached_entry is not None and "unsaturation" in cached_entry:
+            unsaturation_value = _fallback_nan(cached_entry["unsaturation"])
+        else:
+            unsaturation_value = _fallback_nan(_unsaturation_count(smiles))
+        if cached_entry is not None and "hbond" in cached_entry:
+            hbond_value = _fallback_nan(cached_entry["hbond"])
+        else:
+            hbond_value = _fallback_nan(_hbond_capacity(smiles))
+        if cached_entry is not None and "heavy_atoms" in cached_entry:
+            heavy_value = _fallback_nan(cached_entry["heavy_atoms"])
+        else:
+            heavy_value = _fallback_nan(_heavy_atom_count(smiles))
     ether_tail_count = max(
         0.0,
         float(parsed["tail_count"])
@@ -597,7 +683,24 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
         "ring_count": ring_count,
         "npr1": npr1_value,
         "npr2": npr2_value,
+        # dataloader.pair_descriptors.LIPID_DESCRIPTOR_NAMES' own short aliases
+        # (--descriptor_names=chain,unsaturation,hbond,heavy in a real arg file) --
+        # the SAME functions dataloader.chemistry_prior._lipid_descriptor_table
+        # calls for the network's own null-model/PairDescriptorHead path (cache hit
+        # or not, see above), so a value under this name can never drift from what
+        # --descriptor_names=chain,... actually feeds the network. That function
+        # mean-pools over candidates; explicit_lipid_features' own per-species
+        # reduction is a median (see its docstring) -- these values are aggregated
+        # the same way every other column here is, not literally reproduced
+        # number-for-number against the null-model table.
+        "chain": chain_value,
+        "unsaturation": unsaturation_value,
+        "hbond": hbond_value,
+        "heavy": heavy_value,
     }
+
+
+_EXPLICIT_LIPID_FEATURES_CACHE: dict[tuple[int, int], pd.DataFrame] = {}
 
 
 def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) -> pd.DataFrame:
@@ -611,12 +714,26 @@ def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) 
     `npr_cache`: a dataloader.pair_descriptor_cache.load_pair_descriptor_cache result,
     or None to auto-load the project's own on-disk cache (data/pair_descriptor_cache_
     deterministic_<fingerprint>.json) -- the SAME cache dataloader/pair_descriptors.py's
-    network path reads, so npr1/npr2 (the only expensive, conformer-based fields this
-    module computes) are a dict lookup here too instead of a fresh ETKDG+MMFF embed,
-    once `data/build_pair_descriptor_cache.py` has been run since npr1/npr2 were added.
-    None (not an error) when no current cache exists -- _candidate_explicit_features
-    falls back to computing them directly, exactly as before this cache was wired in.
+    network path reads, so npr1/npr2/chain/unsaturation/hbond/heavy (the only fields
+    this module does not always compute itself from scratch) are a dict lookup here
+    too instead of a fresh ETKDG+MMFF embed or RDKit reparse, once
+    `data/build_pair_descriptor_cache.py` has been run since those were added. None
+    (not an error) when no current cache exists -- _candidate_explicit_features falls
+    back to computing them directly, exactly as before this cache was wired in.
+
+    Memoized by (id(table), id(npr_cache)) in-process: build_lipid_kernel's
+    "explicit"/"explicit_subset" branches call this once per (family, seed) block
+    with the SAME table object and the SAME npr_cache argument (None, every time,
+    letting it resolve below) -- without this, every one of those calls reprocessed
+    every one of this project's ~1300 lipid candidates through RDKit from scratch
+    (id(npr_cache) covers the None case too: id(None) is one fixed value for the
+    whole process, so repeat calls hit this cache before even touching the on-disk
+    cache file, not just before the RDKit work).
     """
+    cache_key = (id(table), id(npr_cache))
+    cached = _EXPLICIT_LIPID_FEATURES_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     if npr_cache is None:
         npr_cache = load_pair_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
     records = []
@@ -676,7 +793,9 @@ def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) 
         for name in all_classes:
             values[f"headgroup::{name}"] = float(lipid_class == name)
         records.append(values)
-    return pd.DataFrame(records).set_index("FullIdentityOfLipid").sort_index()
+    result = pd.DataFrame(records).set_index("FullIdentityOfLipid").sort_index()
+    _EXPLICIT_LIPID_FEATURES_CACHE[cache_key] = result
+    return result
 
 
 def standardize_from_train(
@@ -840,8 +959,11 @@ def build_protein_kernel(
 
     - "pocket13" / "pocket23": the full 13- or 23-name pocket-shape descriptor set.
     - "pocket_subset": the same pocket descriptors, restricted to `descriptor_names`
-      (any subset of POCKET23_NAMES) -- use this to match a network run's own
-      `--pocket_descriptor_names` exactly, e.g. the project's "protgeom8" set.
+      (any subset of POCKET_ALL_NAMES -- pocket23 plus dataloader/pair_descriptors.
+      py's PROTEIN_DESCRIPTOR_NAMES' four further promotions: ev28_q10,
+      aromatic_share_rim, hydropathy_mean, ev14_q10) -- use this to match a network
+      run's own `--pocket_descriptor_names`/`--protein_descriptors` exactly, e.g.
+      the project's "protgeom8" or full "protunion14" set.
     - "custom_features": any vectors of your own (`features_path`, see
       `load_feature_table`), turned into a kernel via `kernel_type`.
     - "custom_kernel": a precomputed similarity/kernel matrix of your own
@@ -855,7 +977,7 @@ def build_protein_kernel(
     elif kind == "pocket_subset":
         if not descriptor_names:
             raise ValueError("descriptor_names is required for protein_kernel=pocket_subset")
-        unknown = sorted(set(descriptor_names) - set(POCKET23_NAMES))
+        unknown = sorted(set(descriptor_names) - set(POCKET_ALL_NAMES))
         if unknown:
             raise ValueError(f"unknown pocket descriptor names: {unknown}")
         features = protein_pocket_features(entities, graphs)
@@ -907,6 +1029,9 @@ def build_lipid_kernel(
     - "tanimoto_headgroup": the same, but on the head group only, acyl tails cut off
       first (species_headgroup_tanimoto_similarity, preprocessing/build_tanimoto_
       headgroup.py's artefacts) -- same positional-alignment requirement on `table`.
+    - "molformer": the network's own lipid input -- raw 768-dim MolFormer embedding
+      per species (molformer_lipid_features), turned into a kernel via kernel_type,
+      same as "explicit" -- not a precomputed similarity artefact.
     - "explicit": the existing interpretable lipid descriptors, turned into a kernel
       via `kernel_type`.
     - "explicit_subset": the same explicit_lipid_features table, restricted to
@@ -931,6 +1056,16 @@ def build_lipid_kernel(
         kernel = _kernel_from_index(
             similarity.astype(float), index, entities, "head-group tanimoto similarity"
         )
+    elif kind == "molformer":
+        # The network's own lipid input -- raw 768-dim MolFormer embedding per
+        # species (molformer_lipid_features), turned into a kernel via kernel_type,
+        # same pattern as "explicit". NOT species_tanimoto_similarity-style: no
+        # precomputed similarity artefact, no `table`-row positional alignment.
+        features = molformer_lipid_features(table)
+        missing = sorted(set(entities) - set(features.index))
+        if missing:
+            raise ValueError(f"molformer embedding is missing for lipids: {missing}")
+        kernel = _feature_kernel(kernel_type, features, entities, train_names)
     elif kind == "explicit":
         features = explicit_lipid_features(table)
         missing = sorted(set(entities) - set(features.index))
@@ -940,19 +1075,50 @@ def build_lipid_kernel(
     elif kind == "explicit_subset":
         if not descriptor_names:
             raise ValueError("descriptor_names is required for lipid_kernel=explicit_subset")
+        # "molformer" inside descriptor_names is special: unlike tanimoto/tanimoto_
+        # headgroup (a pairwise SIMILARITY artefact, no per-entity vector to
+        # concatenate), molformer_lipid_features is already a raw per-species
+        # feature table -- the same shape as explicit_lipid_features' own columns --
+        # so it genuinely can sit alongside named descriptors in one feature table,
+        # not just as a whole separate --lipid_kernel.
+        requested = list(descriptor_names)
+        include_molformer = "molformer" in requested
+        named = [name for name in requested if name != "molformer"]
         features = explicit_lipid_features(table)
-        unknown = sorted(set(descriptor_names) - set(features.columns))
+        unknown = sorted(set(named) - set(features.columns))
+        # explicit_lipid_features hand-implements only PART of dataloader.pair_
+        # descriptors.LIPID_DESCRIPTOR_NAMES (the network's own descriptor catalog)
+        # -- it is not that catalog's source of truth. Any requested name this run
+        # does not already carry as a column but that IS in that catalog (e.g.
+        # experimental_lipid_volume, the tail_* measures) is pulled straight from
+        # dataloader.chemistry_prior._lipid_descriptor_table -- the SAME cached,
+        # mean-over-candidates per-species table the network's own --descriptor_names
+        # reads -- instead of being rejected or hand-reimplemented here yet again.
+        catalog_only = sorted(set(unknown) & set(LIPID_DESCRIPTOR_NAMES))
+        unknown = sorted(set(unknown) - set(catalog_only))
         if unknown:
-            raise ValueError(
-                f"unknown explicit lipid descriptor names: {unknown}. "
-                f"Known: {sorted(features.columns)}"
+            kernel_keywords = sorted(set(unknown) & {"tanimoto", "tanimoto_headgroup", "explicit"})
+            hint = (
+                f" {kernel_keywords} name a whole different --lipid_kernel (a "
+                "fingerprint SIMILARITY, not a descriptor column) -- explicit_subset "
+                "cannot mix one in alongside named descriptors; pick a single "
+                "--lipid_kernel."
+                if kernel_keywords else ""
             )
-        missing = sorted(set(entities) - set(features.index))
+            raise ValueError(
+                f"unknown explicit lipid descriptor names: {unknown}.{hint} "
+                f"Known: {sorted(set(features.columns) | set(LIPID_DESCRIPTOR_NAMES))} "
+                "(plus the special name 'molformer')"
+            )
+        if catalog_only:
+            features = features.join(_lipid_catalog_features(table, catalog_only), how="left")
+        subset = features.loc[:, named] if named else pd.DataFrame(index=features.index)
+        if include_molformer:
+            subset = subset.join(molformer_lipid_features(table).add_prefix("molformer_"), how="inner")
+        missing = sorted(set(entities) - set(subset.index))
         if missing:
             raise ValueError(f"explicit lipid features are missing: {missing}")
-        kernel = _feature_kernel(
-            kernel_type, features.loc[:, list(descriptor_names)], entities, train_names
-        )
+        kernel = _feature_kernel(kernel_type, subset, entities, train_names)
     elif kind == "custom_features":
         if features_path is None:
             raise ValueError("--lipid_features is required for lipid_kernel=custom_features")
@@ -971,8 +1137,8 @@ def build_lipid_kernel(
         kernel = _kernel_from_index(matrix, index, entities, str(kernel_path))
     else:
         raise ValueError(
-            f"unknown lipid kernel {kind!r}; expected tanimoto, tanimoto_headgroup, explicit, "
-            "explicit_subset, custom_features, or custom_kernel"
+            f"unknown lipid kernel {kind!r}; expected tanimoto, tanimoto_headgroup, molformer, "
+            "explicit, explicit_subset, custom_features, or custom_kernel"
         )
     return kernel, {name: position for position, name in enumerate(entities)}
 
@@ -1000,6 +1166,72 @@ def species_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarray, dict[s
             source[sorted(structures_of_species[other])].max() for other in names
         ]
     return similarity, index
+
+
+def molformer_lipid_features(table: pd.DataFrame) -> pd.DataFrame:
+    """768-dim MolFormer embedding per lipid species -- the network's own lipid input.
+
+    The SAME per-species vector architecture/lipid_encoder.py's
+    `torch.nn.Linear(768, hiddim)` consumes directly (see any `..._liphid32.md` arg
+    file's own header: "ONE torch.nn.Linear(768, hiddim) over a MolFormer
+    embedding"). Mean-pooled over MolFormer's token dimension, then over a species'
+    candidate isomer structures (preprocessing.lipid_embedding_identity_check.
+    species_embeddings, reading data/lipid_SMILES_embedding_deterministic.pkl or its
+    mmap store) -- the RAW embedding, not preprocessing/build_molformer_similarity_
+    matrix.py's derived species x species similarity (that one is for analysis/
+    null_model.py's --features=molformer null model, a different, already-reduced
+    artefact). --lipid_kernel=molformer turns THIS into a kernel via
+    --lipid_kernel_type, matching how "explicit" turns hand-built descriptors into
+    one -- a network's own embedding is what the fit sees, not a lookup similarity.
+    """
+    from dataloader.lipid_embedding_store import load_lipid_embedding_store
+    from preprocessing.lipid_embedding_identity_check import EMBEDDING_FILE, species_embeddings
+
+    data_dir = PROJECT_ROOT / "data"
+    smiles_encoding = load_lipid_embedding_store(data_dir, EMBEDDING_FILE)
+    if smiles_encoding is None:
+        import pickle
+
+        with open(data_dir / EMBEDDING_FILE, "rb") as handle:
+            smiles_encoding = pickle.load(handle)
+    vectors, missing_species, _ = species_embeddings(table, smiles_encoding)
+    if missing_species:
+        print(
+            f"molformer_lipid_features: {len(missing_species)} species with no "
+            "resolvable embedding, excluded (same as build_molformer_similarity_"
+            f"matrix.py's own warning): {sorted(missing_species)[:10]}"
+        )
+    names = sorted(vectors)
+    matrix = np.stack([vectors[name] for name in names])
+    return pd.DataFrame(matrix, index=pd.Index(names, name="FullIdentityOfLipid"))
+
+
+_LIPID_DESCRIPTOR_TABLE_CACHE: dict[int, dict] = {}
+
+
+def _lipid_catalog_features(table: pd.DataFrame, names: list[str]) -> pd.DataFrame:
+    """`names` (a subset of dataloader.pair_descriptors.LIPID_DESCRIPTOR_NAMES) as a
+    per-species DataFrame, read straight from dataloader.chemistry_prior.
+    _lipid_descriptor_table -- the network's own cached, mean-over-candidates
+    per-species table for the FULL descriptor catalog -- rather than reimplementing
+    each one by hand the way explicit_lipid_features does for its own (partial,
+    median-aggregated) column set. See build_lipid_kernel's explicit_subset branch,
+    the only caller: it uses this for any requested name explicit_lipid_features
+    does not already carry as a column.
+
+    Memoized by id(table) (like explicit_lipid_features' own cache) -- _lipid_
+    descriptor_table already self-persists to data/lipid_descriptor_table.json, but
+    still re-reads/re-validates that file and rebuilds a fresh per-species dict from
+    it on every call; this avoids paying that repeatedly across a run's (family,
+    seed) blocks the same way explicit_lipid_features' own cache does.
+    """
+    table_by_species = _LIPID_DESCRIPTOR_TABLE_CACHE.get(id(table))
+    if table_by_species is None:
+        from dataloader.chemistry_prior import _lipid_descriptor_table
+
+        table_by_species = _lipid_descriptor_table(table, PROJECT_ROOT / "data")
+        _LIPID_DESCRIPTOR_TABLE_CACHE[id(table)] = table_by_species
+    return pd.DataFrame.from_dict(table_by_species, orient="index").loc[:, names]
 
 
 def species_headgroup_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarray, dict[str, int]]:

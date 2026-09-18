@@ -133,10 +133,11 @@ def _lipid_descriptor_table(csv, data_dir=None):
         if source and table_path.exists():
             try:
                 manifest = json.loads(table_path.read_text())
-                # Bumped to 2 when the tail-only columns joined LIPID_DESCRIPTOR_NAMES:
-                # a version-1 table was built without them and would be served missing
-                # exactly the columns a caller now asks for.
-                if manifest.get("format_version") == 2 and manifest.get("source") == source:
+                # Bumped to 2 when the tail-only columns joined LIPID_DESCRIPTOR_NAMES,
+                # and to 3 when experimental_lipid_volume did: a table built under an
+                # older version would be served back missing exactly the column(s) a
+                # caller now asks for.
+                if manifest.get("format_version") == 3 and manifest.get("source") == source:
                     return manifest["values"]
             except (OSError, ValueError, json.JSONDecodeError, KeyError):
                 pass
@@ -149,13 +150,22 @@ def _lipid_descriptor_table(csv, data_dir=None):
     # descriptor_values_by_row's own `cache` parameter.
     npr_cache = load_pair_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
 
-    def _cached_npr(measure, compute, smiles):
+    # data/build_pair_descriptor_cache.py's on-disk cache already stores every one of
+    # these under the SAME name, except "heavy" (stored as "heavy_atoms" -- see that
+    # module's own build_pair_value_cache comment on the rename). A cache hit is a
+    # dict lookup instead of a live RDKit reparse (or, for experimental_lipid_volume,
+    # a pandas.read_excel of data/Lipid_Volumes.xlsx, which additionally needs
+    # openpyxl installed) -- generalized from what previously only covered npr1/npr2.
+    _CACHE_MEASURE_ALIAS = {"heavy": "heavy_atoms"}
+
+    def _cached_measure(measure, compute, smiles):
         if npr_cache is not None:
             canonical = npr_cache["raw_to_canonical"].get(smiles)
             if canonical is not None:
                 cached_entry = npr_cache["values"].get(canonical)
-                if cached_entry is not None and measure in cached_entry:
-                    return cached_entry[measure]
+                cache_key = _CACHE_MEASURE_ALIAS.get(measure, measure)
+                if cached_entry is not None and cache_key in cached_entry:
+                    return cached_entry[cache_key]
         return compute(smiles)
 
     measures = {
@@ -170,10 +180,9 @@ def _lipid_descriptor_table(csv, data_dir=None):
         "rotatable_bond_count": rotatable_bond_count,
         "aromatic_ring_count": aromatic_ring_count,
         "ring_count": ring_count,
-        "npr1": lambda smiles: _cached_npr("npr1", _compute_npr1, smiles),
-        "npr2": lambda smiles: _cached_npr("npr2", _compute_npr2, smiles),
-        # Tail-only, see LIPID_DESCRIPTOR_NAMES. All cheap (one RDKit parse and a walk
-        # over the carbon skeleton), so unlike npr they need no cache lookup.
+        "npr1": _compute_npr1,
+        "npr2": _compute_npr2,
+        # Tail-only, see LIPID_DESCRIPTOR_NAMES.
         "tail_length_asymmetry": pair_descriptors.tail_length_asymmetry,
         "tail_length_mean": pair_descriptors.tail_length_mean,
         "tail_double_bonds": pair_descriptors.tail_double_bonds,
@@ -182,6 +191,11 @@ def _lipid_descriptor_table(csv, data_dir=None):
         "tail_logp": pair_descriptors.tail_logp,
         "tail_molar_refractivity": pair_descriptors.tail_molar_refractivity,
         "tail_heavy_atoms": pair_descriptors.tail_heavy_atoms,
+        # data/Lipid_Volumes.xlsx lookup, not an RDKit formula -- see its own comment
+        # in dataloader/pair_descriptors.py. A per-candidate miss is common (~70%);
+        # per-species below, every one of the 283 distinct FullIdentityOfLipid
+        # species resolves from at least one candidate.
+        "experimental_lipid_volume": pair_descriptors.experimental_lipid_volume,
     }
     per_species_values = {}
     smiles_cache = {}
@@ -193,7 +207,7 @@ def _lipid_descriptor_table(csv, data_dir=None):
         for smiles in candidates_for_row(row):
             if smiles not in smiles_cache:
                 smiles_cache[smiles] = {
-                    name: fn(smiles) for name, fn in measures.items()
+                    name: _cached_measure(name, fn, smiles) for name, fn in measures.items()
                 }
             values = smiles_cache[smiles]
             for name in measures:

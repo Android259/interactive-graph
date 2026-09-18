@@ -81,6 +81,7 @@ Reads only. Fits a closed-form regression in memory each run; writes nothing unl
 from __future__ import annotations
 
 import argparse
+import copy
 import itertools
 import os
 import sys
@@ -156,12 +157,66 @@ def _score_pool(
     return auc_p_vs_u(pool["Interaction"].to_numpy(), score_column), scored_pool
 
 
-def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.Namespace) -> dict:
+def _protein_kernel_cache_key(
+    args: argparse.Namespace, all_proteins: list[str], train_proteins: list[str]
+) -> tuple:
+    """Keyed on the ACTUAL entity lists, not on (family, seed) -- under
+    --split_mode lipid_coldsplit every protein always stays in train (only lipid
+    head-group classes are excluded), so all_proteins/train_proteins come out
+    IDENTICAL for every family and every seed; keying on entity content (rather
+    than on the family/seed label that produced it) lets one single protein-kernel
+    build serve the whole run instead of one per (family, seed) block.
+    """
+    return (
+        tuple(all_proteins), tuple(train_proteins),
+        args.protein_kernel, args.protein_kernel_type,
+        tuple(args.protein_descriptor_names) if args.protein_descriptor_names else None,
+        args.protein_features, args.protein_kernel_matrix, args.protein_kernel_names,
+    )
+
+
+def _lipid_kernel_cache_key(
+    args: argparse.Namespace, all_lipids: list[str], train_lipids: list[str]
+) -> tuple:
+    """Lipid-side counterpart of _protein_kernel_cache_key. all_lipids/train_lipids
+    differ by family (each excludes a different head-group class) but train_lipids
+    is seed-invariant within a family (balance_pool_negatives never touches train),
+    so this still collapses the 5-seeds-per-family case down to one lipid-kernel
+    build per family.
+    """
+    return (
+        tuple(all_lipids), tuple(train_lipids),
+        args.lipid_kernel, args.lipid_kernel_type,
+        tuple(args.lipid_descriptor_names) if args.lipid_descriptor_names else None,
+        args.lipid_features, args.lipid_kernel_matrix, args.lipid_kernel_names,
+    )
+
+
+def evaluate_block(
+    table: pd.DataFrame,
+    family: str,
+    seed: int,
+    args: argparse.Namespace,
+    kernel_cache: dict | None = None,
+) -> dict:
     """Fit and score one (family, seed) cold-split block.
 
     `family` names a protein family for --split_mode single/double, or a
     LIPID_COLDSPLIT_SETS key (e.g. "sphingolipids") for --split_mode lipid_coldsplit --
     the loop variable is generic across axes, only what it indexes into changes.
+
+    `kernel_cache`, when given, memoizes the protein_kernel and lipid_kernel builds
+    below separately, each keyed on its own actual entity lists (not on family/seed
+    labels -- see _protein_kernel_cache_key/_lipid_kernel_cache_key). Neither kernel
+    depends on protein_lambda/lipid_lambda, and under --split_mode lipid_coldsplit
+    the protein side does not depend on family or seed either (every protein always
+    stays in train), so build_report and select_global_lambda both pass one shared
+    dict across their whole (family, seed[, lambda candidate]) loop -- without it,
+    the identical protein/lipid kernel gets rebuilt from scratch on every single
+    block, which used to be cheap enough not to notice and got much more visible
+    once the descriptor sets it builds from (chain/hbond/heavy/unsaturation,
+    POCKET_EXTRA_NAMES, molformer) got heavier to compute. None (the default)
+    preserves the old always-rebuild behaviour for any other caller.
     """
     train_pool, valid_pool, test_pool = cold_split_pools(
         table, family, seed, args.split_mode, args.share
@@ -185,33 +240,52 @@ def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.N
         | set(test_pool["FullIdentityOfLipid"])
     )
 
-    # One kernel over train + held-out entities, computed once per block and sliced
-    # below -- an out-of-sample protein/lipid is just another row of the same kernel,
-    # standardized (where applicable) by train statistics only.
-    protein_kernel, protein_index = build_protein_kernel(
-        args.protein_kernel,
-        all_proteins,
-        train_proteins,
-        kernel_type=args.protein_kernel_type,
-        descriptor_names=args.protein_descriptor_names,
-        features_path=args.protein_features,
-        kernel_path=args.protein_kernel_matrix,
-        names_path=args.protein_kernel_names,
+    protein_key = (
+        _protein_kernel_cache_key(args, all_proteins, train_proteins)
+        if kernel_cache is not None else None
     )
-    # `table` here must stay the full, unfiltered, original-row-order interaction
-    # table -- species_tanimoto_similarity is positionally aligned to the compact
-    # Tanimoto artefacts, not to whatever subset a caller passes.
-    lipid_kernel, lipid_index = build_lipid_kernel(
-        args.lipid_kernel,
-        table,
-        all_lipids,
-        train_lipids,
-        kernel_type=args.lipid_kernel_type,
-        descriptor_names=args.lipid_descriptor_names,
-        features_path=args.lipid_features,
-        kernel_path=args.lipid_kernel_matrix,
-        names_path=args.lipid_kernel_names,
+    if protein_key is not None and protein_key in kernel_cache:
+        protein_kernel, protein_index = kernel_cache[protein_key]
+    else:
+        # One kernel over train + held-out entities, computed once and sliced below --
+        # an out-of-sample protein/lipid is just another row of the same kernel,
+        # standardized (where applicable) by train statistics only.
+        protein_kernel, protein_index = build_protein_kernel(
+            args.protein_kernel,
+            all_proteins,
+            train_proteins,
+            kernel_type=args.protein_kernel_type,
+            descriptor_names=args.protein_descriptor_names,
+            features_path=args.protein_features,
+            kernel_path=args.protein_kernel_matrix,
+            names_path=args.protein_kernel_names,
+        )
+        if protein_key is not None:
+            kernel_cache[protein_key] = (protein_kernel, protein_index)
+
+    lipid_key = (
+        _lipid_kernel_cache_key(args, all_lipids, train_lipids)
+        if kernel_cache is not None else None
     )
+    if lipid_key is not None and lipid_key in kernel_cache:
+        lipid_kernel, lipid_index = kernel_cache[lipid_key]
+    else:
+        # `table` here must stay the full, unfiltered, original-row-order interaction
+        # table -- species_tanimoto_similarity is positionally aligned to the compact
+        # Tanimoto artefacts, not to whatever subset a caller passes.
+        lipid_kernel, lipid_index = build_lipid_kernel(
+            args.lipid_kernel,
+            table,
+            all_lipids,
+            train_lipids,
+            kernel_type=args.lipid_kernel_type,
+            descriptor_names=args.lipid_descriptor_names,
+            features_path=args.lipid_features,
+            kernel_path=args.lipid_kernel_matrix,
+            names_path=args.lipid_kernel_names,
+        )
+        if lipid_key is not None:
+            kernel_cache[lipid_key] = (lipid_kernel, lipid_index)
 
     labels = aggregate_pair_labels(
         train_pool, lipid_class_targets=args.lipid_class_targets
@@ -308,6 +382,8 @@ def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.N
         "threshold": threshold,
         "valid_ba": valid_metrics["balanced_accuracy"],
         "valid_f1": valid_metrics["F1"],
+        "valid_sensitivity": valid_metrics["sensitivity"],
+        "valid_specificity": valid_metrics["specificity"],
         "test_ba": test_metrics["balanced_accuracy"],
         "test_f1": test_metrics["F1"],
         "test_sensitivity": test_metrics["sensitivity"],
@@ -324,6 +400,23 @@ def evaluate_block(table: pd.DataFrame, family: str, seed: int, args: argparse.N
         "train_lipids": len(train_lipids),
         "valid_rows": len(valid_pool),
         "test_rows": len(test_pool),
+        # Full test-block confusion matrix at `threshold` -- report-file-compatible
+        # bare keys (scripts/tools/run_cron.py), not duplicated under a test_ prefix
+        # since these ARE test-only concepts (same convention a network's own
+        # test_metrics_*.txt report uses).
+        "total": test_metrics["total"],
+        "real_positive": test_metrics["real_positive"],
+        "real_negative": test_metrics["real_negative"],
+        "predicted_positive": test_metrics["predicted_positive"],
+        "predicted_negative": test_metrics["predicted_negative"],
+        "TP": test_metrics["TP"],
+        "FP": test_metrics["FP"],
+        "TN": test_metrics["TN"],
+        "FN": test_metrics["FN"],
+        "accuracy": test_metrics["accuracy"],
+        "precision": test_metrics["precision"],
+        "IoU": test_metrics["IoU"],
+        "FAR": test_metrics["FAR"],
     }
 
 
@@ -332,8 +425,86 @@ def _parse_lambda_grid(text: str) -> list[tuple[float, float]]:
     return list(itertools.product(values, values))
 
 
+def select_global_lambda(
+    table: pd.DataFrame, families: list[str], seeds: list[int], args: argparse.Namespace
+) -> tuple[tuple[float, float], float]:
+    """One (protein_lambda, lipid_lambda) pair for EVERY (family, seed) block --
+    --lambda_selection=global's counterpart to the per-block grid search
+    evaluate_block otherwise does on its own.
+
+    For each candidate in --lambda_grid, forces every block to fit with exactly
+    that pair (by handing it a copy of `args` whose lambda_grid is that one
+    candidate) and averages the block's own --select_metric valid score across
+    ALL of them -- not just one block's valid set, so the winner is universal
+    across every group AND every seed, not tuned per block the way the default
+    (per_group) mode is. Re-fits every block once per candidate (the same total
+    work the per_group grid search already does, just aggregated the other way),
+    then whichever candidate wins is handed back to build_report to fit the real,
+    reported pass with a single-candidate grid.
+    """
+    grid = args.lambda_grid or [(args.protein_lambda, args.lipid_lambda)]
+    metric_column = {"auc": "valid_auc", "ba": "valid_ba", "f1": "valid_f1"}[args.select_metric]
+    probe_args = copy.copy(args)
+    best_lambda, best_score = None, None
+    # Shared across every candidate below: the kernel a (family, seed) block needs
+    # does not depend on protein_lambda/lipid_lambda at all, so without this cache
+    # evaluate_block would rebuild the identical protein/lipid kernel len(grid)
+    # times per block -- pure waste that used to be cheap enough not to notice, and
+    # got much more visible once the descriptor sets it builds from (chain/hbond/
+    # heavy/unsaturation, POCKET_EXTRA_NAMES, molformer) got heavier to compute.
+    kernel_cache: dict = {}
+    for candidate in grid:
+        probe_args.lambda_grid = [candidate]
+        scores = [
+            evaluate_block(table, family, seed, probe_args, kernel_cache=kernel_cache)[
+                metric_column
+            ]
+            for family in families
+            for seed in seeds
+        ]
+        scores = [score for score in scores if not np.isnan(score)]
+        if not scores:
+            continue
+        aggregate = float(np.mean(scores))
+        if best_score is None or aggregate > best_score:
+            best_score, best_lambda = aggregate, candidate
+    if best_lambda is None:
+        raise ValueError(
+            "select_global_lambda: no --lambda_grid candidate produced a valid "
+            f"{args.select_metric} score on any (family, seed) block"
+        )
+    return best_lambda, best_score
+
+
 def build_report(table: pd.DataFrame, families: list[str], seeds: list[int], args) -> pd.DataFrame:
-    rows = [evaluate_block(table, family, seed, args) for family in families for seed in seeds]
+    if getattr(args, "lambda_selection", "per_group") == "global":
+        if not args.lambda_grid:
+            raise ValueError(
+                "--lambda_selection=global has nothing to choose between without "
+                "--lambda_grid (with it unset, both per_group and global trivially "
+                "reduce to the same single --protein_lambda/--lipid_lambda default "
+                "-- pass e.g. --lambda_grid=0.01,0.1,1,10,100)"
+            )
+        chosen_lambda, chosen_score = select_global_lambda(table, families, seeds, args)
+        print(
+            f"--lambda_selection=global: protein_lambda={chosen_lambda[0]}, "
+            f"lipid_lambda={chosen_lambda[1]} (mean {args.select_metric}={chosen_score:.4f} "
+            "across every family/seed block)\n"
+        )
+        args = copy.copy(args)
+        args.lambda_grid = [chosen_lambda]
+    # Shared across every (family, seed) block: under lipid_coldsplit the protein
+    # kernel is identical for all of them (no protein is ever excluded), and a
+    # family's lipid kernel is identical across all its seeds (train is untouched by
+    # balance_pool_negatives) -- without this, each block paid the full descriptor
+    # computation (chain/hbond/heavy/unsaturation, POCKET_EXTRA_NAMES, molformer)
+    # from scratch every single time. See _protein_kernel_cache_key/
+    # _lipid_kernel_cache_key for exactly what is/isn't shared.
+    kernel_cache: dict = {}
+    rows = [
+        evaluate_block(table, family, seed, args, kernel_cache=kernel_cache)
+        for family in families for seed in seeds
+    ]
     return pd.DataFrame(rows)
 
 
@@ -383,7 +554,11 @@ def print_report(report: pd.DataFrame, args: argparse.Namespace) -> None:
     )
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
+    """The full kronrls_baseline.py CLI, minus `.parse_args()` -- shared with
+    scripts/tools/run_cron.py so a label-driven runner does not duplicate every flag
+    (and cannot silently drift from this file's own set of them).
+    """
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -485,7 +660,7 @@ def main() -> None:
     parser.add_argument(
         "--lipid_kernel", default="tanimoto",
         choices=(
-            "tanimoto", "tanimoto_headgroup", "explicit", "explicit_subset",
+            "tanimoto", "tanimoto_headgroup", "molformer", "explicit", "explicit_subset",
             "custom_features", "custom_kernel",
         ),
         help=(
@@ -543,6 +718,19 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--lambda_selection", default="per_group", choices=("per_group", "global"),
+        help=(
+            "per_group (default): each (family, seed) block picks its own best "
+            "--lambda_grid candidate independently -- lets each held-out block's "
+            "regularization fit its own valid set, but is not one fixed deployed "
+            "model. global: one (protein_lambda, lipid_lambda) pair for EVERY "
+            "family and EVERY seed (select_global_lambda), chosen by the mean "
+            "--select_metric valid score averaged across all of them -- the "
+            "question 'would ONE regularization strength, not retuned per unknown "
+            "lipid class, still generalize'. Only takes effect with --lambda_grid."
+        ),
+    )
+    parser.add_argument(
         "--threshold_metric", default="ba", choices=("ba", "f1"),
         help=(
             "which metric the single decision threshold (fit on valid, applied to "
@@ -557,18 +745,28 @@ def main() -> None:
         "--show_per_block", action="store_true",
         help="also print the full per-family/per-seed row table (hidden by default)",
     )
-    args = parser.parse_args()
+    return parser
 
+
+def load_table(args: argparse.Namespace) -> pd.DataFrame:
     csv_path = args.csv or interaction_csv_path(os.path.join(PROJECT_ROOT, "data"))
     table = pd.read_csv(csv_path)
     table["pair_id"] = table.index.astype(int)
+    return table
 
+
+def resolve_families(args: argparse.Namespace) -> list[str]:
     if args.families:
-        families = [name for name in args.families.split(",") if name]
-    elif args.split_mode == "lipid_coldsplit":
-        families = list(DEFAULT_LIPID_COLDSPLIT_GROUPS)
-    else:
-        families = list(DEFAULT_FAMILIES)
+        return [name for name in args.families.split(",") if name]
+    if args.split_mode == "lipid_coldsplit":
+        return list(DEFAULT_LIPID_COLDSPLIT_GROUPS)
+    return list(DEFAULT_FAMILIES)
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    table = load_table(args)
+    families = resolve_families(args)
     seeds = [int(value) for value in args.seeds.split(",")]
 
     report = build_report(table, families, seeds, args)

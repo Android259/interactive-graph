@@ -33,6 +33,7 @@ coarsen_to_levels, so a held-out protein's raw cavity size still cannot leak thr
 (files/compat_input_audit.md).
 """
 import functools
+import os
 
 import numpy
 
@@ -62,6 +63,19 @@ LIPID_DESCRIPTOR_NAMES = (
     "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
     "tail_unsaturation_density", "tail_double_bond_position",
     "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
+    # experimental_lipid_volume (data/Lipid_Volumes.xlsx lookup, see its own comment
+    # above _MEASURES): promoted straight in, unlike the tail_* block above, which
+    # waited on an eta^2-against-head-group-class measurement first. What was
+    # actually checked here is coverage, not eta^2 -- at the CANDIDATE level (a raw
+    # SmileFragment/SmileGlobal entry) only ~30% resolve, but chemistry_prior.
+    # _lipid_descriptor_table (this name's only consumer through --descriptor_names/
+    # feature_similarity) averages over every resolved candidate PER SPECIES the
+    # same way it does for every other name here, and at that grain coverage is
+    # 100% (283/283 distinct FullIdentityOfLipid species, positive and negative rows
+    # alike -- verified directly against the current interaction table). The
+    # eta^2-against-protein-identity check the tail_* promotion ran has NOT been run
+    # for this one yet.
+    "experimental_lipid_volume",
 )
 # See pair_descriptor_value below for what each one actually computes.
 PAIR_DESCRIPTOR_NAMES = (
@@ -1096,6 +1110,80 @@ CONFORMER_MEASURE_NAMES = (
 )
 
 
+# data/Lipid_Volumes.xlsx: per-species van-der-Waals volumes (Angstrom^3) from an
+# external source, keyed here by the exact bound SMILES structure -- NOT by
+# (LTPProtein, Lipid), even though the sheet is laid out per protein. Checked directly
+# against this project's own candidate SMILES: every one of the sheet's 393 distinct
+# isomeric-canonical structures maps to exactly one volume value (0 conflicts), so the
+# same molecule gets the same number regardless of which protein's row it came from --
+# the sheet's apparent per-protein structure is really "which isomer of a coarse name
+# (e.g. PC(34:1)) that protein was observed bound to," not a per-protein volume. Under
+# non-isomeric canonicalisation (isomeric=False, this project's default unless
+# --lipid_isomers), 391 of those 393 stereo-distinct structures survive as distinct
+# keys; the 2 that collapse (one is a pure sn-1/sn-2 relabelling of an identical
+# structure) disagree by under 1.3% of the volume scale (max 8.07 Angstrom^3 apart, on
+# a ~650-750 Angstrom^3 baseline) -- averaged rather than picked arbitrarily.
+#
+# Coverage is real but partial: the sheet's 393 structures are a subset of the ~1319
+# distinct candidate structures across the WHOLE interaction table (positive and
+# negative rows alike). A candidate resolves here, or does not, purely by which
+# molecule it is -- every covered structure is a real identified ligand for SOME
+# protein in this project's data, and negative rows draw candidates from the exact
+# same pool positive rows do, so coverage does not track the Interaction label. Not
+# yet in LIPID_DESCRIPTOR_NAMES (see CANDIDATE_LIPID_DESCRIPTOR_NAMES below) --
+# whether the ~70% miss rate (as_arrays -> NaN, same convention as an RDKit parse
+# failure) is safe to feed the model, and how those NaNs should be filled, has not
+# been decided yet.
+_LIPID_VOLUME_XLSX = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data", "Lipid_Volumes.xlsx",
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _experimental_lipid_volume_table():
+    """canonical SMILES (isomeric or not) -> mean measured volume (Angstrom^3).
+
+    Built once from _LIPID_VOLUME_XLSX and memoized; see the comment above this
+    function's registration in _MEASURES for what "mean" absorbs (2 non-isomeric
+    collisions only, out of 393 structures) and why the lookup key is the molecule,
+    not the (protein, lipid) pair the sheet is filed under.
+    """
+    import pandas
+
+    frame = pandas.read_excel(_LIPID_VOLUME_XLSX)
+    volume_column = next(c for c in frame.columns if c.startswith("Lipid Volumes"))
+    iso_groups = {}
+    flat_groups = {}
+    for raw_smiles, volume in zip(frame["Lipid SMILES"], frame[volume_column]):
+        molecule = Chem.MolFromSmiles(str(raw_smiles))
+        if molecule is None:
+            continue
+        iso_key = Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=True)
+        flat_key = Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=False)
+        iso_groups.setdefault(iso_key, []).append(float(volume))
+        flat_groups.setdefault(flat_key, []).append(float(volume))
+    # Flat (collapsed, possibly-averaged) keys first, then exact isomeric keys written
+    # on top -- the isomeric key for a structure with no stereocentre to strip is the
+    # identical string as its flat key, and in that case both dicts agree anyway (an
+    # isomeric group is never averaged, see the module comment above), so this ordering
+    # never overwrites a real value with a different one.
+    table = {key: sum(values) / len(values) for key, values in flat_groups.items()}
+    table.update({key: sum(values) / len(values) for key, values in iso_groups.items()})
+    return table
+
+
+def experimental_lipid_volume(smiles):
+    """Measured volume (Angstrom^3) for `smiles` from data/Lipid_Volumes.xlsx, or None
+    if this exact structure was never one of the ligands the sheet identifies.
+
+    `smiles` arrives already canonicalized by the caller (descriptor_values_by_row),
+    the same way (isomeric or not) _experimental_lipid_volume_table's keys are built,
+    so a direct dict lookup is enough here -- no re-canonicalization.
+    """
+    return _experimental_lipid_volume_table().get(smiles)
+
+
 _MEASURES = {
     "unsaturation": unsaturation_count,
     "hbond": hbond_capacity,
@@ -1125,6 +1213,9 @@ _MEASURES = {
     "tail_logp": tail_logp,
     "tail_molar_refractivity": tail_molar_refractivity,
     "tail_heavy_atoms": tail_heavy_atoms,
+    # data/Lipid_Volumes.xlsx lookup, not an RDKit formula -- see the comment above
+    # its definition and its entry in LIPID_DESCRIPTOR_NAMES above for coverage.
+    "experimental_lipid_volume": experimental_lipid_volume,
 }
 
 # Measured in section 7f/7g, not yet an input to any network. Kept next to _MEASURES so
