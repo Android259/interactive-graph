@@ -88,6 +88,7 @@ from training.pair_baseline_common import (  # noqa: E402
     csv_classes,
     generate_lipid_isolation_groups,
     resolve_excluded_lipids,
+    resolve_family_excluded_lipids,
 )
 
 # Same shape as scripts/run_cron.py's own SUMMARY_METRICS -- (build_report() column,
@@ -156,12 +157,15 @@ def print_split_brief(table: pd.DataFrame, family: str, seed: int, args: argpars
     """
     _, valid_pool, test_pool = cold_split_pools(
         table, family, seed, args.split_mode, args.share,
-        excluded_lipids=getattr(args, "excluded_lipids_species", None),
+        excluded_lipids=resolve_family_excluded_lipids(args, family),
+        merge_valid_test=True,
     )
     valid_pool = balance_pool_negatives(valid_pool, seed, args.eval_negatives_per_positive)
     test_pool = balance_pool_negatives(test_pool, seed, args.eval_negatives_per_positive)
     classes = sorted(set(csv_classes(valid_pool)) | set(csv_classes(test_pool)))
-    print(f"{family}: classes={','.join(classes)} | valid+test rows={len(valid_pool) + len(test_pool)}")
+    # valid=test always here: nothing (threshold, early stopping) is fit on valid any
+    # more, so halving the excluded block away would only shrink what test measures.
+    print(f"{family}: classes={','.join(classes)} | valid=test rows={len(test_pool)} (merged)")
 
 
 def _format(value) -> str:
@@ -516,6 +520,20 @@ def main() -> None:
             "as one group, labeled \"custom\"."
         ),
     )
+    parser.add_argument(
+        "--excluded_lipid_groups", default=None,
+        help=(
+            "comma-separated list of INDEPENDENT held-out groups -- scripts/"
+            "run_cron.py's own flag of the same name, same syntax: each entry is one "
+            "group (an exact FullIdentityOfLipid species, a project head-group "
+            "class, or an article LTP-lipid subclass abbreviation -- \"PC\", \"PG\", "
+            "..., see files/data_source.md), several names joined with \"+\" held "
+            "out TOGETHER as one block. Unlike --excluded_lipids, which merges "
+            "everything given into ONE \"custom\" block, comma-separated entries "
+            "here stay apart, each its own row. Mutually exclusive with "
+            "--excluded_lipids/--families/--families_number."
+        ),
+    )
     args = parser.parse_args()
 
     run_label = args.set_label or args.label
@@ -526,14 +544,32 @@ def main() -> None:
 
     args.excluded_lipids_species = None
     if args.excluded_lipids:
-        if args.families or args.families_number:
+        if args.families or args.families_number or args.excluded_lipid_groups:
             parser.error(
                 "--excluded_lipids gives its own species list directly -- combining "
-                "it with --families/--families_number is ambiguous, drop one"
+                "it with --families/--families_number/--excluded_lipid_groups is "
+                "ambiguous, drop one"
             )
         args.excluded_lipids_species = tuple(
             name.strip() for name in args.excluded_lipids.split(",") if name.strip()
         )
+
+    excluded_lipid_group_specs = None
+    if args.excluded_lipid_groups:
+        if args.families or args.families_number:
+            parser.error(
+                "--excluded_lipid_groups gives its own list of independent groups "
+                "-- combining it with --families/--families_number is ambiguous, "
+                "drop one"
+            )
+        excluded_lipid_group_specs = []
+        for segment in args.excluded_lipid_groups.split(","):
+            segment = segment.strip()
+            if not segment:
+                continue
+            tokens = [token.strip() for token in segment.split("+") if token.strip()]
+            if tokens:
+                excluded_lipid_group_specs.append((segment, tokens))
 
     families_number_target = 0.0
     if args.families_number:
@@ -569,7 +605,16 @@ def main() -> None:
         parser.error("--isolation_target only applies to --split_mode double/lipid_coldsplit")
 
     table = load_table(args)
-    if args.excluded_lipids_species:
+    if excluded_lipid_group_specs:
+        resolved_groups: dict[str, tuple[str, ...]] = {}
+        for label, tokens in excluded_lipid_group_specs:
+            try:
+                resolved_groups[label] = resolve_excluded_lipids(table, tokens)
+            except ValueError as error:
+                parser.error(str(error))
+        args.excluded_lipids_species = resolved_groups
+        families = list(resolved_groups.keys())
+    elif args.excluded_lipids_species:
         try:
             args.excluded_lipids_species = resolve_excluded_lipids(
                 table, list(args.excluded_lipids_species)

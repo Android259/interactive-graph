@@ -104,8 +104,11 @@ from training.pair_baseline_common import (  # noqa: E402
     binary_confusion_metrics,
     build_lipid_kernel,
     build_protein_kernel,
+    block_tanimoto_headgroup_similarity,
+    block_tanimoto_similarity,
     cold_split_pools,
     predict_kronrls,
+    resolve_family_excluded_lipids,
     two_step_kronrls,
 )
 
@@ -218,9 +221,19 @@ def evaluate_block(
     POCKET_EXTRA_NAMES, molformer) got heavier to compute. None (the default)
     preserves the old always-rebuild behaviour for any other caller.
     """
+    excluded_species = resolve_family_excluded_lipids(args, family)
+    # No --lambda_grid means nothing is actually selected on valid (evaluate_block's
+    # own grid loop below has exactly one candidate either way) -- the only thing left
+    # for valid to do is fit a decision threshold that a threshold-free metric
+    # (AUC_within_protein) never reads. Merging valid into test then hands the WHOLE
+    # held-out block to the metric that matters instead of halving it away for nothing,
+    # same reasoning behind cold_split_pools' own merge_valid_test docstring. A real
+    # --lambda_grid still needs the honest split: picking a lambda ON test would leak
+    # into the very AUC being reported.
     train_pool, valid_pool, test_pool = cold_split_pools(
         table, family, seed, args.split_mode, args.share,
-        excluded_lipids=getattr(args, "excluded_lipids_species", None),
+        excluded_lipids=excluded_species,
+        merge_valid_test=not bool(args.lambda_grid),
     )
 
     # Score against the same 1:2 pool the network is scored against, not the held-out
@@ -345,13 +358,28 @@ def evaluate_block(
             best = candidate
     _, valid_auc, protein_lambda, lipid_lambda, coefficients, valid_scored = best
 
-    # Threshold, like the lambdas above it, is chosen on valid only and then applied
-    # unchanged to test (best_threshold_for_metric's own docstring: a Kron-RLS score
-    # is not a calibrated probability, so a fixed 0.5 cut would silently score the
-    # all-negative class here).
+    # Threshold comes from TRAIN, never from the held-out block. The held-out lipid
+    # group stands in for a genuinely new lipid, whose labels do not exist at
+    # prediction time -- so nothing about it may feed the cutoff either, or its
+    # reported BA/F1 would be "the best cutoff achievable knowing the answer", not
+    # what the model would actually do on an unseen lipid. Train rows are the only
+    # labels a production run would legitimately have. (A fixed 0.5 cut is still not
+    # an option -- a Kron-RLS score is not a calibrated probability, see
+    # best_threshold_for_metric's own docstring.)
+    # Kp @ A @ Kl over the train entities themselves -- one small rectangle
+    # (n_train_proteins x n_train_lipids), then a VECTORISED gather of one cell per
+    # train row. The row-at-a-time Python loop this replaces dominated the whole fit
+    # (measured: ~70 CPU-seconds per descriptor combination against ~14 without it) --
+    # train_pool is the big pool here, thousands of rows, scored once per block.
+    train_score_matrix = predict_kronrls(coefficients, kp_train, kl_train)
+    train_protein_position = {name: position for position, name in enumerate(train_proteins)}
+    train_lipid_position = {name: position for position, name in enumerate(train_lipids)}
+    train_scores = train_score_matrix[
+        train_pool["LTPProtein"].map(train_protein_position).to_numpy(),
+        train_pool["FullIdentityOfLipid"].map(train_lipid_position).to_numpy(),
+    ]
     threshold, _ = best_threshold_for_metric(
-        valid_pool["Interaction"].to_numpy(), valid_scored["_score"].to_numpy(),
-        metric=threshold_metric,
+        train_pool["Interaction"].to_numpy(), train_scores, metric=threshold_metric,
     )
     valid_metrics = binary_confusion_metrics(
         valid_pool["Interaction"].to_numpy(), valid_scored["_score"].to_numpy(), threshold
@@ -375,6 +403,16 @@ def evaluate_block(
     pair_auc = per_pair_auc(test_scored, test_scored["_score"].to_numpy())
     n_pair_groups = int(test_scored["lipid_class"].nunique())
 
+    # Constant across seeds (the excluded species set doesn't change with `seed`) --
+    # kernel_cache makes repeated calls within one run free after the first. Both
+    # reported side by side: whole-molecule and head-group-only can disagree (a
+    # block isolated on its head group can still resemble something in train on its
+    # acyl tails, or vice versa).
+    block_similarity = block_tanimoto_similarity(table, excluded_species, units_cache=kernel_cache)
+    block_headgroup_similarity = block_tanimoto_headgroup_similarity(
+        table, excluded_species, units_cache=kernel_cache
+    )
+
     return {
         "family": family,
         "seed": seed,
@@ -397,6 +435,8 @@ def evaluate_block(
         "n_proteins": n_proteins,
         "per_lipid_auc": lipid_auc,
         "n_lipid_classes": n_lipid_classes,
+        "block_tanimoto_similarity": block_similarity,
+        "block_tanimoto_headgroup_similarity": block_headgroup_similarity,
         "train_proteins": len(train_proteins),
         "train_lipids": len(train_lipids),
         "valid_rows": len(valid_pool),

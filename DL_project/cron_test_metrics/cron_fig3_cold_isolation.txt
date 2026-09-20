@@ -1,0 +1,205 @@
+label: cron_fig3_cold_isolation
+split_mode: lipid_coldsplit
+protein_kernel: pocket_subset
+protein_kernel_type: rbf
+protein_descriptor_names: pocket_volume_per_sasa,pocket_elongation,pocket_flatness,buriedness_q50,apolar_sasa_share,aromatic_share,hydropathy_rim,ev28_q10,aromatic_share_rim,depth_q10,ev14_q10,hydropathy_mean,pocket_extent
+lipid_kernel: explicit_subset
+lipid_kernel_type: rbf
+lipid_descriptor_names: chain,hbond,experimental_lipid_volume
+protein_lambda: 1.000000
+lipid_lambda: 1.000000
+positive_weight: 1.000000
+eval_negatives_per_positive: 2
+share: 0.800000
+lipid_class_targets: False
+select_metric: auc
+threshold_metric: ba
+seeds: 0,1,2,3,4,5,6,7,8,9
+groups: 0.46,0.49,0.61,0.75,0.77
+
+=== by group (mean +/- std across seeds) ===
+group    n            test_BA            test_F1     tanimoto_whole  tanimoto_headgroup
+0.46    10      0.7149±0.0117      0.6341±0.0134                n/a                n/a
+0.49    10      0.6123±0.0083      0.6027±0.0805                n/a                n/a
+0.61    10      0.6762±0.0132      0.6214±0.0120                n/a                n/a
+0.75    10      0.6094±0.0181      0.4513±0.0358                n/a                n/a
+0.77    10      0.6136±0.0100      0.5717±0.0387                n/a                n/a
+ALL     50      0.6453±0.0450      0.5762±0.0787                n/a                n/a
+
+=== overall ===
+metric                        mean      median        std  n
+checkpoint valid BA         0.6453      0.6238     0.0450  50
+best valid F1               0.5762      0.6080     0.0787  50
+test BA                     0.6453      0.6238     0.0450  50
+test AUC                    0.6515      0.6473     0.0294  50
+test AUC in-protein         0.6289      0.6292     0.0726  50
+  (proteins averaged)       9.8000     10.0000     5.0061  50
+test AUC in-protein (pairs)      0.6738      0.7247     0.1165  50
+  (lipid classes)          12.6000     13.0000     6.7188  50
+test F1                     0.5762      0.6080     0.0787  50
+test sensitivity            0.6308      0.5758     0.2002  50
+test specificity            0.6597      0.6897     0.1885  50
+test precision              0.5742      0.5388     0.0957  50
+FPR (FP/(FP+TN))            0.3403      0.3103     0.1885  50
+FNR (FN/(FN+TP))            0.3692      0.4242     0.2002  50
+
+abs(sensitivity-specificity) gap: mean=0.3490 median=0.3223 n=50
+sensitivity std across seeds (by group): mean=0.0818 median=0.0530 n=5
+specificity std across seeds (by group): mean=0.0807 median=0.0413 n=5
+
+=== detail (mean +/- std across seeds) ===
+--- group=0.46 ---
+test_AUC: 0.6675±0.0152
+AUC_in_protein: 0.5802±0.0273
+n_proteins: 3.0000±0.0000
+AUC_in_protein_pairs: 0.8086±0.0084
+n_pair_groups: 6.0000±0.0000
+AUC_in_lipid_class: 0.7395±0.0288
+n_lipid_classes: 4.7000±0.4830
+test_sens: 0.5758±0.0000
+test_spec: 0.8541±0.0235
+precision: 0.7064±0.0331
+accuracy: 0.7491±0.0146
+IoU: 0.4644±0.0144
+FAR: 0.1459±0.0235
+TP: 38.0000±0.0000
+FP: 15.9000±2.5582
+TN: 93.1000±2.5582
+FN: 28.0000±0.0000
+total: 175.0000±0.0000
+real_pos: 66.0000±0.0000
+real_neg: 109.0000±0.0000
+pred_pos: 53.9000±2.5582
+pred_neg: 121.1000±2.5582
+threshold: 0.0493±0.0000
+protein_lambda: 1.0000±0.0000
+lipid_lambda: 1.0000±0.0000
+train_proteins: 35.0000±0.0000
+train_lipids: 218.0000±0.0000
+valid_rows: 175.0000±0.0000
+test_rows: 175.0000±0.0000
+
+--- group=0.49 ---
+test_AUC: 0.6294±0.0119
+AUC_in_protein: 0.5337±0.0236
+n_proteins: 7.0000±0.0000
+AUC_in_protein_pairs: 0.5127±0.0424
+n_pair_groups: 13.0000±0.0000
+AUC_in_lipid_class: 0.6321±0.0607
+n_lipid_classes: 10.8000±1.1353
+test_sens: 0.5980±0.1924
+test_spec: 0.6267±0.1928
+precision: 0.6518±0.0481
+accuracy: 0.6117±0.0115
+IoU: 0.4357±0.0830
+FAR: 0.3733±0.1928
+TP: 29.3000±9.4287
+FP: 16.8000±8.6769
+TN: 28.2000±8.6769
+FN: 19.7000±9.4287
+total: 94.0000±0.0000
+real_pos: 49.0000±0.0000
+real_neg: 45.0000±0.0000
+pred_pos: 46.1000±18.0890
+pred_neg: 47.9000±18.0890
+threshold: 0.0133±0.0099
+protein_lambda: 1.0000±0.0000
+lipid_lambda: 1.0000±0.0000
+train_proteins: 35.0000±0.0000
+train_lipids: 270.0000±0.0000
+valid_rows: 94.0000±0.0000
+test_rows: 94.0000±0.0000
+
+--- group=0.61 ---
+test_AUC: 0.6891±0.0125
+AUC_in_protein: 0.6943±0.0268
+n_proteins: 10.0000±0.0000
+AUC_in_protein_pairs: 0.7286±0.0113
+n_pair_groups: 16.0000±0.0000
+AUC_in_lipid_class: 0.7290±0.0345
+n_lipid_classes: 12.6000±1.8379
+test_sens: 0.9239±0.0419
+test_spec: 0.4285±0.0413
+precision: 0.4686±0.0117
+accuracy: 0.6032±0.0174
+IoU: 0.4509±0.0125
+FAR: 0.5715±0.0413
+TP: 61.9000±2.8067
+FP: 70.3000±5.0783
+TN: 52.7000±5.0783
+FN: 5.1000±2.8067
+total: 190.0000±0.0000
+real_pos: 67.0000±0.0000
+real_neg: 123.0000±0.0000
+pred_pos: 132.2000±7.5100
+pred_neg: 57.8000±7.5100
+threshold: -0.0046±0.0010
+protein_lambda: 1.0000±0.0000
+lipid_lambda: 1.0000±0.0000
+train_proteins: 35.0000±0.0000
+train_lipids: 252.0000±0.0000
+valid_rows: 190.0000±0.0000
+test_rows: 190.0000±0.0000
+
+--- group=0.75 ---
+test_AUC: 0.6295±0.0313
+AUC_in_protein: 0.6365±0.0528
+n_proteins: 18.0000±0.0000
+AUC_in_protein_pairs: 0.7487±0.0312
+n_pair_groups: 23.0000±0.0000
+AUC_in_lipid_class: 0.6857±0.0346
+n_lipid_classes: 17.7000±1.3375
+test_sens: 0.3969±0.0530
+test_spec: 0.8219±0.0401
+precision: 0.5303±0.0365
+accuracy: 0.6802±0.0184
+IoU: 0.2920±0.0301
+FAR: 0.1781±0.0401
+TP: 50.8000±6.7791
+FP: 45.6000±10.2762
+TN: 210.4000±10.2762
+FN: 77.2000±6.7791
+total: 384.0000±0.0000
+real_pos: 128.0000±0.0000
+real_neg: 256.0000±0.0000
+pred_pos: 96.4000±15.9178
+pred_neg: 287.6000±15.9178
+threshold: 0.0660±0.0151
+protein_lambda: 1.0000±0.0000
+lipid_lambda: 1.0000±0.0000
+train_proteins: 35.0000±0.0000
+train_lipids: 221.0000±0.0000
+valid_rows: 384.0000±0.0000
+test_rows: 384.0000±0.0000
+
+--- group=0.77 ---
+test_AUC: 0.6420±0.0117
+AUC_in_protein: 0.6996±0.0289
+n_proteins: 11.0000±0.0000
+AUC_in_protein_pairs: 0.5702±0.0186
+n_pair_groups: 5.0000±0.0000
+AUC_in_lipid_class: 0.5986±0.0411
+n_lipid_classes: 4.4000±0.5164
+test_sens: 0.6597±0.1217
+test_spec: 0.5675±0.1058
+precision: 0.5141±0.0177
+accuracy: 0.6050±0.0146
+IoU: 0.4012±0.0377
+FAR: 0.4325±0.1058
+TP: 91.7000±16.9184
+FP: 87.8000±21.4725
+TN: 115.2000±21.4725
+FN: 47.3000±16.9184
+total: 342.0000±0.0000
+real_pos: 139.0000±0.0000
+real_neg: 203.0000±0.0000
+pred_pos: 179.5000±38.3384
+pred_neg: 162.5000±38.3384
+threshold: 0.1004±0.0544
+protein_lambda: 1.0000±0.0000
+lipid_lambda: 1.0000±0.0000
+train_proteins: 35.0000±0.0000
+train_lipids: 225.0000±0.0000
+valid_rows: 342.0000±0.0000
+test_rows: 342.0000±0.0000
+

@@ -71,6 +71,7 @@ from training.pair_baseline_common import (  # noqa: E402
     cold_split_pools,
     explicit_lipid_features,
     protein_pocket_features,
+    resolve_family_excluded_lipids,
     resolve_lipid_feature_subset,
     resolve_protein_feature_subset,
     species_headgroup_tanimoto_similarity,
@@ -239,9 +240,13 @@ def evaluate_block(
     pair_feature_inputs: tuple[pd.DataFrame, pd.DataFrame] | None = None,
 ) -> dict:
     """Fit and score one (family, seed) cold-split block."""
+    # merge_valid_test: nothing is fit on valid any more (threshold and early
+    # stopping both come from train now), so halving the excluded block away would
+    # only shrink what test measures, for nothing.
     train_pool, valid_pool, test_pool = cold_split_pools(
         table, family, seed, args.split_mode, args.share,
-        excluded_lipids=getattr(args, "excluded_lipids_species", None),
+        excluded_lipids=resolve_family_excluded_lipids(args, family),
+        merge_valid_test=True,
     )
     train_pool = balance_pool_negatives(train_pool, seed, args.train_negatives_per_positive)
     valid_pool = balance_pool_negatives(valid_pool, seed, args.eval_negatives_per_positive)
@@ -296,15 +301,20 @@ def evaluate_block(
         early_stopping=True,
         random_state=seed,
     )
-    # Early stopping watches THIS run's own valid pool -- never test -- same
-    # checkpoint-selection role as the network's own valid-based model selection.
-    model.fit(x_train, y_train, X_val=x_valid, y_val=y_valid)
+    # Early stopping holds out a slice of TRAIN (sklearn's own validation_fraction),
+    # never the excluded block: that block stands in for a genuinely new lipid, so
+    # its labels may not pick the stopping iteration any more than they may pick the
+    # threshold below -- either one would make the reported BA/F1 "best achievable
+    # knowing the answer" rather than what the model does on an unseen lipid.
+    model.fit(x_train, y_train)
 
+    train_scores = model.predict_proba(x_train)[:, 1]
     valid_scores = model.predict_proba(x_valid)[:, 1]
     test_scores = model.predict_proba(x_test)[:, 1]
 
+    # Threshold from TRAIN only, same reason as the early-stopping split above.
     threshold_metric = "balanced_accuracy" if args.threshold_metric == "ba" else "F1"
-    threshold, _ = best_threshold_for_metric(y_valid, valid_scores, metric=threshold_metric)
+    threshold, _ = best_threshold_for_metric(y_train, train_scores, metric=threshold_metric)
     valid_metrics = binary_confusion_metrics(y_valid, valid_scores, threshold)
     test_metrics = binary_confusion_metrics(y_test, test_scores, threshold)
 

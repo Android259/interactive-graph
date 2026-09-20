@@ -94,7 +94,10 @@ POCKET23_NAMES = POCKET13_NAMES + POCKET_CHEMISTRY_NAMES
 # 13+10 above -- not a separate reimplementation, so this cannot drift from the
 # network's own values the way an independently-derived formula could.
 POCKET_EXTRA_NAMES = ("ev28_q10", "aromatic_share_rim", "hydropathy_mean", "ev14_q10")
-POCKET_ALL_NAMES = POCKET23_NAMES + POCKET_EXTRA_NAMES
+# The two cavity measures added on top -- see _cavity_values for what they are and why
+# the pre-existing "volume" entries were not cavity measures at all.
+POCKET_CAVITY_NAMES = ("pocket_free_volume", "pocket_packing_density")
+POCKET_ALL_NAMES = POCKET23_NAMES + POCKET_EXTRA_NAMES + POCKET_CAVITY_NAMES
 
 RESIDUE_ORDER = "A R N D C Q E G H I L K M F P S T W Y V".split()
 KYTE_DOOLITTLE = np.array(
@@ -216,6 +219,113 @@ def resolve_excluded_lipids(table: pd.DataFrame, names: list[str]) -> tuple[str,
             "first if data/lipid_article_classification.json does not exist yet)"
         )
     return tuple(sorted(species))
+
+
+def resolve_family_excluded_lipids(args, family: str) -> tuple[str, ...] | None:
+    """args.excluded_lipids_species, resolved for one --families loop iteration.
+
+    A flat tuple (--excluded_lipids' own single merged "custom" block, scripts/
+    run_cron.py) applies the same way regardless of `family` -- there is only ever
+    one such block, named "custom". A dict (--excluded_lipid_groups' several
+    INDEPENDENT blocks) instead maps each family label to its own species tuple, so
+    cold_split_pools only ever sees the block matching the CURRENT loop iteration,
+    not every group's species merged together.
+    """
+    excluded = getattr(args, "excluded_lipids_species", None)
+    if isinstance(excluded, dict):
+        return excluded.get(family)
+    return excluded
+
+
+def _headgroup_isolation_units(table: pd.DataFrame, context: str):
+    """analysis.lipid_block_search.Units at species granularity, built on the HEAD-
+    GROUP-restricted Tanimoto artifacts (preprocessing/build_tanimoto_headgroup.py's
+    Tanimoto_headgroup_compact_* -- acyl tails cut off, see species_headgroup_
+    tanimoto_similarity's own docstring above) instead of _lipid_isolation_units'
+    whole-molecule ones. For a --excluded_lipid_groups block defined BY head-group
+    class (PC, PG, ...), whole-molecule similarity conflates head group and acyl
+    chain; this isolates the axis the block is actually cut on. No manifest/staleness
+    check here (species_headgroup_tanimoto_similarity's own loader does not do one
+    either -- there is no isomeric variant of this artifact to disambiguate against).
+    """
+    from analysis.lipid_block_search import Units
+    from dataloader.tanimoto_compact import CompactTanimoto
+
+    data_dir = PROJECT_ROOT / "data"
+    matrix_path = data_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy"
+    index_path = data_dir / "Tanimoto_headgroup_compact_structure_index.npy"
+    row_path = data_dir / "Tanimoto_headgroup_compact_row_ids.npy"
+    if not (matrix_path.exists() and index_path.exists() and row_path.exists()):
+        raise ValueError(
+            f"{context}: the headgroup-restricted Tanimoto artifacts are missing -- "
+            "rebuild with preprocessing/build_tanimoto_headgroup.py"
+        )
+    compact = CompactTanimoto(
+        np.load(matrix_path, mmap_mode="r"), np.load(index_path), np.load(row_path)
+    )
+    if len(np.unique(compact.row_ids)) != len(table):
+        raise ValueError(
+            f"{context}: the headgroup-restricted Tanimoto artifacts are stale for "
+            "this table -- rebuild with preprocessing/build_tanimoto_headgroup.py"
+        )
+    return Units(table, compact, "species", family=None)
+
+
+def block_tanimoto_headgroup_similarity(
+    table: pd.DataFrame, species, units_cache: dict | None = None
+) -> float:
+    """Mean best-HEAD-GROUP-Tanimoto-similarity of an excluded species block to
+    whatever chemistry stays in training -- analysis.lipid_block_search.Units.
+    isolation's own number, over _headgroup_isolation_units instead of the whole-
+    molecule one, computed for an ARBITRARY hand-picked species set (--excluded_
+    lipids/--excluded_lipid_groups). Same scale --isolation_target already uses: LOW
+    means no similar head group was left behind (a cold split, the fully-novel
+    extreme is 0.0); HIGH means a close relative's head group stayed in training.
+
+    NaN when `species` is empty/None -- there is no block to measure (a --split_mode
+    single/double/lipid_coldsplit family this was never asked about, not a real "0
+    similarity" claim).
+
+    `units_cache`, when given (the same dict evaluate_block/build_report already pass
+    around for their own protein/lipid kernel cache), memoizes the expensive Units
+    build under one fixed key so every (family, seed) block in one run shares it
+    instead of rebuilding it per call -- the table and its compact artifacts never
+    change within a run.
+    """
+    if not species:
+        return float("nan")
+    units = units_cache.get("_headgroup_isolation_units") if units_cache is not None else None
+    if units is None:
+        units = _headgroup_isolation_units(table, "block Tanimoto headgroup similarity")
+        if units_cache is not None:
+            units_cache["_headgroup_isolation_units"] = units
+    held = set(species)
+    block = np.array([name in held for name in units.names], dtype=bool)
+    return units.isolation(block)
+
+
+def block_tanimoto_similarity(
+    table: pd.DataFrame, species, units_cache: dict | None = None
+) -> float:
+    """Whole-molecule counterpart of block_tanimoto_headgroup_similarity, over
+    _lipid_isolation_units instead of _headgroup_isolation_units -- the two are
+    reported side by side (not one replacing the other): a block can be isolated on
+    the head group alone while its acyl tails still resemble something in train, or
+    vice versa, and the gap between the two numbers is itself informative. See
+    block_tanimoto_headgroup_similarity's own docstring for the shared scale/NaN
+    convention and the units_cache memoization this mirrors (own cache key, so the
+    two never evict each other).
+    """
+    if not species:
+        return float("nan")
+    units = units_cache.get("_lipid_isolation_units") if units_cache is not None else None
+    if units is None:
+        units = _lipid_isolation_units(table, "block Tanimoto similarity")
+        if units_cache is not None:
+            units_cache["_lipid_isolation_units"] = units
+    held = set(species)
+    block = np.array([name in held for name in units.names], dtype=bool)
+    return units.isolation(block)
 
 
 def raw_double_cold_pool(
@@ -526,8 +636,16 @@ def cold_split_pools(
     split_mode: str,
     share: float = 0.8,
     excluded_lipids: tuple[str, ...] | None = None,
+    merge_valid_test: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """(train, valid, test) for one cold-split block, shared by every non-neural baseline.
+
+    `merge_valid_test`, when True, skips the usual 50/50 valid/test halving and hands
+    back the WHOLE held-out block as both -- see preprocessing.lipid_marginal_baseline.
+    halve_excluded_block's own docstring for when this is (and is not) sound: only when
+    nothing downstream selects a lambda or a threshold on valid and then reads a
+    DIFFERENT number off test, i.e. no real --lambda_grid and only threshold-free
+    metrics (AUC_within_protein) are read.
 
     `excluded_lipids`, when given (a non-empty tuple of FullIdentityOfLipid names),
     takes priority over everything below: every protein stays in training and
@@ -555,12 +673,14 @@ def cold_split_pools(
     --double_coldsplit produces.
     """
     if excluded_lipids:
-        return lipid_isolation_split(table, excluded_lipids, seed)
+        return lipid_isolation_split(table, excluded_lipids, seed, merge_valid_test=merge_valid_test)
     if split_mode == "lipid_coldsplit":
         if _looks_like_isolation_target(family):
             species = resolve_lipid_isolation_species(family, table)
-            return lipid_isolation_split(table, species, seed)
-        return lipid_split(table, LIPID_COLDSPLIT_SETS[family], seed)
+            return lipid_isolation_split(table, species, seed, merge_valid_test=merge_valid_test)
+        return lipid_split(
+            table, LIPID_COLDSPLIT_SETS[family], seed, merge_valid_test=merge_valid_test
+        )
     if split_mode == "double":
         if "__" in family:
             protein_family, target = family.split("__", 1)
@@ -569,6 +689,8 @@ def cold_split_pools(
             train_pool, held_pool, _ = raw_double_cold_pool(table, family, share)
     else:
         train_pool, held_pool = raw_single_cold_pool(table, family)
+    if merge_valid_test:
+        return train_pool, held_pool, held_pool
     valid_pool, test_pool = split_held_pairs(held_pool, seed)
     return train_pool, valid_pool, test_pool
 
@@ -664,6 +786,14 @@ def best_threshold_for_metric(
     rate, F1 weighs precision, which collapses fast as false positives pile up against
     a small positive count. Picking `metric` up front makes that tradeoff explicit
     instead of silently reporting a BA-optimal cut's F1 (which reads as "broken").
+
+    Vectorised over all candidate cuts at once rather than one Python iteration per
+    cut: each cut's confusion matrix comes from a searchsorted over the score-sorted
+    rows, so the whole sweep is O(n log n) instead of O(n_cuts * n). Same cuts and
+    same values as the loop it replaces (same midpoint candidates, same ">= cut"
+    rule) -- it only matters for speed, and it matters a lot now that the threshold
+    is fit on TRAIN (thousands of rows, thousands of distinct scores) instead of a
+    small held-out pool.
     """
     if metric not in ("balanced_accuracy", "F1"):
         raise ValueError(f"unknown metric {metric!r}; expected balanced_accuracy or F1")
@@ -674,30 +804,37 @@ def best_threshold_for_metric(
         return 0.5, float("nan")
     midpoints = (order[:-1] + order[1:]) / 2 if order.size > 1 else order
     cuts = np.concatenate([[order[0] - 1e-9], midpoints, [order[-1] + 1e-9]])
-    best_cut, best_value = 0.5, float("-inf")
-    for cut in cuts:
-        predicted = scores >= cut
-        true_positive = int((predicted & (truth == 1)).sum())
-        false_negative = int((~predicted & (truth == 1)).sum())
-        true_negative = int((~predicted & (truth == 0)).sum())
-        false_positive = int((predicted & (truth == 0)).sum())
+
+    positives = int(truth.sum())
+    negatives = len(truth) - positives
+    # For each cut, how many rows fall BELOW it (searchsorted on the sorted scores),
+    # split by label -- the predicted-negative side; the predicted-positive side is
+    # then the complement, so all four cells come from two searchsorted calls.
+    positive_scores = np.sort(scores[truth == 1])
+    negative_scores = np.sort(scores[truth == 0])
+    false_negative = np.searchsorted(positive_scores, cuts, side="left")
+    true_negative = np.searchsorted(negative_scores, cuts, side="left")
+    true_positive = positives - false_negative
+    false_positive = negatives - true_negative
+
+    with np.errstate(divide="ignore", invalid="ignore"):
         if metric == "balanced_accuracy":
-            if true_positive + false_negative == 0 or true_negative + false_positive == 0:
-                continue
-            value = 0.5 * (
-                true_positive / (true_positive + false_negative)
-                + true_negative / (true_negative + false_positive)
+            values = 0.5 * (
+                np.divide(true_positive, positives, where=positives > 0,
+                          out=np.full(cuts.shape, np.nan))
+                + np.divide(true_negative, negatives, where=negatives > 0,
+                            out=np.full(cuts.shape, np.nan))
             )
         else:
             denominator = 2 * true_positive + false_positive + false_negative
-            if denominator == 0:
-                continue
-            value = 2 * true_positive / denominator
-        if value > best_value:
-            best_value, best_cut = value, float(cut)
-    if best_value == float("-inf"):
+            values = np.divide(
+                2 * true_positive, denominator, where=denominator > 0,
+                out=np.full(cuts.shape, np.nan),
+            )
+    if not np.isfinite(values).any():
         return 0.5, float("nan")
-    return best_cut, best_value
+    best = int(np.nanargmax(values))
+    return float(cuts[best]), float(values[best])
 
 
 def binary_confusion_metrics(
@@ -784,6 +921,59 @@ def _shape_values(pocket_path: Path) -> tuple[float, float, float]:
     return shape["pocket_extent"], shape["pocket_elongation"], shape["pocket_flatness"]
 
 
+# Van der Waals radii, angstrom (Bondi). Only the elements a protein PDB actually
+# carries; anything unlisted falls back to carbon, the commonest by far.
+_VDW_RADII = {"C": 1.70, "N": 1.55, "O": 1.52, "S": 1.80, "P": 1.80, "H": 1.20}
+
+
+def _cavity_values(pocket_path: Path) -> tuple[float, float]:
+    """(free cavity volume in A^3, packing density) of the binding pocket.
+
+    The existing "volume" in this catalog is NOT the cavity: `residue_volume` is the
+    Voronoi cell of each LINING RESIDUE -- protein material, not empty space -- and
+    since a residue's cell varies only ~21% around 198 A^3, summing it over the pocket
+    tracks the residue count at rho=0.993 (see PROTEIN_DESCRIPTOR_NAMES' own comment in
+    dataloader/pair_descriptors.py, which is why pocket_volume_per_sasa replaced it).
+    A convex hull of the pocket atoms is no better on its own -- measured here across
+    all 35 proteins, hull volume still correlates 0.972 with residue count.
+
+    What IS new information is the hull MINUS the van der Waals volume of every atom
+    whose centre falls inside it: the space actually left for a ligand. Measured over
+    the 35 proteins: mean 1006 A^3 (range 162-3064), correlation with pocket residue
+    count 0.791 -- and the free FRACTION (this function's second return value) sits at
+    -0.196, i.e. essentially independent of how big the pocket is. That fraction is a
+    genuinely new axis rather than another size proxy.
+
+    The absolute free volume matters for a second reason: it lands on the same physical
+    scale as the lipid side's `experimental_lipid_volume` (283 species, mean 632 A^3,
+    range 22-1248), so the lipid-volume-against-pocket-volume relationship the source
+    paper (Titeca et al., files/Reuter.pdf) actually measures becomes expressible.
+    """
+    from scipy.spatial import ConvexHull, Delaunay
+
+    from analysis.pocket_shape_descriptors import read_pocket_atoms
+
+    pocket, _, _ = read_pocket_atoms(pocket_path)
+    if len(pocket) < 4:
+        return 0.0, 0.0
+    hull = ConvexHull(pocket)
+    triangulation = Delaunay(pocket)
+    coordinates, elements = [], []
+    with open(pocket_path) as handle:
+        for line in handle:
+            if not line.startswith(("ATOM", "HETATM")) or len(line) < 63:
+                continue
+            coordinates.append((float(line[30:38]), float(line[38:46]), float(line[46:54])))
+            elements.append((line[76:78].strip() or line[13:14]).upper())
+    inside = triangulation.find_simplex(np.asarray(coordinates)) >= 0
+    occupied = sum(
+        4.0 / 3.0 * np.pi * _VDW_RADII.get(element, 1.70) ** 3
+        for element, is_inside in zip(elements, inside) if is_inside
+    )
+    free = max(hull.volume - occupied, 0.0)
+    return float(free), float(free / max(hull.volume, 1e-9))
+
+
 def _share(residue_letters: np.ndarray, allowed: set[str]) -> float:
     return float(np.isin(residue_letters, list(allowed)).mean())
 
@@ -814,6 +1004,7 @@ def protein_pocket_features(
         if not rim.any():
             rim = np.ones(len(site), dtype=bool)
         extent, elongation, flatness = _shape_values(pocket_path)
+        free_volume, packing = _cavity_values(pocket_path)
         row = {
             "LTPProtein": protein,
             "pocket_residue_share": len(site) / max(len(nodes), 1),
@@ -845,6 +1036,12 @@ def protein_pocket_features(
             "ev14_q10": float(
                 np.percentile(site["residue_mean_ev14"].to_numpy(dtype=float), 10)
             ),
+            # See _cavity_values: the first real cavity measure in this catalog (the
+            # older "volume" entries were residue count in disguise), and the only
+            # protein-side quantity on the same physical scale as the lipid side's
+            # experimental_lipid_volume.
+            "pocket_free_volume": free_volume,
+            "pocket_packing_density": packing,
         }
         for name, allowed in (
             ("basic", BASIC),
@@ -1746,3 +1943,40 @@ def pair_prediction_frame(
         for p, l in zip(result["LTPProtein"], result["FullIdentityOfLipid"])
     ]
     return result
+
+
+def train_threshold(
+    table: pd.DataFrame,
+    all_proteins: list[str],
+    all_lipids: list[str],
+    protein_kernel: np.ndarray,
+    protein_index: dict[str, int],
+    lipid_kernel: np.ndarray,
+    lipid_index: dict[str, int],
+    coefficients: np.ndarray,
+    metric: str = "balanced_accuracy",
+) -> float:
+    """The decision threshold for an already-fit production model (one fit, on ALL
+    data, nothing held out) -- read directly off that SAME fit's own scores on its own
+    training rows. One fit, one threshold search, no second model, no held-out split:
+    `predict_kronrls` queried with the training kernels themselves reproduces the
+    training-block scores exactly (see its own docstring), so this is literally
+    best_threshold_for_metric on train -- no folds, no re-fitting.
+    """
+    scores = predict_kronrls(coefficients, protein_kernel[
+        np.ix_([protein_index[name] for name in all_proteins],
+               [protein_index[name] for name in all_proteins])
+    ], lipid_kernel[
+        np.ix_([lipid_index[name] for name in all_lipids],
+               [lipid_index[name] for name in all_lipids])
+    ])
+    protein_position = {name: position for position, name in enumerate(all_proteins)}
+    lipid_position = {name: position for position, name in enumerate(all_lipids)}
+    row_scores = np.array([
+        scores[protein_position[protein], lipid_position[lipid]]
+        for protein, lipid in zip(table["LTPProtein"], table["FullIdentityOfLipid"])
+    ])
+    threshold, _ = best_threshold_for_metric(
+        table["Interaction"].to_numpy(), row_scores, metric=metric
+    )
+    return float(threshold)

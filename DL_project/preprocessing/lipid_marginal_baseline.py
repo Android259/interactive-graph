@@ -110,7 +110,7 @@ def split(csvt, family, seed, lipid_classes=(), double=False):
     return (train,) + halve_excluded_block(excluded, seed)
 
 
-def halve_excluded_block(excluded, seed):
+def halve_excluded_block(excluded, seed, merge_valid_test=False):
     """(valid, test) from one excluded block, exactly as `_split_interactions` halves it.
 
     Stratified by label: an undivided draw fixes only the total, so the positives fall
@@ -121,7 +121,18 @@ def halve_excluded_block(excluded, seed):
 
     Shared by `split` (protein-family axis) and `lipid_split` (lipid-class axis) so the
     one piece both axes have in common cannot drift between them.
+
+    `merge_valid_test=True` skips the halving and returns the WHOLE excluded block as
+    both valid and test -- for a run with no real --lambda_grid to select on, valid's
+    only remaining job is fitting a decision threshold that a threshold-free metric
+    (AUC_within_protein) never reads, so halving it away just shrinks the sample a
+    small excluded block (a rare Figure-3 lipid subclass, for instance) can't spare.
+    Not the default: a caller that DOES select lambda on valid, or reads a threshold-
+    based metric (BA/F1/sensitivity/specificity), needs the honest split -- fitting
+    the threshold on the same rows it is then scored on would leak.
     """
+    if merge_valid_test:
+        return excluded, excluded
     positive_validate = excluded[excluded["Interaction"] == 1].sample(frac=0.5, random_state=seed)
     negative_validate = excluded[excluded["Interaction"] == 0].sample(frac=0.5, random_state=seed)
     valid = pandas.concat([positive_validate, negative_validate]).sample(frac=1, random_state=seed)
@@ -129,7 +140,7 @@ def halve_excluded_block(excluded, seed):
     return valid, test
 
 
-def lipid_split(csvt, lipid_classes, seed):
+def lipid_split(csvt, lipid_classes, seed, merge_valid_test=False):
     """The loader's `--lipid_coldsplit`, valid/test halves included.
 
     The OTHER axis from `split` above, and the reason it needs its own function rather
@@ -153,10 +164,10 @@ def lipid_split(csvt, lipid_classes, seed):
         raise ValueError("lipid_split needs a non-empty lipid class set")
     train = csvt[~lipid_class_series(csvt).str.lower().isin(held)]
     excluded = csvt.drop(train.index)
-    return (train,) + halve_excluded_block(excluded, seed)
+    return (train,) + halve_excluded_block(excluded, seed, merge_valid_test=merge_valid_test)
 
 
-def lipid_isolation_split(csvt, species, seed):
+def lipid_isolation_split(csvt, species, seed, merge_valid_test=False):
     """The loader's `--lipid_isolation`, valid/test halves included.
 
     `lipid_split`'s counterpart keyed by SPECIES (FullIdentityOfLipid) instead of
@@ -174,7 +185,7 @@ def lipid_isolation_split(csvt, species, seed):
         raise ValueError("lipid_isolation_split needs a non-empty species set")
     train = csvt[~csvt["FullIdentityOfLipid"].isin(held)]
     excluded = csvt.drop(train.index)
-    return (train,) + halve_excluded_block(excluded, seed)
+    return (train,) + halve_excluded_block(excluded, seed, merge_valid_test=merge_valid_test)
 
 
 def balanced_accuracy(truth, prediction):

@@ -1,0 +1,37 @@
+{
+  "protein_descriptors": [
+    "pocket_volume_per_sasa",
+    "pocket_elongation",
+    "pocket_flatness",
+    "buriedness_q50",
+    "apolar_sasa_share",
+    "aromatic_share",
+    "hydropathy_rim",
+    "ev28_q10",
+    "aromatic_share_rim",
+    "depth_q10",
+    "ev14_q10",
+    "hydropathy_mean",
+    "pocket_extent"
+  ],
+  "lipid_descriptors": [
+    "chain",
+    "hbond",
+    "experimental_lipid_volume"
+  ],
+  "protein_lambda": 1.0,
+  "lipid_lambda": 1.0,
+  "threshold_metric": "ba",
+  "threshold": 0.08441606097202253,
+  "fold_thresholds": [
+    0.08793845450859471,
+    0.08296770821315544,
+    0.07196335156844125,
+    0.08142934240765595,
+    0.09778144816226537
+  ],
+  "folds": 5,
+  "cv_seed": 0,
+  "n_proteins": 35,
+  "n_lipids": 283
+}

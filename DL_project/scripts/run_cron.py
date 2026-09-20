@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
-"""Label-driven runner for analysis/kronrls_baseline.py -- writes test_metrics/ reports.
+"""Label-driven runner for analysis/kronrls_baseline.py -- writes cron_test_metrics/ reports.
 
 Takes a label (arbitrary name, like a network arg-file's own label) and runs the
-Kron-RLS calculation over it, then writes one report file per (excluded block, seed)
+Kron-RLS calculation over it, then writes ONE general report file for the whole run
 under
 
-    test_metrics/cron_<label>/groups_<block>/cron_metrics_<timestamp>_seed<seed>.txt
+    cron_test_metrics/cron_<label>.txt
 
--- same directory shape as a real network run's test_metrics/<label>/groups_<set>/
-(so a human/agent already used to reading those can read these the same way), but
-filenames start with `cron_metrics_`, not `test_metrics_`. Deliberate: analysis/
-build_metrics_table.py's own `rglob("test_metrics_*.txt")` would otherwise pick
-these up and either crash (parse_metric_filename expects a network run's exact
-filename shape: timestamp + parameter string) or, worse, silently merge Kron-RLS
-rows into metrics_summary.csv, the network's own canonical table. `cron_*` on the
-label and `cron_metrics_` on the filename both exist to keep this baseline in its
-own, clearly separate namespace.
+-- its own top-level directory, sibling to (not inside) the network's own
+test_metrics/<label>/, so nothing here can ever collide with it or with analysis/
+build_metrics_table.py's own rglob over test_metrics/. One file per label, not one
+per (group, seed): every group this run covers is a ROW of that file's by-group
+table (mean +/- std across seeds), not a separate file -- see
+build_general_report_text.
 
 Every kronrls_baseline.py flag works here unchanged (this file reuses its own
 argument parser, analysis.kronrls_baseline.build_parser(), so the two can never
@@ -33,8 +30,8 @@ pocket_extent --lipid_kernel tanimoto_headgroup --lambda_grid 0.01,0.1,1,10,100
 
     python3 scripts/run_cron.py quick_check --split_mode single --seeds 0
 
-Writes to test_metrics/cron_<label>/ (and, if --out is also given, the usual JSON
-report kronrls_baseline.py's own --out writes). Nothing outside test_metrics/cron_*
+Writes to cron_test_metrics/cron_<label>.txt (and, if --out is also given, the usual
+JSON report kronrls_baseline.py's own --out writes). Nothing outside cron_test_metrics/
 and --out's own path is touched; metrics_summary.csv is never read or written.
 
 Convenience feature-list shorthand. --protein_features and --lipid_features are
@@ -59,7 +56,7 @@ value by construction and does not factor into either kernel alone, so there is 
 well-defined place for it in this method -- passing --pair_features fails fast with
 that explanation rather than silently doing something else with it.
 
---no_logs skips writing test_metrics/cron_*/ files -- no label needed then, unless
+--no_logs skips writing the cron_test_metrics/cron_*.txt file -- no label needed then, unless
 --set_label is also given. --set_label names the run (same role as the positional
 `label`, provided as a flag for scripting convenience) and, when given, wins over
 the positional if both are present.
@@ -80,7 +77,6 @@ from __future__ import annotations
 import argparse
 import statistics
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -102,6 +98,7 @@ from training.pair_baseline_common import (  # noqa: E402
     csv_classes,
     generate_lipid_isolation_groups,
     resolve_excluded_lipids,
+    resolve_family_excluded_lipids,
 )
 
 # analysis/summarize_label.py's own METRICS table, restricted to what a Kron-RLS row
@@ -136,34 +133,35 @@ SUMMARY_RATE_METRICS = (
     ("FNR (FN/(FN+TP))", "FN", ("FN", "TP")),
 )
 
-# Report-file keys a run_cron.py row can actually fill, in the order a network's own
-# test_metrics_*.txt lists its metric block (see that file's tail) -- values missing
-# here (loss, everything ModelConfig-only) are written as "undefined", never
-# fabricated. Left side: report-file key. Right side: the build_report() column it
-# comes from.
-METRIC_FIELD_MAP = {
-    "total": "total",
-    "real_positive": "real_positive",
-    "real_negative": "real_negative",
-    "predicted_positive": "predicted_positive",
-    "predicted_negative": "predicted_negative",
-    "TP": "TP",
-    "FP": "FP",
-    "TN": "TN",
-    "FN": "FN",
-    "accuracy": "accuracy",
-    "sensitivity": "test_sensitivity",
-    "precision": "precision",
-    "specificity": "test_specificity",
-    "IoU": "IoU",
-    "FAR": "FAR",
-    "F1": "test_f1",
-    "balanced_accuracy": "test_ba",
-    "AUC": "test_auc",
-    "AUC_within_protein": "per_protein_auc",
-    "AUC_within_protein_pairs": "pair_auc",
-    "AUC_within_protein_proteins": "n_proteins",
-}
+# The by-group summary is exactly _f1_ba_by_group_table's own pair (test_BA, test_F1)
+# -- the terminal's existing default -- minus valid_ba/valid_f1 (identical to test_*
+# under merge_valid_test, pure clutter). Everything else lives in the DETAIL section
+# below instead: aggregated (mean+-std across seeds) the same way, not per-seed rows
+# -- nobody reads 10 near-identical seed rows per group, the point of more than one
+# seed here is exactly to average them.
+REPORT_SUMMARY_COLUMNS = (
+    ("test_ba", "test_BA"), ("test_f1", "test_F1"),
+    ("block_tanimoto_similarity", "tanimoto_whole"),
+    ("block_tanimoto_headgroup_similarity", "tanimoto_headgroup"),
+)
+# The DETAIL table -- every other build_report() column, ONE table, same shape/style
+# as REPORT_SUMMARY_COLUMNS above (just more columns), aggregated mean+-std by group.
+DETAIL_COLUMNS = (
+    ("test_auc", "test_AUC"), ("per_protein_auc", "AUC_in_protein"),
+    ("n_proteins", "n_proteins"), ("pair_auc", "AUC_in_protein_pairs"),
+    ("n_pair_groups", "n_pair_groups"), ("per_lipid_auc", "AUC_in_lipid_class"),
+    ("n_lipid_classes", "n_lipid_classes"),
+    ("test_sensitivity", "test_sens"), ("test_specificity", "test_spec"),
+    ("precision", "precision"), ("accuracy", "accuracy"),
+    ("IoU", "IoU"), ("FAR", "FAR"),
+    ("TP", "TP"), ("FP", "FP"), ("TN", "TN"), ("FN", "FN"),
+    ("total", "total"), ("real_positive", "real_pos"), ("real_negative", "real_neg"),
+    ("predicted_positive", "pred_pos"), ("predicted_negative", "pred_neg"),
+    ("threshold", "threshold"),
+    ("protein_lambda", "protein_lambda"), ("lipid_lambda", "lipid_lambda"),
+    ("train_proteins", "train_proteins"), ("train_lipids", "train_lipids"),
+    ("valid_rows", "valid_rows"), ("test_rows", "test_rows"),
+)
 # Config/provenance keys, written above the metric block -- kronrls_baseline.py's
 # own args plus what the split resolved to, not a ModelConfig field dump (this is
 # not a network run and faking hiddim/lr/etc. for it would be actively misleading,
@@ -182,14 +180,21 @@ def print_split_brief(table: pd.DataFrame, family: str, seed: int, args: argpars
     group; valid/test size barely moves across seeds) -- printed once per group,
     not once per (group, seed), to avoid repeating the same line seeds times.
     """
+    merge_valid_test = not bool(args.lambda_grid)
     _, valid_pool, test_pool = cold_split_pools(
         table, family, seed, args.split_mode, args.share,
-        excluded_lipids=getattr(args, "excluded_lipids_species", None),
+        excluded_lipids=resolve_family_excluded_lipids(args, family),
+        merge_valid_test=merge_valid_test,
     )
     valid_pool = balance_pool_negatives(valid_pool, seed, args.eval_negatives_per_positive)
     test_pool = balance_pool_negatives(test_pool, seed, args.eval_negatives_per_positive)
     classes = sorted(set(csv_classes(valid_pool)) | set(csv_classes(test_pool)))
-    print(f"{family}: classes={','.join(classes)} | valid+test rows={len(valid_pool) + len(test_pool)}")
+    if merge_valid_test:
+        # Same pool scored as both valid and test (no --lambda_grid to select on) --
+        # summing the two would double-count it, so report its own size once instead.
+        print(f"{family}: classes={','.join(classes)} | valid=test rows={len(test_pool)} (merged, no --lambda_grid)")
+    else:
+        print(f"{family}: classes={','.join(classes)} | valid+test rows={len(valid_pool) + len(test_pool)}")
 
 
 def _format(value) -> str:
@@ -204,36 +209,48 @@ def _format(value) -> str:
     return str(value)
 
 
-def build_report_text(row: pd.Series, args: argparse.Namespace, run_label: str) -> str:
+def build_general_report_text(report: pd.DataFrame, args: argparse.Namespace, run_label: str) -> str:
+    """The whole run's persisted record -- one file per label (see write_general_report),
+    replacing the old one-file-per-(group,seed) layout. The by-group summary is just
+    REPORT_SUMMARY_COLUMNS (test_BA, test_F1) -- exactly the terminal's own default
+    table, no valid_* (identical to test_* under merge_valid_test). Everything else
+    (AUC_in_protein, TP/FP/confusion-matrix/provenance) lives in the DETAIL section:
+    one block PER GROUP (DETAIL_COLUMNS as vertical "label: mean+-std" lines, not a
+    table -- a table this many columns wide is unreadable regardless of row count),
+    aggregated across seeds the same way the summary is -- NOT one row per seed.
+    Nobody reads 10 near-identical seed rows per group; the whole point of more than
+    one seed is to average them, here as everywhere else in this file.
+    """
     lines = [f"label: cron_{run_label}"]
     for field in CONFIG_ARG_FIELDS:
         lines.append(f"{field}: {_format(getattr(args, field))}")
-    lines.append(f"seed: {row['seed']}")
-    lines.append(f"excluded_group: {row['family']}")
-    lines.append(f"lambda_grid_protein_lambda: {_format(row['protein_lambda'])}")
-    lines.append(f"lambda_grid_lipid_lambda: {_format(row['lipid_lambda'])}")
-    lines.append(f"threshold: {_format(row['threshold'])}")
-    lines.append(f"train_proteins: {row['train_proteins']}")
-    lines.append(f"train_lipids: {row['train_lipids']}")
-    lines.append(f"valid_rows: {row['valid_rows']}")
-    lines.append(f"test_rows: {row['test_rows']}")
-    lines.append(f"valid_balanced_accuracy: {_format(row['valid_ba'])}")
-    lines.append(f"valid_F1: {_format(row['valid_f1'])}")
-    lines.append(f"valid_AUC: {_format(row['valid_auc'])}")
+    lines.append(f"seeds: {_format(sorted(int(value) for value in report['seed'].unique()))}")
+    lines.append(f"groups: {_format(sorted(report['family'].unique().tolist()))}")
     lines.append("")
-    for report_key, column in METRIC_FIELD_MAP.items():
-        lines.append(f"{report_key}: {_format(row[column])}")
-    lines.append("loss: undefined")
-    lines.append(f"AUC_within_protein_pairs_proteins: {_format(row['n_pair_groups'])}")
+    lines.append("=== by group (mean +/- std across seeds) ===")
+    lines.append(_by_group_mean_std_table(report, REPORT_SUMMARY_COLUMNS))
+    lines.append("")
+    lines.append("=== overall ===")
+    lines.append(_metric_table(report, complete=True))
+    lines.append("")
+    lines.append(_gap_line(report))
+    lines.append(_seed_variability_lines(report))
+    lines.append("")
+    lines.append("=== detail (mean +/- std across seeds) ===")
+    for group, frame in report.groupby("family", sort=True):
+        lines.append(f"--- group={group} ---")
+        for column, label in DETAIL_COLUMNS:
+            lines.append(f"{label}: {_mean_std_cell(frame[column].dropna().tolist())}")
+        lines.append("")
     return "\n".join(lines) + "\n"
 
 
-def write_report(
-    row: pd.Series, args: argparse.Namespace, run_label: str, out_dir: Path, run_id: str
+def write_general_report(
+    report: pd.DataFrame, args: argparse.Namespace, run_label: str, out_root: Path
 ) -> Path:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"cron_metrics_{run_id}.txt"
-    path.write_text(build_report_text(row, args, run_label))
+    out_root.mkdir(parents=True, exist_ok=True)
+    path = out_root / f"cron_{run_label}.txt"
+    path.write_text(build_general_report_text(report, args, run_label))
     return path
 
 
@@ -318,7 +335,9 @@ def _by_group_mean_std_table(
 ) -> str:
     """One row per group (plus ALL), one "mean+-std across that group's seeds" cell
     per (build_report() column, header label) in `columns` -- the shared renderer
-    behind both _f1_ba_by_group_table and _test_ba_f1_table below.
+    behind _f1_ba_by_group_table/_test_ba_f1_table below (the terminal's trimmed
+    views) and build_general_report_text's REPORT_SUMMARY_COLUMNS/DETAIL_COLUMNS
+    (the written file's own summary table and its detail table, same shape).
     """
     col_width = 17
     groups = sorted(report["family"].unique()) + ["ALL"]
@@ -478,10 +497,10 @@ def main() -> None:
     parser.add_argument(
         "label", nargs="?", default=None,
         help=(
-            "run name -- output goes to test_metrics/cron_<label>/, never "
-            "test_metrics/<label>/ (that namespace is the network's own). Optional "
-            "with --no_logs (nothing is written then); --set_label overrides it "
-            "either way."
+            "run name -- output goes to cron_test_metrics/cron_<label>.txt, one "
+            "file for the whole run, never test_metrics/<label>/ (that namespace "
+            "is the network's own). Optional with --no_logs (nothing is written "
+            "then); --set_label overrides it either way."
         ),
     )
     parser.add_argument(
@@ -491,8 +510,8 @@ def main() -> None:
     parser.add_argument(
         "--no_logs", action="store_true",
         help=(
-            "print each block's report to the terminal instead of writing "
-            "test_metrics/cron_<label>/ files"
+            "print the report to the terminal instead of writing "
+            "cron_test_metrics/cron_<label>.txt"
         ),
     )
     parser.add_argument(
@@ -508,8 +527,8 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--out_root", type=Path, default=PROJECT_ROOT / "test_metrics",
-        help="parent of cron_<label>/ (default: the project's test_metrics/)",
+        "--out_root", type=Path, default=PROJECT_ROOT / "cron_test_metrics",
+        help="parent of cron_<label>.txt (default: the project's cron_test_metrics/)",
     )
     parser.add_argument(
         "--families_number", type=int, default=None,
@@ -551,6 +570,33 @@ def main() -> None:
             "as one group, labeled \"custom\"."
         ),
     )
+    parser.add_argument(
+        "--excluded_lipid_groups", default=None,
+        help=(
+            "comma-separated list of INDEPENDENT held-out groups. Each entry is "
+            "one group; a group is one name (an exact FullIdentityOfLipid species, "
+            "a project head-group class, or an article LTP-lipid subclass "
+            "abbreviation -- \"PC\", \"PG\", \"FA\", ..., see files/data_source.md) "
+            "or several such names joined with \"+\" to hold them out TOGETHER as "
+            "one combined block (e.g. \"Cer+CerP+HexCer+Hex2Cer+SHexCer+SM\" for "
+            "files/data_source.md's own Sphingolipids sub-group -- useful when a "
+            "single subclass has too few distinct interacting proteins on its own "
+            "for AUC_within_protein to average over, but its structural neighbors "
+            "combined clear that bar). Each comma-separated group -- single-name or "
+            "\"+\"-combined -- runs as its OWN separate block: its own row (named "
+            "after the entry itself, e.g. \"PC\" or \"Cer+CerP+HexCer+Hex2Cer+"
+            "SHexCer+SM\") in the one general report file this run writes. Unlike "
+            "--excluded_lipids, which always merges everything given into ONE "
+            "combined \"custom\" block "
+            "regardless of comma, this always keeps comma-separated entries apart "
+            "-- \"+\" is the only combinator. One invocation covering several "
+            "lipid cold splits at once (e.g. every Figure 3a row worth reading) "
+            "instead of one --excluded_lipids run per group. Implies the "
+            "lipid_coldsplit behaviour the same way --excluded_lipids does "
+            "(--split_mode is ignored). Mutually exclusive with --excluded_lipids/"
+            "--families/--families_number."
+        ),
+    )
     args = parser.parse_args()
 
     if args.pair_features:
@@ -568,14 +614,33 @@ def main() -> None:
 
     args.excluded_lipids_species = None
     if args.excluded_lipids:
-        if args.families or args.families_number:
+        if args.families or args.families_number or args.excluded_lipid_groups:
             parser.error(
                 "--excluded_lipids gives its own species list directly -- combining "
-                "it with --families/--families_number is ambiguous, drop one"
+                "it with --families/--families_number/--excluded_lipid_groups is "
+                "ambiguous, drop one"
             )
         args.excluded_lipids_species = tuple(
             name.strip() for name in args.excluded_lipids.split(",") if name.strip()
         )
+
+    excluded_lipid_group_specs = None
+    if args.excluded_lipid_groups:
+        if args.families or args.families_number:
+            parser.error(
+                "--excluded_lipid_groups gives its own list of independent groups "
+                "-- combining it with --families/--families_number is ambiguous, "
+                "drop one"
+            )
+        excluded_lipid_group_specs = []
+        for segment in args.excluded_lipid_groups.split(","):
+            segment = segment.strip()
+            if not segment:
+                continue
+            tokens = [token.strip() for token in segment.split("+") if token.strip()]
+            if not tokens:
+                continue
+            excluded_lipid_group_specs.append((segment, tokens))
 
     families_number_target = 0.0
     if args.families_number:
@@ -613,7 +678,16 @@ def main() -> None:
         parser.error("--isolation_target only applies to --split_mode double/lipid_coldsplit")
 
     table = load_table(args)
-    if args.excluded_lipids_species:
+    if excluded_lipid_group_specs:
+        resolved_groups: dict[str, tuple[str, ...]] = {}
+        for label, tokens in excluded_lipid_group_specs:
+            try:
+                resolved_groups[label] = resolve_excluded_lipids(table, tokens)
+            except ValueError as error:
+                parser.error(str(error))
+        args.excluded_lipids_species = resolved_groups
+        families = list(resolved_groups.keys())
+    elif args.excluded_lipids_species:
         try:
             args.excluded_lipids_species = resolve_excluded_lipids(
                 table, list(args.excluded_lipids_species)
@@ -642,14 +716,8 @@ def main() -> None:
     print_standard_summary(report, run_label, complete=args.complete)
 
     if not args.no_logs:
-        run_dir = args.out_root / f"cron_{run_label}"
-        written = []
-        for _, row in report.iterrows():
-            group_dir = run_dir / f"groups_{row['family']}"
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            run_id = f"{timestamp}_seed{row['seed']}"
-            written.append(write_report(row, args, run_label, group_dir, run_id))
-        print(f"\nwrote {len(written)} report(s) under {run_dir}")
+        report_path = write_general_report(report, args, run_label, args.out_root)
+        print(f"\nwrote general report to {report_path}")
 
     if args.out:
         report.to_json(args.out, orient="records", indent=2)
