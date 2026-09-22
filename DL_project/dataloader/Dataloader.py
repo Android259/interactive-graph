@@ -172,6 +172,22 @@ class PLIDataset(
             # here restores the position-equals-label invariant for this filtered
             # frame, the same way a fresh read already gives it for every other run.
             csv = csv.reset_index(drop=True)
+        # --drop_proteins: named LTPProtein rows removed from the table outright,
+        # before anything else runs -- same positional-invariant reasoning and same
+        # reset_index(drop=True) as --family_only's own filter just above (pair_id is
+        # read straight off .index a few lines down, while _compute_pair_descriptors'
+        # arrays are built with .to_numpy(), purely positional; a boolean mask without
+        # resetting the index would leave those two disagreeing on what "row 2 of the
+        # filtered frame" means). Unlike excluded_subgroups (which keeps a named
+        # protein IN the run and only moves its rows from train into the evaluated
+        # pool -- the point of the family-holdout axis it serves), a dropped protein
+        # never appears anywhere in train, valid or test, and its graph is never built.
+        # For data-hygiene removals (a protein whose own input is broken, e.g. PITPNA
+        # -- see ModelConfig.drop_proteins' own comment), not a split-axis choice.
+        drop_proteins = {name for name in getattr(config, "drop_proteins", []) or []}
+        if drop_proteins:
+            csv = csv[~csv["LTPProtein"].isin(drop_proteins)]
+            csv = csv.reset_index(drop=True)
         # --rotate_train_negatives needs the negatives the sampler did NOT draw, so the
         # table is kept as it stands here: after --family_only's filter and its
         # reset_index (so `pair_id` means the same thing as in self.csvt) and before
@@ -1160,6 +1176,7 @@ class PLIDataset(
                 BOUNDED_SHARE_DESCRIPTOR_NAMES,
                 LIPID_DESCRIPTOR_NAMES as _CATALOG_LIPID_NAMES,
                 PAIR_DESCRIPTOR_NAMES as _CATALOG_PAIR_NAMES,
+                POCKET_CHEMISTRY_DESCRIPTOR_NAMES as _CATALOG_POCKET_CHEMISTRY_NAMES,
                 PROTEIN_DESCRIPTOR_NAMES as _CATALOG_PROTEIN_NAMES,
                 pair_descriptor_value,
                 parse_descriptor_token,
@@ -1177,7 +1194,9 @@ class PLIDataset(
             raw_values["extent"] = (coarse_extent, False)
 
             protein_names_needed = base_names_needed & (
-                set(_CATALOG_PROTEIN_NAMES) | {"polar_share"}
+                set(_CATALOG_PROTEIN_NAMES)
+                | set(_CATALOG_POCKET_CHEMISTRY_NAMES)
+                | {"polar_share"}
             )
             pair_names_needed = base_names_needed & set(_CATALOG_PAIR_NAMES)
             # tail_count is needed whenever it is named directly OR a pair formula

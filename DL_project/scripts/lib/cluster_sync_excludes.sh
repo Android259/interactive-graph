@@ -113,6 +113,20 @@ SYNC_EXCLUDES=(
     --include='/data/Tanimoto_compact*'
     --include='/data/grab_pair_graph_edges.csv'
     --include='/data/*.py'
+    # Small, external-source lookup tables the running model reads directly rather
+    # than deriving on the fly -- neither is reproducible from something else already
+    # carved out above, so a cluster missing either fails at dataset construction with
+    # a bare FileNotFoundError instead of falling back to computing it. Both found the
+    # hard way: Lipid_Volumes.csv (experimental_lipid_volume, dataloader/
+    # pair_descriptors.py -- originally a .xlsx, converted by preprocessing/convert_
+    # lipid_volumes_xlsx.py specifically because the old format needed openpyxl AND
+    # was never carved out of this same exclusion, so it silently never reached a
+    # cluster at all) and lipid_article_classification.json (--lipid_subclass and
+    # --excluded_lipid_groups' article-abbreviation resolution, dataloader/lipid_
+    # subclass_blocks.py / training/pair_baseline_common.py, built by preprocessing/
+    # classify_lipids_by_article.py).
+    --include='/data/Lipid_Volumes.csv'
+    --include='/data/lipid_article_classification.json'
     # Self-validating (dataloader/pair_descriptor_cache.py's store_is_current() embeds
     # every source file's size/mtime_ns in the JSON itself and checks it fresh on every
     # load), so shipping a copy built on this machine is never a wrong answer on the
@@ -129,6 +143,20 @@ SYNC_EXCLUDES=(
     --include='/data/graphs/'
     --include='/data/graphs/**'
     --include='/data/protein_graph_tensors*'
+    # Per-protein ESM3 embeddings -- the actual reason PITPNA's graph<->embedding
+    # mismatch surfaced on Bigfoot at all (files/split_similarity_four_baselines_and_
+    # deepclip.md): unlike data/graphs/ just above, this directory used to sit fully
+    # excluded, on the same reasoning as the Pretrained MoLFormer/ESM3 CHECKPOINT
+    # weights below -- "the copy already on the cluster is authoritative, do not mirror
+    # a local one over it." That reasoning fits a third-party pretrained checkpoint; it
+    # does not fit this directory, which is project-derived per-protein output rebuilt
+    # locally exactly like data/graphs/ is (same preprocessing/embed_protein_esm3_v2.py-
+    # style pipeline, same "rebuilt here, has to reach every cluster" argument) -- and
+    # data/graphs/ is resynced on every push while this sat frozen, so the two silently
+    # drifted apart for GLTP/GM2A/HSDL2/LCN15 the moment either was rebuilt without the
+    # other. 47 MB total, negligible next to the 3.8 GB this exclusion exists for.
+    --include='/data/embedding_ESM3/'
+    --include='/data/embedding_ESM3/**'
     --exclude='/data/**'
     --exclude='/data/'
 

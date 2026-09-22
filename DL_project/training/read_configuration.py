@@ -310,6 +310,17 @@ def read_excluded_subgroups(value):
     return list(dict.fromkeys(excluded_subgroups))
 
 
+def read_drop_proteins(value):
+    """Parse --drop_proteins: LTPProtein names removed from the table outright.
+
+    Same bare-string parsing as read_excluded_subgroups (order-preserving, deduped) --
+    the two lists differ in what the loader DOES with them, not in how they are read.
+    """
+    return list(dict.fromkeys(
+        item.strip() for item in str(value).split(",") if item.strip()
+    ))
+
+
 @dataclass
 class ModelConfig:
     third_layers_in_mlps: bool = False
@@ -1156,6 +1167,22 @@ class ModelConfig:
     # not about the guarantee; 0.3 is the one value in the sweep that breaks it.
     coldsplit_share: float = 0.8
     excluded_subgroups: list = field(default_factory=list)
+    # Data-hygiene removal, orthogonal to every split axis above: named LTPProtein rows
+    # are dropped from the interaction table before ANYTHING else runs (sampling,
+    # excluded_groups/lipid_coldsplit/lipid_subclass's own filters, warm_caches), so a
+    # protein named here never has its graph built and never appears in train, valid or
+    # test -- unlike excluded_subgroups, which keeps a named protein IN the run and only
+    # moves its rows from train into the evaluated (valid/test) pool, because that is
+    # the point of the family-holdout axis it serves. This exists for the opposite
+    # case: a protein whose own input is broken (e.g. PITPNA's coarse_graph_nodes.csv
+    # carries 267 rows against its ESM3 embedding's 269 -- 4 C-terminal residues
+    # missing from the graph plus 2 duplicated residue numbers elsewhere, a gap in the
+    # graph-building pipeline for that one PDB entry -- see tests/test_esm3_alignment.py
+    # and files/split_similarity_four_baselines_and_deepclip.md for the full diagnosis),
+    # which crashes dataset construction under every axis alike and has nothing to do
+    # with which split is being run. Combines with any axis, including lipid_coldsplit/
+    # lipid_subclass, for exactly that reason.
+    drop_proteins: list = field(default_factory=list)
     balance_excluded_group_negatives: bool = False
     balance_negatives_by_family: bool = False
     balanced_proteins: bool = False
@@ -3398,6 +3425,7 @@ VALUE_HANDLERS = {
     "--excluded_subgroups=": set_config_field(
         "excluded_subgroups", read_excluded_subgroups
     ),
+    "--drop_proteins=": set_config_field("drop_proteins", read_drop_proteins),
     "--excluded_groups=": set_config_field("excluded_groups", read_excluded_groups),
     "--negatives_per_positive=": set_config_field("negatives_per_positive", int),
     "--rotate_negatives_per_epoch=": set_config_field("rotate_negatives_per_epoch", int),

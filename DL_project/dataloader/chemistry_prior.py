@@ -155,8 +155,8 @@ def _lipid_descriptor_table(csv, data_dir=None):
     # these under the SAME name, except "heavy" (stored as "heavy_atoms" -- see that
     # module's own build_pair_value_cache comment on the rename). A cache hit is a
     # dict lookup instead of a live RDKit reparse (or, for experimental_lipid_volume,
-    # a pandas.read_excel of data/Lipid_Volumes.xlsx, which additionally needs
-    # openpyxl installed) -- generalized from what previously only covered npr1/npr2.
+    # a pandas.read_csv of data/Lipid_Volumes.csv) -- generalized from what previously
+    # only covered npr1/npr2.
     _CACHE_MEASURE_ALIAS = {"heavy": "heavy_atoms"}
 
     def _cached_measure(measure, compute, smiles):
@@ -192,7 +192,7 @@ def _lipid_descriptor_table(csv, data_dir=None):
         "tail_logp": pair_descriptors.tail_logp,
         "tail_molar_refractivity": pair_descriptors.tail_molar_refractivity,
         "tail_heavy_atoms": pair_descriptors.tail_heavy_atoms,
-        # data/Lipid_Volumes.xlsx lookup, not an RDKit formula -- see its own comment
+        # data/Lipid_Volumes.csv lookup, not an RDKit formula -- see its own comment
         # in dataloader/pair_descriptors.py. A per-candidate miss is common (~70%);
         # per-species below, every one of the 283 distinct FullIdentityOfLipid
         # species resolves from at least one candidate.

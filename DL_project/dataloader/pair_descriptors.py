@@ -63,7 +63,7 @@ LIPID_DESCRIPTOR_NAMES = (
     "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
     "tail_unsaturation_density", "tail_double_bond_position",
     "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
-    # experimental_lipid_volume (data/Lipid_Volumes.xlsx lookup, see its own comment
+    # experimental_lipid_volume (data/Lipid_Volumes.csv lookup, see its own comment
     # above _MEASURES): promoted straight in, unlike the tail_* block above, which
     # waited on an eta^2-against-head-group-class measurement first. What was
     # actually checked here is coverage, not eta^2 -- at the CANDIDATE level (a raw
@@ -1153,9 +1153,24 @@ CONFORMER_MEASURE_NAMES = (
 )
 
 
-# data/Lipid_Volumes.xlsx: per-species van-der-Waals volumes (Angstrom^3) from an
+# data/Lipid_Volumes.csv: per-species van-der-Waals volumes (Angstrom^3) from an
 # external source, keyed here by the exact bound SMILES structure -- NOT by
-# (LTPProtein, Lipid), even though the sheet is laid out per protein. Checked directly
+# (LTPProtein, Lipid), even though the sheet is laid out per protein.
+#
+# CSV, not the original .xlsx the source arrived as: converted once by
+# preprocessing/convert_lipid_volumes_xlsx.py (a stdlib-only zip/XML parse -- no
+# spreadsheet library, see that script's own docstring), for two reasons a plain CSV
+# does not have. First, `pandas.read_excel` needs `openpyxl` installed, which this
+# .xlsx was the only thing in the whole project requiring -- a machine that runs
+# everything else fine can be missing it, and then this one descriptor raises
+# ImportError. Second, and the one that actually surfaced in practice:
+# scripts/lib/cluster_sync_excludes.sh protects the whole data/ directory from being
+# refreshed by an ordinary code sync, and only a short, explicit list of data/ files is
+# carved out of that protection (Processed_*.csv, Tanimoto_compact*, ...) -- .xlsx was
+# never one of them, so this file quietly never reached the cluster at all, surfacing
+# as a bare FileNotFoundError the first time an arg file's descriptor set actually
+# needed it. data/Lipid_Volumes.csv is now in that carve-out list; the .xlsx never
+# needs to be synced again. Checked directly
 # against this project's own candidate SMILES: every one of the sheet's 393 distinct
 # isomeric-canonical structures maps to exactly one volume value (0 conflicts), so the
 # same molecule gets the same number regardless of which protein's row it came from --
@@ -1177,9 +1192,9 @@ CONFORMER_MEASURE_NAMES = (
 # whether the ~70% miss rate (as_arrays -> NaN, same convention as an RDKit parse
 # failure) is safe to feed the model, and how those NaNs should be filled, has not
 # been decided yet.
-_LIPID_VOLUME_XLSX = os.path.join(
+_LIPID_VOLUME_CSV = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "Lipid_Volumes.xlsx",
+    "data", "Lipid_Volumes.csv",
 )
 
 
@@ -1187,14 +1202,14 @@ _LIPID_VOLUME_XLSX = os.path.join(
 def _experimental_lipid_volume_table():
     """canonical SMILES (isomeric or not) -> mean measured volume (Angstrom^3).
 
-    Built once from _LIPID_VOLUME_XLSX and memoized; see the comment above this
+    Built once from _LIPID_VOLUME_CSV and memoized; see the comment above this
     function's registration in _MEASURES for what "mean" absorbs (2 non-isomeric
     collisions only, out of 393 structures) and why the lookup key is the molecule,
     not the (protein, lipid) pair the sheet is filed under.
     """
     import pandas
 
-    frame = pandas.read_excel(_LIPID_VOLUME_XLSX)
+    frame = pandas.read_csv(_LIPID_VOLUME_CSV)
     volume_column = next(c for c in frame.columns if c.startswith("Lipid Volumes"))
     iso_groups = {}
     flat_groups = {}
@@ -1217,7 +1232,7 @@ def _experimental_lipid_volume_table():
 
 
 def experimental_lipid_volume(smiles):
-    """Measured volume (Angstrom^3) for `smiles` from data/Lipid_Volumes.xlsx, or None
+    """Measured volume (Angstrom^3) for `smiles` from data/Lipid_Volumes.csv, or None
     if this exact structure was never one of the ligands the sheet identifies.
 
     `smiles` arrives already canonicalized by the caller (descriptor_values_by_row),
@@ -1256,7 +1271,7 @@ _MEASURES = {
     "tail_logp": tail_logp,
     "tail_molar_refractivity": tail_molar_refractivity,
     "tail_heavy_atoms": tail_heavy_atoms,
-    # data/Lipid_Volumes.xlsx lookup, not an RDKit formula -- see the comment above
+    # data/Lipid_Volumes.csv lookup, not an RDKit formula -- see the comment above
     # its definition and its entry in LIPID_DESCRIPTOR_NAMES above for coverage.
     "experimental_lipid_volume": experimental_lipid_volume,
 }
