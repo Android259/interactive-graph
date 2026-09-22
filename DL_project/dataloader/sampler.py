@@ -523,3 +523,118 @@ class ClassBalancedBatchSampler(torch.utils.data.Sampler):
                 (self._chunk(positives, batch), self._chunk(unlabeled, batch))
             ).tolist()
 
+
+
+class RotatingNegativeBatchSampler(torch.utils.data.Sampler):
+    """Every negative reaches the model, a different slice of them each epoch.
+
+    The problem this exists for. Negatives are drawn ONCE, when the dataset is built
+    (``_sample_interactions``), and the same ``negatives_per_positive`` of them are
+    replayed for all 120 epochs while the other ~80% of the table is never seen at all.
+    At the project's own ratio that is 634 positives against 9271 negatives: a 2:1 draw
+    shows 1268 of those 9271 and discards 86% of the negative evidence, and WHICH 86%
+    is a property of the seed rather than of the data.
+
+    What it does instead. The epoch's cost is unchanged -- it still emits ``chunk``
+    negatives, so a rotating run and a fixed one do the same amount of work per epoch --
+    but the chunk moves: the negatives are permuted once (seeded, so the whole schedule
+    is reproducible) and epoch *e* takes the *e*-th consecutive slice, wrapping around at
+    the end. Over ``ceil(n_negatives / chunk)`` epochs every negative has been shown
+    exactly once, and a 120-epoch run makes about sixteen such passes at the default
+    chunk. Positives are NOT rotated: there are few enough that every epoch gets all of
+    them, which is also what keeps the per-epoch class ratio fixed at what
+    ``negatives_per_positive`` asked for.
+
+    Composition with --balanced_batches. When ``balanced`` is set the epoch's active
+    rows are handed to a fresh ClassBalancedBatchSampler, so batch composition is
+    decided by exactly the code that decides it without this flag; the positions it
+    yields are subset-local and are mapped back to dataset positions here. When it is
+    not set, the active rows are shuffled and cut into ``batch_size`` batches, which is
+    what a plain shuffling DataLoader would have done to them.
+
+    ``labels`` are the training interaction labels in dataset order, as for
+    ClassBalancedBatchSampler, and the yielded entries are dataset positions.
+    ``set_epoch`` must be called before each epoch; epoch 0 is the state it is built in,
+    so a caller that forgets it trains on one fixed slice rather than on nothing.
+    """
+
+    def __init__(self, labels, batch_size, chunk, balanced, generator=None):
+        if batch_size < 1:
+            raise ValueError("rotating negatives require batch_size >= 1")
+        if chunk < 1:
+            raise ValueError("rotating negatives require at least one negative per epoch")
+        labels = torch.as_tensor(labels).reshape(-1).long()
+        if not ((labels == 0) | (labels == 1)).all():
+            raise ValueError("rotating negatives require labels in {0, 1}")
+
+        self.labels = labels
+        self.positive_indices = torch.nonzero(labels == 1, as_tuple=False).view(-1)
+        negatives = torch.nonzero(labels == 0, as_tuple=False).view(-1)
+        if self.positive_indices.numel() == 0 or negatives.numel() == 0:
+            raise ValueError(
+                "rotating negatives require both classes to be present, got "
+                f"{int(self.positive_indices.numel())} positive and "
+                f"{int(negatives.numel())} negative"
+            )
+        self.batch_size = batch_size
+        self.balanced = bool(balanced)
+        self.generator = generator
+        # Permuted ONCE, not per epoch: consecutive slices of one fixed permutation are
+        # what makes "every negative exactly once per pass" true. Re-permuting each
+        # epoch would sample with replacement across epochs and leave some negatives
+        # unseen for a long time, which is the behaviour this class replaces.
+        self.negative_order = negatives[
+            torch.randperm(negatives.numel(), generator=generator)
+        ]
+        self.chunk = min(int(chunk), int(negatives.numel()))
+        self.epochs_per_pass = -(-int(negatives.numel()) // self.chunk)
+        self._epoch = 0
+        self._active = None
+        self.set_epoch(0)
+
+    def set_epoch(self, epoch):
+        """Point the sampler at epoch `epoch`'s slice of the negative order."""
+        self._epoch = int(epoch)
+        count = int(self.negative_order.numel())
+        start = (self._epoch * self.chunk) % count
+        take = self.negative_order[start:start + self.chunk]
+        if take.numel() < self.chunk:
+            # The pass wraps here. Taking the shortfall from the FRONT keeps every epoch
+            # the same size (so the loss is averaged over a constant number of rows) at
+            # the price of showing a few negatives twice in the wrapping epoch -- the
+            # alternative, a short final epoch, changes the epoch's meaning instead.
+            take = torch.cat((take, self.negative_order[: self.chunk - take.numel()]))
+        self._active = torch.cat((self.positive_indices, take))
+        return self
+
+    @property
+    def active_indices(self):
+        return self._active
+
+    def _batches(self):
+        active = self._active
+        if self.balanced:
+            inner = ClassBalancedBatchSampler(
+                self.labels[active], self.batch_size, generator=self.generator
+            )
+            return [active[torch.as_tensor(batch)].tolist() for batch in inner]
+        order = active[torch.randperm(active.numel(), generator=self.generator)]
+        return [
+            order[start:start + self.batch_size].tolist()
+            for start in range(0, order.numel(), self.batch_size)
+        ]
+
+    def __len__(self):
+        # Counted, not materialized: len() is asked for once per epoch by the loader and
+        # once at startup by new_train.py's batch cap, and building every batch to
+        # answer it would draw from the generator and shift the epoch's own shuffle.
+        active = int(self._active.numel())
+        if not self.balanced:
+            return -(-active // self.batch_size)
+        positives = int((self.labels[self._active] == 1).sum())
+        return min(
+            max(1, -(-active // self.batch_size)), positives, active - positives
+        )
+
+    def __iter__(self):
+        return iter(self._batches())

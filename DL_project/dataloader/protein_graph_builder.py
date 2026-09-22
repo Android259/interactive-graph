@@ -72,6 +72,41 @@ POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES = tuple(
 # Voronota's residue_type code is alphabetical by one-letter code (verified against
 # ID_resName), the same order KYTE_DOOLITTLE is indexed in; Phe, Trp, Tyr sit here.
 AROMATIC_RESIDUE_TYPES = (13, 17, 18)
+
+# The same residue_type code read as a one-letter name, in the same alphabetical-by-
+# three-letter-name order KYTE_DOOLITTLE above is indexed in. Only
+# pocket_chemistry_descriptor() below needs it: its shares are defined by residue
+# CLASS, and a class is a set of names, not a hydropathy threshold.
+RESIDUE_LETTERS = (
+    "A", "R", "N", "D", "C", "Q", "E", "G", "H", "I",
+    "L", "K", "M", "F", "P", "S", "T", "W", "Y", "V",
+)
+# Residue classes behind POCKET_CHEMISTRY_DESCRIPTOR_NAMES. Spelled as residue_type
+# codes rather than letters so the shares are computed by a numpy membership test on
+# the column itself. Identical membership to training/pair_baseline_common.py's
+# BASIC/ACIDIC/POLAR/HBOND_DONOR/HBOND_ACCEPTOR (the Kron-RLS side's copy, which works
+# in letters) -- that equality is what lets a descriptor set found by a Kron-RLS search
+# be named in a network arg file and mean the same thing.
+_RESIDUE_CLASS_TYPES = {
+    "basic": tuple(RESIDUE_LETTERS.index(letter) for letter in ("R", "K", "H")),
+    "acidic": tuple(RESIDUE_LETTERS.index(letter) for letter in ("D", "E")),
+    "polar": tuple(
+        RESIDUE_LETTERS.index(letter) for letter in ("N", "Q", "S", "T", "Y", "C")
+    ),
+    "hbond_donor": tuple(
+        RESIDUE_LETTERS.index(letter)
+        for letter in ("R", "K", "H", "N", "Q", "S", "T", "Y", "W", "C")
+    ),
+    "hbond_acceptor": tuple(
+        RESIDUE_LETTERS.index(letter)
+        for letter in ("D", "E", "H", "N", "Q", "S", "T", "Y", "C")
+    ),
+}
+
+# Van der Waals radii in angstrom (Bondi), for the cavity's free volume below. Only the
+# elements a protein PDB actually carries; anything unlisted falls back to carbon, the
+# commonest by far. Same table and same fallback as training/pair_baseline_common.py.
+_VDW_RADII = {"C": 1.70, "N": 1.55, "O": 1.52, "S": 1.80, "P": 1.80, "H": 1.20}
 # Side chains only: a backbone atom is in every residue and says nothing about which
 # ones line a cavity. Same set the pocket mask itself is built from.
 POCKET_BACKBONE_ATOMS = ("C", "CA", "CB", "O", "N")
@@ -289,6 +324,109 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
             f"{len(values)} entries; ModelConfig and POCKET_DESCRIPTOR_NAMES disagree"
         )
     return torch.tensor(values, dtype=torch.float32).unsqueeze(0)
+
+
+def pocket_cavity_volume(pocketness_path):
+    """(free cavity volume in A^3, free fraction) of the binding pocket.
+
+    The convex hull of the pocket atom cloud MINUS the van der Waals volume of every
+    atom in the file whose centre falls inside that hull: the space actually left for a
+    ligand. Neither quantity already in POCKET_DESCRIPTOR_NAMES is a cavity volume --
+    `residue_volume` is the Voronoi cell of each LINING residue (protein material, not
+    empty space) and tracks the residue count at rho=0.993, which is why
+    pocket_volume_per_sasa replaced it; the hull on its own still correlates 0.972 with
+    residue count over these 35 proteins. The free volume correlates 0.791, and the
+    free FRACTION -0.196 -- an axis genuinely independent of pocket size.
+
+    The absolute volume matters for a second reason: it is the only protein-side
+    quantity on the same physical scale as the lipid side's experimental_lipid_volume
+    (mean 632 A^3), so the cavity-volume-against-lipid-volume relation the source paper
+    (Titeca et al., files/Reuter.pdf) actually measures becomes expressible as a pair
+    quantity rather than as two incomparable numbers.
+
+    Identical formula to training/pair_baseline_common.py::_cavity_values -- see that
+    function for the measurements quoted above. Duplicated rather than imported because
+    training.pair_baseline_common imports dataloader.chemistry_prior, which imports
+    this module: the arrow only runs one way.
+    """
+    from scipy.spatial import ConvexHull, Delaunay
+
+    pocket = pocket_atom_coordinates(pocketness_path)
+    if len(pocket) < 4:
+        return 0.0, 0.0
+    hull = ConvexHull(pocket)
+    triangulation = Delaunay(pocket)
+    coordinates, elements = [], []
+    with open(pocketness_path) as handle:
+        for line in handle:
+            if not line.startswith(("ATOM", "HETATM")) or len(line) < 63:
+                continue
+            coordinates.append(
+                (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+            )
+            elements.append((line[76:78].strip() or line[13:14]).upper())
+    inside = triangulation.find_simplex(numpy.asarray(coordinates)) >= 0
+    occupied = sum(
+        4.0 / 3.0 * numpy.pi * _VDW_RADII.get(element, 1.70) ** 3
+        for element, is_inside in zip(elements, inside) if is_inside
+    )
+    free = max(hull.volume - occupied, 0.0)
+    return float(free), float(free / max(hull.volume, 1e-9))
+
+
+def pocket_chemistry_descriptor(vertices, pocket, pocketness_path=None):
+    """{name: value} for POCKET_CHEMISTRY_DESCRIPTOR_NAMES -- residue-class shares of
+    the pocket, split core/rim, plus the two cavity-volume measures.
+
+    A DICT and not a row of pocket_descriptor()'s tensor, deliberately. Positions in
+    that tensor are load-bearing (architecture/pair_descriptor_head.py indexes it by
+    bare integer literal) and its length is ModelConfig.pocket_descriptor_count, which
+    is part of every --pocket_descriptors run's parameter count and therefore of its
+    run-directory identity; appending to it would silently renumber past runs. These
+    names are reached by NAME instead -- through --descriptor_names/
+    --protein_descriptors and dataloader/chemistry_prior.py's protein_descriptor_table
+    -- exactly the way PROTEIN_DERIVED_DESCRIPTOR_NAMES already is, so nothing that
+    does not ask for them by name changes at all.
+
+    Why these twelve: files/binding_determinants_literature_and_feature_proposals.md.
+    The residue-class shares are the mechanism the head-group-recognition literature
+    names first (anionic head groups read by Lys/Arg), and the core/rim split is the
+    source paper's own two-channel specificity (mouth reads the head group, depth packs
+    the chain). They were added on the Kron-RLS side first and a 16369-subset search
+    there (cron_test_metrics/exhaustive_protein_side_search.csv) put four of them --
+    basic_share_core, pocket_free_volume, basic_share_rim, hbond_donor_share_core -- in
+    almost every leading combination, ahead of two of the incumbent seven. All twelve
+    are computed here rather than only those four: they come out of one pass over the
+    same pocket residues, and keeping the network's pool equal to the Kron-RLS pool is
+    what makes a set found by a search there nameable here without a second spelling.
+
+    `pocketness_path` is what the two cavity entries need. Without it they are 0.0,
+    matching pocket_descriptor()'s own convention for its shape entries.
+    """
+    mask = pocket.bool().numpy() if hasattr(pocket, "bool") else pocket
+    site = vertices[mask]
+    if len(site) == 0:
+        raise ValueError("pocket_chemistry_descriptor requires at least one pocket residue")
+    residue_types = site["residue_type"].to_numpy(copy=True).astype(int)
+    burial = site["residue_mean_buriedness"].to_numpy(dtype=float)
+    # The pocket's own median splits it into a depth and a mouth -- the same split
+    # pocket_descriptor() uses for hydropathy_core/hydropathy_rim, and with the same
+    # fallback when every residue sits at the median.
+    core = burial >= numpy.median(burial)
+    rim = ~core
+    if not rim.any():
+        rim = numpy.ones(len(site), dtype=bool)
+    values = {}
+    for name, types in _RESIDUE_CLASS_TYPES.items():
+        member = numpy.isin(residue_types, types)
+        values[f"{name}_share_core"] = float(member[core].mean())
+        values[f"{name}_share_rim"] = float(member[rim].mean())
+    free_volume, packing = (
+        pocket_cavity_volume(pocketness_path) if pocketness_path is not None else (0.0, 0.0)
+    )
+    values["pocket_free_volume"] = free_volume
+    values["pocket_packing_density"] = packing
+    return values
 
 
 def restrict_parts_to_mask(parts, keep):

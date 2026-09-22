@@ -228,6 +228,36 @@ PROTEIN_DESCRIPTOR_NAMES = (
 #                             torch.bucketize's own output at both edges and interior
 #                             points.
 PROTEIN_DERIVED_DESCRIPTOR_NAMES = ("polar_share", "aromatic_share_coarse", "polar_share_coarse")
+
+# Pocket CHEMISTRY and CAVITY descriptors. Protein-side and nameable through
+# --descriptor_names/--protein_descriptors like everything in PROTEIN_DESCRIPTOR_NAMES
+# above, but deliberately NOT part of that tuple: its length is
+# ModelConfig.pocket_descriptor_count and its positions are indexed by bare integer
+# literal in architecture/pair_descriptor_head.py, so appending there would change the
+# parameter count -- and therefore the run-directory identity -- of every past
+# --pocket_descriptors run. Reached by name only, computed by
+# dataloader/protein_graph_builder.py's pocket_chemistry_descriptor() and merged into
+# the per-protein table by dataloader/chemistry_prior.py's protein_descriptor_table,
+# exactly the way PROTEIN_DERIVED_DESCRIPTOR_NAMES already is.
+#
+# Same twelve names, same formulas and same residue-class membership as
+# training/pair_baseline_common.py's POCKET_CHEMISTRY_NAMES + POCKET_CAVITY_NAMES --
+# that equality is the point. The Kron-RLS side saw these first and searched 16369
+# subsets over them (cron_test_metrics/exhaustive_protein_side_search.csv); four --
+# basic_share_core, pocket_free_volume, basic_share_rim, hbond_donor_share_core --
+# appear in nearly every leading combination there, and the winning set beats the
+# seven-descriptor incumbent it was asked to defend (AUC_within_protein 0.6888 vs
+# 0.6681, the incumbent ranking 1106th of 16369). A set found there can now be named
+# here without re-spelling it. Motivation for the names themselves:
+# files/binding_determinants_literature_and_feature_proposals.md.
+POCKET_CHEMISTRY_DESCRIPTOR_NAMES = (
+    "basic_share_core", "basic_share_rim",
+    "acidic_share_core", "acidic_share_rim",
+    "polar_share_core", "polar_share_rim",
+    "hbond_donor_share_core", "hbond_donor_share_rim",
+    "hbond_acceptor_share_core", "hbond_acceptor_share_rim",
+    "pocket_free_volume", "pocket_packing_density",
+)
 _SHARE_BAND_EDGES = (1.0 / 3, 2.0 / 3)
 _SHARE_BAND_CENTRES = (1.0 / 6, 0.5, 5.0 / 6)
 
@@ -253,6 +283,7 @@ DESCRIPTOR_CATALOG = (
     + ("extent",)
     + PROTEIN_DESCRIPTOR_NAMES
     + ("polar_share",)
+    + POCKET_CHEMISTRY_DESCRIPTOR_NAMES
     + PAIR_DESCRIPTOR_NAMES
 )
 
@@ -266,6 +297,15 @@ DESCRIPTOR_CATALOG = (
 BOUNDED_SHARE_DESCRIPTOR_NAMES = (
     "pocket_residue_share", "pocket_sasa_share", "apolar_sasa_share", "aromatic_share",
     "polar_share",
+    # The ten residue-class shares are fractions of the pocket's core (or rim)
+    # residues, and pocket_packing_density is a fraction of the cavity's own hull:
+    # [0, 1] is their whole possible domain by construction. pocket_free_volume is
+    # NOT here -- it is an unbounded angstrom^3 volume, so its fixed-N coarsening
+    # falls back to the train-observed range like any other unbounded quantity.
+    *(
+        name for name in POCKET_CHEMISTRY_DESCRIPTOR_NAMES
+        if name != "pocket_free_volume"
+    ),
 )
 
 # <name>_coarse=<spec>'s default quantile count when <spec> is the bare word
@@ -493,7 +533,10 @@ def split_names_by_side(names):
     belongs in a plain --pair_descriptors/--good_descriptors self-attention head
     instead, not a --thematical_paths group.
     """
-    protein_side = PROTEIN_DESCRIPTOR_NAMES + ("extent", "polar_share")
+    protein_side = (
+        PROTEIN_DESCRIPTOR_NAMES + ("extent", "polar_share")
+        + POCKET_CHEMISTRY_DESCRIPTOR_NAMES
+    )
     lipid, protein = [], []
     for token in names:
         base = token.partition(_COARSE_SUFFIX)[0]

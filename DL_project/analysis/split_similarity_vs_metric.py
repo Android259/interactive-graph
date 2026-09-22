@@ -32,9 +32,25 @@ reconstruction is pure pandas and reads no embedding, no graph and no checkpoint
 Every split axis the project runs is handled:
 
     --lipid_coldsplit     a named chemical set leaves training, every protein stays
+    --lipid_isolation     a block chosen by distance, same axis addressed differently
+    --lipid_subclass      one Titeca-et-al. subclass, same axis named a third way
     --excluded_groups     a protein family leaves training (+ --double_coldsplit)
     --family_only         one family is the whole table, split 85/7.5/7.5 inside it
     neither of the above  the plain 85/7.5/7.5 random split ("random" in the reports)
+
+TWO axes can go on x, and they are the same statistic read on the two partners:
+
+    --x test_isolation           LIPID: mean over the block's structures of the best
+                                 Tanimoto similarity to a training structure
+    --x test_protein_isolation   PROTEIN: mean over the block's proteins of the best
+                                 RBF pocket-descriptor similarity to a training protein
+
+The protein reading is built the way the Kron-RLS protein kernel is built (standardized
+pocket descriptors, RBF), over the descriptor set the RUN itself named in
+--protein_descriptors/--pocket_descriptor_names where it named one. It is 1.0 by
+construction on every lipid-side split -- no protein is held out there -- so it is the
+axis for --excluded_groups/--cold_split labels, where the LIPID axis in turn crushes six
+of the seven blocks into 0.78-0.86 and cannot separate them.
 
 Several labels are handled in ONE call -- every label in the table by default, or the
 ones named by --labels -- and each gets its own curve in its own place, the way the rest
@@ -53,6 +69,8 @@ shared table, and writes only inside the labels' own graphics directories.
     python3 analysis/split_similarity_vs_metric.py
     python3 analysis/split_similarity_vs_metric.py --labels label_a,label_b,label_c
     python3 analysis/split_similarity_vs_metric.py --metrics balanced_accuracy,F1,AUC_within_protein
+    python3 analysis/split_similarity_vs_metric.py --labels <protein-coldsplit label> \
+        --x test_protein_isolation
 """
 
 from __future__ import annotations
@@ -107,9 +125,77 @@ from dataloader.sampler import (  # noqa: E402
     split_and_sample_lipid_class_balanced_interactions,
     split_and_sample_protein_balanced_interactions,
 )
+from dataloader.lipid_subclass_blocks import subclass_block_species  # noqa: E402
 from dataloader.tanimoto_compact import load_compact  # noqa: E402
 
-DEFAULT_METRICS = ("balanced_accuracy", "F1")
+# Pocket descriptors the protein-side similarity may be computed over. The Kron-RLS
+# protein kernel's own catalog (POCKET_ALL_NAMES) plus the three lambda_sqrt shape
+# variants, which live only in the network's PROTEIN_DESCRIPTOR_NAMES -- both reach
+# resolve_protein_feature_subset, which is what actually builds the vectors.
+# Imported lazily-ish (module level is fine: these two modules are pure pandas/numpy)
+# so a machine without the training runtime still runs the lipid axis.
+try:  # pragma: no cover - a metrics-only machine may lack rdkit/scipy
+    from training.pair_baseline_common import (
+        POCKET_ALL_NAMES,
+        resolve_protein_feature_subset,
+    )
+    from dataloader.pair_descriptors import PROTEIN_DESCRIPTOR_NAMES
+
+    PROTEIN_KERNEL_NAMES = frozenset(POCKET_ALL_NAMES) | frozenset(PROTEIN_DESCRIPTOR_NAMES)
+except Exception:  # pragma: no cover
+    resolve_protein_feature_subset = None
+    PROTEIN_KERNEL_NAMES = frozenset()
+
+# What a run that names no descriptor set is measured with: the project's "protunion14",
+# the set both current baselines' protein side is built from. Named explicitly rather
+# than "whatever is in the catalog" because the similarity is only comparable across
+# labels when the description of a pocket is the same for all of them.
+DEFAULT_PROTEIN_DESCRIPTORS = (
+    "pocket_volume_per_sasa", "pocket_elongation", "pocket_flatness", "buriedness_q50",
+    "apolar_sasa_share", "aromatic_share", "hydropathy_rim", "ev28_q10",
+    "aromatic_share_rim", "depth_q10", "hydropathy_core", "ev14_q10", "hydropathy_mean",
+    "pocket_extent",
+)
+
+# The four confusion cells as SHARES of the evaluated block, derived per run from the
+# TP/FP/TN/FN counts metrics_summary.csv already stores (derived_metric below). Shares
+# and not the raw counts, because the blocks on one curve differ in size by an order of
+# magnitude -- the Figure-3 PC block is 2660 rows against PI's 245 -- so a curve of raw
+# counts is a curve of block size with the model's behaviour buried in it. The counts
+# themselves still go into the point CSV beside the figure.
+#
+# Why they belong next to BA and F1 rather than instead of them: a summary metric hides
+# WHICH WAY a block fails. balanced_accuracy 0.5 is returned equally by a model that
+# calls everything positive and one that calls everything negative, and the project has
+# already hit both -- the PI block of cron_test_metrics/cron_fig3_lipidgroups.txt is
+# test_spec 0.0000 with TN=0 on all ten seeds (everything positive), while deepclip's
+# iso70 rung is sensitivity 0.091 against specificity 0.914 (everything negative). On
+# these panels those two are opposite corners, not the same point.
+CONFUSION_SHARE_METRICS = ("TP_share", "FP_share", "TN_share", "FN_share")
+CONFUSION_COUNTS = ("TP", "FP", "TN", "FN")
+DEFAULT_METRICS = ("balanced_accuracy", "F1") + CONFUSION_SHARE_METRICS
+
+
+def derived_metric(row, name):
+    """Metric columns that are computed from a metrics row rather than read from it.
+
+    Returns None for a name this function does not derive, so the caller falls back to
+    reading the column, and for a row whose counts are missing or do not add up to a
+    block (a pre-2026-09 row, or one where the run failed before the test block).
+    """
+    if name not in CONFUSION_SHARE_METRICS:
+        return None
+    counts = {}
+    for cell in CONFUSION_COUNTS:
+        raw = str(row.get(cell, "")).strip()
+        try:
+            counts[cell] = float(raw)
+        except (TypeError, ValueError):
+            return None
+    total = sum(counts.values())
+    if total <= 0:
+        return None
+    return counts[name.removesuffix("_share")] / total
 
 
 def read_flag(row, name):
@@ -147,6 +233,7 @@ class SplitSpec:
     excluded_subgroups: tuple = ()
     lipid_coldsplit: str = ""
     lipid_isolation: str = ""
+    lipid_subclass: str = ""
     double_coldsplit: bool = False
     mixed_coldsplit: bool = False
     coldsplit_share: float = 0.8
@@ -156,11 +243,18 @@ class SplitSpec:
     negatives_per_positive: int = 2
     balance_excluded_group_negatives: bool = False
     hard_negative_mining: bool = False
+    # Not part of the split at all -- it is the descriptor set the PROTEIN similarity
+    # reading is computed over (protein_isolation below). Carried on the spec because
+    # measure_split is cached by spec, and two runs that held out the same proteins but
+    # describe their pockets differently do not have the same protein similarity.
+    protein_descriptors: tuple = ()
 
     @property
     def axis(self):
         if self.lipid_isolation:
             return "lipid_isolation"
+        if self.lipid_subclass:
+            return "lipid_subclass"
         if self.lipid_coldsplit:
             return "lipid_coldsplit"
         if self.family_only:
@@ -187,6 +281,7 @@ def spec_from_row(row):
         excluded_subgroups=tuple(read_list(row, "excluded_subgroups")),
         lipid_coldsplit=str(row.get("lipid_coldsplit", "") or "").strip(),
         lipid_isolation=str(row.get("lipid_isolation", "") or "").strip(),
+        lipid_subclass=str(row.get("lipid_subclass", "") or "").strip(),
         double_coldsplit=read_flag(row, "double_coldsplit"),
         mixed_coldsplit=read_flag(row, "mixed_coldsplit"),
         coldsplit_share=read_number(row, "coldsplit_share", 0.8),
@@ -198,7 +293,32 @@ def spec_from_row(row):
             row, "balance_excluded_group_negatives"
         ),
         hard_negative_mining=read_flag(row, "hard_negative_mining"),
+        protein_descriptors=protein_descriptor_names(row),
     )
+
+
+def protein_descriptor_names(row):
+    """The pocket descriptors the PROTEIN similarity reading is computed over.
+
+    The run's own set when it names one -- --protein_descriptors (the node broadcast) or
+    --pocket_descriptor_names (the fixed cavity vector's restriction) -- so the
+    similarity is computed in the same description of a pocket the model was given.
+    Runs that name neither (every --descriptors_head label, and every run older than
+    those flags) fall back to DEFAULT_PROTEIN_DESCRIPTORS, and the figure says which was
+    used.
+
+    Only the PROTEIN-side names are kept: --protein_descriptors is validated against the
+    whole DESCRIPTOR_CATALOG, so a label is free to broadcast lipid names through it too,
+    and those have no place in a protein kernel.
+    """
+    raw = str(row.get("protein_descriptors", "") or "").strip()
+    if not raw:
+        raw = str(row.get("pocket_descriptor_names", "") or "").strip()
+    names = tuple(
+        name.strip() for name in raw.split(",")
+        if name.strip() in PROTEIN_KERNEL_NAMES
+    )
+    return names or DEFAULT_PROTEIN_DESCRIPTORS
 
 
 def held_lipid_species(spec):
@@ -209,6 +329,12 @@ def held_lipid_species(spec):
     dataloader/lipid_isolation_blocks.py). `cold_chemistry` is where the two meet, the
     same way `Dataloader._cold_chemistry` joins them for the run itself.
     """
+    if spec.lipid_subclass:
+        # The third naming of the same axis (dataloader/lipid_subclass_blocks.py): one
+        # or more Titeca-et-al. subclasses, "+"-joined. Without this branch a
+        # --lipid_subclass run reconstructs as a RANDOM split -- silently, with an x
+        # value belonging to a split the run never used.
+        return set(subclass_block_species(spec.lipid_subclass))
     if not spec.lipid_isolation:
         return set()
     species = LIPID_ISOLATION_BLOCKS.get(spec.lipid_isolation)
@@ -412,6 +538,81 @@ def block_geometry(compact, train_rows, held_rows):
     }
 
 
+_PROTEIN_FEATURE_CACHE = {}
+
+
+def protein_similarity(proteins, names):
+    """Protein x protein RBF similarity over the pocket descriptors `names`.
+
+    The same construction the Kron-RLS protein kernel uses
+    (training.pair_baseline_common.build_protein_kernel's "pocket_subset" branch with
+    kernel_type="rbf"): standardize the descriptor columns, then
+    exp(-||a-b||^2 / (2 * d)) with d the number of descriptors, so the width does not
+    move when the set does and two labels with different-sized sets are still on one
+    scale. 1.0 on the diagonal, falling toward 0 as pockets differ.
+
+    Standardized over ALL 35 proteins rather than over a split's training proteins --
+    deliberately, and differently from build_protein_kernel, which standardizes on train
+    only. Here the number is an x AXIS shared by every point of a curve: if each block's
+    similarity were computed in its own standardization, two blocks' x values would be
+    measured with two different rulers and the curve between them would not mean
+    anything. Nothing is fitted on it, so there is no leak to avoid.
+    """
+    if resolve_protein_feature_subset is None:
+        raise ValueError(
+            "the protein axis needs training.pair_baseline_common, which did not import "
+            "on this machine (rdkit/scipy missing?) -- the lipid axis still works"
+        )
+    key = (tuple(proteins), tuple(names))
+    cached = _PROTEIN_FEATURE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    features = resolve_protein_feature_subset(list(proteins), list(names))
+    matrix = features.to_numpy(dtype=float)
+    matrix = (matrix - matrix.mean(axis=0)) / np.clip(matrix.std(axis=0), 1e-12, None)
+    squared = (
+        (matrix ** 2).sum(axis=1)[:, None]
+        + (matrix ** 2).sum(axis=1)[None, :]
+        - 2.0 * matrix @ matrix.T
+    )
+    similarity = np.exp(-np.clip(squared, 0.0, None) / (2.0 * max(matrix.shape[1], 1)))
+    index = {name: position for position, name in enumerate(features.index)}
+    _PROTEIN_FEATURE_CACHE[key] = (similarity, index)
+    return similarity, index
+
+
+def protein_block_geometry(similarity, index, train_proteins, held_proteins):
+    """The lipid curve's own statistic, on the protein axis.
+
+    isolation = mean over the block's PROTEINS of the highest similarity to any protein
+    that stayed in training -- the same "is there a relative left in training" reading
+    block_geometry applies to lipid structures, so the two axes are read the same way
+    and a figure can put them side by side.
+
+    Under every lipid-side axis (--lipid_coldsplit / --lipid_isolation /
+    --lipid_subclass) this is 1.0 by construction: every protein stays in training, and
+    each one is its own nearest relative. That is not a defect of the measurement, it is
+    the statement that those runs hold nothing out on this axis -- and it is why a
+    protein-axis curve is read on --excluded_groups / --cold_split labels.
+    """
+    held = [index[name] for name in held_proteins if name in index]
+    kept = [index[name] for name in train_proteins if name in index]
+    if not held or not kept:
+        return {
+            "protein_isolation": float("nan"),
+            "protein_cross_mean": float("nan"),
+            "block_proteins": len(held),
+            "train_proteins": len(kept),
+        }
+    block = similarity[np.ix_(held, kept)]
+    return {
+        "protein_isolation": float(block.max(axis=1).mean()),
+        "protein_cross_mean": float(block.mean()),
+        "block_proteins": len(held),
+        "train_proteins": len(kept),
+    }
+
+
 def measure_split(csv, compact, spec):
     """Every geometric property of one run's split; cached by the caller."""
     (train_rows, valid_rows, test_rows), (train, valid, test) = build_split(csv, spec)
@@ -441,6 +642,38 @@ def measure_split(csv, compact, spec):
             if len(part)
             else float("nan")
         )
+    # The protein axis. Computed over every protein in the table, so a block whose
+    # proteins all stayed in training reads 1.0 rather than going missing.
+    #
+    # Filled with NaN rather than raised when the protein kernel is unavailable: this
+    # module is meant to run on a machine that has a metrics table and nothing else
+    # (see the torch stand-in at the top), and the LIPID axis needs none of what the
+    # protein axis needs. Asking for --x test_protein_isolation there still fails, with
+    # protein_similarity's own message.
+    train_proteins = set(train["LTPProtein"].dropna().unique())
+    try:
+        similarity, index = protein_similarity(
+            sorted(csv["LTPProtein"].dropna().unique()), spec.protein_descriptors
+        )
+    except (ValueError, OSError, FileNotFoundError, ImportError):
+        similarity = index = None
+    for name, part in (("test", test), ("valid", valid)):
+        geometry = (
+            protein_block_geometry(
+                similarity, index, train_proteins,
+                set(part["LTPProtein"].dropna().unique()),
+            )
+            if similarity is not None
+            else {
+                "protein_isolation": float("nan"),
+                "protein_cross_mean": float("nan"),
+                "block_proteins": int(part["LTPProtein"].nunique()) if len(part) else 0,
+                "train_proteins": len(train_proteins),
+            }
+        )
+        for key, value in geometry.items():
+            measurement[f"{name}_{key}"] = value
+    measurement["protein_descriptors"] = ",".join(spec.protein_descriptors)
     return measurement
 
 
@@ -547,7 +780,15 @@ def latest_rows(table_path, labels, metrics):
             label = row.get("label", "")
             if labels and label not in labels:
                 continue
-            if not any(str(row.get(metric, "")).strip() for metric in metrics):
+            # A derived metric has no column of its own, so "is this row populated"
+            # has to be asked of what it is derived FROM -- otherwise a request for
+            # the confusion panels alone would discard every row in the table.
+            if not any(
+                derived_metric(row, metric) is not None
+                if metric in CONFUSION_SHARE_METRICS
+                else str(row.get(metric, "")).strip()
+                for metric in metrics
+            ):
                 continue
             key = (label, row.get("exclusion_set", ""), row.get("seed", ""))
             previous = keep.get(key)
@@ -588,7 +829,13 @@ def aggregate(points, metrics):
                 f"block {exclusion_set} of curve {curve} was measured by more than one "
                 "label; the curve would average two configurations into one point"
             )
-        for column in ("test_isolation", "test_cross_mean", "test_seen_lipid_share"):
+        for column in (
+            "test_isolation",
+            "test_cross_mean",
+            "test_seen_lipid_share",
+            "test_protein_isolation",
+            "test_protein_cross_mean",
+        ):
             values = [row[column] for row in rows if not math.isnan(row[column])]
             entry[column] = statistics.fmean(values) if values else float("nan")
             entry[f"{column}_std"] = deviation(values)
@@ -627,9 +874,15 @@ def write_points(path, points, metrics):
         "test_isolation",
         "test_cross_mean",
         "test_seen_lipid_share",
+        "test_protein_isolation",
+        "test_protein_cross_mean",
+        "test_block_proteins",
+        "test_train_proteins",
+        "protein_descriptors",
         "valid_isolation",
         "valid_cross_mean",
         "valid_seen_lipid_share",
+        "valid_protein_isolation",
         "train_rows",
         "valid_rows",
         "test_rows",
@@ -639,7 +892,8 @@ def write_points(path, points, metrics):
         "train_positives",
         "test_block_structures",
         "test_train_structures",
-        *metrics,
+        *CONFUSION_COUNTS,
+        *[metric for metric in metrics if metric not in CONFUSION_COUNTS],
     ]
     with open(path, "w", newline="") as handle:
         writer = csv_module.DictWriter(
@@ -650,6 +904,30 @@ def write_points(path, points, metrics):
             points, key=lambda item: (item["label"], item["test_isolation"], item["seed"])
         ):
             writer.writerow(point)
+
+
+X_AXIS_LABELS = {
+    "test_isolation": (
+        "Tanimoto similarity of the test block to train\n"
+        "(mean over block structures of the best similarity to a training structure)"
+    ),
+    "test_cross_mean": (
+        "Tanimoto similarity of the test block to train\n"
+        "(plain mean over all block x train structure pairs)"
+    ),
+    "test_seen_lipid_share": (
+        "share of evaluated rows whose exact lipid species is also in training"
+    ),
+    "test_protein_isolation": (
+        "pocket similarity of the test block's proteins to train\n"
+        "(mean over block proteins of the best RBF pocket-descriptor similarity\n"
+        "to a protein that stayed in training)"
+    ),
+    "test_protein_cross_mean": (
+        "pocket similarity of the test block's proteins to train\n"
+        "(plain mean over all block x train protein pairs)"
+    ),
+}
 
 
 def plot(aggregated, metrics, path, x_column="test_isolation", title=""):
@@ -683,11 +961,16 @@ def plot(aggregated, metrics, path, x_column="test_isolation", title=""):
     def colour_for(index):
         return palette[index] if index < len(palette) else extra((index - len(palette)) % 10)
 
+    # Up to three panels per row. One row was fine while the default was two metrics;
+    # with the four confusion shares beside BA and F1 it is six, and a single row would
+    # be a 45-inch figure nobody opens.
+    columns = min(3, max(1, len(metrics)))
+    rows = -(-len(metrics) // columns)
     figure, axes = plt.subplots(
-        1, len(metrics), figsize=(7.5 * len(metrics), 5.5), squeeze=False
+        rows, columns, figsize=(7.5 * columns, 5.5 * rows), squeeze=False
     )
     for index, metric in enumerate(metrics):
-        axis = axes[0][index]
+        axis = axes[index // columns][index % columns]
         for colour_index, label in enumerate(labels):
             series = [
                 entry
@@ -733,23 +1016,41 @@ def plot(aggregated, metrics, path, x_column="test_isolation", title=""):
                 alpha=0.7,
                 label="random = 0.500",
             )
-        axis.set_xlabel(
-            "Tanimoto similarity of the test block to train\n"
-            "(mean over block structures of the best similarity to a training structure)"
-        )
-        axis.set_ylabel(f"test {metric}")
+        axis.set_xlabel(X_AXIS_LABELS.get(x_column, x_column))
+        if metric in CONFUSION_SHARE_METRICS:
+            # Fixed [0, 1] on all four, so the panels can be read against each other --
+            # the whole point is the SPLIT of the block between the four cells, and
+            # autoscaled axes would make a cell holding 2% of the block look like one
+            # holding 60%. The block's own positive rate is the line a share panel is
+            # read against (TP+FN is it by construction), so it is drawn where it
+            # applies: on the two positive-row panels.
+            axis.set_ylim(-0.02, 1.02)
+            if metric in ("TP_share", "FN_share"):
+                rates = [
+                    entry["test_positive_rate"]
+                    for entry in aggregated
+                    if not math.isnan(entry["test_positive_rate"])
+                ]
+                if rates:
+                    axis.axhline(
+                        statistics.fmean(rates),
+                        color="black", linestyle=":", linewidth=1.0, alpha=0.7,
+                        label="mean positive rate of the blocks",
+                    )
+            axis.set_ylabel(f"test {metric.removesuffix('_share')} / block rows")
+        else:
+            axis.set_ylabel(f"test {metric}")
         axis.grid(alpha=0.25)
         # With one curve per figure the series entry just repeats the title, so only
         # the baseline stays in the legend; a comparison figure keeps both.
         handles, texts = axis.get_legend_handles_labels()
         if len(labels) == 1:
-            handles, texts = zip(
-                *[
-                    (handle, text)
-                    for handle, text in zip(handles, texts)
-                    if text.startswith("random =")
-                ]
-            ) if any(text.startswith("random =") for text in texts) else ((), ())
+            reference = [
+                (handle, text)
+                for handle, text in zip(handles, texts)
+                if text.startswith("random =") or text.startswith("mean positive rate")
+            ]
+            handles, texts = zip(*reference) if reference else ((), ())
         if handles:
             axis.legend(handles, texts, fontsize=8, loc="best")
     if title:
@@ -757,6 +1058,60 @@ def plot(aggregated, metrics, path, x_column="test_isolation", title=""):
     figure.tight_layout()
     figure.savefig(path, dpi=200)
     plt.close(figure)
+
+
+def curve_correlations(aggregated, metrics, x_column):
+    """Spearman rho between the x reading and each metric, over one curve's BLOCKS.
+
+    Rank correlation and not Pearson: the question the figure asks is monotone ("does
+    the metric fall as the block gets more distant"), the blocks are 4-9 points, and one
+    block at an extreme x would set a Pearson slope on its own.
+
+    Computed over the per-block MEANS, so n is the number of blocks, not the number of
+    runs -- which is the honest n here: the five seeds of one block are five readings of
+    the same point, not five points. With 4 blocks even rho = 1.0 is p = 0.083, so these
+    are effect sizes to look at next to the figure, never significance claims; the
+    number of blocks is printed beside them for exactly that reason.
+    """
+    texts = []
+    for metric in metrics:
+        pairs = [
+            (entry[x_column], entry[metric])
+            for entry in aggregated
+            if not math.isnan(entry[x_column]) and not math.isnan(entry[metric])
+        ]
+        if len(pairs) < 3:
+            texts.append("n/a")
+            continue
+        xs = [value for value, _ in pairs]
+        ys = [value for _, value in pairs]
+        texts.append(f"{spearman(xs, ys):+.3f} (n={len(pairs)})")
+    return texts
+
+
+def spearman(xs, ys):
+    """Rank correlation, average ranks for ties, without pulling scipy in."""
+    def ranks(values):
+        order = sorted(range(len(values)), key=lambda i: values[i])
+        out = [0.0] * len(values)
+        position = 0
+        while position < len(order):
+            stop = position
+            while stop + 1 < len(order) and values[order[stop + 1]] == values[order[position]]:
+                stop += 1
+            average = (position + stop) / 2.0 + 1.0
+            for index in range(position, stop + 1):
+                out[order[index]] = average
+            position = stop + 1
+        return out
+
+    rx, ry = ranks(xs), ranks(ys)
+    mean_x, mean_y = statistics.fmean(rx), statistics.fmean(ry)
+    numerator = sum((a - mean_x) * (b - mean_y) for a, b in zip(rx, ry))
+    denominator = math.sqrt(
+        sum((a - mean_x) ** 2 for a in rx) * sum((b - mean_y) ** 2 for b in ry)
+    )
+    return numerator / denominator if denominator else float("nan")
 
 
 def shorten(label, width=48):
@@ -809,8 +1164,22 @@ def main():
     parser.add_argument(
         "--x",
         default="test_isolation",
-        choices=("test_isolation", "test_cross_mean", "test_seen_lipid_share"),
-        help="which similarity reading goes on the x axis",
+        choices=(
+            "test_isolation",
+            "test_cross_mean",
+            "test_seen_lipid_share",
+            "test_protein_isolation",
+            "test_protein_cross_mean",
+        ),
+        help=(
+            "which similarity reading goes on the x axis. The first three are the LIPID "
+            "axis (Tanimoto of the evaluated block's chemistry to training chemistry); "
+            "test_protein_isolation is the same statistic on the PROTEIN axis -- mean "
+            "over the block's proteins of the highest RBF pocket-descriptor similarity "
+            "to a protein that stayed in training. The protein axis is 1.0 by "
+            "construction on every lipid-side split, so it is read on "
+            "--excluded_groups/--cold_split labels"
+        ),
     )
     parser.add_argument(
         "--graphics_root",
@@ -869,7 +1238,20 @@ def main():
             "seed": int(seed),
         }
         point.update(cache[spec])
+        # The raw cells travel with the point whether or not a share panel was asked
+        # for: the CSV beside the figure is where block size is recoverable, and a
+        # share without its denominator cannot be checked.
+        for cell in CONFUSION_COUNTS:
+            raw = str(row.get(cell, "")).strip()
+            try:
+                point[cell] = float(raw)
+            except (TypeError, ValueError):
+                point[cell] = None
         for metric in metrics:
+            value = derived_metric(row, metric)
+            if value is not None:
+                point[metric] = value
+                continue
             raw = str(row.get(metric, "")).strip()
             try:
                 point[metric] = float(raw)
@@ -941,6 +1323,12 @@ def main():
             for metric in metrics:
                 line += f" {entry[metric]:10.3f} +/- {entry[f'{metric}_sem']:7.3f}"
             print(line)
+        correlations = curve_correlations(aggregated, metrics, arguments.x)
+        if correlations:
+            print(
+                f"{'Spearman rho vs x':22s} {'':18s} {len(aggregated):5d}    n/a"
+                + "".join(f" {text:>22s}" for text in correlations)
+            )
         for written_path in paths:
             print(f"wrote {written_path}")
     for reason, count in skipped.items():

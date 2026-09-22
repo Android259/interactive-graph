@@ -22,6 +22,7 @@ from dataloader.pair_descriptors import (
     MIN_PAIR_DESCRIPTOR_NAMES,
     MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES,
     PAIR_DESCRIPTOR_NAMES,
+    POCKET_CHEMISTRY_DESCRIPTOR_NAMES,
     PROTEIN_DERIVED_DESCRIPTOR_NAMES,
     PROTEIN_DESCRIPTOR_NAMES,
     acyl_chain_count,
@@ -223,8 +224,11 @@ def _lipid_descriptor_table(csv, data_dir=None):
 # Bumped to 4 when pocket_extent/elongation/flatness_lambda_sqrt were appended to
 # PROTEIN_DESCRIPTOR_NAMES: the cache keys on source-file mtime/size, not on this code,
 # so a table written before those three existed would still validate and be served back
-# three columns short.
-_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 4
+# three columns short. Bumped to 5 for POCKET_CHEMISTRY_DESCRIPTOR_NAMES (the ten
+# residue-class shares and the two cavity-volume measures), for exactly the same
+# reason -- an existing data/protein_descriptor_table.json is twelve columns short of
+# what this code now writes, and only the version number says so.
+_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 5
 
 
 def _protein_descriptor_table_path(data_dir):
@@ -244,7 +248,8 @@ def _protein_descriptor_table_sources(data_dir, protein_names):
 
 
 def protein_descriptor_table(data_dir):
-    """{protein: {PROTEIN_DESCRIPTOR_NAMES + PROTEIN_DERIVED_DESCRIPTOR_NAMES: value}},
+    """{protein: {PROTEIN_DESCRIPTOR_NAMES + PROTEIN_DERIVED_DESCRIPTOR_NAMES +
+    POCKET_CHEMISTRY_DESCRIPTOR_NAMES: value}},
     read straight off data/graphs/<protein>/{coarse_graph_nodes.csv,pocketness.pdb} --
     the same recipe preprocessing/pocket_descriptor_identity_check.py uses, standalone
     (no ProteinGraphBuilder/ModelConfig instance needed: pocket_descriptor's own
@@ -275,7 +280,10 @@ def protein_descriptor_table(data_dir):
     """
     import pandas as pd
 
-    from dataloader.protein_graph_builder import pocket_descriptor
+    from dataloader.protein_graph_builder import (
+        pocket_chemistry_descriptor,
+        pocket_descriptor,
+    )
     from dataloader.protein_graph_tensor_cache import _pocket_tensor
 
     graphs_dir = os.path.join(data_dir, "graphs")
@@ -313,6 +321,10 @@ def protein_descriptor_table(data_dir):
             name: float(descriptor[position])
             for position, name in enumerate(PROTEIN_DESCRIPTOR_NAMES)
         }
+        # Reached by NAME only, never through the positional descriptor tensor above
+        # -- see POCKET_CHEMISTRY_DESCRIPTOR_NAMES' own comment for why they are not
+        # part of PROTEIN_DESCRIPTOR_NAMES.
+        raw.update(pocket_chemistry_descriptor(vertices, pocket, pocketness_path))
         raw["polar_share"] = 1.0 - raw["apolar_sasa_share"]
         raw["aromatic_share_coarse"] = coarse_share(raw["aromatic_share"])
         raw["polar_share_coarse"] = coarse_share(raw["polar_share"])
@@ -406,7 +418,11 @@ def raw_feature_matrix(csv, data_dir, names, zscore=False):
     if not names:
         raise ValueError("feature_similarity needs at least one descriptor name")
 
-    pocket_names = set(PROTEIN_DESCRIPTOR_NAMES) | set(PROTEIN_DERIVED_DESCRIPTOR_NAMES)
+    pocket_names = (
+        set(PROTEIN_DESCRIPTOR_NAMES)
+        | set(PROTEIN_DERIVED_DESCRIPTOR_NAMES)
+        | set(POCKET_CHEMISTRY_DESCRIPTOR_NAMES)
+    )
     lipid_names = [n for n in names if n in LIPID_DESCRIPTOR_NAMES]
     protein_names = [n for n in names if n in pocket_names]
     pair_names = [n for n in names if n in PAIR_DESCRIPTOR_NAMES]

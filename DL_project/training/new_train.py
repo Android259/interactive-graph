@@ -57,7 +57,10 @@ from architecture.loss import (
     pairwise_ranking_loss,
     reset_pu_loss_diagnostics,
 )
-from dataloader.sampler import ClassBalancedBatchSampler
+from dataloader.sampler import (
+    ClassBalancedBatchSampler,
+    RotatingNegativeBatchSampler,
+)
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.Dataloader import PLIDataset
 from dataloader.lipid_classes import class_level_positive_labels
@@ -276,7 +279,36 @@ if conf.num_workers > 0:
 # A batch_sampler carries batch composition itself, so batch_size/shuffle must
 # not be passed alongside it.
 train_loader_kwargs = dict(loader_kwargs)
-if conf.balanced_batches:
+rotating_sampler = None
+if conf.rotate_train_negatives:
+    # Takes precedence over the plain balanced-batch branch below and does not replace
+    # it: --balanced_batches is passed through, so batch composition is still decided by
+    # ClassBalancedBatchSampler -- over this epoch's active rows instead of over a
+    # draw fixed for the whole run. Chunk default: the same number of negatives an epoch
+    # would have held without the flag, so the per-epoch cost and class ratio are
+    # unchanged and only WHICH negatives is different.
+    del train_loader_kwargs["batch_size"], train_loader_kwargs["shuffle"]
+    _train_positives = int((train_labels == 1).sum())
+    rotating_chunk = conf.rotate_negatives_per_epoch or (
+        conf.negatives_per_positive * _train_positives
+    )
+    rotating_sampler = RotatingNegativeBatchSampler(
+        train_labels,
+        conf.batch,
+        rotating_chunk,
+        conf.balanced_batches,
+        generator=seeded_generator(conf.seed),
+    )
+    train_loader_kwargs["batch_sampler"] = rotating_sampler
+    print(
+        f"rotating negatives : {int(rotating_sampler.negative_order.numel())} train "
+        f"negatives, {rotating_sampler.chunk} per epoch, one full pass every "
+        f"{rotating_sampler.epochs_per_pass} epochs "
+        f"({conf.ep / rotating_sampler.epochs_per_pass:.1f} passes over {conf.ep} "
+        f"epochs), {len(rotating_sampler)} batches per epoch, "
+        f"balanced_batches={bool(conf.balanced_batches)}"
+    )
+elif conf.balanced_batches:
     del train_loader_kwargs["batch_size"], train_loader_kwargs["shuffle"]
     train_loader_kwargs["batch_sampler"] = ClassBalancedBatchSampler(
         train_labels,
@@ -356,6 +388,17 @@ def _return_freed_heap_to_kernel():
 
 _return_freed_heap_to_kernel()
 train_batches_to_run = min(len(train_loader), (1740 + conf.batch - 1) // conf.batch)
+if rotating_sampler is not None and train_batches_to_run < len(train_loader):
+    # The 1740-row cap above predates this flag and is silent: it simply stops the
+    # training loop early (`if i < train_batches_to_run`). A rotating epoch larger than
+    # the cap is therefore not the epoch that was asked for -- the slice still MOVES, so
+    # the pool is still covered, but each epoch trains on the cap's worth of it. Said out
+    # loud rather than left to be inferred from the batch counter.
+    print(
+        f"rotating negatives : --rotate_negatives_per_epoch asks for "
+        f"{len(train_loader)} batches, the {1740}-row per-epoch cap allows "
+        f"{train_batches_to_run}; the remaining batches of each epoch are skipped"
+    )
 valid_batches_to_run = len(valid_loader)
 test_batches_to_run = len(test_loader)
 print("data extracted")
@@ -606,6 +649,13 @@ if conf.lipid_isolation:
     # every consumer of this path keys on. The key is the requested isolation, so the
     # directory reads "groups_iso0.85" and says what the block is without a lookup.
     excluded_set_parts.append("groups_iso" + conf.lipid_isolation)
+if conf.lipid_subclass:
+    # Same axis again, cut by the source paper's own subclass -- same "groups_" prefix
+    # and the same reason for it. The spec goes in verbatim ("groups_PC",
+    # "groups_LPC+LPE+LPG"), so the directory says which block was held out without a
+    # lookup; SAFE_PATH_PART is not applied here because a spec is only letters,
+    # digits and "+", all safe in a path.
+    excluded_set_parts.append("groups_" + conf.lipid_subclass)
 if conf.family_only:
     # Third axis, same argument as --lipid_coldsplit just above. --family_only excludes
     # nothing, it RESTRICTS training to one family, so without this every family landed
@@ -2271,6 +2321,11 @@ uses_fit_ramp = (
 for eepoch in range(EPOCHS):
     print('EPOCH {}:'.format(epoch_number + 1))
     epoch_progress = epoch_number / max(EPOCHS - 1, 1)
+    if rotating_sampler is not None:
+        # Before the loader is iterated, the way DistributedSampler.set_epoch is used:
+        # the sampler lives in this process and is re-walked at the start of every
+        # epoch, so moving its window here is what the workers then receive.
+        rotating_sampler.set_epoch(epoch_number)
     if conf.adversarial_grl:
         # The fit ramp reads the previous epoch's fit (this one has not run yet), so
         # epoch 0 starts at lambda = 0 either way.

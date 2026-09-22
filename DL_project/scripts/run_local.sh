@@ -294,6 +294,7 @@ LABEL_ARGS_FILE=()
 LABEL_ARGS_TEMPLATE=()
 LABEL_OUTPUT_ROOT=()
 LABEL_IS_LIPID_COLDSPLIT=()
+LABEL_IS_LIPID_SUBCLASS=()
 LABEL_IS_RANDOM_SPLIT=()
 LABEL_LIPID_ISOLATION=()
 LABEL_SEEDS_CSV=()
@@ -402,6 +403,40 @@ for requested in "${POSITIONALS[@]}"; do
     # (dataloader/lipid_isolation_blocks.py). It already names its block, so there is
     # nothing to expand: one pseudo-group, named the way new_train.py files the run.
     # The flag itself stays in the template.
+    # --lipid_subclass is the same lipid axis cut by the SOURCE PAPER'S own subclass
+    # (Titeca et al.'s LTP x lipid-subclass matrix) rather than by the four hand-built
+    # sets above. Bare marker -> the grid iterates the nine blocks (kept in step with
+    # dataloader/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS and with
+    # scripts/launch/submit_grid.sh's copy of the same list); --lipid_subclass=<spec>
+    # in the file -> that one block alone, flag left in the template.
+    this_is_lipid_subclass=0
+    this_lipid_subclass_fixed=""
+    if args_file_has_flag "${this_args_file}" --lipid_subclass; then
+        if (( this_is_lipid_coldsplit )); then
+            printf -- '--lipid_subclass and --lipid_coldsplit hold out different '\
+'things; pick one (%s).\n' "${this_args_file}" >&2
+            exit 2
+        fi
+        this_is_lipid_subclass=1
+        this_lipid_subclass_fixed="$(args_file_flag_lines "${this_args_file}" \
+            | sed -nE 's/^--lipid_subclass=(.+)$/\1/p' | tail -1)"
+        if [[ -n "${this_lipid_subclass_fixed}" ]]; then
+            this_excl_groups=("${this_lipid_subclass_fixed}")
+        else
+            if [[ -n "${GROUPS_ARG:-}${SKIP_GROUPS_ARG:-}" ]]; then
+                printf -- '--lipid_subclass runs over lipid subclasses, not protein '\
+'groups; ignoring --groups/--no_groups for %s -- all nine blocks will run.\n' \
+                    "${this_args_file}" >&2
+            fi
+            this_excl_groups=(
+                PC PG FA PE "Cer+CerP+HexCer+Hex2Cer+SHexCer+SM" PI "LPC+LPE+LPG" PA \
+                "PS+PGP+DAG+TAG"
+            )
+            this_args_template="$(printf '%s' "${this_args_template}" \
+                | sed -E 's/(^|[[:space:]])--lipid_subclass([[:space:]]|$)/\1/g')"
+        fi
+    fi
+
     this_lipid_isolation=""
     if args_file_has_flag "${this_args_file}" --lipid_isolation; then
         this_lipid_isolation="$(args_file_flag_lines "${this_args_file}" \
@@ -411,9 +446,9 @@ for requested in "${POSITIONALS[@]}"; do
                 "${this_args_file}" >&2
             exit 2
         fi
-        if (( this_is_lipid_coldsplit )); then
-            printf -- '--lipid_isolation and --lipid_coldsplit hold out different '\
-'things; pick one (%s).\n' "${this_args_file}" >&2
+        if (( this_is_lipid_coldsplit )) || (( this_is_lipid_subclass )); then
+            printf -- '--lipid_isolation and --lipid_coldsplit/--lipid_subclass hold '\
+'out different things; pick one (%s).\n' "${this_args_file}" >&2
             exit 2
         fi
         this_excl_groups=("iso${this_lipid_isolation}")
@@ -458,6 +493,7 @@ for requested in "${POSITIONALS[@]}"; do
     LABEL_ARGS_TEMPLATE+=("${this_args_template}")
     LABEL_OUTPUT_ROOT+=("script_logs/${this_variant}_seeds$(IFS=; echo "${this_seeds[*]}")")
     LABEL_IS_LIPID_COLDSPLIT+=("${this_is_lipid_coldsplit}")
+    LABEL_IS_LIPID_SUBCLASS+=("${this_is_lipid_subclass}")
     LABEL_IS_RANDOM_SPLIT+=("${this_is_random_split}")
     LABEL_LIPID_ISOLATION+=("${this_lipid_isolation}")
     LABEL_SEEDS_CSV+=("$(IFS=,; printf '%s' "${this_seeds[*]}")")
@@ -956,6 +992,10 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     # one in the same command reads its own axis correctly either way.
     if (( LABEL_IS_LIPID_COLDSPLIT[label_index] )); then
         split_flag=(--lipid_coldsplit="${group}")
+    elif (( LABEL_IS_LIPID_SUBCLASS[label_index] )); then
+        # The "group" is one article lipid-subclass block spec. Appended even when the
+        # args file already names it: the same flag with the same value, last one wins.
+        split_flag=(--lipid_subclass="${group}")
     elif [[ -n "${LABEL_LIPID_ISOLATION[label_index]}" ]]; then
         # The block is named by the flag already in the template; nothing is appended.
         split_flag=()
@@ -971,9 +1011,10 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     printf '=== [%d/%d] %s: %s | VARIANT: %s | SEED: %s ===\n' \
         "$(( job_index + 1 ))" "${total_jobs}" \
         "$( (( LABEL_IS_LIPID_COLDSPLIT[label_index] )) && printf 'LIPID SET' \
+            || { (( LABEL_IS_LIPID_SUBCLASS[label_index] )) && printf 'SUBCLASS' \
             || { [[ -n "${LABEL_LIPID_ISOLATION[label_index]}" ]] && printf 'ISOLATION' \
             || { (( LABEL_IS_RANDOM_SPLIT[label_index] )) && printf 'SPLIT' \
-            || printf 'GROUP'; }; } )" \
+            || printf 'GROUP'; }; }; } )" \
         "${group}" "${variant}" "${seed}"
 
     # read_configuration.py applies flags in argv order and the last one wins,

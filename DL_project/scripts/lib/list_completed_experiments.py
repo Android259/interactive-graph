@@ -59,16 +59,18 @@ def main() -> int:
                     continue
                 group = str(excluded[0])
             else:
-                # Three axes leave excluded_groups empty, and each names its grid
+                # Four axes leave excluded_groups empty, and each names its grid
                 # position with a different field. --lipid_coldsplit holds a set of
-                # lipid classes out, --family_only restricts the table to one family,
-                # and --random_split holds nothing out at all -- for that last one the
+                # lipid classes out, --lipid_subclass holds one article lipid subclass
+                # out, --family_only restricts the table to one family, and
+                # --random_split holds nothing out at all -- for that last one the
                 # position is the single literal the grid iterates. Without this the
                 # report is skipped, the run never counts as completed, and --complete
                 # relaunches it forever.
                 isolation = str(fields.get("lipid_isolation", ""))
                 group = (
                     str(fields.get("lipid_coldsplit", ""))
+                    or str(fields.get("lipid_subclass", ""))
                     or (f"iso{isolation}" if isolation else "")
                     or str(fields.get("family_only", ""))
                     or "random"

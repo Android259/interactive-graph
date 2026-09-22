@@ -55,6 +55,10 @@ from dataloader.lipid_isolation_blocks import (
     BLOCK_GEOMETRY,
     LIPID_ISOLATION_BLOCKS,
 )
+from dataloader.lipid_subclass_blocks import (
+    BLOCK_TANIMOTO,
+    subclass_block_species,
+)
 from dataloader.sampler import (
     COLDSPLIT_MINIMUM_TEST_POSITIVES,
     LIPID_COLDSPLIT_SETS,
@@ -168,6 +172,14 @@ class PLIDataset(
             # here restores the position-equals-label invariant for this filtered
             # frame, the same way a fresh read already gives it for every other run.
             csv = csv.reset_index(drop=True)
+        # --rotate_train_negatives needs the negatives the sampler did NOT draw, so the
+        # table is kept as it stands here: after --family_only's filter and its
+        # reset_index (so `pair_id` means the same thing as in self.csvt) and before
+        # _sample_interactions narrows it. Only that flag reads it, and
+        # _add_rotating_negatives drops the reference once it has been used.
+        self._rotation_source = (
+            csv if getattr(config, "rotate_train_negatives", False) else None
+        )
         self.excluded_groups = {group.lower() for group in excluded_groups or []}
         self.excluded_subgroups = set(excluded_subgroups)
         self.protein_names = sorted(csv["LTPProtein"].dropna().unique().tolist())
@@ -473,6 +485,12 @@ class PLIDataset(
         # the rest of the axis unmeasurable -- everything else about the split is the
         # one --lipid_coldsplit already does.
         self.lipid_isolation = str(getattr(config, "lipid_isolation", "") or "")
+        # The same axis again, cut by the SOURCE PAPER'S own lipid subclass instead of
+        # by a hand-built class set or by distance -- the partition the collaborators'
+        # task definition names. Species-level like lipid_isolation, so it shares
+        # excluded_lipid_species and every consumer of it; see
+        # dataloader/lipid_subclass_blocks.py for why it is its own flag.
+        self.lipid_subclass = str(getattr(config, "lipid_subclass", "") or "")
         self.excluded_lipid_species = set()
         self.test_group = str(getattr(config, "test_group", "") or "").lower()
 
@@ -1425,6 +1443,27 @@ class PLIDataset(
             )
             return
 
+        if self.lipid_subclass:
+            species = subclass_block_species(self.lipid_subclass, self.ROOT_DIR)
+            self.excluded_lipid_species = set(species)
+            positives = int(
+                csv.loc[csv["FullIdentityOfLipid"].isin(self.excluded_lipid_species),
+                        "Interaction"].sum()
+            )
+            tanimoto = BLOCK_TANIMOTO.get(self.lipid_subclass)
+            print(
+                f"lipid subclass block '{self.lipid_subclass}' : {len(species)} species "
+                f"held out of training for every protein, {positives} positives"
+                + (
+                    f", Tanimoto to train {tanimoto[0]:.3f} whole / "
+                    f"{tanimoto[1]:.3f} head group"
+                    if tanimoto else
+                    " (block Tanimoto not in BLOCK_TANIMOTO -- measure it with "
+                    "analysis/lipid_subclass_block_report.py)"
+                )
+            )
+            return
+
         if self.lipid_coldsplit:
             classes = LIPID_COLDSPLIT_SETS.get(self.lipid_coldsplit)
             if classes is None:
@@ -1526,7 +1565,12 @@ class PLIDataset(
             csvtrain = self.csvt[
                 ~self.csvt["ProteinDomain"].str.lower().isin(self.excluded_groups)
             ]
-        elif self.excluded_subgroups or self.lipid_coldsplit or self.lipid_isolation:
+        elif (
+            self.excluded_subgroups
+            or self.lipid_coldsplit
+            or self.lipid_isolation
+            or self.lipid_subclass
+        ):
             # lipid_coldsplit keeps every protein: the whole table is train until the
             # class filter below removes the held-out chemistry. The random 85% draw of
             # the last branch would mix an ordinary split into it and make the held-out
@@ -1604,7 +1648,65 @@ class PLIDataset(
                 [positive_validate, negative_validate]
             ).sample(frac=1, random_state=seed)
             csvtest = excluded_data.drop(csvalidate.index).sample(frac=1)
-        return csvtrain, csvalidate, csvtest
+        return self._add_rotating_negatives(csvtrain), csvalidate, csvtest
+
+    def _add_rotating_negatives(self, csvtrain):
+        """--rotate_train_negatives: put every eligible unsampled negative into train.
+
+        Added HERE, after valid and test are already cut out of self.csvt, and not by
+        widening the draw in _sample_interactions: the draw feeds both sides of the
+        split, so widening it would change the evaluated block too and the run would
+        stop being comparable with a non-rotating one. This only grows train.
+
+        Eligible means the same three things the branches above already required of a
+        train row, asked again of the rows the draw never looked at:
+          * not already in self.csvt -- those rows are either in train already or are
+            the valid/test block, and pulling the block into train is the leak the
+            split exists to prevent;
+          * not a held-out protein (excluded_groups / excluded_subgroups);
+          * not held-out chemistry (_cold_chemistry -- --lipid_coldsplit,
+            --lipid_isolation, --lipid_subclass, --double_coldsplit). This is the guard
+            that matters: without it a subclass cold split would hand the model the very
+            lipids it is about to be tested on, as negatives.
+        Positives are never added -- every positive is already in the pool by
+        construction (split_and_sample_* keep all of them), so there is nothing to add.
+        """
+        source = self._rotation_source
+        self._rotation_source = None
+        if source is None:
+            return csvtrain
+        candidates = source[source["Interaction"] == 0]
+        candidates = candidates[~candidates.index.isin(self.csvt["pair_id"].astype(int))]
+        if self.excluded_groups:
+            candidates = candidates[
+                ~candidates["ProteinDomain"].str.lower().isin(self.excluded_groups)
+            ]
+        if self.excluded_subgroups:
+            candidates = candidates[
+                ~candidates["LTPProtein"].isin(self.excluded_subgroups)
+            ]
+        if self._has_cold_chemistry and not candidates.empty:
+            candidates = candidates[~self._cold_chemistry(candidates)]
+        if candidates.empty:
+            print("rotate_train_negatives : no unsampled negative was eligible")
+            return csvtrain
+        candidates = candidates.copy()
+        candidates["pair_id"] = candidates.index
+        # Fresh positions after self.csvt's own 0..N-1 range, so no added row can
+        # collide with a sampled one (pair_id, the identity every cache keys on, comes
+        # from the source table above and is untouched by this).
+        candidates.index = pandas.Index(
+            range(len(self.csvt), len(self.csvt) + len(candidates))
+        )
+        combined = pandas.concat([csvtrain, candidates])
+        print(
+            f"rotate_train_negatives : train negatives "
+            f"{int((csvtrain['Interaction'] == 0).sum())} -> "
+            f"{int((combined['Interaction'] == 0).sum())} "
+            f"({len(candidates)} added), positives "
+            f"{int((combined['Interaction'] == 1).sum())} unchanged"
+        )
+        return combined
 
     def get_tanimoto_weights(self):
         if self.train_tanimoto_matrix is None:

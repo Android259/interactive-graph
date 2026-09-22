@@ -1,6 +1,6 @@
 # Сравнительный анализ моделей
 
-Всего экспериментов: 9971.
+Всего экспериментов: 9976.
 Модели ранжируются по validation-метрикам. Test используется только для описания обобщения уже выбранных конфигураций.
 
 ## Качество по датасетам
@@ -4385,6 +4385,13 @@
 - 21. valid BA=0.569767, std=N/A, test BA=0.562500, runs=1, seeds=1 (4=0.569767); architecture[third_layers_in_mlps=1, cross_attention=1, protein_self_attention=1, lipid_self_attention=1, double_attention=0, m=4, final_m=4, final_dropout=0.1, hiddim=64, pool_type=gem]; data_representation[lipid_fragments_treatment=concat, protein_pooling=attention_pos_bias, lipid_isomers=0, plmon=1, buryon=1]; objective[tanimoto_weight=0, class_weights=1, protein_group_weight=0, grab_loss=0, loss_type=cross_entropy]; optimization[lr=0.0001, ep=150, batch=16, type_opt=0].
 - 22. valid BA=0.554070, std=0.049747, test BA=0.609375, runs=4, seeds=4 (0=0.609302, 1=0.560465, 2=0.488372, 3=0.558140); architecture[third_layers_in_mlps=1, cross_attention=1, protein_self_attention=1, lipid_self_attention=1, double_attention=0, m=4, final_m=4, final_dropout=0.0, hiddim=64, pool_type=max]; data_representation[lipid_fragments_treatment=concat, protein_pooling=attention_pos_bias, lipid_isomers=0, plmon=1, buryon=1]; objective[tanimoto_weight=0, class_weights=1, protein_group_weight=0, grab_loss=0, loss_type=cross_entropy]; optimization[lr=0.0001, ep=150, batch=16, type_opt=0].
 
+### groups_PG_groups_cral-trio
+- 1. valid BA=0.528571, std=N/A, test BA=0.514286, runs=1, seeds=1 (4=0.528571); architecture[third_layers_in_mlps=0, cross_attention=1, protein_self_attention=1, lipid_self_attention=1, double_attention=0, m=4, final_m=4, final_dropout=0.0, hiddim=64, pool_type=max]; data_representation[lipid_fragments_treatment=random_choice, protein_pooling=attention_pos_bias, lipid_isomers=0, plmon=1, buryon=1]; objective[tanimoto_weight=0, class_weights=1, protein_group_weight=0, grab_loss=0, loss_type=cross_entropy]; optimization[lr=0.0001, ep=120, batch=16, type_opt=0].
+- 2. valid BA=0.513297, std=N/A, test BA=0.524339, runs=1, seeds=1 (3=0.513297); architecture[third_layers_in_mlps=0, cross_attention=1, protein_self_attention=1, lipid_self_attention=1, double_attention=0, m=4, final_m=4, final_dropout=0.0, hiddim=64, pool_type=max]; data_representation[lipid_fragments_treatment=random_choice, protein_pooling=attention_pos_bias, lipid_isomers=0, plmon=1, buryon=1]; objective[tanimoto_weight=0, class_weights=1, protein_group_weight=0, grab_loss=0, loss_type=cross_entropy]; optimization[lr=0.0001, ep=120, batch=16, type_opt=0].
+- 3. valid BA=0.511429, std=N/A, test BA=0.528571, runs=1, seeds=1 (0=0.511429); architecture[third_layers_in_mlps=0, cross_attention=1, protein_self_attention=1, lipid_self_attention=1, double_attention=0, m=4, final_m=4, final_dropout=0.0, hiddim=64, pool_type=max]; data_representation[lipid_fragments_treatment=random_choice, protein_pooling=attention_pos_bias, lipid_isomers=0, plmon=1, buryon=1]; objective[tanimoto_weight=0, class_weights=1, protein_group_weight=0, grab_loss=0, loss_type=cross_entropy]; optimization[lr=0.0001, ep=120, batch=16, type_opt=0].
+- 4. valid BA=0.511429, std=N/A, test BA=0.528571, runs=1, seeds=1 (2=0.511429); architecture[third_layers_in_mlps=0, cross_attention=1, protein_self_attention=1, lipid_self_attention=1, double_attention=0, m=4, final_m=4, final_dropout=0.0, hiddim=64, pool_type=max]; data_representation[lipid_fragments_treatment=random_choice, protein_pooling=attention_pos_bias, lipid_isomers=0, plmon=1, buryon=1]; objective[tanimoto_weight=0, class_weights=1, protein_group_weight=0, grab_loss=0, loss_type=cross_entropy]; optimization[lr=0.0001, ep=120, batch=16, type_opt=0].
+- 5. valid BA=0.500000, std=N/A, test BA=0.500000, runs=1, seeds=1 (1=0.500000); architecture[third_layers_in_mlps=0, cross_attention=1, protein_self_attention=1, lipid_self_attention=1, double_attention=0, m=4, final_m=4, final_dropout=0.0, hiddim=64, pool_type=max]; data_representation[lipid_fragments_treatment=random_choice, protein_pooling=attention_pos_bias, lipid_isomers=0, plmon=1, buryon=1]; objective[tanimoto_weight=0, class_weights=1, protein_group_weight=0, grab_loss=0, loss_type=cross_entropy]; optimization[lr=0.0001, ep=120, batch=16, type_opt=0].
+
 ### groups_START
 - 1. valid BA=0.983333, std=N/A, test BA=0.978261, runs=1, seeds=1 (0=0.983333); architecture[third_layers_in_mlps=1, cross_attention=1, protein_self_attention=1, lipid_self_attention=1, double_attention=0, m=4, final_m=4, final_dropout=0.1, hiddim=64, pool_type=gem]; data_representation[lipid_fragments_treatment=random_choice, protein_pooling=attention_pos_bias, lipid_isomers=0, plmon=1, buryon=1]; objective[tanimoto_weight=0, class_weights=1, protein_group_weight=0, grab_loss=0, loss_type=cross_entropy]; optimization[lr=0.0001, ep=120, batch=16, type_opt=0].
 - 2. valid BA=0.979167, std=N/A, test BA=0.978261, runs=1, seeds=1 (0=0.979167); architecture[third_layers_in_mlps=1, cross_attention=1, protein_self_attention=1, lipid_self_attention=1, double_attention=0, m=4, final_m=4, final_dropout=0.1, hiddim=64, pool_type=gem]; data_representation[lipid_fragments_treatment=random_choice, protein_pooling=attention_pos_bias, lipid_isomers=0, plmon=1, buryon=1]; objective[tanimoto_weight=0, class_weights=1, protein_group_weight=0, grab_loss=0, loss_type=cross_entropy]; optimization[lr=0.0001, ep=120, batch=16, type_opt=0].
@@ -8159,10 +8166,10 @@
 
 ## Ограничения и контроль качества
 
-- Runs с неполным снимком конфигурации: 9971.
+- Runs с неполным снимком конфигурации: 9976.
 - Незавершённые или с неизвестным статусом runs, исключённые из рейтинга: 9.
-- Runs с undefined-метриками: 9568.
-- Runs с константными test-предсказаниями: 879.
+- Runs с undefined-метриками: 9573.
+- Runs с константными test-предсказаниями: 880.
 - Старые отчёты без config snapshot не используются для вывода о влиянии неизвестных флагов.
 - Эффект параметра считается только по matched-парам: отличается один параметр, остальные флаги, датасет и seed совпадают.
 - Связанные boolean-флаги режимов не считаются отдельными характеристиками: используются lipid_fragments_treatment и protein_pooling.

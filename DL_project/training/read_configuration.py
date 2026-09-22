@@ -176,6 +176,19 @@ def read_lipid_isolation(value):
     return name
 
 
+def read_lipid_subclass(value):
+    """Resolve a "+"-joined block of Titeca-et-al. lipid subclasses held out of training.
+
+    Validated (and spelled canonically) at parse time rather than in the loader for the
+    same reason read_lipid_coldsplit is: a typo in a subclass name must fail before a
+    job reaches a GPU, not four hours later. Membership itself lives in
+    data/lipid_article_classification.json -- see dataloader/lipid_subclass_blocks.py.
+    """
+    from dataloader.lipid_subclass_blocks import canonical_subclass_spec
+
+    return canonical_subclass_spec(value)
+
+
 def read_lipid_coldsplit(value):
     """Resolve the name of a lipid-class set held out of training."""
     name = str(value).strip().lower()
@@ -1117,6 +1130,16 @@ class ModelConfig:
     # (every protein stays, the block is halved label-by-label into validation and test)
     # is what --lipid_coldsplit already does.
     lipid_isolation: str = ""
+    # The same axis cut by the SOURCE PAPER'S own subclass: one (or several, joined by
+    # "+") of the lipid subclasses on the y axis of Titeca et al.'s LTP x lipid-subclass
+    # matrix leaves training for every protein. Neither of the two above is this
+    # partition -- LIPID_COLDSPLIT_SETS merges PC with LPC and lumps six anionic classes
+    # together, and an isolation block is whatever sits at a requested distance -- and
+    # this one is the task as the collaborators state it ("classify binders and
+    # non-binders by lipid subclass"), which is why it gets its own flag rather than a
+    # re-spelling of either. Same species-level machinery as lipid_isolation from here
+    # on; see dataloader/lipid_subclass_blocks.py.
+    lipid_subclass: str = ""
     # How much of the held-out family's positives the derived class set has to cover.
     #
     # 0.8 rather than 0.7: the value decides how many of a family's own classes leave
@@ -1151,6 +1174,22 @@ class ModelConfig:
     # --negatives_per_positive=1 explicitly; results from before this default are 1:1
     # and are not directly comparable.
     negatives_per_positive: int = 2
+    # --rotate_train_negatives: show the model EVERY negative over the course of a run
+    # instead of the one draw negatives_per_positive fixed at dataset build time. The
+    # draw above decides what a single epoch holds; without this flag it also decides
+    # what the whole RUN ever sees, which at this table's 634:9271 ratio is 14% of the
+    # negative evidence, chosen by the seed. With it, train keeps every eligible
+    # negative and each epoch is handed a different consecutive slice of a fixed
+    # permutation (dataloader/sampler.py's RotatingNegativeBatchSampler), so the epoch
+    # costs exactly what it cost before and the run covers the pool about sixteen times
+    # over at 120 epochs. Only TRAIN changes: the evaluated block is sampled exactly as
+    # before, so a rotating run's metrics stay comparable with a fixed one's.
+    rotate_train_negatives: bool = False
+    # How many negatives one epoch holds under the flag above. 0 means
+    # negatives_per_positive x (train positives), i.e. the same per-epoch class ratio
+    # the run would have had without rotation -- raise it to trade epoch cost for a
+    # shorter pass over the pool.
+    rotate_negatives_per_epoch: int = 0
     # Bias the negatives drawn for a protein's TRAIN-side rows toward its own chemistry
     # hard cases -- unlabeled lipids Tanimoto-similar to a lipid that protein IS
     # positive for -- instead of drawing them uniformly, so the loss must separate
@@ -1600,6 +1639,19 @@ class ModelConfig:
                 "protein left in training -- the same axis lipid_coldsplit is on, and "
                 "it cannot be combined with another holdout on either axis"
             )
+        if self.lipid_subclass and (
+            self.lipid_coldsplit
+            or self.lipid_isolation
+            or self.double_coldsplit
+            or self.mixed_coldsplit
+            or self.excluded_groups
+            or self.excluded_subgroups
+        ):
+            raise ValueError(
+                "lipid_subclass holds one article lipid subclass out with every protein "
+                "left in training -- the same axis lipid_coldsplit/lipid_isolation are "
+                "on, and it cannot be combined with another holdout on either axis"
+            )
         if self.lipid_coldsplit and (self.double_coldsplit or self.mixed_coldsplit):
             raise ValueError(
                 "lipid_coldsplit holds a fixed chemical family out with every protein "
@@ -1634,6 +1686,28 @@ class ModelConfig:
                 "negatives_per_positive is how many negatives each positive draws "
                 "inside its balancing group and must be at least 1; "
                 f"got {self.negatives_per_positive}"
+            )
+
+        if self.rotate_negatives_per_epoch < 0:
+            raise ValueError(
+                "rotate_negatives_per_epoch is how many negatives one epoch holds "
+                "under rotate_train_negatives and cannot be negative; 0 means "
+                f"negatives_per_positive x train positives. Got "
+                f"{self.rotate_negatives_per_epoch}"
+            )
+        if self.rotate_negatives_per_epoch and not self.rotate_train_negatives:
+            raise ValueError(
+                "rotate_negatives_per_epoch sizes the per-epoch slice of "
+                "rotate_train_negatives -- there is no slice to size without it"
+            )
+        if self.rotate_train_negatives and self.eval_average_candidates:
+            # eval_average_candidates expands valid/test rows per candidate structure;
+            # it never touches train, so the two do not actually collide -- but the
+            # expansion happens in the same __iter__ that clones the train split, and
+            # nothing has checked the combination. Refused rather than left untested.
+            raise ValueError(
+                "rotate_train_negatives and eval_average_candidates have not been "
+                "run together; pass one of them"
             )
 
         if self.hard_negative_mining and not (
@@ -3241,6 +3315,8 @@ SIMPLE_BOOL_FLAGS = {
     "--balanced_proteins": "balanced_proteins",
     "balanced_batches": "balanced_batches",
     "--balanced_batches": "balanced_batches",
+    "rotate_train_negatives": "rotate_train_negatives",
+    "--rotate_train_negatives": "rotate_train_negatives",
     "cold_split": "cold_split",
     "--cold_split": "cold_split",
     "lipid_only": "lipid_only",
@@ -3324,6 +3400,7 @@ VALUE_HANDLERS = {
     ),
     "--excluded_groups=": set_config_field("excluded_groups", read_excluded_groups),
     "--negatives_per_positive=": set_config_field("negatives_per_positive", int),
+    "--rotate_negatives_per_epoch=": set_config_field("rotate_negatives_per_epoch", int),
     "--hard_negative_share=": set_config_field("hard_negative_share", float),
     "--eval_candidates_per_pair=": set_config_field(
         "eval_candidates_per_pair", int
@@ -3331,6 +3408,7 @@ VALUE_HANDLERS = {
     "--coldsplit_share=": set_config_field("coldsplit_share", float),
     "--lipid_coldsplit=": set_config_field("lipid_coldsplit", read_lipid_coldsplit),
     "--lipid_isolation=": set_config_field("lipid_isolation", read_lipid_isolation),
+    "--lipid_subclass=": set_config_field("lipid_subclass", read_lipid_subclass),
     "--protein_recon_weight=": set_config_field("protein_recon_weight", float),
     "--protein_mask_share=": set_config_field("protein_mask_share", float),
     "--pretrained_checkpoint=": set_config_field("pretrained_checkpoint"),

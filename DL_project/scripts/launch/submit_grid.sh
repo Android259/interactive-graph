@@ -195,6 +195,16 @@ read -r -a REQUESTED_ARGS_FILES <<< "$*"
 # rejected at parse time.
 LIPID_COLDSPLIT_SETS_LIST=(sphingolipids phosphorus_free choline anionic)
 
+# --lipid_subclass is the same lipid axis cut by the SOURCE PAPER'S own subclass
+# (Titeca et al., the y axis of the LTP x lipid-subclass matrix) instead of by the four
+# hand-built sets above. Two forms, like --family_only: BARE expands into one job per
+# block below; --lipid_subclass=<spec> names one fixed block and runs it alone. Keep
+# this list in step with dataloader/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS --
+# a spec absent from data/lipid_article_classification.json is rejected at parse time.
+LIPID_SUBCLASS_BLOCKS_LIST=(
+    PC PG FA PE "Cer+CerP+HexCer+Hex2Cer+SHexCer+SM" PI "LPC+LPE+LPG" PA "PS+PGP+DAG+TAG"
+)
+
 # --family_only, bare (no value), in the args file switches the grid to a third axis:
 # one model per family, trained AND validated on that family's own rows only (a warm,
 # row-level random split inside the family -- dataloader/Dataloader.py:147-150,1461 --
@@ -238,6 +248,7 @@ LABEL_FAMILY_ONLY=()
 LABEL_FAMILY_ONLY_FIXED=()
 LABEL_RANDOM_SPLIT=()
 LABEL_LIPID_ISOLATION=()
+LABEL_LIPID_SUBCLASS=()
 LABEL_OUTPUT_ROOT=()
 LABEL_WALLTIME=()
 # One line per (label_index, group, seed), across ALL labels -- the combined
@@ -315,6 +326,26 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
             | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
     fi
 
+    # --lipid_subclass, bare or valued (see LIPID_SUBCLASS_BLOCKS_LIST above). Bare is
+    # stripped from the template exactly like the bare --lipid_coldsplit marker just
+    # above -- the trainer's flag needs a value, and the grid appends it per block.
+    this_lipid_subclass=0
+    this_lipid_subclass_fixed=""
+    if args_file_has_flag "${args_file}" --lipid_subclass; then
+        this_lipid_subclass=1
+        if (( this_cold_split )) || (( this_lipid_coldsplit )); then
+            printf -- '--lipid_subclass and --cold_split/--lipid_coldsplit hold out '\
+'different things; pick one (%s).\n' "${args_file}" >&2
+            exit 2
+        fi
+        this_lipid_subclass_fixed="$(args_file_flag_lines "${args_file}" \
+            | sed -nE 's/^--lipid_subclass=(.+)$/\1/p' | tail -1)"
+        if [[ -z "${this_lipid_subclass_fixed}" ]]; then
+            this_args_template="$(printf '%s' "${this_args_template}" \
+                | sed -E 's/(^|[[:space:]])--lipid_subclass([[:space:]]|$)/\1/g')"
+        fi
+    fi
+
     # --family_only comes in two forms. BARE (no value) is the marker documented
     # below: the grid expands it into one job per PROTEIN_GROUPS entry, appending
     # --family_only=<group> itself. --family_only=<value>, spelled out in the file, is
@@ -356,9 +387,9 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
                 "${args_file}" >&2
             exit 2
         fi
-        if (( this_cold_split )) || (( this_lipid_coldsplit )); then
-            printf -- '--lipid_isolation and --cold_split/--lipid_coldsplit hold out '\
-'different things; pick one (%s).\n' "${args_file}" >&2
+        if (( this_cold_split )) || (( this_lipid_coldsplit )) || (( this_lipid_subclass )); then
+            printf -- '--lipid_isolation and --cold_split/--lipid_coldsplit/'\
+'--lipid_subclass hold out different things; pick one (%s).\n' "${args_file}" >&2
             exit 2
         fi
     fi
@@ -405,6 +436,16 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_output_root="script_logs/${this_variant}_random"
         this_groups=("random")
     fi
+    if (( this_lipid_subclass )); then
+        if [[ -n "${this_lipid_subclass_fixed}" ]]; then
+            # One fixed block, already named in the template -- one job x seed.
+            this_output_root="script_logs/${this_variant}_subclass"
+            this_groups=("${this_lipid_subclass_fixed}")
+        else
+            this_output_root="script_logs/${this_variant}_lipidsubclasses"
+            this_groups=("${LIPID_SUBCLASS_BLOCKS_LIST[@]}")
+        fi
+    fi
     if [[ -n "${this_lipid_isolation}" ]]; then
         this_output_root="script_logs/${this_variant}_iso${this_lipid_isolation}"
         this_groups=("iso${this_lipid_isolation}")
@@ -431,6 +472,15 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         # and for this label nothing was narrowed.
         printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
 'ignoring --groups/--no_groups for %s -- all %d lipid sets will run.\n' \
+            "${args_file}" "${#this_groups[@]}" >&2
+    elif (( this_lipid_subclass )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
+        # Same rule as the --lipid_coldsplit case above: GROUPS_OVERRIDE names protein
+        # families, which is the OTHER axis for a --lipid_subclass label. Ignored (not
+        # fatal) so one command can queue protein-axis and subclass-axis labels
+        # together. To run a SUBSET of the blocks, name it in the args file itself as
+        # --lipid_subclass=<spec> -- that form already runs exactly one block.
+        printf -- '--lipid_subclass runs over lipid subclasses, not protein groups; '\
+'ignoring --groups/--no_groups for %s -- all %d blocks will run.\n' \
             "${args_file}" "${#this_groups[@]}" >&2
     elif [[ -n "${this_lipid_isolation}" ]] && [[ -n "${GROUPS_OVERRIDE}" ]]; then
         # A --lipid_isolation label runs one fixed group already named by its key (and,
@@ -462,6 +512,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     LABEL_FAMILY_ONLY_FIXED+=("${this_family_only_fixed}")
     LABEL_RANDOM_SPLIT+=("${this_random_split}")
     LABEL_LIPID_ISOLATION+=("${this_lipid_isolation}")
+    LABEL_LIPID_SUBCLASS+=("${this_lipid_subclass}")
     LABEL_OUTPUT_ROOT+=("${this_output_root}")
     LABEL_WALLTIME+=("${this_walltime}")
 
@@ -510,6 +561,7 @@ experiment_record() {
     local family_only_fixed="${LABEL_FAMILY_ONLY_FIXED[label_index]}"
     local random_split="${LABEL_RANDOM_SPLIT[label_index]}"
     local lipid_isolation="${LABEL_LIPID_ISOLATION[label_index]}"
+    local lipid_subclass="${LABEL_LIPID_SUBCLASS[label_index]}"
     local output_root="${LABEL_OUTPUT_ROOT[label_index]}"
     local val_group excluded output_dir stem header extra=""
 
@@ -528,6 +580,16 @@ experiment_record() {
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="LIPID SET: ${group} | VARIANT: ${variant} | SEED: ${seed}"
+    elif (( lipid_subclass )); then
+        # The "group" is one article lipid-subclass block spec. Appended even when the
+        # args file already names it: appending the same value the template carries is
+        # a no-op (last flag wins, and it is the same flag), and it keeps this branch
+        # identical for the bare and the fixed form.
+        excluded=""
+        extra=" --lipid_subclass=${group}"
+        output_dir="${output_root}/${group}"
+        stem="${variant}_seed${seed}"
+        header="LIPID SUBCLASS: ${group} | VARIANT: ${variant} | SEED: ${seed}"
     elif (( family_only )) && [[ -n "${family_only_fixed}" ]]; then
         # The family is already spelled out in the template (--family_only=<value>);
         # nothing is appended, and if --lipid_isolation is ALSO set it stays in the
