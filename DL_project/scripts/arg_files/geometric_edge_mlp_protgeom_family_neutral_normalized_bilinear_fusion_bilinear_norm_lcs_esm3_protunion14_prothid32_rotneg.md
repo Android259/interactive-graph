@@ -30,6 +30,7 @@
 --protein_hiddim=32
 
 --save_model_in_dynamics
+--save_model
 
 --balanced_batches
 --balanced_proteins

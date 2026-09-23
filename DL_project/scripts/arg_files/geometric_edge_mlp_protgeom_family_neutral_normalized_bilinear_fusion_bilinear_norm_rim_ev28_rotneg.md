@@ -58,6 +58,7 @@
 --protein_edge_mlp
 
 --save_model_in_dynamics
+--save_model
 
 --balanced_batches
 --balanced_proteins

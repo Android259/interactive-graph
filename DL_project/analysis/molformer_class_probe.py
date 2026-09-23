@@ -86,9 +86,16 @@ def build_features(table: pd.DataFrame, kind: str) -> pd.DataFrame:
 
 
 def evaluate(features: np.ndarray, labels: np.ndarray, probe: str, folds: int, seed: int):
-    """(accuracy, macro F1, per-class recall) by stratified k-fold over species."""
+    """(balanced accuracy, macro F1, per-class recall) by stratified k-fold.
+
+    Balanced accuracy, not plain accuracy: with --min_species 1 the class sizes run
+    from 76 species (PC) down to 1, so a plain hit rate is decided by the few large
+    classes and says nothing about the rest. Balanced accuracy is the mean of the
+    per-class recalls below, so every class counts once whatever its size, and its
+    chance level is 1 / number of classes.
+    """
     from sklearn.linear_model import LogisticRegression
-    from sklearn.metrics import f1_score, recall_score
+    from sklearn.metrics import balanced_accuracy_score, f1_score, recall_score
     from sklearn.model_selection import StratifiedKFold
     from sklearn.neural_network import MLPClassifier
     from sklearn.pipeline import make_pipeline
@@ -117,11 +124,38 @@ def evaluate(features: np.ndarray, labels: np.ndarray, probe: str, folds: int, s
         model = make_model()
         model.fit(features[train_index], labels[train_index])
         predicted[test_index] = model.predict(features[test_index])
-    accuracy = float((predicted == labels).mean())
+    balanced = float(balanced_accuracy_score(labels, predicted))
     macro_f1 = float(f1_score(labels, predicted, average="macro", zero_division=0))
     classes = np.unique(labels)
-    recall = recall_score(labels, predicted, labels=classes, average=None, zero_division=0)
-    return accuracy, macro_f1, dict(zip(classes, recall))
+    # One-vs-rest confusion per class: TP its species called by its own name, FN its
+    # species called something else, FP other classes called by its name, TN everything
+    # else. Counts are species, and every column sums to len(labels) across the four.
+    per_class = {}
+    for name in classes:
+        is_class = labels == name
+        called_class = predicted == name
+        tp = int((is_class & called_class).sum())
+        fn = int((is_class & ~called_class).sum())
+        fp = int((~is_class & called_class).sum())
+        tn = int((~is_class & ~called_class).sum())
+        sensitivity = tp / (tp + fn) if tp + fn else 0.0
+        specificity = tn / (tn + fp) if tn + fp else 0.0
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        f1 = (
+            2 * precision * sensitivity / (precision + sensitivity)
+            if precision + sensitivity
+            else 0.0
+        )
+        per_class[name] = {
+            "species": int(is_class.sum()),
+            "TP": tp, "FP": fp, "TN": tn, "FN": fn,
+            "sensitivity": sensitivity,
+            "specificity": specificity,
+            "precision": precision,
+            "F1": f1,
+            "balanced_accuracy": (sensitivity + specificity) / 2.0,
+        }
+    return balanced, macro_f1, per_class
 
 
 def geometry(features: np.ndarray, labels: np.ndarray) -> dict:
@@ -172,6 +206,18 @@ def geometry(features: np.ndarray, labels: np.ndarray) -> dict:
     }
 
 
+def per_class_frame(per_class):
+    """One row per class: the four counts plus the rates derived from them."""
+    import pandas as pd
+
+    frame = pd.DataFrame(
+        [{"class": name, **values} for name, values in per_class.items()]
+    )
+    return frame.sort_values(
+        ["balanced_accuracy", "species"], ascending=[False, False]
+    ).reset_index(drop=True)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -212,6 +258,11 @@ def main() -> int:
         help="also print per-class recall for the best configuration",
     )
     parser.add_argument("--csv", type=Path, default=None, help="also write the table here")
+    parser.add_argument(
+        "--recall_csv", type=Path, default=None,
+        help="write the best configuration's per-class table here: species, TP, FP, "
+             "TN, FN and the rates derived from them",
+    )
     args = parser.parse_args()
 
     table = pbc.read_interactions()
@@ -229,7 +280,12 @@ def main() -> int:
     shared &= set(targets.index)
     labels_all = targets.loc[sorted(shared)]
     counts = labels_all.value_counts()
-    keep = counts[counts >= max(args.min_species, args.folds)].index
+    # min_species alone, not max(min_species, folds): at --min_species 1 a class with
+    # fewer members than folds stays in, StratifiedKFold warns about it, and that class
+    # simply never appears in a training half -- its recall comes out 0. That is the
+    # honest reading of "can the representation place this class", not a reason to hide
+    # the class from the table.
+    keep = counts[counts >= args.min_species].index
     species = [name for name in sorted(shared) if labels_all[name] in set(keep)]
     labels = targets.loc[species].to_numpy()
     dropped = sorted(set(counts.index) - set(keep))
@@ -238,9 +294,10 @@ def main() -> int:
     print(
         f"target={args.target}  {len(species)} species, {len(keep)} classes "
         f"(dropped {len(dropped)} class(es) with < "
-        f"{max(args.min_species, args.folds)} species: {', '.join(dropped) or 'none'})"
+        f"{args.min_species} species: {', '.join(dropped) or 'none'})"
     )
     print(f"majority-class rate (a model that ignores the input): {majority:.3f}")
+    print(f"chance balanced accuracy (1 / classes): {1.0 / len(keep):.3f}")
     print()
 
     rows = []
@@ -249,16 +306,15 @@ def main() -> int:
         matrix = built[kind].loc[species].to_numpy(dtype=float)
         matrix = np.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
         for probe in probes:
-            accuracy, macro_f1, recall = evaluate(
+            balanced, macro_f1, recall = evaluate(
                 matrix, labels, probe, args.folds, args.seed
             )
             rows.append({
                 "features": kind,
                 "columns": matrix.shape[1],
                 "probe": probe,
-                "accuracy": accuracy,
+                "balanced_accuracy": balanced,
                 "macro_f1": macro_f1,
-                "over_majority": accuracy - majority,
             })
             if best is None or macro_f1 > best[0]:
                 best = (macro_f1, kind, probe, recall)
@@ -283,12 +339,16 @@ def main() -> int:
         print(shape.to_string(index=False, float_format=lambda value: f"{value:.4f}"))
 
     if args.per_class and best is not None:
-        _, kind, probe, recall = best
-        print(f"\nper-class recall, best configuration ({kind} / {probe}):")
-        order = sorted(recall, key=lambda name: -recall[name])
-        for name in order:
-            members = int((labels == name).sum())
-            print(f"  {name:12s} n={members:4d}  recall={recall[name]:.3f}")
+        _, kind, probe, per_class = best
+        print(f"\nper-class confusion, best configuration ({kind} / {probe}):")
+        print(per_class_frame(per_class).to_string(
+            index=False, float_format=lambda value: f"{value:.4f}"
+        ))
+
+    if args.recall_csv and best is not None:
+        _, _, _, per_class = best
+        per_class_frame(per_class).to_csv(args.recall_csv, index=False)
+        print(f"\nper-class table written to {args.recall_csv}")
 
     if args.csv:
         frame.to_csv(args.csv, index=False)

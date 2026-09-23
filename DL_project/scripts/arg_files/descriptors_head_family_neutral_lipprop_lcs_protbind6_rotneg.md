@@ -24,6 +24,7 @@
 --descriptor_names=chain,unsaturation,hbond,heavy,pocket_volume_per_sasa,pocket_elongation,pocket_flatness,buriedness_q50,apolar_sasa_share,aromatic_share,hydropathy_rim,ev28_q10,aromatic_share_rim,depth_q10,hydropathy_core,ev14_q10,hydropathy_mean
 
 --save_model_in_dynamics
+--save_model
 
 --balanced_batches
 --balanced_lipid_classes

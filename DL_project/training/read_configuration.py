@@ -1592,7 +1592,16 @@ class ModelConfig:
     swa_start_frac: float = 0.75
     swa_lr: float | None = None
     save_checkpoint: bool = False
-    save_model: bool = False
+    # ON by default: these are the weights run_test() is measured on (new_train.py picks
+    # best_model_state by rolling validation and loads it before testing), and nothing
+    # else on disk holds them -- save_model_in_dynamics writes only the five fixed
+    # milestones, which the selected epoch misses about 80% of the time. Losing them
+    # means any later question needing per-row predictions (a per-subclass breakdown, a
+    # metric added after the run, analysis/estimate_rho_elkan_noto.py) can only be
+    # answered by approximating with a neighbouring milestone. Defaulting it off has
+    # already cost this project finished sweeps that cannot be re-read; the weights are
+    # a few hundred KB per run.
+    save_model: bool = True
     # Branch diagnostics, for the question "is the protein half of the model used at
     # all, and from which epoch is it not". save_dynamics adds per-epoch scalars only
     # -- two extra validation passes with the pooled halves ablated in turn, the

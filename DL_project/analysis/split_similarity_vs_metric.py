@@ -1187,6 +1187,14 @@ def main():
         help="figures and point tables go to <graphics_root>/<label>/split_similarity/",
     )
     parser.add_argument(
+        "--one_file_per_metric",
+        action="store_true",
+        help=(
+            "write one figure per metric (<stem>_split_similarity_<metric>.<fmt>) "
+            "instead of a single figure with one panel per metric"
+        ),
+    )
+    parser.add_argument(
         "--output_format",
         default="pdf",
         help="figure format, as for analysis/plot_metric_by_subgroup.py",
@@ -1293,22 +1301,42 @@ def main():
                 directory, f"{stem}_split_similarity_points.csv"
             )
             write_points(points_path, curve_points, metrics)
-            figure_path = os.path.join(
-                directory,
-                f"{stem}_split_similarity_vs_metric.{arguments.output_format}",
-            )
-            # Per metric, not per point: a run from before AUC_within_protein existed
-            # has that column empty and the other two filled, and dropping the whole
-            # point would quietly shrink the curve of every metric to the intersection
-            # of all of them.
-            plot(
-                aggregated,
-                metrics,
-                figure_path,
-                arguments.x,
-                f"{curve}  [{axis_names}]",
-            )
-            paths.extend((points_path, figure_path))
+            # One file per metric (--one_file_per_metric) or one file with a panel per
+            # metric. Same curve either way; only how it is packaged differs.
+            if arguments.one_file_per_metric:
+                figure_path = []
+                for metric in metrics:
+                    metric_path = os.path.join(
+                        directory,
+                        f"{stem}_split_similarity_{metric}."
+                        f"{arguments.output_format}",
+                    )
+                    plot(
+                        aggregated,
+                        [metric],
+                        metric_path,
+                        arguments.x,
+                        f"{curve}  [{axis_names}]",
+                    )
+                    figure_path.append(metric_path)
+            else:
+                figure_path = os.path.join(
+                    directory,
+                    f"{stem}_split_similarity_vs_metric.{arguments.output_format}",
+                )
+                # Per metric, not per point: a run from before AUC_within_protein
+                # existed has that column empty and the other two filled, and dropping
+                # the whole point would quietly shrink the curve of every metric to the
+                # intersection of all of them.
+                plot(
+                    aggregated,
+                    metrics,
+                    figure_path,
+                    arguments.x,
+                    f"{curve}  [{axis_names}]",
+                )
+            paths.append(points_path)
+            paths.extend(figure_path if isinstance(figure_path, list) else [figure_path])
         written.append((curve, aggregated, paths))
 
     header = f"{'block':22s} {'axis':18s} {'seeds':>5s} {'x':>7s}"

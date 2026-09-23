@@ -55,6 +55,7 @@ from dataloader.Dataloader import PLIDataset  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.pair_descriptors import resolve_similarity_feature_names  # noqa: E402
 from dataloader.sampler import LIPID_COLDSPLIT_SETS  # noqa: E402
+from dataloader.lipid_subclass_blocks import FIG3_SUBCLASS_BLOCKS  # noqa: E402
 from forward_args import build_forward_args  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 
@@ -133,11 +134,16 @@ def split_argv(lines, group):
 
     The two axes are mutually exclusive (read_configuration rejects them together), so
     --excluded_groups is not appended for a lipid label -- `group` is a lipid-class set
-    name there, not a family.
+    name there, not a family. --lipid_subclass is the third axis (a Titeca-et-al.
+    subclass block, dataloader/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS) and
+    takes the same bare-marker treatment.
     """
     if "--lipid_coldsplit" in lines:
         kept = [line for line in lines if line != "--lipid_coldsplit"]
         return kept + [f"--lipid_coldsplit={group}"]
+    if "--lipid_subclass" in lines:
+        kept = [line for line in lines if line != "--lipid_subclass"]
+        return kept + [f"--lipid_subclass={group}"]
     return list(lines) + [f"--excluded_groups={group}"]
 
 
@@ -146,10 +152,16 @@ def default_groups_for_label(label):
 
     Without this a --lipid_coldsplit label reached here with the seven protein
     families, looked for models/<label>/groups_CRAL-TRIO/ that no such run ever wrote,
-    reported every checkpoint missing and ended in "no checkpoints scored".
+    reported every checkpoint missing and ended in "no checkpoints scored". Same
+    reasoning covers --lipid_subclass: its nine FIG3_SUBCLASS_BLOCKS directory names
+    (some "+"-joined, e.g. groups_PS+PGP+DAG+TAG) are neither the seven families nor
+    the four LIPID_COLDSPLIT_SETS.
     """
-    if "--lipid_coldsplit" in arg_lines(label):
+    lines = arg_lines(label)
+    if "--lipid_coldsplit" in lines:
         return list(DEFAULT_LIPID_SETS)
+    if "--lipid_subclass" in lines:
+        return list(FIG3_SUBCLASS_BLOCKS)
     return list(DEFAULT_FAMILIES)
 
 
