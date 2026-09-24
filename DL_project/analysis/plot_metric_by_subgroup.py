@@ -159,10 +159,17 @@ def parse_report(path: Path, reports_root: Path) -> dict[str, object]:
     if tuple(header) not in (SUBGROUP_COLUMNS, LEGACY_SUBGROUP_COLUMNS):
         raise ValueError(f"Unexpected subgroup columns in {path}")
 
+    # The table ends at the first blank line -- some reports (--lipid_subclass/
+    # --lipid_isolation runs) print a further section afterward (e.g.
+    # "lipid_isolation_species (N held out...):" and a name per line), which is not
+    # tabular and must not be read as more subgroup rows. Skipping blank lines instead
+    # of stopping at the first one treated that section as data and raised on its first
+    # non-tabular line -- found when this label's per_protein_subgroup_metrics table
+    # was never reached at all (every one of its reports failed to parse).
     subgroup_rows = []
     for line in lines[marker_index + 3 :]:
         if not line.strip():
-            continue
+            break
         values = re.split(r"\s{2,}", line.strip())
         if len(values) != len(header):
             raise ValueError(f"Malformed subgroup row in {path}: {line}")

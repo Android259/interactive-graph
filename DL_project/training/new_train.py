@@ -425,6 +425,16 @@ final_layer = getattr(model, "final_layer", None)
 bilinear_module = getattr(final_layer, "bilinear", None)
 bilinear_params = list(bilinear_module.parameters()) if bilinear_module is not None else []
 bilinear_param_ids = {id(p) for p in bilinear_params}
+# --deepclip_gate_weight_decay: architecture/deepclip.py's DeepCLIP.gate (the
+# --deepclip_protein_gate MLP) gets its own optimizer group the same way bilinear_
+# module does just above -- getattr on the MODEL so a non-deepclip run (no
+# self.deepclip attribute at all) resolves to the same no-op empty group.
+deepclip_module = getattr(model, "deepclip", None)
+deepclip_gate_module = getattr(deepclip_module, "gate", None)
+deepclip_gate_params = (
+    list(deepclip_gate_module.parameters()) if deepclip_gate_module is not None else []
+)
+deepclip_gate_param_ids = {id(p) for p in deepclip_gate_params}
 # --thematical_interaction_lr (ModelConfig docstring, files/thematical_paths_dynamics_
 # and_pair_auc.md section 7): ForcedInteraction's parameters sit behind two chained
 # hard-normalisation ops MLB's own paper reports as slow/hyperparameter-sensitive to
@@ -444,6 +454,11 @@ thematic_interaction_param_ids = {id(p) for p in thematic_interaction_params}
 bilinear_weight_decay = (
     conf.weight_decay if conf.bilinear_weight_decay is None else conf.bilinear_weight_decay
 )
+deepclip_gate_weight_decay = (
+    conf.weight_decay
+    if conf.deepclip_gate_weight_decay is None
+    else conf.deepclip_gate_weight_decay
+)
 theta_params = [
     p
     for p in model.parameters()
@@ -451,6 +466,7 @@ theta_params = [
     and id(p) not in dropout_logit_ids
     and id(p) not in bilinear_param_ids
     and id(p) not in thematic_interaction_param_ids
+    and id(p) not in deepclip_gate_param_ids
 ]
 
 lipid_branch_param_ids = (
@@ -491,6 +507,10 @@ if conf.bilevel and gate_params:
         main_groups.append(
             {"params": bilinear_params, "weight_decay": bilinear_weight_decay}
         )
+    if deepclip_gate_params:
+        main_groups.append(
+            {"params": deepclip_gate_params, "weight_decay": deepclip_gate_weight_decay}
+        )
     if dropout_logit_params:
         main_groups.append({"params": dropout_logit_params, "weight_decay": 0.0})
     if thematic_interaction_params:
@@ -513,6 +533,10 @@ elif dropout_logit_params:
     ]
     if bilinear_params:
         groups.append({"params": bilinear_params, "weight_decay": bilinear_weight_decay})
+    if deepclip_gate_params:
+        groups.append(
+            {"params": deepclip_gate_params, "weight_decay": deepclip_gate_weight_decay}
+        )
     if thematic_interaction_params:
         groups.append({
             "params": thematic_interaction_params,
@@ -523,16 +547,22 @@ elif dropout_logit_params:
 else:
     # No bilevel, no ConcreteDropout: everything (including gate_params, if any exist
     # without bilevel search being on) trains as one plain group at the top-level
-    # weight_decay, same as before this split existed -- only bilinear_params is
-    # carved out, not theta_params, since theta_params also drops gate_param_ids/
-    # dropout_logit_ids that this branch never re-adds.
+    # weight_decay, same as before this split existed -- only bilinear_params and
+    # deepclip_gate_params are carved out, not theta_params, since theta_params also
+    # drops gate_param_ids/dropout_logit_ids that this branch never re-adds.
     base_params = [
         p for p in model.parameters()
-        if id(p) not in bilinear_param_ids and id(p) not in thematic_interaction_param_ids
+        if id(p) not in bilinear_param_ids
+        and id(p) not in thematic_interaction_param_ids
+        and id(p) not in deepclip_gate_param_ids
     ]
     groups = [{"params": base_params}]
     if bilinear_params:
         groups.append({"params": bilinear_params, "weight_decay": bilinear_weight_decay})
+    if deepclip_gate_params:
+        groups.append(
+            {"params": deepclip_gate_params, "weight_decay": deepclip_gate_weight_decay}
+        )
     if thematic_interaction_params:
         groups.append({
             "params": thematic_interaction_params,
@@ -939,8 +969,16 @@ def aggregate_values(stats):
 
 
 def log_epoch_metrics(writer, epoch_index, mode, metrics):
-    """Write aggregate epoch metrics to TensorBoard."""
-    for key in ("accuracy", "sensitivity", "precision", "specificity", "F1", "balanced_accuracy", "loss"):
+    """Write aggregate epoch metrics to TensorBoard.
+
+    AUC included here for the first time: aggregate_values() has always computed it on
+    the validation pass (metrics.get("AUC") is None on train, where no scores are
+    collected -- see aggregate_values' own docstring), but nothing wrote the value out,
+    so no run before this change has an "epoch/valid AUC" scalar to plot a learning
+    curve from. analysis/plot_group_learning_curve.py's METRIC_SERIES/read logic is
+    updated alongside this to read a valid-only series for AUC.
+    """
+    for key in ("accuracy", "sensitivity", "precision", "specificity", "F1", "balanced_accuracy", "AUC", "loss"):
         value = metrics.get(key)
         if value is not None:
             writer.add_scalar(f"epoch/{mode} {key}", value, epoch_index + 1)
@@ -2379,8 +2417,20 @@ for eepoch in range(EPOCHS):
     # the lowest rolling reconstruction loss instead of the highest rolling BA.
     # valid_metrics["loss"] already IS the mean reconstruction MSE in this mode (see
     # the structural_pretrain branch in the validation loop above), so this needs no
-    # new metric, only the opposite comparison direction.
-    selection_metric_name = "loss" if conf.structural_pretrain else "balanced_accuracy"
+    # new metric, only the opposite comparison direction. --checkpoint_selection_metric
+    # overrides the non-structural_pretrain default (validate() refuses it together with
+    # structural_pretrain, which always selects by loss); "auc" reads valid_metrics'
+    # "AUC" key instead of "balanced_accuracy" -- both are higher-is-better, only loss
+    # flips the comparison.
+    if conf.structural_pretrain:
+        selection_metric_name = "loss"
+    elif conf.checkpoint_selection_metric == "auc":
+        selection_metric_name = "AUC"
+    elif conf.checkpoint_selection_metric:
+        selection_metric_name = conf.checkpoint_selection_metric
+    else:
+        selection_metric_name = "balanced_accuracy"
+    lower_selection_metric_is_better = selection_metric_name == "loss"
     rolling_valid_selection_metric = rolling_metric_mean(
         [
             *epoch_history,
@@ -2397,7 +2447,7 @@ for eepoch in range(EPOCHS):
         and best_valid_selection_metric is not None
         and (
             rolling_valid_selection_metric < best_valid_selection_metric
-            if conf.structural_pretrain
+            if lower_selection_metric_is_better
             else rolling_valid_selection_metric > best_valid_selection_metric
         )
     )

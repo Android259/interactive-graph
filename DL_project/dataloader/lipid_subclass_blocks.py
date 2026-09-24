@@ -49,8 +49,12 @@ import os
 #   PS 5/2, PGP 2/1, DAG 2/1, TAG 8/2 -> one block, 17/6. PS+PGP alone reached
 #       n_proteins=0 in the first Kron-RLS pass (files/fig3_lipid_subclass_coldsplit_
 #       results.md) -- the four-way merge is what made it measurable.
-# CL (14/2), BMP (1/1), VA (2/2) and FAL (1/1) are in no block: they are in the table
-# but not on the paper's own Figure-3a axis at a size any split could read.
+# CL (14/2), BMP (1/1), VA (2/2) and FAL (1/1) are in no block: each IS its own row on
+# the paper's own Figure-3a axis (page 22 of files/Reuter.pdf, verified directly against
+# the rendered page), just too small -- fewer positives/proteins than even the
+# single-protein sphingolipid rows merged above -- for any split to read, and none of the
+# four shares enough chemistry with an existing merge to fold into it (CL and BMP are not
+# sphingolipid/lyso/PS+PGP+DAG+TAG-like; VA/FAL are not glycerolipids at all).
 FIG3_SUBCLASS_BLOCKS = (
     "PC",
     "PG",

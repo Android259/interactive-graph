@@ -92,6 +92,62 @@ def head_group_class(name):
     return _resolved_class(str(name).split(";"))
 
 
+# The only 3 project classes that mix an ether-linked ("(O-...)") and a diacyl species
+# under one name -- verified once against the live table (data/Processed_Negative_
+# Interaction_Corrected_Domains_SMILES_Fixed_CandidatesCompleted_Deduplicated.csv):
+# Phosphatidylcholine (45 diacyl / 31 ether), Phosphatidylethanolamine (22/2),
+# Lysophosphatidylethanolamine (9/1). Every other class's species are all-ether or
+# all-diacyl already, so splitting them would produce an empty second class.
+ETHER_SPLIT_ELIGIBLE_CLASSES = frozenset({
+    "Phosphatidylcholine",
+    "Phosphatidylethanolamine",
+    "Lysophosphatidylethanolamine",
+})
+
+
+def ether_split_head_group_class(name):
+    """head_group_class(name), except PC/PE/LPE keep the ether ("(O-...)") linkage as
+    its own class ("Phosphatidylcholine-O", ...) instead of folding it into the diacyl
+    one -- the variant lipid_class_series()/csv_classes() do NOT use by default (see
+    files/data_source.md's own note on why PC-O/PE-O are folded into PC/PE there: the
+    sn-1 linkage is not exposed to headgroup readout, and it is tracked separately as
+    the continuous `ether_tail_count` descriptor, training.pair_baseline_common's
+    lipid_chemistry_descriptors).
+
+    Whether a name is "ether" is read off the SPECIFIC semicolon-segment that produced
+    the resolved class, not the row as a whole -- an ambiguous entry like
+    "Lysophosphatidylethanolamine (18:1);Phosphatidylethanolamine (O-18:1)" resolves to
+    LPE (AMBIGUOUS_CLASS_RESOLUTION), and its LPE-side segment itself carries no "O-",
+    so it stays plain LPE, not LPE-O -- the ether marker sat on the PE alternative the
+    resolution already rejected. This mirrors the original class's own structure-
+    verified ambiguity resolution instead of second-guessing it.
+
+    No caller in this project uses this to build a split today -- --lipid_coldsplit's
+    "choline" set and --lipid_subclass's PC/PE/LPC+LPE+LPG blocks still hold out the
+    SAME species under the plain classes above; splitting those species between two
+    classes here would silently shrink what a run built against the un-split names
+    excludes unless the caller also names the "-O" sibling. Any caller adopting this
+    classification must exclude both `X` and `X-O` wherever the un-split scheme named
+    plain `X`, to keep held-out species sets unchanged.
+    """
+    names = str(name).split(";")
+    resolved = _resolved_class(names)
+    if resolved not in ETHER_SPLIT_ELIGIBLE_CLASSES:
+        return resolved
+    is_ether = False
+    for raw in names:
+        stripped = re.sub(r"\s*\(.*", "", raw)
+        stripped = re.sub(r"^[^A-Za-z]+", "", stripped).strip()
+        if stripped == resolved and re.search(r"\(O-", raw):
+            is_ether = True
+    return f"{resolved}-O" if is_ether else resolved
+
+
+def ether_split_class_series(csv):
+    """lipid_class_series(csv), through ether_split_head_group_class per row."""
+    return csv["FullIdentityOfLipid"].astype(str).map(ether_split_head_group_class)
+
+
 def class_level_positive_labels(table):
     """Coarsen `Interaction` from "this exact lipid" to "this lipid's head-group class".
 

@@ -13,8 +13,17 @@
 #   learning_curves/<group>/<metric>.pdf   for every complete group and metric
 #   subgroups/<label>_<metric>_by_subgroup.pdf   for every subgroup metric
 #
-# Learning-curve metrics: balanced_accuracy, F1, sensitivity, specificity, precision, loss
-# Subgroup metrics:       balanced_accuracy, F1, sensitivity, specificity, precision
+# Learning-curve metrics: balanced_accuracy, F1, sensitivity, specificity, precision, AUC, loss
+# Subgroup metrics:       balanced_accuracy, F1, sensitivity, specificity, precision, AUC
+#
+# AUC's learning curve is validation-only (no train line, see analysis/
+# plot_group_learning_curve.py's METRIC_SERIES) because aggregate_values() only ever
+# computes it on the validation pass. It also only exists in TensorBoard logs from
+# runs AFTER training/new_train.py's log_epoch_metrics started writing "epoch/valid
+# AUC" -- a run completed before that change has no such scalar, and this script
+# prints "no runs with required TensorBoard tags" and skips it, same as any other
+# missing-tag case. The subgroup AUC bar chart has no such gap: it reads the final-
+# epoch AUC every test_metrics report already writes per protein/subgroup.
 
 set -euo pipefail
 
@@ -30,8 +39,8 @@ fi
 
 LABEL="$1"
 OUTPUT_DIR="${PROJECT_ROOT}/graphics/${LABEL}"
-CURVE_METRICS=(balanced_accuracy F1 sensitivity specificity precision loss)
-SUBGROUP_METRICS=(balanced_accuracy F1 sensitivity specificity precision)
+CURVE_METRICS=(balanced_accuracy F1 sensitivity specificity precision AUC loss)
+SUBGROUP_METRICS=(balanced_accuracy F1 sensitivity specificity precision AUC)
 
 cd "${PROJECT_ROOT}"
 

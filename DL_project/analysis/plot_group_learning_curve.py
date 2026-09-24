@@ -26,6 +26,12 @@ METRIC_SERIES = {
     "specificity": ("epoch/train specificity", "epoch/valid specificity"),
     "precision": ("epoch/train precision", "epoch/valid precision"),
     "loss": ("epoch/train loss", "epoch/valid loss"),
+    # None train tag: AUC is only ever computed on the validation pass (train batches
+    # collect no scores -- training/new_train.py's aggregate_values docstring), so
+    # there is no "epoch/train AUC" scalar to pair it with, unlike every other metric
+    # here. The read loop below treats a None train_tag as "skip the train series,
+    # valid alone is enough" instead of requiring both the way it does for the rest.
+    "AUC": (None, "epoch/valid AUC"),
 }
 
 
@@ -257,6 +263,13 @@ def random_baseline(metric, prevalence, positive_rate="half"):
     """
     if metric == "loss":
         return None
+    if metric == "AUC":
+        # Rank-based and prevalence-free by construction (a random scorer places any
+        # given positive above any given negative half the time, whatever the class
+        # balance) -- unlike balanced_accuracy/sensitivity/specificity just below,
+        # which are pinned at 0.5 only because positive_rate=="half" chooses a
+        # fair-coin decision policy for them.
+        return 0.5
     if prevalence is None:
         # Only prevalence-free baselines remain well defined.
         if metric == "balanced_accuracy":
@@ -629,9 +642,14 @@ def main():
             train_tag, valid_tag = METRIC_SERIES[metric]
             histories = []
             for run_dir in run_dirs:
-                train_series = try_read_series(run_dir, train_tag)
+                # train_tag is None for AUC (never computed on the train pass, see
+                # METRIC_SERIES's own comment) -- read only the valid series then,
+                # instead of requiring a train tag that will never exist.
+                train_series = (
+                    try_read_series(run_dir, train_tag) if train_tag is not None else {}
+                )
                 valid_series = try_read_series(run_dir, valid_tag)
-                if train_series is None or valid_series is None:
+                if valid_series is None or (train_tag is not None and train_series is None):
                     continue
                 histories.append({"train": train_series, "valid": valid_series})
             if not histories:

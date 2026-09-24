@@ -13,7 +13,9 @@ POCKET_DESCRIPTOR_NAMES = (
     "pocket_residue_share", "pocket_sasa_share", "pocket_volume_per_sasa",
     "pocket_extent", "pocket_elongation", "pocket_flatness", "ev14_q50",
     "buriedness_q50", "depth_q10", "apolar_sasa_share", "aromatic_share",
-    "hydropathy_core", "hydropathy_rim",
+    "hydropathy_core", "hydropathy_rim", "ev28_q10", "aromatic_share_rim",
+    "hydropathy_mean", "ev14_q10", "pocket_extent_lambda_sqrt",
+    "pocket_elongation_lambda_sqrt", "pocket_flatness_lambda_sqrt",
 )
 # Width of the cavity descriptor --pocket_descriptors appends to the fused pair vector.
 # Checked in dataloader/protein_graph_builder.py against the descriptor it actually
@@ -341,6 +343,14 @@ class ModelConfig:
     # --weight_decay, unchanged behaviour. Only meaningful under --bilinear_fusion
     # (validate() below).
     bilinear_weight_decay: float | None = None
+    # Same idea as bilinear_weight_decay above, for architecture/deepclip.py's
+    # --deepclip_protein_gate MLP instead of Final_Layer.bilinear: its own optimizer
+    # group so an overfit-prone module on a data-starved --family_only run (a few
+    # hundred rows, ~9 proteins) can be reined in without penalising the conv/LSTM
+    # trunk that carries the actual sequence signal. None (default) falls back to
+    # --weight_decay, unchanged behaviour. Only meaningful under --deepclip_protein_gate
+    # (validate() below).
+    deepclip_gate_weight_decay: float | None = None
     # LayerNorm on lip_outs/prot_outs right before self.bilinear (Final_Layer.forward,
     # after _pool_partners, before the bilinear product). Distinct from the LayerNorms
     # inside CrossAttention: those normalise each NODE before pooling, but pool_type=
@@ -1141,6 +1151,19 @@ class ModelConfig:
     lipid_hiddim: int | None = None
     ep: int = 150
     checkpoint_window: int = 5
+    # Which rolling valid metric picks the checkpoint. "" (default) keeps the existing
+    # rule -- loss under --structural_pretrain (no Interaction label to score BA
+    # against), balanced_accuracy otherwise. balanced_accuracy is a FIXED-0.5-threshold,
+    # coarse metric on a small excluded block (--family_only/--lipid_subclass runs can
+    # have valid splits of a dozen-odd rows, one row = ~0.06-0.1 BA), so checkpoint
+    # selection by it can be noisy in exactly the same way the metric itself is (see
+    # training/new_train.py's own AUC-vs-BA comment). "auc" selects by rolling valid AUC
+    # instead -- threshold-independent, so it answers "which epoch ranks best" rather
+    # than "which epoch happens to sit on the right side of 0.5" -- without touching the
+    # decision threshold used to REPORT sensitivity/specificity/BA at the end, which
+    # stays exactly 0.5 either way. Not a recalibration; a different, less discretised
+    # criterion for which epoch's weights get used.
+    checkpoint_selection_metric: str = ""
     seed: int = 0
     excluded_groups: list = field(default_factory=list)
     # Head-group classes held out of training alongside excluded_groups. With both set
@@ -2138,6 +2161,19 @@ class ModelConfig:
             raise ValueError("hiddim must be greater than zero")
         if self.checkpoint_window <= 0:
             raise ValueError("checkpoint_window must be greater than zero")
+        if self.checkpoint_selection_metric and self.checkpoint_selection_metric not in (
+            "balanced_accuracy", "auc", "loss",
+        ):
+            raise ValueError(
+                "checkpoint_selection_metric must be one of balanced_accuracy/auc/loss, "
+                f"got {self.checkpoint_selection_metric!r}"
+            )
+        if self.checkpoint_selection_metric and self.structural_pretrain:
+            raise ValueError(
+                "structural_pretrain has no Interaction label, so balanced_accuracy/auc "
+                "checkpoint selection has nothing to score against -- it always selects "
+                "by loss and checkpoint_selection_metric must be left unset"
+            )
         if self.lr_warmup_epochs < 0:
             raise ValueError("lr_warmup_epochs must be non-negative")
         if not 0.0 < self.lr_min_factor <= 1.0:
@@ -2512,6 +2548,13 @@ class ModelConfig:
                 "bilinear_weight_decay requires bilinear_fusion -- there is no "
                 "self.bilinear parameter group to apply it to otherwise"
             )
+        if self.deepclip_gate_weight_decay is not None and not self.deepclip_protein_gate:
+            raise ValueError(
+                "deepclip_gate_weight_decay requires deepclip_protein_gate -- there is "
+                "no gate parameter group to apply it to otherwise"
+            )
+        if self.deepclip_gate_weight_decay is not None and self.deepclip_gate_weight_decay < 0.0:
+            raise ValueError("deepclip_gate_weight_decay must be non-negative")
         if self.bilinear_weight_decay is not None and self.bilinear_weight_decay < 0.0:
             raise ValueError("bilinear_weight_decay must be non-negative")
         if self.bilinear_pooled_norm and not self.bilinear_fusion:
@@ -3491,6 +3534,7 @@ VALUE_HANDLERS = {
     "--lr=": set_config_field("lr", float),
     "--weight_decay=": set_config_field("weight_decay", float),
     "--bilinear_weight_decay=": set_config_field("bilinear_weight_decay", float),
+    "--deepclip_gate_weight_decay=": set_config_field("deepclip_gate_weight_decay", float),
     "--hiddim=": set_config_field("hiddim", int),
     "--protein_hiddim=": set_config_field("protein_hiddim", int),
     "--lipid_hiddim=": set_config_field("lipid_hiddim", int),
@@ -3504,6 +3548,7 @@ VALUE_HANDLERS = {
     "--target_sparsity=": set_config_field("target_sparsity", float),
     "--ep=": set_config_field("ep", int),
     "--checkpoint_window=": set_config_field("checkpoint_window", int),
+    "--checkpoint_selection_metric=": set_config_field("checkpoint_selection_metric"),
     "--seed=": set_config_field("seed", int),
     "--label=": set_config_field("label"),
     "--excluded_subgroups=": set_config_field(

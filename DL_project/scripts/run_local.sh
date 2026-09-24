@@ -296,6 +296,8 @@ LABEL_OUTPUT_ROOT=()
 LABEL_IS_LIPID_COLDSPLIT=()
 LABEL_IS_LIPID_SUBCLASS=()
 LABEL_IS_RANDOM_SPLIT=()
+LABEL_IS_FAMILY_ONLY=()
+LABEL_FAMILY_ONLY_FIXED=()
 LABEL_LIPID_ISOLATION=()
 LABEL_SEEDS_CSV=()
 job_label_index=()
@@ -390,6 +392,41 @@ for requested in "${POSITIONALS[@]}"; do
             | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
     fi
 
+    # --family_only in the args file restricts the WHOLE table to one protein family
+    # before any split runs -- a warm, row-level random split inside the family
+    # (dataloader/Dataloader.py), not a held-out-family cold split. Nothing is EXCLUDED
+    # from training either way, so this axis never appends --excluded_groups (see the
+    # dispatch loop below, which appends --family_only=<group> instead). Two forms, like
+    # --lipid_subclass: BARE expands into one job per protein group (--groups/--no_groups
+    # apply normally here, same spelling as the base protein axis, because family_only
+    # rotates over the SAME PROTEIN_GROUPS list -- unlike --lipid_coldsplit/--lipid_
+    # subclass/--random_split below, whose axis is not protein groups at all);
+    # --family_only=<value> names one fixed family and runs it alone. Kept in step with
+    # scripts/launch/submit_grid.sh's copy of the same axis. Detected BEFORE --lipid_
+    # subclass/--lipid_isolation below on purpose: when an args file fixes both (a
+    # family AND a subclass -- --family_only=gltp --lipid_subclass=CerP, say), the later
+    # block's assignment to this_excl_groups must win, the same precedence submit_grid.sh
+    # gives lipid_subclass/lipid_isolation over family_only in its own two-pass version
+    # of this logic.
+    this_is_family_only=0
+    this_family_only_fixed=""
+    if args_file_has_flag "${this_args_file}" --family_only; then
+        if (( this_is_lipid_coldsplit )); then
+            printf -- '--family_only is a warm per-family split, not a cold-split axis; '\
+'it cannot combine with --lipid_coldsplit (%s).\n' "${this_args_file}" >&2
+            exit 2
+        fi
+        this_is_family_only=1
+        this_family_only_fixed="$(args_file_flag_lines "${this_args_file}" \
+            | sed -nE 's/^--family_only=(.+)$/\1/p' | tail -1)"
+        if [[ -n "${this_family_only_fixed}" ]]; then
+            # One job x seed, not nine: the family is already fixed in the template.
+            this_excl_groups=("${this_family_only_fixed}")
+        fi
+        # Bare form: this_excl_groups is already the (possibly --groups/--no_groups
+        # narrowed) PROTEIN_GROUPS list from above -- nothing to do here.
+    fi
+
     # --random_split in the args file is the axis defined by holding NOTHING out: no
     # protein family, no lipid class. It needs a marker of its own because every other
     # axis is expressed by APPENDING a flag below, and an args file cannot suppress an
@@ -461,6 +498,11 @@ for requested in "${POSITIONALS[@]}"; do
 'chemical set out; pick one (%s).\n' "${this_args_file}" >&2
             exit 2
         fi
+        if (( this_is_family_only )); then
+            printf -- '--random_split holds nothing out and --family_only restricts '\
+'training to one family; pick one (%s).\n' "${this_args_file}" >&2
+            exit 2
+        fi
         if [[ -n "${GROUPS_ARG:-}${SKIP_GROUPS_ARG:-}" ]]; then
             printf -- '--random_split holds no group out; ignoring --groups/--no_groups '\
 'for %s -- the single random-split grid will run.\n' "${this_args_file}" >&2
@@ -495,6 +537,8 @@ for requested in "${POSITIONALS[@]}"; do
     LABEL_IS_LIPID_COLDSPLIT+=("${this_is_lipid_coldsplit}")
     LABEL_IS_LIPID_SUBCLASS+=("${this_is_lipid_subclass}")
     LABEL_IS_RANDOM_SPLIT+=("${this_is_random_split}")
+    LABEL_IS_FAMILY_ONLY+=("${this_is_family_only}")
+    LABEL_FAMILY_ONLY_FIXED+=("${this_family_only_fixed}")
     LABEL_LIPID_ISOLATION+=("${this_lipid_isolation}")
     LABEL_SEEDS_CSV+=("$(IFS=,; printf '%s' "${this_seeds[*]}")")
 
@@ -1004,6 +1048,16 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
         # does the split and names it. "${group}" is already the literal "random" the
         # run will be filed under, which is why the log path needs no special case.
         split_flag=()
+    elif (( LABEL_IS_FAMILY_ONLY[label_index] )); then
+        # Nothing is EXCLUDED (the family named by "group" is the entire training
+        # pool), so --excluded_groups is never appended for this axis. Fixed form:
+        # the family is already spelled out in the template, nothing to append.
+        # Bare form: "group" is the one family this job restricts the whole table to.
+        if [[ -n "${LABEL_FAMILY_ONLY_FIXED[label_index]}" ]]; then
+            split_flag=()
+        else
+            split_flag=(--family_only="${group}")
+        fi
     else
         split_flag=(--excluded_groups="${group}")
     fi
@@ -1014,7 +1068,8 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
             || { (( LABEL_IS_LIPID_SUBCLASS[label_index] )) && printf 'SUBCLASS' \
             || { [[ -n "${LABEL_LIPID_ISOLATION[label_index]}" ]] && printf 'ISOLATION' \
             || { (( LABEL_IS_RANDOM_SPLIT[label_index] )) && printf 'SPLIT' \
-            || printf 'GROUP'; }; }; } )" \
+            || { (( LABEL_IS_FAMILY_ONLY[label_index] )) && printf 'FAMILY_ONLY' \
+            || printf 'GROUP'; }; }; }; } )" \
         "${group}" "${variant}" "${seed}"
 
     # read_configuration.py applies flags in argv order and the last one wins,

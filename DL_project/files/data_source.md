@@ -47,7 +47,7 @@ Figure 3a (стр. 22 PDF) даёт ось Y LTP-lipid subclass матрицы -
 | PA | Phosphatidic acid | `Phosphatidate` | 11 |
 | CerP | Ceramide-1-phosphate | `Ceramide phosphate` | 10 |
 | LPE | Lyso-PE (+ эфирная форма LPE-O) | `Lysophosphatidylethanolamine` | 10 |
-| CL | Cardiolipin (Figure 2, отдельно от Figure 3) | `Cardiolipin` | 10 |
+| CL | Cardiolipin (своя строка и на Figure 2, и на Figure 3a — проверено напрямую по странице 22 PDF, реальные данные под CRAL-TRIO) | `Cardiolipin` | 10 |
 | TAG | Triacylglycerol | `Triacylglycerol` | 8 |
 | PI | Phosphatidylinositol | `Phosphatidylinositol` | 7 |
 | LPC | Lysophosphatidylcholine | `Lysophosphatidylcholine` | 5 |
@@ -86,7 +86,7 @@ ML, Lipocalin, SCP2 -- в проекте `ProteinDomain`: PITP -> `IP_trans`, BP
 | Sphingolipids | Cer, CerP, HexCer, Hex2Cer, SHexCer, SM | сфингоидный backbone (керамид-производные) |
 | Free acyls | FA, FAL | свободная жирная кислота/спирт, без глицеринового backbone |
 | Lysophospholipids | LPC, LPE, LPE-O, LPG | один ацильный хвост (моноацил) |
-| Glycerophospholipids | PA, PC, PC-O, PE, PE-O, PI, PIPs, PS, PGP, PG, PG/BMP, BMP | диацилглицерофосфат-backbone, различаются головной группой |
+| Glycerophospholipids | PA, PC, PC-O, PE, PE-O, PI, PIPs, PS, PGP, PG, PG/BMP, BMP, CL | диацилглицерофосфат-backbone, различаются головной группой (CL — bis(phosphatidyl)glycerol, ближе всего к PG/BMP и по химии, и по позиции на оси Y) |
 | Neutral glycerolipids | DAG, TAG | без фосфатной головной группы |
 | Прочее | Sterol (ST), VA | структурно не глицеролипиды (стерольное кольцо / изопреноид) |
 

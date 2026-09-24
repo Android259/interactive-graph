@@ -160,10 +160,28 @@ class DeepCLIP(torch.nn.Module):
                 [catalog_index[name] for name in gate_tokens], dtype=torch.long
             )
             gate_hidden = int(getattr(config, "deepclip_gate_hidden", 8))
+            # hidden + 1 outputs, not hidden: the extra one is an additive bias on the
+            # final score (forward() splits it back off), not another profile weight.
+            # Why a bias is needed at all: the published readout (docstring above) has
+            # none anywhere -- DeepCLIP trains one model per protein, so whatever
+            # constant shift a protein needs is absorbed into the conv/LSTM weights
+            # themselves. A shared multiplicative gate across several proteins does not
+            # have that freedom: `weights = 1 + MLP(pocket)` scales the WHOLE profile
+            # for one protein, and if that scaling lands the same sign on every
+            # position (plausible on a data-starved family -- GLTP/GLTPD1 at ~25-30
+            # positives each), the bias-free sum collapses to a constant answer for
+            # every lipid that protein sees, regardless of sequence (measured: several
+            # seeds of deepclip_gltp_protein_gate_subclass_sugar_phospho_ep120 land at
+            # specificity exactly 0.0 or 1.0 while AUC stays informative -- an ordering
+            # signal the fixed threshold cannot express, files/deepclip_gate_and_
+            # subclass_plan.md's running log). A per-protein bias gives the gate a
+            # degree of freedom to correct that shift independently of the profile's
+            # own scale, instead of every departure from 0 having to run through the
+            # same channels that also carry the sequence signal.
             self.gate = torch.nn.Sequential(
                 torch.nn.Linear(len(gate_tokens), gate_hidden),
                 torch.nn.ReLU(),
-                torch.nn.Linear(gate_hidden, hidden),
+                torch.nn.Linear(gate_hidden, hidden + 1),
             )
             # Last layer at zero, so the gate starts as the all-ones vector the
             # published readout uses (the +1.0 in forward) and every departure from
@@ -229,6 +247,7 @@ class DeepCLIP(torch.nn.Module):
         # -- the per-character readout DeepCLIP's motif logos and mutation maps are
         # built from -- so it is kept on the module for anything that wants to read
         # it, rather than only existing inside this expression.
+        gate_bias = None
         if self.gate is not None:
             if descriptor_catalog_input is None:
                 raise ValueError(
@@ -237,9 +256,41 @@ class DeepCLIP(torch.nn.Module):
             gate_input = descriptor_catalog_input.index_select(
                 1, self.gate_columns
             ).to(states.dtype)
+            gate_out = torch.tanh(self.gate(gate_input))
+            # tanh bounds every gate output to (-1, 1) before it touches the profile or
+            # the score, so neither the per-channel weights nor the bias can run away to
+            # an extreme the way the raw linear output could -- measured on
+            # deepclip_cral_trio_protein_gate_subclass_pa_ep120 (files/deepclip_gate_
+            # and_subclass_plan.md's running log): adding an unbounded additive bias
+            # alone barely moved specificity-collapse rate (7/10 seeds at
+            # specificity 0 or 1 -> 6/10), consistent with the bias learning its own
+            # runaway constant on the same data-starved family instead of a useful
+            # correction. tanh(0) = 0 exactly, so a zero-initialised gate is still
+            # published DeepCLIP's all-ones, no-bias sum -- this changes what the gate
+            # CAN reach under gradient pressure, not where it starts.
             # +1.0 so a zero-initialised gate IS the published all-ones sum, and a
-            # pocket that says nothing leaves the profile exactly as DeepCLIP's.
-            weights = (1.0 + self.gate(gate_input)).unsqueeze(1)
+            # pocket that says nothing leaves the profile exactly as DeepCLIP's. The
+            # last output column is the additive bias instead (also zero at init, so
+            # it too starts as a no-op); split off BEFORE the +1.0, which only the
+            # multiplicative weights get. Weights therefore live in (0, 2) -- bounded
+            # away from 0 too, so a channel cannot be silenced outright, only damped.
+            #
+            # Mean-centred across channels: tanh alone bounded the PER-CHANNEL
+            # magnitude but did nothing to stop every channel moving the SAME way at
+            # once, which is the actual collapse mechanism (a protein whose gate
+            # departs uniformly scales the whole profile toward one sign, regardless
+            # of sequence -- measured: bias alone and bias+tanh gave statistically
+            # identical specificity-collapse rates, files/deepclip_gate_and_subclass_
+            # plan.md's running log). Subtracting the channel mean before the +1.0
+            # forces weights.mean(channel) == 1.0 exactly, so this pathway can only
+            # REDISTRIBUTE emphasis across profile channels, never scale all of them
+            # up or down together -- any genuine protein-level shift has to go
+            # through gate_bias instead, which is the one place that shift is
+            # actually wanted and can be reasoned about on its own.
+            channel_out = gate_out[:, :-1]
+            channel_out = channel_out - channel_out.mean(dim=-1, keepdim=True)
+            weights = (1.0 + channel_out).unsqueeze(1)
+            gate_bias = gate_out[:, -1]
             profile = (states * weights).sum(dim=-1)
         elif self.profile_weights is not None:
             profile = (states * self.profile_weights).sum(dim=-1)
@@ -258,4 +309,10 @@ class DeepCLIP(torch.nn.Module):
         score = profile.sum(dim=-1)
         if self.config.deepclip_readout == "mean":
             score = score / lengths.to(score.device).clamp(min=1)
+        if gate_bias is not None:
+            # Added AFTER the mean/sum readout, not folded into the profile: a
+            # protein's calibration shift is one number per protein, not something
+            # that should shrink with a longer molecule the way the summed profile
+            # itself does under "sum" readout.
+            score = score + gate_bias
         return torch.stack([torch.zeros_like(score), score], dim=1)
