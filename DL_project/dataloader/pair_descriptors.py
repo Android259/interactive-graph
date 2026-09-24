@@ -511,6 +511,12 @@ def full_catalog_order(config):
         getattr(config, "chemical_descriptors", ""),
         getattr(config, "geometric_pair_priors", ""),
         getattr(config, "chemical_pair_priors", ""),
+        # architecture/deepclip.py: extra per-character input channels, and the
+        # pocket vector that weights the binding profile. Listed here for the same
+        # reason every other name-list is -- a destination may only name tokens this
+        # function also builds a column for.
+        getattr(config, "deepclip_lipid_descriptors", ""),
+        getattr(config, "deepclip_protein_gate", ""),
     )
 
 

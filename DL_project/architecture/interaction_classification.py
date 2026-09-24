@@ -318,7 +318,7 @@ class InteractionClassification(torch.nn.Module):
         if config.deepclip:
             # The lipid is the whole input. Every other argument belongs to modules
             # __init__ did not build under this flag.
-            return self.deepclip(lip, lip_batch)
+            return self.deepclip(lip, lip_batch, descriptor_catalog_input)
 
         if (
             config.descriptors_head or config.two_pair_descriptors_paths

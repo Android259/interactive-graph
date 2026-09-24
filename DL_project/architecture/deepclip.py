@@ -46,6 +46,7 @@ Two deliberate departures from the source, both forced and both local:
 import torch
 from torch_geometric.utils import to_dense_batch
 
+from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
 from dataloader.smiles_tokens import SMILES_VOCABULARY
 from training.read_configuration import parse_deepclip_widths
 
@@ -73,11 +74,51 @@ class DeepCLIP(torch.nn.Module):
         # gradients, forever. That is harmless at DeepCLIP's own NUM_FILTERS=1 (one
         # filter per width, nothing to be identical to) and fatal above it, so
         # validate() refuses filters > 1 unless the initialisation is changed.
+        # --deepclip_lipid_descriptors widens the per-character input: the named
+        # catalog quantities are broadcast onto every position beside the one-hot,
+        # so a window sees "these characters, in a molecule with this head group"
+        # rather than having to recover the head group from the characters alone.
+        descriptor_width = 0
+        lipid_descriptor_columns = None
+        lipid_descriptor_tokens = parse_descriptor_list(
+            getattr(config, "deepclip_lipid_descriptors", "")
+        )
+        if lipid_descriptor_tokens:
+            catalog_index = {
+                name: position
+                for position, name in enumerate(full_catalog_order(config))
+            }
+            lipid_descriptor_columns = torch.tensor(
+                [catalog_index[name] for name in lipid_descriptor_tokens],
+                dtype=torch.long,
+            )
+            descriptor_width = len(lipid_descriptor_tokens)
+        # register_buffer, not a plain attribute, so the column index follows the
+        # module to whatever device the model moves to -- and registered even when
+        # empty, because a buffer name cannot be assigned first and registered after.
+        self.register_buffer(
+            "lipid_descriptor_columns", lipid_descriptor_columns, persistent=False
+        )
+        conv_in = vocabulary + descriptor_width
+
         self.convs = torch.nn.ModuleList([
-            torch.nn.Conv1d(vocabulary, filters, width, padding="same", bias=False)
+            torch.nn.Conv1d(conv_in, filters, width, padding="same", bias=False)
             for width in widths
         ])
-        for conv in self.convs:
+        # --deepclip_conv_layers: further layers read the concatenated filter
+        # channels of the one before, so the receptive field grows by (width - 1)
+        # per layer -- the only way, short of a wider window, for the branch to see
+        # across a ring closure (32-38 characters here) at all.
+        self.extra_convs = torch.nn.ModuleList()
+        stacked = int(getattr(config, "deepclip_conv_layers", 1))
+        for _ in range(max(0, stacked - 1)):
+            self.extra_convs.append(torch.nn.ModuleList([
+                torch.nn.Conv1d(
+                    filters * len(widths), filters, width, padding="same", bias=False
+                )
+                for width in widths
+            ]))
+        for conv in list(self.convs) + [c for layer in self.extra_convs for c in layer]:
             if config.deepclip_conv_init == "constant":
                 torch.nn.init.constant_(conv.weight, 0.01)
             else:
@@ -98,7 +139,40 @@ class DeepCLIP(torch.nn.Module):
         self.lstm_dropout = torch.nn.Dropout(float(config.deepclip_lstm_dropout))
         self.profile_dropout = torch.nn.Dropout(float(config.deepclip_out_dropout))
 
-    def forward(self, lip, lip_batch):
+        # The weights of Sum_last_ax. DeepCLIP's own are a fixed 1.0 each and are
+        # what `None` here means; the two flags below are the two ways to make them
+        # something else, and validate() refuses both at once because they write
+        # the same vector.
+        self.profile_weights = None
+        if getattr(config, "deepclip_profile_weights", False):
+            # Initialised at 1.0: the run starts as published DeepCLIP exactly, and
+            # only departs from it if the gradient pays for the departure.
+            self.profile_weights = torch.nn.Parameter(torch.ones(hidden))
+        self.gate = None
+        gate_columns = None
+        gate_tokens = parse_descriptor_list(getattr(config, "deepclip_protein_gate", ""))
+        if gate_tokens:
+            catalog_index = {
+                name: position
+                for position, name in enumerate(full_catalog_order(config))
+            }
+            gate_columns = torch.tensor(
+                [catalog_index[name] for name in gate_tokens], dtype=torch.long
+            )
+            gate_hidden = int(getattr(config, "deepclip_gate_hidden", 8))
+            self.gate = torch.nn.Sequential(
+                torch.nn.Linear(len(gate_tokens), gate_hidden),
+                torch.nn.ReLU(),
+                torch.nn.Linear(gate_hidden, hidden),
+            )
+            # Last layer at zero, so the gate starts as the all-ones vector the
+            # published readout uses (the +1.0 in forward) and every departure from
+            # DeepCLIP is something the pocket had to earn.
+            torch.nn.init.zeros_(self.gate[-1].weight)
+            torch.nn.init.zeros_(self.gate[-1].bias)
+        self.register_buffer("gate_columns", gate_columns, persistent=False)
+
+    def forward(self, lip, lip_batch, descriptor_catalog_input=None):
         """`[nodes, vocabulary]` one-hot characters -> `[graphs, 2]` logits.
 
         The lipid arrives flat, every molecule of the batch stacked into one tensor
@@ -109,10 +183,27 @@ class DeepCLIP(torch.nn.Module):
         counted into its score.
         """
         dense, mask = to_dense_batch(lip, lip_batch)
+        if self.lipid_descriptor_columns is not None:
+            if descriptor_catalog_input is None:
+                raise ValueError(
+                    "deepclip_lipid_descriptors requires descriptor_catalog_input"
+                )
+            selected = descriptor_catalog_input.index_select(
+                1, self.lipid_descriptor_columns
+            ).to(dense.dtype)
+            # One row per graph, held constant along the character axis: these are
+            # properties of the molecule, not of a position in its spelling.
+            broadcast = selected.unsqueeze(1).expand(-1, dense.shape[1], -1)
+            dense = torch.cat((dense, broadcast * mask.unsqueeze(-1)), dim=-1)
         scanned = torch.cat(
             [conv(dense.transpose(1, 2)) for conv in self.convs], dim=1
         )
-        scanned = self.conv_act(scanned).transpose(1, 2)
+        scanned = self.conv_act(scanned)
+        for layer in self.extra_convs:
+            scanned = self.conv_act(
+                torch.cat([conv(scanned) for conv in layer], dim=1)
+            )
+        scanned = scanned.transpose(1, 2)
 
         # Packed, not run over the padded tensor. Masking the LSTM's output would not
         # be enough: the backward direction starts at the LAST position, so on a short
@@ -138,7 +229,23 @@ class DeepCLIP(torch.nn.Module):
         # -- the per-character readout DeepCLIP's motif logos and mutation maps are
         # built from -- so it is kept on the module for anything that wants to read
         # it, rather than only existing inside this expression.
-        profile = states.sum(dim=-1).masked_fill(~mask, 0.0)
+        if self.gate is not None:
+            if descriptor_catalog_input is None:
+                raise ValueError(
+                    "deepclip_protein_gate requires descriptor_catalog_input"
+                )
+            gate_input = descriptor_catalog_input.index_select(
+                1, self.gate_columns
+            ).to(states.dtype)
+            # +1.0 so a zero-initialised gate IS the published all-ones sum, and a
+            # pocket that says nothing leaves the profile exactly as DeepCLIP's.
+            weights = (1.0 + self.gate(gate_input)).unsqueeze(1)
+            profile = (states * weights).sum(dim=-1)
+        elif self.profile_weights is not None:
+            profile = (states * self.profile_weights).sum(dim=-1)
+        else:
+            profile = states.sum(dim=-1)
+        profile = profile.masked_fill(~mask, 0.0)
         self.profile = profile
         profile = self.profile_dropout(profile)
 

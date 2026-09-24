@@ -851,6 +851,43 @@ class ModelConfig:
     # "mean" divides by that molecule's own length and is the default for that
     # reason; "sum" is kept for reproducing the published readout exactly.
     deepclip_readout: str = "mean"
+    # Sum_last_ax with LEARNED weights instead of DeepCLIP's fixed unit ones. Its
+    # profile is sum_h states[:, :, h] -- every LSTM channel counted exactly once,
+    # no parameters -- so the network cannot learn that one channel matters more
+    # than another, and nothing downstream can select a channel either. This makes
+    # that sum sum_h w_h * states[:, :, h] with w a learned vector of
+    # deepclip_lstm entries, initialised to 1.0 so the run STARTS as published
+    # DeepCLIP and moves away from it only if the gradient asks. deepclip_lstm
+    # extra parameters (10 at the default).
+    deepclip_profile_weights: bool = False
+    # Stacked convolutions instead of DeepCLIP's single layer. Its receptive field
+    # is one window wide, so the widest published filter sees 8 characters; two
+    # layers of width W see 2W-1. Measured on this table's own species, a hexose
+    # ring closes across 32-38 SMILES characters (analysis/deepclip_headgroup_probe.py),
+    # which one layer cannot span at any published width -- so a glycosyl head
+    # group is not visible AS a ring, only as more C and O. Layers after the first
+    # read the concatenated filter channels, not the one-hot.
+    deepclip_conv_layers: int = 1
+    # Named DESCRIPTOR_CATALOG entries (dataloader/pair_descriptors.py) broadcast
+    # onto every character position as extra input channels beside the one-hot.
+    # The direct route to the same head-group question the stacked/wide filters
+    # attack through the sequence: instead of hoping a window recognises a ring,
+    # hand the branch the head-group quantity itself. Same naming and the same
+    # shared descriptor_catalog_input tensor --lipid_descriptors already selects
+    # from (architecture/lipid_encoder.py).
+    deepclip_lipid_descriptors: str = ""
+    # THE PROTEIN, as a gate on the profile. Named DESCRIPTOR_CATALOG entries ->
+    # a one-hidden-layer MLP -> one weight per LSTM channel, used as the w above.
+    # Published DeepCLIP has no protein input at all, so for two proteins of one
+    # family with opposite specificity (GLTP binds glycosphingolipids and not
+    # sphingomyelin; GLTPD1 is the exact mirror) it must emit the same number for
+    # both and is wrong on one by construction. Multiplicative on purpose: an
+    # additive protein term shifts both the same way and cannot mirror. Leaves the
+    # per-position profile intact, so DeepCLIP's own readout stays interpretable
+    # and becomes protein-specific -- which part of the molecule THIS pocket reads.
+    deepclip_protein_gate: str = ""
+    # Hidden width of that gate's MLP.
+    deepclip_gate_hidden: int = 8
     # Protein side only: turns --plmon off (no ESM3 contribution to protein nodes),
     # without touching MolFormer or the lipid graph at all -- the finer-grained sibling
     # --no_embeddings (which implies this too, for backward compatibility) does not
@@ -1961,6 +1998,42 @@ class ModelConfig:
                 raise ValueError("deepclip_readout must be 'sum' or 'mean'")
             if self.deepclip_lstm <= 0:
                 raise ValueError("deepclip_lstm must be positive")
+            if self.deepclip_conv_layers < 1:
+                raise ValueError("deepclip_conv_layers must be at least 1")
+            if self.deepclip_gate_hidden <= 0:
+                raise ValueError("deepclip_gate_hidden must be positive")
+            if self.deepclip_protein_gate and self.deepclip_profile_weights:
+                raise ValueError(
+                    "deepclip_protein_gate and deepclip_profile_weights are two "
+                    "sources for the SAME vector -- the per-channel weights of the "
+                    "profile sum. The gate derives them from the pocket, the other "
+                    "learns them as one constant for every protein; asking for both "
+                    "would silently drop one. Pick one."
+                )
+            if self.deepclip_lipid_descriptors or self.deepclip_protein_gate:
+                # Imported here, not at module scope: dataloader.pair_descriptors
+                # pulls in the descriptor machinery, and this module is deliberately
+                # importable without it (see the POCKET_DESCRIPTOR_NAMES note at the
+                # top). Same lazy-import shape read_lipid_subclass already uses.
+                from dataloader.pair_descriptors import (  # noqa: PLC0415
+                    full_catalog_order, parse_descriptor_list,
+                )
+                catalog = set(full_catalog_order(self))
+                for field_name in ("deepclip_lipid_descriptors", "deepclip_protein_gate"):
+                    for name in parse_descriptor_list(getattr(self, field_name)):
+                        if name not in catalog:
+                            raise ValueError(
+                                f"{field_name} names {name!r}, which is not in this "
+                                "configuration's descriptor catalog"
+                            )
+            if (
+                self.deepclip_lipid_descriptors or self.deepclip_protein_gate
+            ) and not self.pair_descriptors:
+                raise ValueError(
+                    "deepclip_lipid_descriptors/deepclip_protein_gate read the shared "
+                    "descriptor_catalog_input tensor, which only the --pair_descriptors "
+                    "path builds -- add --pair_descriptors"
+                )
             # Parsed here so a bad --deepclip_widths fails at configuration time
             # rather than inside DeepCLIP.__init__ half a startup later.
             parse_deepclip_widths(self.deepclip_widths)
@@ -3124,6 +3197,8 @@ SIMPLE_BOOL_FLAGS = {
     "--lipid_smiles_tokens": "lipid_smiles_tokens",
     "deepclip": "deepclip",
     "--deepclip": "deepclip",
+    "deepclip_profile_weights": "deepclip_profile_weights",
+    "--deepclip_profile_weights": "deepclip_profile_weights",
     "no_protein_embeddings": "no_protein_embeddings",
     "--no_protein_embeddings": "no_protein_embeddings",
     "no_protein_geometry": "no_protein_geometry",
@@ -3461,6 +3536,10 @@ VALUE_HANDLERS = {
     "--deepclip_out_dropout=": set_config_field("deepclip_out_dropout", float),
     "--deepclip_conv_init=": set_config_field("deepclip_conv_init"),
     "--deepclip_readout=": set_config_field("deepclip_readout"),
+    "--deepclip_conv_layers=": set_config_field("deepclip_conv_layers", int),
+    "--deepclip_lipid_descriptors=": set_config_field("deepclip_lipid_descriptors"),
+    "--deepclip_protein_gate=": set_config_field("deepclip_protein_gate"),
+    "--deepclip_gate_hidden=": set_config_field("deepclip_gate_hidden", int),
     "--lipid_first_fragment_only=": set_config_field(
         "lipid_first_fragment_only", read_bool
     ),
