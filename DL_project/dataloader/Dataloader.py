@@ -146,6 +146,23 @@ class PLIDataset(
         self.ROOT_DIR = root_dir
         self.config = config
         self.seed = seed
+        # --relabel_fig3a_disputed_negatives: flip sampled negatives whose (protein,
+        # lipid class) Reuter et al.'s Figure 3a documents as a real interaction to
+        # Interaction=1, keyed by pair_id = ORIGINAL row position in this table
+        # (data/fig3a_disputed_negative_pair_ids.csv, built and explained in
+        # files/reuter_fig3a_dataset_consistency.md). Must run before --family_only/
+        # --drop_proteins reset the index just below (pair_id only means "row position
+        # in the fresh-read table" until then) and before _sample_interactions,
+        # _derive_lipid_class_holdout, GRAB-graph construction and chemistry-prior
+        # fitting ever read csv["Interaction"], so every one of them sees the
+        # relabelled positives consistently rather than some stages working off the
+        # old label.
+        if getattr(config, "relabel_fig3a_disputed_negatives", False):
+            disputed_ids = pandas.read_csv(
+                os.path.join(root_dir, "fig3a_disputed_negative_pair_ids.csv")
+            )["pair_id"]
+            csv = csv.copy()
+            csv.loc[csv.index.isin(disputed_ids), "Interaction"] = 1
         # --family_only: restrict the whole table to one family's rows BEFORE
         # anything else (sampling, split) runs, so the normal 85/15 random split
         # below (excluded_groups empty) lands inside just that family -- the

@@ -288,6 +288,16 @@ def test_balanced_batches_defaults_false_and_parses():
     assert config.balanced_batches is True
 
 
+def test_relabel_fig3a_disputed_negatives_defaults_false_and_parses():
+    assert ModelConfig().relabel_fig3a_disputed_negatives is False
+
+    config = read_named_configuration(
+        ["train.py", "--relabel_fig3a_disputed_negatives"]
+    )
+
+    assert config.relabel_fig3a_disputed_negatives is True
+
+
 def test_balanced_batches_rejects_batch_below_two():
     with pytest.raises(ValueError, match="balanced_batches"):
         read_named_configuration(["train.py", "--balanced_batches", "--batch=1"])

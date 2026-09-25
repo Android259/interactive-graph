@@ -1293,6 +1293,17 @@ class ModelConfig:
     hard_negative_share: float = 0.5
     test_group: str = ""
     cold_split: bool = False
+    # Relabels sampled negatives whose (protein, lipid class) cell Reuter et al.'s
+    # Figure 3a documents as a known interaction (data/fig3a_disputed_negative_pair_ids
+    # .csv, 1159 pair_ids -- built and explained in files/reuter_fig3a_dataset_
+    # consistency.md). Applied in PLIDataset.__init__ to the raw table's Interaction
+    # column BEFORE --family_only/--drop_proteins filtering, sampling, GRAB-graph
+    # construction, chemistry-prior fitting, and lipid-class-holdout selection, so every
+    # one of those sees the relabelled positives consistently rather than some stages
+    # working off the old label. Off by default: a run with this set is not directly
+    # comparable to one without it (634 positives becomes 1793, and the lipid-class
+    # holdout it feeds is chosen off the new positive concentrations).
+    relabel_fig3a_disputed_negatives: bool = False
     # Diagnostic shortcut ablation: zero one pooled partner before the final
     # classifier (and disable cross-attention) so the model must decide from the
     # other partner alone. lipid_only hides the protein, protein_only hides the
@@ -3473,6 +3484,8 @@ SIMPLE_BOOL_FLAGS = {
     "--rotate_train_negatives": "rotate_train_negatives",
     "cold_split": "cold_split",
     "--cold_split": "cold_split",
+    "relabel_fig3a_disputed_negatives": "relabel_fig3a_disputed_negatives",
+    "--relabel_fig3a_disputed_negatives": "relabel_fig3a_disputed_negatives",
     "lipid_only": "lipid_only",
     "--lipid_only": "lipid_only",
     "protein_only": "protein_only",
