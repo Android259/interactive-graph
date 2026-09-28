@@ -59,6 +59,7 @@ from dataloader.lipid_subclass_blocks import (
     BLOCK_TANIMOTO,
     subclass_block_species,
 )
+from dataloader.lipid_species_blocks import species_coldsplit_block
 from dataloader.sampler import (
     COLDSPLIT_MINIMUM_TEST_POSITIVES,
     LIPID_COLDSPLIT_SETS,
@@ -524,6 +525,16 @@ class PLIDataset(
         # excluded_lipid_species and every consumer of it; see
         # dataloader/lipid_subclass_blocks.py for why it is its own flag.
         self.lipid_subclass = str(getattr(config, "lipid_subclass", "") or "")
+        # The same axis once more, cut at the CONCRETE LIPID: a seeded draw of individual
+        # lipids sized to carry this share of the table's positives. Species-level like
+        # the two above, so it shares excluded_lipid_species and every consumer of it --
+        # what differs is that the unit is a structure-disjoint component rather than a
+        # named chemical set, because holding out names alone leaves 12-22% of the drawn
+        # structures in training under a second name. See
+        # dataloader/lipid_species_blocks.py.
+        self.lipid_species_coldsplit = float(
+            getattr(config, "lipid_species_coldsplit", 0.0) or 0.0
+        )
         self.excluded_lipid_species = set()
         self.test_group = str(getattr(config, "test_group", "") or "").lower()
 
@@ -1500,6 +1511,33 @@ class PLIDataset(
             )
             return
 
+        if self.lipid_species_coldsplit:
+            species, stats = species_coldsplit_block(
+                csv,
+                self.lipid_species_coldsplit,
+                self.seed,
+                isomeric=bool(getattr(self.config, "lipid_isomers", False)),
+            )
+            self.excluded_lipid_species = set(species)
+            print(
+                f"lipid species cold split {self.lipid_species_coldsplit:.2f} : "
+                f"{stats['species']} lipids in {stats['components_used']} of "
+                f"{stats['components']} structure-disjoint components held out of "
+                f"training for every protein, {stats['block_positives']} positives in "
+                f"{stats['block_rows']} rows over {stats['block_proteins']} proteins; "
+                f"train keeps {stats['train_positives']} positives"
+            )
+            if stats["proteins_without_train_positive"]:
+                # Not fatal and not repaired here: such a protein still trains on its
+                # negatives, and the fix -- a smaller share -- is the caller's, not a
+                # silent redraw that would make the share mean something different per
+                # seed.
+                print(
+                    f"  warning: {stats['proteins_without_train_positive']} protein(s) "
+                    "have no positive left anywhere in training at this share"
+                )
+            return
+
         if self.lipid_coldsplit:
             classes = LIPID_COLDSPLIT_SETS.get(self.lipid_coldsplit)
             if classes is None:
@@ -1606,6 +1644,7 @@ class PLIDataset(
             or self.lipid_coldsplit
             or self.lipid_isolation
             or self.lipid_subclass
+            or self.lipid_species_coldsplit
         ):
             # lipid_coldsplit keeps every protein: the whole table is train until the
             # class filter below removes the held-out chemistry. The random 85% draw of

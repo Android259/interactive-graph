@@ -641,6 +641,53 @@ def null_scores_within_protein(train, held, similarity, index, neighbours,
     return np.array(scores)
 
 
+def null_scores_contrastive(train, held, similarity, index, neighbours,
+                            entity_column="FullIdentityOfLipid",
+                            protein_column="LTPProtein"):
+    """`null_scores_within_protein`, but comparing the two labels separately.
+
+    The one above averages the training positive RATE over a protein's k nearest
+    training lipids, so it inherits whatever class ratio the pool was sampled at. At
+    --negatives_per_positive=2 two thirds of a protein's training lipids are negatives,
+    so the k nearest are usually negatives whatever the held lipid is, the score barely
+    varies, and the competitor reads as chance for a reason that has nothing to do with
+    the chemistry: measured on --family_only=gltp --lipid_subclass=CerP+Hex2Cer+SHexCer,
+    it gives AUC 0.456 at k=1 against 0.726 at k=15 on identical rows.
+
+    This one asks the comparison directly -- is the held lipid closer to something this
+    protein BINDS than to something it does not -- as `top-k mean similarity to the
+    protein's training positives` minus `the same over its training negatives`. The
+    subtraction cancels the class ratio, so the number does not move with
+    --negatives_per_positive, and at k=1 it is the plain "closer to a positive or to a
+    negative" rule. On the block above it scores AUC 0.93-1.00 across ten seeds, which
+    makes it the harder of the two bars and the one worth quoting.
+
+    nan when the protein has no training rows on one of the two sides -- there is no
+    comparison to make then, and callers already filter nan (see
+    lipid_coldsplit_null_model.auc_on_scored).
+    """
+    positives, negatives = {}, {}
+    for name, frame in train.groupby(protein_column):
+        rate = frame.groupby(entity_column)["Interaction"].mean()
+        positives[name] = np.array(
+            [index[entity] for entity in rate.index[rate > 0.5]], dtype=int
+        )
+        negatives[name] = np.array(
+            [index[entity] for entity in rate.index[rate <= 0.5]], dtype=int
+        )
+    scores = []
+    for entity, protein in zip(held[entity_column], held[protein_column]):
+        bound, unbound = positives.get(protein), negatives.get(protein)
+        if bound is None or not len(bound) or not len(unbound):
+            scores.append(float("nan"))
+            continue
+        row = similarity[index[entity]]
+        best_bound = np.sort(row[bound])[::-1][:neighbours].mean()
+        best_unbound = np.sort(row[unbound])[::-1][:neighbours].mean()
+        scores.append(float(best_bound - best_unbound))
+    return np.array(scores)
+
+
 def fit_prior_calibration(design_train, labels_train, steps=400, learning_rate=0.5):
     """Intercept and one weight per column of `label ~ standardised(design)`.
 

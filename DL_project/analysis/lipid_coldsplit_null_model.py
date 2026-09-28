@@ -68,12 +68,16 @@ from null_model import (  # noqa: E402
     TANIMOTO, auc, per_lipid_auc, per_protein_auc, resolve_similarity, working_set,
 )
 from dataloader.chemistry_prior import (  # noqa: E402
-    null_scores, null_scores_within_protein,
+    null_scores, null_scores_contrastive, null_scores_within_protein,
 )
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.lipid_classes import lipid_class_series  # noqa: E402
+from dataloader.lipid_species_blocks import species_coldsplit_block  # noqa: E402
+from dataloader.lipid_subclass_blocks import subclass_block_species  # noqa: E402
 from dataloader.sampler import LIPID_COLDSPLIT_SETS  # noqa: E402
-from preprocessing.lipid_marginal_baseline import lipid_split  # noqa: E402
+from preprocessing.lipid_marginal_baseline import (  # noqa: E402
+    lipid_isolation_split, lipid_split,
+)
 
 # ModelConfig defaults for the flags every current --lipid_coldsplit arg file leaves
 # alone; the split has to be rebuilt with the same ones the run trained under or the
@@ -83,17 +87,34 @@ DEFAULT_NEIGHBOURS = 15
 
 
 def block_records(csv, data_dir, similarity, index, entity_column, set_name, seeds,
-                   neighbours, ratio, network=None, balanced_lipid_classes=False):
+                   neighbours, ratio, network=None, balanced_lipid_classes=False,
+                   species_of_seed=None):
+    """One record per (block, seed, split).
+
+    `species_of_seed`, when given, is a callable seed -> the FullIdentityOfLipid set this
+    block holds out, and it replaces the head-group-class route entirely: the three
+    species-keyed axes (--lipid_subclass, --lipid_isolation, --lipid_species_coldsplit)
+    are not expressible as a LIPID_COLDSPLIT_SETS entry, which is why every number this
+    script produced before covered only the four class sets -- and why the regime the
+    DeepCLIP gate runs live in (--family_only plus a subclass block) had no baseline at
+    all. It is a callable rather than a set because --lipid_species_coldsplit draws its
+    block per seed.
+    """
     records = []
-    classes = LIPID_COLDSPLIT_SETS[set_name]
+    classes = LIPID_COLDSPLIT_SETS[set_name] if species_of_seed is None else ()
     for seed in seeds:
         # The same pool the loader builds. Which sampler that is depends on the run:
         # --balanced_lipid_classes overrides --balanced_proteins in Dataloader.py's own
         # if/elif chain, and the new lipid-cold-split baseline sets it.
+        species = species_of_seed(seed) if species_of_seed is not None else None
         csvt = working_set(
-            csv, seed, ratio, classes, balanced_lipid_classes=balanced_lipid_classes
+            csv, seed, ratio, classes,
+            balanced_lipid_classes=balanced_lipid_classes, species=species,
         )
-        train, valid, test = lipid_split(csvt, classes, seed)
+        if species is None:
+            train, valid, test = lipid_split(csvt, classes, seed)
+        else:
+            train, valid, test = lipid_isolation_split(csvt, species, seed)
         for split_name, held in (("valid", valid), ("test", test)):
             if held.empty:
                 continue
@@ -108,6 +129,9 @@ def block_records(csv, data_dir, similarity, index, entity_column, set_name, see
             within = null_scores_within_protein(
                 train, held, similarity, index, neighbours, entity_column
             )
+            contrastive = null_scores_contrastive(
+                train, held, similarity, index, neighbours, entity_column
+            )
             record = {
                 "set": set_name,
                 "seed": seed,
@@ -120,6 +144,9 @@ def block_records(csv, data_dir, similarity, index, entity_column, set_name, see
             record["within_protein_AUC"], record["within_protein_covered"] = (
                 auc_on_scored(truth, within)
             )
+            record["contrastive_AUC"], record["contrastive_covered"] = (
+                auc_on_scored(truth, contrastive)
+            )
             # Within-protein reading of each score vector: a pooled AUC can be carried
             # entirely by which protein a row belongs to, which is not the question.
             record["lipid_only_AUC_prot"], _ = per_protein_auc(held, lipid_only)
@@ -128,8 +155,18 @@ def block_records(csv, data_dir, similarity, index, entity_column, set_name, see
             record["lipid_only_AUC_lipid"], _ = per_lipid_auc(held, lipid_only)
             record["within_protein_AUC_lipid"], _ = per_lipid_auc(held, within)
             if network is not None:
+                # A label that names its own block files the run under the whole
+                # directory name (analysis/checkpoint_scores.self_named_group), so a
+                # --family_only + --lipid_subclass run writes fam
+                # "PA_groups_cral-trio" where the block here is called "PA". Matching
+                # on equality alone found nothing and silently dropped the net_AUC
+                # column instead of saying so.
+                fam = network["fam"].astype(str)
                 mine = network[
-                    (network["fam"] == set_name)
+                    (
+                        (fam == set_name)
+                        | fam.str.startswith(f"{set_name}_groups_")
+                    )
                     & (network["seed"] == seed)
                     & (network["split"] == split_name)
                 ]
@@ -186,7 +223,8 @@ def print_report(frame, features_label, neighbours, split):
         print(f"\nno {split} rows")
         return
     columns = [c for c in (
-        "lipid_only_AUC", "within_protein_AUC", "within_protein_covered", "net_AUC",
+        "lipid_only_AUC", "within_protein_AUC", "contrastive_AUC", "net_AUC",
+        "within_protein_covered", "contrastive_covered",
         "lipid_only_AUC_prot", "within_protein_AUC_prot", "net_AUC_prot",
     ) if c in shown.columns]
     print(f"\n=== {split} | features={features_label} | k={neighbours} ===")
@@ -227,6 +265,24 @@ def main():
         "--sets", default=",".join(LIPID_COLDSPLIT_SETS),
         help="which LIPID_COLDSPLIT_SETS to score (default: all four)",
     )
+    parser.add_argument(
+        "--family_only",
+        help="restrict the whole table to one ProteinDomain before anything else, the "
+             "way --family_only does in the loader -- the regime every DeepCLIP run "
+             "trains in. Both competitors are then built from that family's own rows "
+             "only, which is what they have to be compared against",
+    )
+    parser.add_argument(
+        "--lipid_subclass",
+        help="score a --lipid_subclass block instead of a LIPID_COLDSPLIT_SET: one or "
+             "more specs (\"PA\", \"CerP+Hex2Cer+SHexCer\"), comma-separated for "
+             "several blocks",
+    )
+    parser.add_argument(
+        "--lipid_species_coldsplit", type=float,
+        help="score a --lipid_species_coldsplit block of this share instead; the block "
+             "is redrawn per seed exactly as the loader draws it",
+    )
     parser.add_argument("--seeds", default="0,1,2,3,4")
     parser.add_argument("--neighbours", type=int, default=DEFAULT_NEIGHBOURS,
                         help="k nearest training entities per held row")
@@ -247,18 +303,44 @@ def main():
     parser.add_argument("--out", help="write every per-(set, seed, split) row here")
     args = parser.parse_args()
 
-    unknown = [s for s in args.sets.split(",") if s and s not in LIPID_COLDSPLIT_SETS]
-    if unknown:
+    if args.lipid_subclass and args.lipid_species_coldsplit is not None:
         raise SystemExit(
-            f"unknown lipid set(s): {unknown}. Known: {list(LIPID_COLDSPLIT_SETS)}"
+            "--lipid_subclass and --lipid_species_coldsplit name two different blocks; "
+            "pass one"
         )
+    species_axis = bool(args.lipid_subclass) or args.lipid_species_coldsplit is not None
+    if not species_axis:
+        unknown = [s for s in args.sets.split(",") if s and s not in LIPID_COLDSPLIT_SETS]
+        if unknown:
+            raise SystemExit(
+                f"unknown lipid set(s): {unknown}. Known: {list(LIPID_COLDSPLIT_SETS)}"
+            )
     sets = [s for s in args.sets.split(",") if s]
     seeds = [int(s) for s in args.seeds.split(",") if s]
 
     data_dir = str(PROJECT_ROOT / "data") + "/"
     csv = pandas.read_csv(interaction_csv_path(data_dir))
+    # The similarity index is built on the FULL table on purpose, before any
+    # restriction. dataloader.chemistry_prior.species_similarity maps a species to its
+    # candidate structures by ROW POSITION (enumerate over the frame) against row ids
+    # that are positions in the whole interaction table, so handing it a subset -- a
+    # --family_only slice, reindexed or not -- silently pairs species with another
+    # row's structures. Similarity is a property of the chemistry, not of which family
+    # is being scored, and the competitors look it up by species name, so the full
+    # index serves the restricted rows correctly.
+    similarity_csv = csv
+    if args.family_only:
+        csv = csv[csv["ProteinDomain"].str.lower() == args.family_only.lower()]
+        if csv.empty:
+            raise SystemExit(f"--family_only={args.family_only} matches no rows")
+        # reset_index, because the loader does it too (dataloader/Dataloader.py's own
+        # --family_only filter) and pair_id is read straight off the index a few lines
+        # later in working_set. Without it every pair_id here is an id in the whole
+        # table while the scored rows carry positions within the family, and the
+        # --scores comparison refuses the pair rather than matching wrong rows.
+        csv = csv.reset_index(drop=True)
     similarity, index, entity_column, features_label, _ = resolve_similarity(
-        csv, data_dir, args.features, args.label, args.zscore
+        similarity_csv, data_dir, args.features, args.label, args.zscore
     )
 
     network = None
@@ -272,12 +354,27 @@ def main():
                 "pass --epoch to choose one"
             )
 
+    blocks = []
+    if args.lipid_subclass:
+        for spec in (s for s in args.lipid_subclass.split(",") if s):
+            held = tuple(subclass_block_species(spec, data_dir))
+            blocks.append((spec, lambda seed, held=held: held))
+    elif args.lipid_species_coldsplit is not None:
+        share = args.lipid_species_coldsplit
+        blocks.append((
+            "species%02d" % int(share * 100 + 0.5),
+            lambda seed, share=share: species_coldsplit_block(csv, share, seed)[0],
+        ))
+    else:
+        blocks = [(name, None) for name in sets]
+
     records = []
-    for set_name in sets:
+    for set_name, species_of_seed in blocks:
         records.extend(block_records(
             csv, data_dir, similarity, index, entity_column, set_name, seeds,
             args.neighbours, args.ratio, network,
             balanced_lipid_classes=args.balanced_lipid_classes,
+            species_of_seed=species_of_seed,
         ))
     frame = pandas.DataFrame(records)
 

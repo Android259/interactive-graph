@@ -299,6 +299,7 @@ LABEL_IS_RANDOM_SPLIT=()
 LABEL_IS_FAMILY_ONLY=()
 LABEL_FAMILY_ONLY_FIXED=()
 LABEL_LIPID_ISOLATION=()
+LABEL_LIPID_SPECIES=()
 LABEL_SEEDS_CSV=()
 job_label_index=()
 job_groups=()
@@ -491,6 +492,30 @@ for requested in "${POSITIONALS[@]}"; do
         this_excl_groups=("iso${this_lipid_isolation}")
     fi
 
+    # --lipid_species_coldsplit=<share> is the lipid axis cut at the CONCRETE LIPID
+    # (dataloader/lipid_species_blocks.py). It names its own split, so one pseudo-group
+    # runs against the seeds; the block behind that name is drawn per seed inside the
+    # loader, so two seeds hold out different lipids on purpose.
+    this_lipid_species=""
+    if args_file_has_flag "${this_args_file}" --lipid_species_coldsplit; then
+        this_lipid_species="$(args_file_flag_lines "${this_args_file}" \
+            | sed -nE 's/^--lipid_species_coldsplit=(.*)$/\1/p' | tail -1)"
+        if [[ -z "${this_lipid_species}" ]]; then
+            printf -- '--lipid_species_coldsplit needs a value (share of positives in '\
+'the held-out block, e.g. 0.15) in %s.\n' "${this_args_file}" >&2
+            exit 2
+        fi
+        if (( this_is_lipid_coldsplit )) || (( this_is_lipid_subclass )) \
+            || [[ -n "${this_lipid_isolation}" ]]; then
+            printf -- '--lipid_species_coldsplit and --lipid_coldsplit/--lipid_subclass'\
+'/--lipid_isolation hold out different things; pick one (%s).\n' \
+                "${this_args_file}" >&2
+            exit 2
+        fi
+        this_excl_groups=("species$(printf '%02d' \
+            "$(awk -v s="${this_lipid_species}" 'BEGIN{printf "%d", s*100 + 0.5}')")")
+    fi
+
     this_is_random_split=0
     if args_file_has_flag "${this_args_file}" --random_split; then
         if (( this_is_lipid_coldsplit )); then
@@ -540,6 +565,7 @@ for requested in "${POSITIONALS[@]}"; do
     LABEL_IS_FAMILY_ONLY+=("${this_is_family_only}")
     LABEL_FAMILY_ONLY_FIXED+=("${this_family_only_fixed}")
     LABEL_LIPID_ISOLATION+=("${this_lipid_isolation}")
+    LABEL_LIPID_SPECIES+=("${this_lipid_species}")
     LABEL_SEEDS_CSV+=("$(IFS=,; printf '%s' "${this_seeds[*]}")")
 
     while IFS=$'\t' read -r group seed; do
@@ -1042,6 +1068,11 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
         split_flag=(--lipid_subclass="${group}")
     elif [[ -n "${LABEL_LIPID_ISOLATION[label_index]}" ]]; then
         # The block is named by the flag already in the template; nothing is appended.
+        split_flag=()
+    elif [[ -n "${LABEL_LIPID_SPECIES[label_index]}" ]]; then
+        # Same as --lipid_isolation just above: the share is already in the template,
+        # nothing is appended, and "${group}" is the "species<NN>" name new_train.py
+        # files the run under.
         split_flag=()
     elif (( LABEL_IS_RANDOM_SPLIT[label_index] )); then
         # Nothing is held out, so nothing is appended: the loader's own last branch

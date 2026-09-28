@@ -249,6 +249,7 @@ LABEL_FAMILY_ONLY_FIXED=()
 LABEL_RANDOM_SPLIT=()
 LABEL_LIPID_ISOLATION=()
 LABEL_LIPID_SUBCLASS=()
+LABEL_LIPID_SPECIES=()
 LABEL_OUTPUT_ROOT=()
 LABEL_WALLTIME=()
 # One line per (label_index, group, seed), across ALL labels -- the combined
@@ -394,6 +395,29 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         fi
     fi
 
+    # --lipid_species_coldsplit=<share> is the lipid axis cut at the CONCRETE LIPID
+    # (dataloader/lipid_species_blocks.py). Like --lipid_isolation it names its own
+    # split, so there is nothing to expand: one pseudo-group against the seeds. Unlike
+    # it, the block is a per-seed draw, so the pseudo-group is the SHARE -- the same
+    # name new_train.py files the run under.
+    this_lipid_species=""
+    if args_file_has_flag "${args_file}" --lipid_species_coldsplit; then
+        this_lipid_species="$(args_file_flag_lines "${args_file}" \
+            | sed -nE 's/^--lipid_species_coldsplit=(.*)$/\1/p' | tail -1)"
+        if [[ -z "${this_lipid_species}" ]]; then
+            printf -- '--lipid_species_coldsplit needs a value (share of positives in '\
+'the held-out block, e.g. 0.15) in %s.\n' "${args_file}" >&2
+            exit 2
+        fi
+        if (( this_cold_split )) || (( this_lipid_coldsplit )) || (( this_lipid_subclass )) \
+            || [[ -n "${this_lipid_isolation}" ]]; then
+            printf -- '--lipid_species_coldsplit and --cold_split/--lipid_coldsplit/'\
+'--lipid_subclass/--lipid_isolation hold out different things; pick one (%s).\n' \
+                "${args_file}" >&2
+            exit 2
+        fi
+    fi
+
     this_random_split=0
     if args_file_has_flag "${args_file}" --random_split; then
         this_random_split=1
@@ -450,6 +474,15 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_output_root="script_logs/${this_variant}_iso${this_lipid_isolation}"
         this_groups=("iso${this_lipid_isolation}")
     fi
+    if [[ -n "${this_lipid_species}" ]]; then
+        # Two digits of the share, exactly as new_train.py names the run directory, so
+        # log path, run/ path and test_metrics/ path agree the way they do on every
+        # other axis.
+        this_species_tag="species$(printf '%02d' \
+            "$(awk -v s="${this_lipid_species}" 'BEGIN{printf "%d", s*100 + 0.5}')")"
+        this_output_root="script_logs/${this_variant}_${this_species_tag}"
+        this_groups=("${this_species_tag}")
+    fi
     if (( this_random_split )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
         # Same rule, same reason as the --lipid_coldsplit case just below: the override
         # names protein families, which is not this label's axis. Ignored, not fatal, so
@@ -488,6 +521,12 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         # protein-family override has nothing to narrow here.
         printf -- '--lipid_isolation names its own block; ignoring --groups/--no_groups '\
 'for %s.\n' "${args_file}" >&2
+    elif [[ -n "${this_lipid_species}" ]] && [[ -n "${GROUPS_OVERRIDE}" ]]; then
+        # Same as --lipid_isolation just above: the label's axis is individual lipids,
+        # and it runs one pseudo-group named by its share, so a protein-family override
+        # has nothing to narrow.
+        printf -- '--lipid_species_coldsplit names its own block; ignoring '\
+'--groups/--no_groups for %s.\n' "${args_file}" >&2
     elif (( this_family_only )) && [[ -n "${this_family_only_fixed}" ]] \
         && [[ -n "${GROUPS_OVERRIDE}" ]]; then
         # Same reason: the family is already fixed in the template, so overriding
@@ -513,6 +552,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     LABEL_RANDOM_SPLIT+=("${this_random_split}")
     LABEL_LIPID_ISOLATION+=("${this_lipid_isolation}")
     LABEL_LIPID_SUBCLASS+=("${this_lipid_subclass}")
+    LABEL_LIPID_SPECIES+=("${this_lipid_species}")
     LABEL_OUTPUT_ROOT+=("${this_output_root}")
     LABEL_WALLTIME+=("${this_walltime}")
 
@@ -562,6 +602,7 @@ experiment_record() {
     local random_split="${LABEL_RANDOM_SPLIT[label_index]}"
     local lipid_isolation="${LABEL_LIPID_ISOLATION[label_index]}"
     local lipid_subclass="${LABEL_LIPID_SUBCLASS[label_index]}"
+    local lipid_species="${LABEL_LIPID_SPECIES[label_index]}"
     local output_root="${LABEL_OUTPUT_ROOT[label_index]}"
     local val_group excluded output_dir stem header extra=""
 
@@ -620,6 +661,15 @@ experiment_record() {
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="LIPID ISOLATION: ${lipid_isolation} | VARIANT: ${variant} | SEED: ${seed}"
+    elif [[ -n "${lipid_species}" ]]; then
+        # Same shape as --lipid_isolation just above: the share is already in the
+        # template, nothing is appended, and "group" is the directory name
+        # new_train.py will use. The block itself is drawn per seed inside the loader,
+        # so two seeds of this label hold out different lipids on purpose.
+        excluded=""
+        output_dir="${output_root}/${group}"
+        stem="${variant}_seed${seed}"
+        header="LIPID SPECIES: ${lipid_species} | VARIANT: ${variant} | SEED: ${seed}"
     elif (( random_split )); then
         # The axis defined by appending nothing: no --excluded_groups, no split flag of
         # any kind, so the loader's own last branch does the 85/7.5/7.5 random split and

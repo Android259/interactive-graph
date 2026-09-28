@@ -164,7 +164,8 @@ def resolve_similarity(csv, data_dir, features, label=None, zscore=False):
     return similarity, index, entity_column, resolved_label, feature_list
 
 
-def working_set(csv, seed, ratio, lipid_classes, balanced_lipid_classes=False):
+def working_set(csv, seed, ratio, lipid_classes, balanced_lipid_classes=False,
+                species=None):
     """The loader's `csvt`, carrying the loader's `pair_id`.
 
     `lipid_marginal_baseline.working_set` builds the same rows in the same order but
@@ -180,8 +181,16 @@ def working_set(csv, seed, ratio, lipid_classes, balanced_lipid_classes=False):
     protein-balanced sampler at all -- reproducing it here with the default would
     silently compare a network's scores to a null model built on other rows.
     """
-    held = {name.lower() for name in lipid_classes}
-    strata = lipid_class_series(csv).str.lower().isin(held) if held else None
+    if species is not None:
+        # A block named by SPECIES (--lipid_subclass / --lipid_isolation /
+        # --lipid_species_coldsplit) rather than by head-group class. The sampler's
+        # strata are "which side of the coming cut is this row on", so they have to be
+        # computed on the same key the cut uses -- head-group class would put a held-out
+        # species and a retained one of the same class on the same side.
+        strata = csv["FullIdentityOfLipid"].isin(set(species))
+    else:
+        held = {name.lower() for name in lipid_classes}
+        strata = lipid_class_series(csv).str.lower().isin(held) if held else None
     if balanced_lipid_classes:
         positives, negatives = split_and_sample_lipid_class_balanced_interactions(
             csv, seed, ratio=ratio

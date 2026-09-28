@@ -120,6 +120,46 @@ def arg_lines(label):
     return lines
 
 
+# Split flags that carry their own block in the args file, in the order
+# training/new_train.py assembles the run-directory name from them.
+SELF_NAMING_SPLIT_FLAGS = (
+    "lipid_coldsplit", "lipid_isolation", "lipid_subclass",
+    "lipid_species_coldsplit", "family_only",
+)
+
+
+def valued_flag(lines, name):
+    """The value of `--<name>=<value>` in an args file, or "" when it is absent or bare."""
+    prefix = f"--{name}="
+    for line in lines:
+        if line.startswith(prefix):
+            return line[len(prefix):]
+    return ""
+
+
+def self_named_group(lines):
+    """The run-directory name a label names outright, or "" when it names none.
+
+    Mirrors training/new_train.py's excluded_set_parts: each part is prefixed
+    "groups_" and the parts are joined by "_", so what score_checkpoints needs for its
+    f"groups_{family}" path is the parts joined by "_groups_". A label with both
+    --lipid_subclass=<spec> and --family_only=<name> therefore gives
+    "CerP+Hex2Cer+SHexCer_groups_gltp", which is the directory those runs actually
+    wrote.
+    """
+    parts = []
+    for name in SELF_NAMING_SPLIT_FLAGS:
+        value = valued_flag(lines, name)
+        if not value:
+            continue
+        if name == "lipid_isolation":
+            value = f"iso{value}"
+        elif name == "lipid_species_coldsplit":
+            value = "species%02d" % int(float(value) * 100 + 0.5)
+        parts.append(value)
+    return "_groups_".join(parts)
+
+
 def split_argv(lines, group):
     """`lines` with the bare split marker removed, plus the flag that names `group`.
 
@@ -137,6 +177,14 @@ def split_argv(lines, group):
     name there, not a family. --lipid_subclass is the third axis (a Titeca-et-al.
     subclass block, dataloader/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS) and
     takes the same bare-marker treatment.
+
+    An arg file may instead name its block OUTRIGHT (--lipid_subclass=<spec>,
+    --lipid_isolation=<key>, --lipid_species_coldsplit=<share>, --family_only=<name>),
+    which is what a single-block label does -- and then there is nothing to append at
+    all. Detecting only the bare marker sent such a label down the last branch, where
+    the appended --excluded_groups collided with the split flag already in the file and
+    read_configuration refused the pair; every gate label
+    (deepclip_*_protein_gate_subclass_*) is of this shape.
     """
     if "--lipid_coldsplit" in lines:
         kept = [line for line in lines if line != "--lipid_coldsplit"]
@@ -144,6 +192,8 @@ def split_argv(lines, group):
     if "--lipid_subclass" in lines:
         kept = [line for line in lines if line != "--lipid_subclass"]
         return kept + [f"--lipid_subclass={group}"]
+    if any(valued_flag(lines, name) for name in SELF_NAMING_SPLIT_FLAGS):
+        return list(lines)
     return list(lines) + [f"--excluded_groups={group}"]
 
 
@@ -162,6 +212,11 @@ def default_groups_for_label(label):
         return list(DEFAULT_LIPID_SETS)
     if "--lipid_subclass" in lines:
         return list(FIG3_SUBCLASS_BLOCKS)
+    named = self_named_group(lines)
+    if named:
+        # One block, already spelled out in the args file -- there is no axis to
+        # rotate, and the seven families would look for directories no such run wrote.
+        return [named]
     return list(DEFAULT_FAMILIES)
 
 
@@ -244,8 +299,16 @@ def _average_candidate_rows(frame, probs, labels):
     return frame.iloc[keep], averaged, labels[keep]
 
 
-def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, verbose=True):
+def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, verbose=True,
+                      splits=("valid", "test")):
     """Per-row (family, seed, epoch, split, pair_id) scores for one sweep label.
+
+    `splits` may include "train". It is not in the default because scoring it costs a
+    pass over a set several times larger than the evaluated block and nothing that
+    reads this table asked for it -- but "does this run fit its own train set" cannot
+    be answered without it, and that is the first question when a run scores at chance
+    (train high and block at chance is memorisation; both at chance is an optimisation
+    failure, and the two call for opposite fixes).
 
     The loop `main()` used to run inline, factored out so analysis/full_label_report.py
     (and anything else that wants scores without a CSV round-trip) can call it directly.
@@ -269,7 +332,7 @@ def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, ver
                 conf.final_m = conf.m
             seed_everything(conf.seed)
             csv = pd.read_csv(interaction_csv_path(data_dir))
-            _, valid_dataset, test_dataset = PLIDataset(
+            train_dataset, valid_dataset, test_dataset = PLIDataset(
                 root_dir=data_dir,
                 csv=csv,
                 seed=conf.seed,
@@ -293,7 +356,9 @@ def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, ver
                 model.load_state_dict(
                     torch.load(checkpoint, map_location="cpu", weights_only=True)
                 )
-                for split_name, dataset in (("valid", valid_dataset), ("test", test_dataset)):
+                by_name = {"train": train_dataset, "valid": valid_dataset, "test": test_dataset}
+                for split_name in splits:
+                    dataset = by_name[split_name]
                     probs, labels = score_split(model, conf, dataset, device)
                     frame = dataset.csv
                     # Both are the contract this function rests on: the rebuilt split is
@@ -326,7 +391,7 @@ def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, ver
                     }))
                 if verbose:
                     print(f"{family} seed{seed} epoch{epoch} : scored ({parameters} parameters)", flush=True)
-            del valid_dataset, test_dataset, model
+            del train_dataset, valid_dataset, test_dataset, model
 
     if not frames:
         raise SystemExit("no checkpoints scored")
@@ -345,6 +410,11 @@ def main():
              "(protein families, or the lipid-class sets under --lipid_coldsplit)",
     )
     parser.add_argument("--batch", type=int, default=16, help="only affects the split's sampler")
+    parser.add_argument(
+        "--splits", default="valid,test",
+        help="which splits to score; add 'train' to answer whether the run fits its "
+             "own training set",
+    )
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
@@ -359,6 +429,7 @@ def main():
         seeds=[int(s) for s in args.seeds.split(",")],
         families=families,
         batch=args.batch,
+        splits=tuple(s for s in args.splits.split(",") if s),
     )
     table.to_csv(args.out, index=False)
     print(f"wrote : {args.out}")

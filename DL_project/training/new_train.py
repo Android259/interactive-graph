@@ -686,6 +686,18 @@ if conf.lipid_subclass:
     # lookup; SAFE_PATH_PART is not applied here because a spec is only letters,
     # digits and "+", all safe in a path.
     excluded_set_parts.append("groups_" + conf.lipid_subclass)
+if conf.lipid_species_coldsplit:
+    # Same axis, same "groups_" prefix, same reason. The share goes in as two digits
+    # ("groups_species15") because that is what identifies the split here -- the block
+    # itself is a per-seed draw, so unlike a subclass spec there is no name to put in
+    # the path, and the seed already has its own place in every consumer of it.
+    # int(x + 0.5), not round(): the launchers name the same directory from awk, which
+    # rounds halves up, while Python's round() rounds them to even. The two disagree at
+    # exactly the halfway shares (0.125 -> 13 against 12), and a disagreement here puts
+    # the job's log in one directory and its run/ and test_metrics/ in another.
+    excluded_set_parts.append(
+        "groups_species%02d" % int(conf.lipid_species_coldsplit * 100 + 0.5)
+    )
 if conf.family_only:
     # Third axis, same argument as --lipid_coldsplit just above. --family_only excludes
     # nothing, it RESTRICTS training to one family, so without this every family landed

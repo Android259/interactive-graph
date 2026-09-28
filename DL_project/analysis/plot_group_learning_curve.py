@@ -567,8 +567,11 @@ def main():
         ]
         if args.all_groups
         else [
+            # "random" is --random_split's own exclusion_set value -- the one
+            # value in the table that is not a groups_ name, so prefixing it
+            # would look for a groups_random that never exists.
             args.group
-            if args.group.startswith("groups_")
+            if args.group.startswith("groups_") or args.group == "random"
             else f"groups_{args.group}"
         ]
     )

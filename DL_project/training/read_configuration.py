@@ -1211,6 +1211,17 @@ class ModelConfig:
     # re-spelling of either. Same species-level machinery as lipid_isolation from here
     # on; see dataloader/lipid_subclass_blocks.py.
     lipid_subclass: str = ""
+    # The same axis again, cut at the CONCRETE LIPID instead of at a named chemical set:
+    # a seeded draw of individual lipids leaves training for every protein, sized so the
+    # block carries this share of the table's positives. 0.0 means the flag is off.
+    #
+    # What it holds out is not a set of FullIdentityOfLipid names. A name is a measured
+    # sum composition carrying a bag of candidate structures, and those bags overlap --
+    # 149 of 1226 structures are offered by more than one name -- so a name-level draw
+    # leaves 12-22% of the drawn structures in training under another name. The unit is
+    # therefore the connected component of the name-structure graph, which is the finest
+    # structure-disjoint cut that exists; see dataloader/lipid_species_blocks.py.
+    lipid_species_coldsplit: float = 0.0
     # How much of the held-out family's positives the derived class set has to cover.
     #
     # 0.8 rather than 0.7: the value decides how many of a family's own classes leave
@@ -1759,6 +1770,28 @@ class ModelConfig:
                 "left in training -- the same axis lipid_coldsplit/lipid_isolation are "
                 "on, and it cannot be combined with another holdout on either axis"
             )
+        if self.lipid_species_coldsplit and (
+            self.lipid_coldsplit
+            or self.lipid_isolation
+            or self.lipid_subclass
+            or self.double_coldsplit
+            or self.mixed_coldsplit
+            or self.excluded_groups
+            or self.excluded_subgroups
+        ):
+            raise ValueError(
+                "lipid_species_coldsplit draws individual lipids out with every protein "
+                "left in training -- the same axis lipid_coldsplit/lipid_isolation/"
+                "lipid_subclass are on, and it cannot be combined with another holdout "
+                "on either axis"
+            )
+        if not 0.0 <= self.lipid_species_coldsplit < 1.0:
+            raise ValueError(
+                "lipid_species_coldsplit is the share of the table's positives the "
+                "held-out block has to carry and belongs in [0, 1); 0 turns it off. "
+                f"Got {self.lipid_species_coldsplit}"
+            )
+
         if self.lipid_coldsplit and (self.double_coldsplit or self.mixed_coldsplit):
             raise ValueError(
                 "lipid_coldsplit holds a fixed chemical family out with every protein "
@@ -3579,6 +3612,9 @@ VALUE_HANDLERS = {
     "--lipid_coldsplit=": set_config_field("lipid_coldsplit", read_lipid_coldsplit),
     "--lipid_isolation=": set_config_field("lipid_isolation", read_lipid_isolation),
     "--lipid_subclass=": set_config_field("lipid_subclass", read_lipid_subclass),
+    "--lipid_species_coldsplit=": set_config_field(
+        "lipid_species_coldsplit", float
+    ),
     "--protein_recon_weight=": set_config_field("protein_recon_weight", float),
     "--protein_mask_share=": set_config_field("protein_mask_share", float),
     "--pretrained_checkpoint=": set_config_field("pretrained_checkpoint"),
