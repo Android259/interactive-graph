@@ -63,6 +63,7 @@ from dataloader.sampler import (
 )
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.Dataloader import PLIDataset
+from dataloader.preassembled_loader import PreassembledLoader, preassembly_mode
 from dataloader.lipid_classes import class_level_positive_labels
 from dataloader.protein_graph_builder import FAMILY_NAMES
 from candidate_averaging import (
@@ -401,6 +402,30 @@ if rotating_sampler is not None and train_batches_to_run < len(train_loader):
     )
 valid_batches_to_run = len(valid_loader)
 test_batches_to_run = len(test_loader)
+if conf.deepclip:
+    # Each split as a few tensors on the device, batched by indexing, instead of PyG
+    # re-collating the same cached samples every batch (dataloader/preassembled_
+    # loader.py). Same batches in the same order, and the same lipid candidate drawn
+    # for each row: the loader built above still supplies its own sampler and
+    # generator, and the draws are replayed on the generator get() would have used
+    # (this process's; a split that draws with num_workers > 0 keeps its DataLoader).
+    # Skipped for a split whose samples change in any other way per access, and for
+    # train when the 1740-row cap cuts epochs short -- the DataLoader then stops
+    # mid-sampler (and its workers prefetch past the stop), which this does not mirror.
+    preassembled_splits = []
+    if (
+        preassembly_mode(train_dataset, conf.num_workers)
+        and train_batches_to_run == len(train_loader)
+    ):
+        train_loader = PreassembledLoader(train_loader, device)
+        preassembled_splits.append("train")
+    if preassembly_mode(valid_dataset, conf.num_workers):
+        valid_loader = PreassembledLoader(valid_loader, device)
+        preassembled_splits.append("valid")
+    if preassembly_mode(test_dataset, conf.num_workers):
+        test_loader = PreassembledLoader(test_loader, device)
+        preassembled_splits.append("test")
+    print(f"preassembled splits : {preassembled_splits or 'none'}")
 print("data extracted")
 # Parameter split for bilevel width search. Gate params (lambda) are optimized on the
 # validation split; theta (weights) on train. ConcreteDropout logits are trained on the

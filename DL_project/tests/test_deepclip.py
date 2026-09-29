@@ -193,3 +193,204 @@ def test_filter_count_and_lstm_width_are_configurable():
     expected_convs = 4 * VOCABULARY * 3 + 4 * VOCABULARY * 5
     assert sum(p.numel() for p in model.convs.parameters()) == expected_convs
     assert model.lstm.input_size == 8
+
+
+def _dense_inputs(rows, batch, lengths):
+    """What dataloader/preassembled_loader.py hands the model for the same batch."""
+    from torch_geometric.utils import to_dense_batch
+
+    dense, mask = to_dense_batch(rows, batch)
+    return dense, mask, torch.tensor(lengths, dtype=torch.long)
+
+
+@pytest.mark.parametrize("readout", ["mean", "sum"])
+def test_host_lengths_and_preassembled_input_change_no_bit(readout):
+    """The three ways of feeding DeepCLIP give identical logits AND gradients.
+
+    Flat input alone (the original path), flat input plus host-side lengths (no
+    device->host reads), and the already padded tensor plus its mask (the
+    preassembled loader). Compared with torch.equal, not allclose: these are
+    supposed to be the same computation, not a close one. Train mode, reseeded before
+    each pass, so the dropout draws are covered too.
+    """
+    config = make_config(deepclip_readout=readout, deepclip_conv_init="normal")
+    lengths = [9, 4, 7]
+    rows, batch = one_hot(lengths, seed=3)
+    dense, mask, host_lengths = _dense_inputs(rows, batch, lengths)
+    torch.manual_seed(11)
+    model = DeepCLIP(config).train()
+
+    def run(**kwargs):
+        model.zero_grad()
+        torch.manual_seed(5)
+        out = model(**kwargs)
+        (out[:, 1] * torch.tensor([1.0, -2.0, 0.5])).sum().backward()
+        return out.detach(), [p.grad.clone() for p in model.parameters()]
+
+    reference = run(lip=rows, lip_batch=batch)
+    with_lengths = run(lip=rows, lip_batch=batch, lip_lengths=host_lengths)
+    preassembled = run(
+        lip=dense, lip_batch=None, lip_lengths=host_lengths, lip_mask=mask
+    )
+
+    for other in (with_lengths, preassembled):
+        assert torch.equal(other[0], reference[0])
+        assert all(torch.equal(a, b) for a, b in zip(other[1], reference[1]))
+
+
+class _FixedSamples:
+    """A dataset of fixed samples shaped like Dataloader.get's under --deepclip."""
+
+    _sample_cache_enabled = True
+
+    def __init__(self, count, seed=0):
+        from torch_geometric.data import Data
+
+        from dataloader.protein_graph_builder import ProteinGraphData
+
+        generator = torch.Generator().manual_seed(seed)
+        self.samples = []
+        for row in range(count):
+            length = int(torch.randint(3, 12, (1,), generator=generator))
+            x = torch.zeros(length, VOCABULARY)
+            x[torch.arange(length), torch.randint(0, VOCABULARY, (length,), generator=generator)] = 1.0
+            family = torch.zeros(9)
+            family[row % 9] = 1.0
+            protein = ProteinGraphData(inter=torch.tensor(row % 3 == 0, dtype=torch.long), family=family)
+            protein.tanimoto_pos = torch.tensor([row])
+            protein.descriptor_catalog_input = torch.rand(1, 4, generator=generator)
+            self.samples.append((protein, Data(x=x)))
+        self.labels = torch.tensor([row % 3 == 0 for row in range(count)], dtype=torch.long)
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        return self.samples[idx]
+
+
+def _pyg_loader(dataset, num_workers, balanced):
+    import torch_geometric
+
+    from dataloader.sampler import ClassBalancedBatchSampler
+
+    kwargs = dict(
+        generator=torch.Generator().manual_seed(7),
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,
+    )
+    if balanced:
+        kwargs["batch_sampler"] = ClassBalancedBatchSampler(
+            dataset.labels, 4, generator=torch.Generator().manual_seed(7)
+        )
+    else:
+        kwargs.update(batch_size=4, shuffle=True)
+    return torch_geometric.loader.DataLoader(dataset, **kwargs)
+
+
+@pytest.mark.parametrize("balanced", [False, True])
+@pytest.mark.parametrize("num_workers", [0, 1])
+def test_preassembled_loader_yields_the_dataloaders_batches(num_workers, balanced):
+    """Same rows, same order, same values, epoch after epoch.
+
+    Three epochs, so the per-epoch generator draw (non-persistent workers) and the
+    single draw (persistent ones) are both exercised: getting either wrong reorders
+    the second epoch onwards, not the first.
+    """
+    from torch_geometric.utils import to_dense_batch
+
+    from dataloader.preassembled_loader import PreassembledLoader
+
+    dataset = _FixedSamples(23)
+    reference = _pyg_loader(dataset, num_workers, balanced)
+    fast = PreassembledLoader(_pyg_loader(dataset, num_workers, balanced), torch.device("cpu"))
+
+    assert len(fast) == len(reference)
+    for _ in range(3):
+        pairs = list(zip(reference, fast))
+        assert len(pairs) == len(reference)
+        for (prot, lipid), (fast_prot, fast_lipid) in pairs:
+            for key in ("inter", "family", "tanimoto_pos", "descriptor_catalog_input"):
+                assert torch.equal(getattr(fast_prot, key), prot[key]), key
+            dense, mask = to_dense_batch(lipid.x, lipid.batch)
+            assert torch.equal(fast_lipid.x, dense)
+            assert torch.equal(fast_lipid.mask, mask)
+            assert torch.equal(fast_lipid.lengths, lipid.ptr[1:] - lipid.ptr[:-1])
+
+
+class _DrawnSamples(_FixedSamples):
+    """Rows with 1-4 candidates each, drawn per access exactly as Dataloader.get does."""
+
+    _sample_cache_enabled = False
+    _draw_lipid_candidate = True
+    _augment_residues = False
+    _structural_pretrain_mask = False
+    _candidate_index_by_idx = None
+
+    def __init__(self, count):
+        super().__init__(count * 4, seed=1)
+        self.variants = [self.samples[4 * row: 4 * row + 1 + row % 4] for row in range(count)]
+        self.labels = self.labels[: count]
+
+    def __len__(self):
+        return len(self.variants)
+
+    def candidate_count(self, idx):
+        return len(self.variants[idx])
+
+    def sample_for_candidate(self, idx, candidate):
+        return self.variants[idx][candidate]
+
+    def __getitem__(self, idx):
+        import random
+
+        return self.variants[idx][random.choice(range(len(self.variants[idx])))]
+
+
+def test_drawn_split_with_workers_is_not_preassembled():
+    """With workers the draws happen in the worker processes, which are not replayed."""
+    from dataloader.preassembled_loader import preassembly_mode
+
+    dataset = _DrawnSamples(5)
+    assert preassembly_mode(dataset, num_workers=0) == "drawn"
+    assert preassembly_mode(dataset, num_workers=4) is None
+
+
+@pytest.mark.parametrize("balanced", [False, True])
+def test_preassembled_loader_replays_the_candidate_draws(balanced):
+    """lipid_random_choice: the same candidate per row as the DataLoader drew, 3 epochs."""
+    num_workers = 0
+    import random
+
+    import torch_geometric
+
+    from dataloader.preassembled_loader import PreassembledLoader
+    from dataloader.sampler import ClassBalancedBatchSampler
+
+    dataset = _DrawnSamples(21)
+
+    def loader():
+        kwargs = dict(
+            generator=torch.Generator().manual_seed(7),
+            num_workers=num_workers,
+            persistent_workers=num_workers > 0,
+        )
+        if balanced:
+            kwargs["batch_sampler"] = ClassBalancedBatchSampler(
+                dataset.labels, 4, generator=torch.Generator().manual_seed(7)
+            )
+        else:
+            kwargs.update(batch_size=4, shuffle=True)
+        return torch_geometric.loader.DataLoader(dataset, **kwargs)
+
+    reference = loader()
+    fast = PreassembledLoader(loader(), torch.device("cpu"))
+    for _ in range(3):
+        random.seed(123)
+        expected = [(prot["tanimoto_pos"], lipid.x) for prot, lipid in reference]
+        random.seed(123)
+        got = [(prot.tanimoto_pos, lipid) for prot, lipid in fast]
+        assert len(expected) == len(got)
+        for (positions, flat), (fast_positions, fast_lipid) in zip(expected, got):
+            assert torch.equal(fast_positions, positions)
+            assert torch.equal(fast_lipid.x[fast_lipid.mask], flat)

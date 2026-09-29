@@ -99,7 +99,17 @@ THEMATICAL_PATHS_WALLTIME="${THEMATICAL_PATHS_WALLTIME:-0:20:00}"
 # A --family_only job trains on one family's 240-2400 rows, so at batch 16 that is
 # 15-150 batches per epoch; the arithmetic says this stays well inside 20 minutes, but
 # arithmetic is not a measurement.
-DEEPCLIP_WALLTIME="${DEEPCLIP_WALLTIME:-0:20:00}"
+#
+# Measured since (2026-09-29, test_metrics/deepclip*/*/, training_duration_sec over
+# 263 completed runs): 9-120 s for every family-only / isolation arm on Bigfoot,
+# 350 s for deepclip_start_warm, and the longest ever 508-554 s
+# (deepclip_f1_normal_mean_cral_trio_subclass_pg_npp5, run locally). 15 minutes keeps
+# that worst run's training 1.6x inside the budget with ~6 minutes left for startup
+# and the test pass, which no log times. Walltime is what OAR reserves and what its
+# backfilling schedules on, so the 5 minutes cut from the borrowed 20 are 5 minutes
+# per job of cores nobody uses. PACK_SKIP_DONE re-runs only what a wall kill left
+# unfinished if this ever proves short.
+DEEPCLIP_WALLTIME="${DEEPCLIP_WALLTIME:-0:15:00}"
 
 # How many jobs may sit WAITING in OAR at once. The cluster's own copy of this
 # (<queue>/max_waiting) wins when it exists, so two computers draining the same

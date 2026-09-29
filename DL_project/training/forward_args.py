@@ -20,6 +20,35 @@ from dataloader.pair_descriptors import full_catalog_order
 
 def build_forward_args(config, prot, lipid):
     """Model kwargs for one protein/lipid batch under this configuration."""
+    if getattr(config, "deepclip", False):
+        # DeepCLIP reads the lipid and, under --deepclip_protein_gate/--deepclip_
+        # lipid_descriptors, the descriptor catalog -- nothing else. Under this flag
+        # the dataset no longer builds the protein graph at all (Dataloader.get), so
+        # prot.x/plm/edge_index/... do not exist to be read here.
+        #
+        # lip_lengths: a preassembled batch carries them on the CPU already; a PyG
+        # batch has them as ptr's differences. ptr has usually been moved to the
+        # device by the caller, so that path still reads once from it -- one read in
+        # place of the three architecture/deepclip.py's forward used to make.
+        lip_lengths = getattr(lipid, "lengths", None)
+        if lip_lengths is None:
+            lip_lengths = (lipid.ptr[1:] - lipid.ptr[:-1]).cpu()
+        forward_args = dict(
+            config=config,
+            plm=None,
+            bury=None,
+            prot=None,
+            prot_edgidx=None,
+            prot_e_attr=None,
+            prot_batch=None,
+            lip=lipid.x,
+            lip_batch=getattr(lipid, "batch", None),
+            lip_lengths=lip_lengths,
+            lip_mask=getattr(lipid, "mask", None),
+        )
+        if full_catalog_order(config):
+            forward_args["descriptor_catalog_input"] = prot.descriptor_catalog_input
+        return forward_args
     forward_args = dict(
         config=config,
         plm=prot.plm,

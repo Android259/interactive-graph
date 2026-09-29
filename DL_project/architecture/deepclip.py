@@ -44,6 +44,7 @@ Two deliberate departures from the source, both forced and both local:
 """
 
 import torch
+import torch_geometric
 from torch_geometric.utils import to_dense_batch
 
 from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
@@ -190,7 +191,10 @@ class DeepCLIP(torch.nn.Module):
             torch.nn.init.zeros_(self.gate[-1].bias)
         self.register_buffer("gate_columns", gate_columns, persistent=False)
 
-    def forward(self, lip, lip_batch, descriptor_catalog_input=None):
+    def forward(
+        self, lip, lip_batch, descriptor_catalog_input=None,
+        lip_lengths=None, lip_mask=None,
+    ):
         """`[nodes, vocabulary]` one-hot characters -> `[graphs, 2]` logits.
 
         The lipid arrives flat, every molecule of the batch stacked into one tensor
@@ -199,8 +203,32 @@ class DeepCLIP(torch.nn.Module):
         mask is what keeps padded positions out of the profile sum below -- without
         that, a short molecule in a batch with a long one would have the padding
         counted into its score.
+
+        `lip_lengths` is each molecule's character count as a CPU tensor, known
+        before the batch ever reaches the device. With it, nothing below has to read
+        a number back from the device: to_dense_batch is told the batch size and the
+        padded length instead of computing them (two device->host reads), and the
+        packing below takes these lengths instead of `mask.sum().cpu()` (a third).
+        `lip_mask` additionally says `lip` is ALREADY the padded `[graphs, length,
+        vocabulary]` tensor (dataloader/preassembled_loader.py builds it that way),
+        so to_dense_batch is skipped. Every path produces the same dense tensor and
+        mask bit for bit -- only where the shape comes from differs.
         """
-        dense, mask = to_dense_batch(lip, lip_batch)
+        if lip_mask is not None:
+            dense, mask = lip, lip_mask
+        elif lip_lengths is not None:
+            # disable_dynamic_shapes turns off to_dense_batch's own "is any graph
+            # longer than max_num_nodes" check, itself a device->host read. It can
+            # never fire here: max_num_nodes IS the longest graph.
+            with torch_geometric.experimental_mode("disable_dynamic_shapes"):
+                dense, mask = to_dense_batch(
+                    lip,
+                    lip_batch,
+                    batch_size=int(lip_lengths.numel()),
+                    max_num_nodes=int(lip_lengths.max()),
+                )
+        else:
+            dense, mask = to_dense_batch(lip, lip_batch)
         if self.lipid_descriptor_columns is not None:
             if descriptor_catalog_input is None:
                 raise ValueError(
@@ -232,7 +260,7 @@ class DeepCLIP(torch.nn.Module):
         # ends. (The convolution above needs no such care: a window reaching into the
         # zero padding reads the same nothing it reads running off the end of the
         # string, which is what padding="same" gives it when the molecule is alone.)
-        lengths = mask.sum(dim=1).cpu()
+        lengths = lip_lengths if lip_lengths is not None else mask.sum(dim=1).cpu()
         packed = torch.nn.utils.rnn.pack_padded_sequence(
             scanned, lengths, batch_first=True, enforce_sorted=False
         )
@@ -308,7 +336,9 @@ class DeepCLIP(torch.nn.Module):
         # "mean" divides by this molecule's own character count to remove exactly that.
         score = profile.sum(dim=-1)
         if self.config.deepclip_readout == "mean":
-            score = score / lengths.to(score.device).clamp(min=1)
+            # The same integer counts as `lengths`, summed where the score already is,
+            # so the division needs no host->device copy of them.
+            score = score / mask.sum(dim=1).clamp(min=1)
         if gate_bias is not None:
             # Added AFTER the mean/sum readout, not folded into the profile: a
             # protein's calibration shift is one number per protein, not something

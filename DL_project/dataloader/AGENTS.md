@@ -175,6 +175,22 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
   stream and changes metrics from the second epoch on (measured: valid balanced accuracy
   0.489583 → 0.500000). It also bought no time once these caches existed.
 
+## `--deepclip` samples and the preassembled loader
+
+- Under `--deepclip`, `get()` builds no protein graph: the sample's `ProteinGraphData`
+  holds `inter`, `family` (from `protein_family_one_hot`, no graph files read) and the
+  per-row fields `finish_sample` attaches. `warm_caches` warms only the family one-hots,
+  and the protein tensor cache is not loaded.
+- `new_train.py` then swaps each split's DataLoader for `preassembled_loader.
+  PreassembledLoader`: every (row, candidate) sample collated once onto the device,
+  batches cut by indexing. It drives the original loader's batch sampler, replays the
+  loader's per-iteration base-seed draw and replays the `lipid_random_choice` draws
+  (`random.choice(range(n))`, in-process; a drawn split with `num_workers > 0` keeps
+  its DataLoader), so
+  batches, order and drawn candidates are those of the DataLoader.
+  `get()` = draw + `sample_for_candidate(idx, candidate)`; keep that split if either
+  changes. Verified bit-identical end to end with `analysis/compare_run_outputs.py`.
+
 ## Invariants (do not break)
 
 - Pair IDs are original interaction-CSV row positions and stay stable after

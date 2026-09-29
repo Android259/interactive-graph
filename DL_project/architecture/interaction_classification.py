@@ -312,13 +312,19 @@ class InteractionClassification(torch.nn.Module):
         descriptor_catalog_input=None,
         chain_rank=None,
         recon_index=None,
-        recon_target=None):
+        recon_target=None,
+        lip_lengths=None,
+        lip_mask=None):
         """Encode a batched protein-lipid input and return binary logits."""
 
         if config.deepclip:
             # The lipid is the whole input. Every other argument belongs to modules
-            # __init__ did not build under this flag.
-            return self.deepclip(lip, lip_batch, descriptor_catalog_input)
+            # __init__ did not build under this flag. lip_lengths/lip_mask are read
+            # only here (architecture/deepclip.py's forward says what they save).
+            return self.deepclip(
+                lip, lip_batch, descriptor_catalog_input,
+                lip_lengths=lip_lengths, lip_mask=lip_mask,
+            )
 
         if (
             config.descriptors_head or config.two_pair_descriptors_paths

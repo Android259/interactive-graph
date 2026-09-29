@@ -43,6 +43,7 @@ from dataloader.lipid_isomer_graph_builder import (
     LipidIsomerGraphBuilder,
 )
 from dataloader.protein_graph_builder import (
+    FAMILY_NAMES,
     ProteinGraphBuilder,
     ProteinGraphData,
     protein_node_columns,
@@ -383,9 +384,20 @@ class PLIDataset(
         # DataLoader workers fork after warm_caches(), so a pre-warmed cache is shared
         # copy-on-write instead of being rebuilt once per worker.
         self._protein_graph_cache = {}
-        self._protein_tensor_cache = load_protein_graph_tensor_cache(
-            self.ROOT_DIR, protein_node_columns(config)
+        # --deepclip reads no protein graph (get() below), so the precomputed protein
+        # tensors are not even loaded for it. protein_graph_parts still works without
+        # them if anything asks: it falls back to the source files, as it does
+        # whenever this cache is absent.
+        self._protein_tensor_cache = (
+            {}
+            if getattr(config, "deepclip", False)
+            else load_protein_graph_tensor_cache(
+                self.ROOT_DIR, protein_node_columns(config)
+            )
         )
+        # --deepclip's replacement for the family one-hot protein_graph_parts would
+        # otherwise have produced, keyed by LTPProtein (protein_family_one_hot).
+        self._protein_family_cache = {}
         # Same idea for --lipid_graph_isomers' per-graph_id tensors (dataloader/
         # lipid_graph_tensor_cache.py, built by data/build_lipid_graph_tensor_cache.py):
         # {} when no cache has been built or data/lipid_graphs/ changed since, which
@@ -1919,7 +1931,12 @@ class PLIDataset(
         """
         frame = self.csv if csv is None else csv
         for prot_file in frame["LTPProtein"].dropna().unique().tolist():
-            self.protein_graph_parts(prot_file)
+            if getattr(self.config, "deepclip", False):
+                # Here and not lazily: protein_family reads csvt, which
+                # release_source_artifacts() drops right after this call.
+                self.protein_family_one_hot(prot_file)
+            else:
+                self.protein_graph_parts(prot_file)
         isomer_graphs = getattr(self.config, "lipid_graph_isomers", False)
         if not (isomer_graphs and self._draw_lipid_candidate):
             seen = set()
@@ -1946,6 +1963,24 @@ class PLIDataset(
             ),
             "lipid_graphs": len(self._lipid_graph_cache),
         }
+
+    def protein_family_one_hot(self, prot_file):
+        """The 9-wide family one-hot of one protein, without loading its graph.
+
+        The same vector protein_graph_parts returns next to the graph tensors, built
+        the same way; --deepclip needs only this half of it. Memoized, because
+        protein_family reads csvt, which does not survive initialization.
+        """
+        cached = self._protein_family_cache.get(prot_file)
+        if cached is not None:
+            return cached
+        family = self.protein_family(prot_file)
+        tenfam = torch.zeros(9)
+        for i in range(len(FAMILY_NAMES)):
+            if FAMILY_NAMES[i] == family.strip():
+                tenfam[i] = 1
+        self._protein_family_cache[prot_file] = tenfam
+        return tenfam
 
     def cache_memory_bytes(self):
         """Resident bytes held by the caches, counting each storage once."""
@@ -2387,7 +2422,6 @@ class PLIDataset(
         # idx-keyed cache would serve one split's sample to another -- silently, with no
         # error and no crash, just wrong numbers. pair_id is the row's position in the
         # interaction table and is unique across all three.
-        pair_id = int(self._pair_id_by_idx[idx])
         # On an expanded split the pair id alone no longer identifies a sample: the same
         # pair appears once per candidate, and keying by it would serve one candidate's
         # sample for all of them.
@@ -2396,14 +2430,31 @@ class PLIDataset(
             if self._candidate_index_by_idx is None
             else int(self._candidate_index_by_idx[idx])
         )
-        protein = self._protein_by_idx[idx]
-        smile_global = self._smile_global_by_idx[idx]
-        smile_fragment = self._smile_fragment_by_idx[idx]
         if candidate_index is None and self._draw_lipid_candidate:
             # Drawn here rather than inside the encoder, so the frozen prior and the
             # compatibility input can be read for the same candidate the encoding is
             # built from instead of for whichever one the list happens to start with.
-            candidate_index = self.draw_candidate_index(smile_global, smile_fragment)
+            candidate_index = self.draw_candidate_index(
+                self._smile_global_by_idx[idx], self._smile_fragment_by_idx[idx]
+            )
+        return self.sample_for_candidate(idx, candidate_index)
+
+    def candidate_count(self, idx):
+        """How many candidates draw_candidate_index chooses among for row `idx`."""
+        smile_global, smile_fragment = self._smiles_pair(
+            self._smile_global_by_idx[idx], self._smile_fragment_by_idx[idx]
+        )
+        return len(self.candidate_keys_for_row(smile_global, smile_fragment))
+
+    def sample_for_candidate(self, idx, candidate_index):
+        """Row `idx`'s sample encoded as candidate `candidate_index` (None: the row's
+        fixed encoding). Everything get() does after the draw -- split out so
+        dataloader/preassembled_loader.py can build each candidate's sample once and
+        leave only the draw itself to each access."""
+        pair_id = int(self._pair_id_by_idx[idx])
+        protein = self._protein_by_idx[idx]
+        smile_global = self._smile_global_by_idx[idx]
+        smile_fragment = self._smile_fragment_by_idx[idx]
         cache_key = pair_id if candidate_index is None else (pair_id, candidate_index)
         cached = self._sample_cache.get(cache_key)
         if cached is not None:
@@ -2428,13 +2479,25 @@ class PLIDataset(
             )
             lipid_batch = None
 
-        parts, tenfam = self.protein_graph_parts(protein)
-        parts = self._subsample_residues(parts, pair_id)
-        parts = self._mask_residue_features(parts, pair_id)
+        if getattr(self.config, "deepclip", False):
+            # DeepCLIP's input is the lipid alone (architecture/deepclip.py), so the
+            # protein graph -- residue nodes, 1536-wide ESM3 rows, edges, pocket
+            # masks -- used to be built, collated into every batch and moved to the
+            # device only for the model to ignore it. What remains are the per-row
+            # fields the training loop itself reads: the label and the family
+            # one-hot (group DRO), plus the identifiers finish_sample attaches.
+            protein_graph = ProteinGraphData(
+                inter=self._interaction_tensor[idx],
+                family=self.protein_family_one_hot(protein),
+            )
+        else:
+            parts, tenfam = self.protein_graph_parts(protein)
+            parts = self._subsample_residues(parts, pair_id)
+            parts = self._mask_residue_features(parts, pair_id)
 
-        protein_graph = self.assemble_protein_graph(
-            parts, self._interaction_tensor[idx], tenfam
-        )
+            protein_graph = self.assemble_protein_graph(
+                parts, self._interaction_tensor[idx], tenfam
+            )
         sample = self.finish_sample(
             idx,
             protein_graph,

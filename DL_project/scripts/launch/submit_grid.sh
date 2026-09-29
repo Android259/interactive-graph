@@ -252,6 +252,9 @@ LABEL_LIPID_SUBCLASS=()
 LABEL_LIPID_SPECIES=()
 LABEL_OUTPUT_ROOT=()
 LABEL_WALLTIME=()
+# 1 for a --deepclip label: on a CPU-only cluster its jobs ask for the cores their
+# runs use instead of a whole node (cpu_only_resources below).
+LABEL_CORE_SIZED=()
 # One line per (label_index, group, seed), across ALL labels -- the combined
 # stream the main loop below packs from, label boundaries included on purpose.
 combined_pairs=""
@@ -555,6 +558,11 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     LABEL_LIPID_SPECIES+=("${this_lipid_species}")
     LABEL_OUTPUT_ROOT+=("${this_output_root}")
     LABEL_WALLTIME+=("${this_walltime}")
+    this_core_sized=0
+    if args_file_has_flag "${args_file}" --deepclip; then
+        this_core_sized=1
+    fi
+    LABEL_CORE_SIZED+=("${this_core_sized}")
 
     while IFS=$'\t' read -r group seed; do
         [[ -n "${group}" ]] || continue
@@ -699,9 +707,10 @@ experiment_record() {
 # return 1 and `set -e` would abort the whole submitter.
 oarsub_submit() {
     local job_name="$1" walltime="$2" out_prefix="$3" job_command="$4"
+    local resources="${5:-${OAR_RESOURCES}}"
     local -a oarsub_args=(
         --name "${job_name}"
-        -l "${OAR_RESOURCES},walltime=${walltime}"
+        -l "${resources},walltime=${walltime}"
     )
     if [[ -n "${GPU_PROPERTY}" ]]; then
         oarsub_args+=(-p "${GPU_PROPERTY}")
@@ -720,6 +729,27 @@ oarsub_submit() {
         "${job_command}"
     )
     oarsub "${oarsub_args[@]}"
+}
+
+# What a CPU-only job asks OAR for. kraken-cpu's default is one whole node
+# (OAR_RESOURCES=/nodes=1: 192 cores and all of its memory), which suits a pack big
+# enough to fill it. A --deepclip job runs each experiment on ONE core (1 OMP thread,
+# no DataLoader workers -- run_experiment_pack.sh / run_one_experiment.sh), and a
+# typical deepclip grid is 5 to 45 experiments, so a whole node left 150-190 cores
+# and their memory reserved and idle for the job's whole walltime. Such a job asks
+# for exactly the cores its runs use instead, on one node, so nproc inside the job
+# -- which sets the runner's slot count -- equals the number of runs and every run
+# still starts at once (depth 1, the walltime the pack already requests). Memory is
+# not requested separately anywhere in these scripts; on OAR it comes with the cores.
+# Anything else, or a GPU cluster, keeps OAR_RESOURCES unchanged.
+cpu_only_resources() {
+    local core_sized="$1" runs="$2"
+    local cores=$(( runs * (PACK_CPU_PER_RUN > 0 ? PACK_CPU_PER_RUN : 1) ))
+    if (( CPU_ONLY && core_sized && cores > 0 && cores <= 192 )); then
+        printf '/nodes=1/core=%d\n' "${cores}"
+    else
+        printf '%s\n' "${OAR_RESOURCES}"
+    fi
 }
 
 # The OAR job name. It is what the progress table falls back to for a job whose
@@ -750,11 +780,13 @@ submit_one() {
 
     oarsub_submit "$(job_name "${label_index}" "${group}" "${seed}")" \
         "${LABEL_WALLTIME[label_index]}" \
-        "${out_base}${JOB_ID_TAG}%jobid%" "${job_command}"
+        "${out_base}${JOB_ID_TAG}%jobid%" "${job_command}" \
+        "$(cpu_only_resources "${LABEL_CORE_SIZED[label_index]}" 1)"
 }
 
 submit_pack() {
     local pack_index="$1" spec="$2" pack_count="$3" pack_walltime_str="$4" pack_tag="$5" job_tag="$6"
+    local pack_core_sized="${7:-0}"
     local job_walltime pack_dir job_command runner_env spec_file
 
     job_walltime="$(pack_job_walltime "${pack_count}" "${pack_walltime_str}" "${PACK_WALLTIME_PARALLEL}")"
@@ -816,7 +848,8 @@ submit_pack() {
     oarsub_submit "${oar_job_name}" \
         "${job_walltime}" \
         "${pack_dir}/pack${pack_index}_${JOB_ID_TAG}%jobid%.pack" \
-        "${job_command}"
+        "${job_command}" \
+        "$(cpu_only_resources "${pack_core_sized}" "${pack_count}")"
 }
 
 # --- the grid -----------------------------------------------------------------
@@ -837,6 +870,9 @@ pack_spec=""
 # initialised to the base WALLTIME: a pack built entirely from --fast_attention
 # labels must not inherit the slower default just because it once existed.
 pack_walltime_str=""
+# Stays 1 only while every experiment in the pack is core-sized (LABEL_CORE_SIZED);
+# one other label in a cross-label pack keeps the whole-node request.
+pack_core_sized=1
 declare -A pack_labels_seen=()
 pack_labels_list=()
 
@@ -845,12 +881,13 @@ flush_pack() {
     local tag job_tag
     tag="$(IFS=+; printf '%s' "${pack_labels_list[*]}")"
     job_tag="$(IFS=-; printf '%s' "${pack_labels_list[*]}")"
-    submit_pack "${pack_index}" "${pack_spec}" "${pack_count}" "${pack_walltime_str}" "${tag}" "${job_tag}"
+    submit_pack "${pack_index}" "${pack_spec}" "${pack_count}" "${pack_walltime_str}" "${tag}" "${job_tag}" "${pack_core_sized}"
     pack_index=$((pack_index + 1))
     submitted=$((submitted + 1))
     pack_count=0
     pack_spec=""
     pack_walltime_str=""
+    pack_core_sized=1
     pack_labels_seen=()
     pack_labels_list=()
 }
@@ -865,6 +902,7 @@ while IFS=$'\t' read -r label_index group seed; do
     fi
     pack_spec+="$(experiment_record "${label_index}" "${group}" "${seed}")"$'\n'
     pack_count=$((pack_count + 1))
+    (( LABEL_CORE_SIZED[label_index] )) || pack_core_sized=0
 
     this_walltime="${LABEL_WALLTIME[label_index]}"
     if [[ -z "${pack_walltime_str}" ]] \
