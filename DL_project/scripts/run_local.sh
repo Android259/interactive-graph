@@ -53,7 +53,7 @@
 #                           for memory themselves.
 #   OMP_THREADS_PER_JOB     OMP_NUM_THREADS / MKL_NUM_THREADS given to each job.
 #                           Default: (nproc - RESERVED_CORES) / LOCAL_JOBS.
-#   NUM_WORKERS_PER_JOB     --num_workers given to each job. Default: 1.
+#   NUM_WORKERS_PER_JOB     --num_workers given to each job. Default: 0.
 #   RESERVED_CORES          Cores held back from the CPU split. Default: 25% of
 #                           the CPUs detected on this machine, at least 2.
 #                           Override with 0 on a headless worker.
@@ -72,7 +72,7 @@
 #   MEM_PER_JOB_GIB         RAM budgeted per job. Setting it FIXES the budget at
 #                           that value and turns the measurement below off; left
 #                           unset, it is only the bootstrap for the first jobs
-#                           (default 2) and the real figure is measured from the
+#                           (default 4) and the real figure is measured from the
 #                           jobs themselves as soon as one is training. What is
 #                           budgeted is the MARGINAL cost of one more concurrent
 #                           job, not one job's own RSS in isolation (summing
@@ -217,6 +217,24 @@ if [[ "${CONDA_DEFAULT_ENV:-}" != "Kalinin_project_LP" ]]; then
         printf 'Could not activate the Kalinin_project_LP conda env; using current python3: %s\n' \
             "$(command -v python3 || echo 'not found')" >&2
     fi
+fi
+
+# LOCAL_PYTHON: the interpreter the jobs run under. Default: a CPU-only torch build
+# layered over the conda env (venv --system-site-packages, torch==2.12.1+cpu), because
+# there is no GPU here and the cu130 wheel loads triton/cuBLAS/nvrtc into every process
+# -- 1052 -> 734 MiB peak RSS per job, and memory is what caps how many run at once.
+# Verified bit-identical to the cu130 build on dh_s15_mbw_hid32 (2 epochs): 19/19
+# checkpoint tensors and 407/407 report lines equal, same MKL 2024.2/MKL-DNN 3.11.2
+# underneath. Missing or broken, it falls back to the conda env's python3 with a
+# warning -- nothing here depends on the CPU build existing.
+LOCAL_PYTHON="${LOCAL_PYTHON:-${HOME}/.venvs/ltp_cpu/bin/python}"
+if [[ ! -x "${LOCAL_PYTHON}" ]] \
+    || ! "${LOCAL_PYTHON}" -c 'import torch, torch_geometric' 2>/dev/null; then
+    if [[ -n "${LOCAL_PYTHON}" ]]; then
+        printf 'LOCAL_PYTHON (%s) cannot import torch/torch_geometric; using python3 from the active env.\n' \
+            "${LOCAL_PYTHON}" >&2
+    fi
+    LOCAL_PYTHON="$(command -v python3)"
 fi
 
 POSITIONALS=()
@@ -649,16 +667,23 @@ if (( usable_cores < 1 )); then usable_cores=1; fi
 # below. An explicitly set MEM_PER_JOB_GIB still wins and switches the
 # measurement off, because a caller who names a number has usually measured
 # something this script cannot see.
+#
+# Bootstrap 4, not 2: the first measurement now waits for a finished validation (see
+# update_job_budget), so the bootstrap alone decides how many jobs start before it.
+# At 2 GiB it started 9 of a config that settled at ~2.7 GiB PSS/job (main process
+# plus the train and valid loaders' persistent workers) and ran the machine out of RAM.
 if [[ -n "${MEM_PER_JOB_GIB+set}" ]]; then
     MEM_PER_JOB_FIXED=1
 else
     MEM_PER_JOB_FIXED=0
 fi
-MEM_PER_JOB_GIB="${MEM_PER_JOB_GIB:-2}"
+MEM_PER_JOB_GIB="${MEM_PER_JOB_GIB:-4}"
 # The budget in MiB, which is what everything below works in: a measured figure has
 # no reason to land on a whole gibibyte, and rounding it up to one would give back
 # most of what measuring gained.
 MEM_PER_JOB_MIB=$(( MEM_PER_JOB_GIB * 1024 ))
+# Set once update_job_budget has replaced the bootstrap figure with a measured one.
+MEM_MEASURED=0
 MEM_MARGIN_PERCENT="${MEM_MARGIN_PERCENT:-30}"
 # Memory equivalent of RESERVED_CORES: kept separate (not derived from it)
 # because the two resources are unrelated, and the failure mode here is worse
@@ -747,7 +772,10 @@ MAX_OMP_THREADS_PER_JOB="${MAX_OMP_THREADS_PER_JOB:-${default_max_omp_threads_pe
 if (( OMP_THREADS_PER_JOB > MAX_OMP_THREADS_PER_JOB )); then
     OMP_THREADS_PER_JOB="${MAX_OMP_THREADS_PER_JOB}"
 fi
-NUM_WORKERS_PER_JOB="${NUM_WORKERS_PER_JOB:-1}"
+# 0, not 1: with persistent_workers each split's loader keeps a forked copy of the
+# dataset alive -- measured ~1.7 GiB of a ~2.7 GiB/job footprint for workers at
+# 1-7% CPU. Memory, not cores, caps how many jobs run here, so the workers cost jobs.
+NUM_WORKERS_PER_JOB="${NUM_WORKERS_PER_JOB:-0}"
 
 # Pin each job to one last-level-cache domain. Unpinned, the kernel is free to
 # move a job's threads between domains, and on a machine whose L3 is split (the
@@ -915,17 +943,26 @@ update_job_budget() {
     (( LOCAL_JOBS_FIXED )) && return 0
     local measured headroom affordable cap
     if (( ! MEM_PER_JOB_FIXED )) && [[ -n "${first_log_file}" ]] \
-        && grep -q '^EPOCH ' "${first_log_file}" 2>/dev/null; then
-        # Measured only once a job is past dataset construction and into its first
-        # epoch: before that the model, the optimizer state and the sample caches are
-        # not allocated yet, and a snapshot taken then would budget for a job that
-        # does not exist. Re-measured every time rather than once, because a run's
-        # footprint drifts and because the mean falls as later jobs share more pages.
+        && grep -q '^EPOCH 2:' "${first_log_file}" 2>/dev/null; then
+        # Measured only once a job has finished its first epoch AND its first
+        # validation: before that the model, the optimizer state and the sample caches
+        # are not allocated yet, and the valid loader's persistent DataLoader worker
+        # (a fork of the whole dataset) does not exist yet either. Measuring at the
+        # first `EPOCH` line saw 777 MiB/job for a config that settled at ~2.7 GiB,
+        # which let 9 jobs start and exhausted the 31 GiB here.
         if measured="$(measure_job_memory_mib)"; then
             measured=$(( measured * (100 + MEM_MARGIN_PERCENT) / 100 ))
             # Never zero: it is a divisor below, and a job that measures as free is a
             # broken measurement rather than a job that costs nothing.
             (( measured < 1 )) && measured=1
+            # The peak, not the latest snapshot: a job's footprint grows over its run
+            # (workers forked late, the best-epoch state_dict, the test pass), so a
+            # lower later mean is not a reason to launch more. The first measurement
+            # replaces the bootstrap constant in either direction.
+            if (( MEM_MEASURED && measured < MEM_PER_JOB_MIB )); then
+                measured=${MEM_PER_JOB_MIB}
+            fi
+            MEM_MEASURED=1
             # Said out loud only when it moves by more than 5%. Re-measured before
             # every launch, the figure drifts by a megabyte at a time, and a line per
             # launch would bury the launches themselves.
@@ -1136,7 +1173,7 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     # shellcheck disable=SC2086
     OMP_NUM_THREADS="${OMP_THREADS_PER_JOB}" MKL_NUM_THREADS="${OMP_THREADS_PER_JOB}" \
     OMP_WAIT_POLICY=PASSIVE MALLOC_ARENA_MAX=2 \
-    PYTHONUNBUFFERED=1 "${pin_command[@]}" python3 ./training/new_train.py \
+    PYTHONUNBUFFERED=1 "${pin_command[@]}" "${LOCAL_PYTHON}" ./training/new_train.py \
         ${args_template} \
         --label="${variant}" \
         --seed="${seed}" \

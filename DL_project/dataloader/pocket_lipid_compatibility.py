@@ -74,6 +74,44 @@ def candidates_for_row(row):
     return []
 
 
+def candidate_fields_by_row(csv):
+    """`candidates_for_row` for a whole table at once, one tuple per row.
+
+    Identical result, without a Series per row: `csv.iterrows()` builds one, and the
+    callers ask for this table once per measure -- 21 measures x 11018 rows was 221k
+    Series constructions, 4.8 s of a 9.1 s dataset build with not one RDKit parse
+    among them. Memoized by the raw column texts as well, since rows of one species
+    repeat them.
+    """
+    length = len(csv)
+    columns = [
+        csv[name].to_numpy(dtype=object) if name in csv.columns else [""] * length
+        for name in ("SmileGlobal", "SmileFragment")
+    ]
+    by_text = {}
+    per_row = []
+    for texts in zip(*columns):
+        field = by_text.get(texts)
+        if field is None:
+            # The first column whose text is not a sentinel decides the row, exactly as
+            # candidates_for_row returns on it -- including when its parts all filter
+            # out, which yields an empty field rather than falling through to the next.
+            field = ()
+            for text in texts:
+                text = str(text).strip()
+                if text in EMPTY:
+                    continue
+                field = tuple(
+                    part
+                    for part in (part.strip() for part in text.split(";"))
+                    if part and part not in EMPTY
+                )
+                break
+            by_text[texts] = field
+        per_row.append(field)
+    return per_row
+
+
 def chain_lengths_by_species(csv):
     """Longest acyl chain of EVERY candidate structure, per FullIdentityOfLipid.
 
@@ -165,8 +203,7 @@ def chain_lengths_by_row(csv, isomeric=False, cache=None):
     by_field = {}
     by_smiles = {}
     per_row = []
-    for _, row in csv.iterrows():
-        field = tuple(candidates_for_row(row))
+    for field in candidate_fields_by_row(csv):
         lengths = by_field.get(field)
         if lengths is None:
             lengths = []

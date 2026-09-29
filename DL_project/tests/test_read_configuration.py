@@ -813,3 +813,20 @@ def test_dann_class_conditional_can_be_switched_off_for_ablation():
     ])
 
     assert config.dann_class_conditional is False
+
+
+def test_read_configuration_parses_marginal_balance_weight():
+    assert ModelConfig().marginal_balance_weight is False
+    config = read_named_configuration(["train.py", "--marginal_balance_weight"])
+
+    assert config.marginal_balance_weight is True
+
+
+@pytest.mark.parametrize(
+    "other", ["protein_balance_weight", "protein_class_weight", "protein_class_sqrt_weight"]
+)
+def test_marginal_balance_weight_rejects_other_per_protein_weights(other):
+    config = ModelConfig(marginal_balance_weight=True, **{other: True})
+
+    with pytest.raises(ValueError, match="marginal_balance_weight"):
+        config.validate()

@@ -898,6 +898,14 @@ class ModelConfig:
     deepclip_protein_gate: str = ""
     # Hidden width of that gate's MLP.
     deepclip_gate_hidden: int = 8
+    # THE PROTEIN, as a token sequence feeding that same gate: the pocket residues in
+    # chain order (dataloader/protein_tokens.py), each one-hot in the named alphabets
+    # -- "aa" (amino acid), "3di" (Foldseek structural letter, data/protein_3di.csv)
+    # or "aa,3di" -- plus a chain-break channel. A conv+BiLSTM tower of DeepCLIP's own
+    # shape (--deepclip_widths/filters/lstm/conv_init) reads it, and its mean state is
+    # the gate's input, next to any --deepclip_protein_gate descriptors. The gate's
+    # zero-initialised last layer keeps the run starting as published DeepCLIP.
+    deepclip_protein_tokens: str = ""
     # Protein side only: turns --plmon off (no ESM3 contribution to protein nodes),
     # without touching MolFormer or the lipid graph at all -- the finer-grained sibling
     # --no_embeddings (which implies this too, for backward compatibility) does not
@@ -1550,6 +1558,16 @@ class ModelConfig:
     # unlabeled), and re-matching by subsampling would cut hardest from exactly those.
     # See PLIDataset.get_protein_balance_weights.
     protein_balance_weight: bool = False
+    # Rake the train rows' loss weights (iterative proportional fitting) so that the
+    # weighted positive rate is the SAME inside every protein, every lipid class and
+    # every individual lipid: the train-wide rate, so --class_weights keeps its meaning.
+    # Each of the three one-dimensional priors ("this protein binds", "this class
+    # binds", "this lipid binds") then carries no information, while the joint
+    # (protein x class) is left intact -- measured on --lipid_species_coldsplit=0.15,
+    # npp=5: marginal AUCs 0.634/0.615 -> 0.458/0.471, joint 0.930 -> 0.930
+    # (files/descriptors_head_species15_run_plan.md). A loss weight, so it works under
+    # every architecture. See PLIDataset.get_marginal_balance_weights.
+    marginal_balance_weight: bool = False
     grab_loss: bool = False
     pu_loss: bool = False
     disable_early_stopping: bool = True
@@ -2077,6 +2095,18 @@ class ModelConfig:
                     "learns them as one constant for every protein; asking for both "
                     "would silently drop one. Pick one."
                 )
+            if self.deepclip_protein_tokens:
+                from dataloader.protein_tokens import (  # noqa: PLC0415
+                    parse_protein_token_alphabets,
+                )
+                if not parse_protein_token_alphabets(self.deepclip_protein_tokens):
+                    raise ValueError("deepclip_protein_tokens names no alphabet")
+                if self.deepclip_profile_weights:
+                    raise ValueError(
+                        "deepclip_protein_tokens feeds the gate, which writes the same "
+                        "per-channel profile weights deepclip_profile_weights learns -- "
+                        "pick one"
+                    )
             if self.deepclip_lipid_descriptors or self.deepclip_protein_gate:
                 # Imported here, not at module scope: dataloader.pair_descriptors
                 # pulls in the descriptor machinery, and this module is deliberately
@@ -2141,6 +2171,11 @@ class ModelConfig:
                         f"protein encoder, no cross-attention, no Final_Layer -- so "
                         f"--{name} has nothing to configure. Drop it"
                     )
+        if self.deepclip_protein_tokens and not self.deepclip:
+            raise ValueError(
+                "deepclip_protein_tokens feeds architecture/deepclip.py's gate -- add "
+                "--deepclip"
+            )
         if self.no_protein_geometry and not self.descriptors_in_protein:
             raise ValueError(
                 "no_protein_geometry drops residue_type/sas_area/volume from every "
@@ -2522,6 +2557,18 @@ class ModelConfig:
                 "two per-protein balancing tables balances neither"
             )
 
+        if self.marginal_balance_weight and (
+            self.protein_balance_weight or self.protein_class_weight
+            or self.protein_class_sqrt_weight
+        ):
+            # Same reason as protein_balance_weight above: common_weights_parts
+            # averages its parts, and marginal_balance_weight already balances the
+            # protein axis -- averaged with a second per-protein table it balances none.
+            raise ValueError(
+                "marginal_balance_weight cannot be combined with protein_balance_weight, "
+                "protein_class_weight or protein_class_sqrt_weight: the parts are "
+                "averaged, and it already balances every protein on its own"
+            )
         if self.protein_class_weight and self.protein_class_sqrt_weight:
             raise ValueError(
                 "protein_class_weight and protein_class_sqrt_weight "
@@ -2592,9 +2639,12 @@ class ModelConfig:
                 "bilinear_weight_decay requires bilinear_fusion -- there is no "
                 "self.bilinear parameter group to apply it to otherwise"
             )
-        if self.deepclip_gate_weight_decay is not None and not self.deepclip_protein_gate:
+        if self.deepclip_gate_weight_decay is not None and not (
+            self.deepclip_protein_gate or self.deepclip_protein_tokens
+        ):
             raise ValueError(
-                "deepclip_gate_weight_decay requires deepclip_protein_gate -- there is "
+                "deepclip_gate_weight_decay requires deepclip_protein_gate or "
+                "deepclip_protein_tokens -- there is "
                 "no gate parameter group to apply it to otherwise"
             )
         if self.deepclip_gate_weight_decay is not None and self.deepclip_gate_weight_decay < 0.0:
@@ -3465,6 +3515,8 @@ SIMPLE_BOOL_FLAGS = {
     "--mixed_coldsplit": "mixed_coldsplit",
     "protein_balance_weight": "protein_balance_weight",
     "--protein_balance_weight": "protein_balance_weight",
+    "marginal_balance_weight": "marginal_balance_weight",
+    "--marginal_balance_weight": "marginal_balance_weight",
     "protein_class_weight": "protein_class_weight",
     "--protein_class_weight": "protein_class_weight",
     "protein_class_sqrt_weight": "protein_class_sqrt_weight",
@@ -3634,6 +3686,7 @@ VALUE_HANDLERS = {
     "--deepclip_lipid_descriptors=": set_config_field("deepclip_lipid_descriptors"),
     "--deepclip_protein_gate=": set_config_field("deepclip_protein_gate"),
     "--deepclip_gate_hidden=": set_config_field("deepclip_gate_hidden", int),
+    "--deepclip_protein_tokens=": set_config_field("deepclip_protein_tokens"),
     "--lipid_first_fragment_only=": set_config_field(
         "lipid_first_fragment_only", read_bool
     ),

@@ -48,6 +48,11 @@ import torch_geometric
 from torch_geometric.utils import to_dense_batch
 
 from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
+from dataloader.protein_tokens import (
+    parse_protein_token_alphabets,
+    protein_token_one_hot,
+    protein_token_width,
+)
 from dataloader.smiles_tokens import SMILES_VOCABULARY
 from training.read_configuration import parse_deepclip_widths
 
@@ -149,6 +154,32 @@ class DeepCLIP(torch.nn.Module):
             # Initialised at 1.0: the run starts as published DeepCLIP exactly, and
             # only departs from it if the gradient pays for the departure.
             self.profile_weights = torch.nn.Parameter(torch.ones(hidden))
+        # --deepclip_protein_tokens: the pocket as a token sequence (dataloader/
+        # protein_tokens.py), read by a tower of DeepCLIP's own shape -- the same
+        # widths, filter count, init and LSTM width as the lipid side. Its mean state
+        # is one more input of the gate below, so the protein still acts only through
+        # the gate's bounded, mean-centred weights and bias, never on the score directly.
+        self.protein_alphabets = parse_protein_token_alphabets(
+            getattr(config, "deepclip_protein_tokens", "")
+        )
+        self.protein_convs = None
+        self.protein_lstm = None
+        if self.protein_alphabets:
+            self.protein_convs = torch.nn.ModuleList([
+                torch.nn.Conv1d(
+                    protein_token_width(self.protein_alphabets), filters, width,
+                    padding="same", bias=False,
+                )
+                for width in widths
+            ])
+            for conv in self.protein_convs:
+                if config.deepclip_conv_init == "constant":
+                    torch.nn.init.constant_(conv.weight, 0.01)
+                else:
+                    torch.nn.init.normal_(conv.weight, std=0.01)
+            self.protein_lstm = torch.nn.LSTM(
+                filters * len(widths), hidden, batch_first=True, bidirectional=True,
+            )
         self.gate = None
         gate_columns = None
         gate_tokens = parse_descriptor_list(getattr(config, "deepclip_protein_gate", ""))
@@ -160,6 +191,8 @@ class DeepCLIP(torch.nn.Module):
             gate_columns = torch.tensor(
                 [catalog_index[name] for name in gate_tokens], dtype=torch.long
             )
+        if gate_tokens or self.protein_alphabets:
+            gate_input_width = len(gate_tokens) + (hidden if self.protein_alphabets else 0)
             gate_hidden = int(getattr(config, "deepclip_gate_hidden", 8))
             # hidden + 1 outputs, not hidden: the extra one is an additive bias on the
             # final score (forward() splits it back off), not another profile weight.
@@ -180,7 +213,7 @@ class DeepCLIP(torch.nn.Module):
             # own scale, instead of every departure from 0 having to run through the
             # same channels that also carry the sequence signal.
             self.gate = torch.nn.Sequential(
-                torch.nn.Linear(len(gate_tokens), gate_hidden),
+                torch.nn.Linear(gate_input_width, gate_hidden),
                 torch.nn.ReLU(),
                 torch.nn.Linear(gate_hidden, hidden + 1),
             )
@@ -191,9 +224,35 @@ class DeepCLIP(torch.nn.Module):
             torch.nn.init.zeros_(self.gate[-1].bias)
         self.register_buffer("gate_columns", gate_columns, persistent=False)
 
+    def protein_summary(self, protein_tokens, protein_token_count):
+        """[batch, longest, 3] pocket token codes -> [batch, deepclip_lstm].
+
+        The lipid side's conv -> ReLU -> packed BiLSTM -> summed directions, over the
+        pocket instead of the molecule, then averaged over that pocket's own residues.
+        Packed for the same reason as the lipid: the backward direction must start at
+        the last real residue, not at the padding up to the run's longest pocket.
+        """
+        dense = protein_token_one_hot(protein_tokens, self.protein_alphabets)
+        lengths = protein_token_count.reshape(-1)
+        scanned = torch.cat(
+            [conv(dense.transpose(1, 2)) for conv in self.protein_convs], dim=1
+        )
+        scanned = self.conv_act(scanned).transpose(1, 2)
+        packed = torch.nn.utils.rnn.pack_padded_sequence(
+            scanned, lengths.cpu(), batch_first=True, enforce_sorted=False
+        )
+        states, _ = self.protein_lstm(packed)
+        states, _ = torch.nn.utils.rnn.pad_packed_sequence(
+            states, batch_first=True, total_length=scanned.shape[1]
+        )
+        states = states[:, :, : self.hidden] + states[:, :, self.hidden :]
+        # pad_packed_sequence already leaves zeros past each pocket's end.
+        return states.sum(dim=1) / lengths.clamp(min=1).unsqueeze(-1).to(states.dtype)
+
     def forward(
         self, lip, lip_batch, descriptor_catalog_input=None,
         lip_lengths=None, lip_mask=None,
+        protein_tokens=None, protein_token_count=None,
     ):
         """`[nodes, vocabulary]` one-hot characters -> `[graphs, 2]` logits.
 
@@ -277,13 +336,26 @@ class DeepCLIP(torch.nn.Module):
         # it, rather than only existing inside this expression.
         gate_bias = None
         if self.gate is not None:
-            if descriptor_catalog_input is None:
-                raise ValueError(
-                    "deepclip_protein_gate requires descriptor_catalog_input"
+            gate_inputs = []
+            if self.gate_columns is not None:
+                if descriptor_catalog_input is None:
+                    raise ValueError(
+                        "deepclip_protein_gate requires descriptor_catalog_input"
+                    )
+                gate_inputs.append(descriptor_catalog_input.index_select(
+                    1, self.gate_columns
+                ).to(states.dtype))
+            if self.protein_lstm is not None:
+                if protein_tokens is None or protein_token_count is None:
+                    raise ValueError(
+                        "deepclip_protein_tokens requires protein_tokens and "
+                        "protein_token_count"
+                    )
+                gate_inputs.append(
+                    self.protein_summary(protein_tokens, protein_token_count)
+                    .to(states.dtype)
                 )
-            gate_input = descriptor_catalog_input.index_select(
-                1, self.gate_columns
-            ).to(states.dtype)
+            gate_input = torch.cat(gate_inputs, dim=-1)
             gate_out = torch.tanh(self.gate(gate_input))
             # tanh bounds every gate output to (-1, 1) before it touches the profile or
             # the score, so neither the per-channel weights nor the bias can run away to

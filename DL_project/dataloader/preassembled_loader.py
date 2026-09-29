@@ -1,8 +1,12 @@
 """A whole split held as a few tensors on the device, batched by indexing.
 
-For --deepclip only. A sample of such a run is fully determined by its row and, on
-the training split under lipid_random_choice (the default), by which candidate
-structure was drawn for it on that access. The DataLoader nevertheless rebuilt and
+For --deepclip, and for --descriptors_head --descriptor_names (pair_descriptors.
+descriptor_catalog_only), whose samples carry no lipid at all: an empty lipid Data,
+served as a lipid batch with x=None.
+
+A sample of such a run is fully determined by its row and, on the training split
+under lipid_random_choice (the default), by which candidate structure was drawn for
+it on that access. The DataLoader nevertheless rebuilt and
 re-collated those samples every batch of every epoch -- PyG's Python-level
 concatenation, key by key and sample by sample, then a transfer to the device -- for a
 model of ~2k parameters whose own arithmetic is a small part of that. Here every
@@ -136,13 +140,21 @@ class PreassembledLoader:
                         f"preassembly handles graph-level fields only, got {key!r}"
                     )
                 protein_rows.setdefault(key, []).append(protein_graph[key])
-            if set(lipid_graph.keys()) != {"x"}:
+            lipid_keys = set(lipid_graph.keys())
+            if lipid_keys == set():
+                lipid_rows.append(None)
+                continue
+            if lipid_keys != {"x"}:
                 raise ValueError(
                     "preassembly expects the lipid as one-hot characters alone, got "
                     f"{sorted(lipid_graph.keys())}"
                 )
             lipid_rows.append(lipid_graph.x)
         count = len(lipid_rows)
+        if any(row is None for row in lipid_rows) and not all(
+            row is None for row in lipid_rows
+        ):
+            raise ValueError("some samples carry a lipid and some do not")
         for key, rows in protein_rows.items():
             if len(rows) != count:
                 raise ValueError(f"{key!r} is missing from some samples")
@@ -154,6 +166,9 @@ class PreassembledLoader:
             key: torch.stack(rows).to(device) for key, rows in protein_rows.items()
         }
 
+        self._has_lipid = lipid_rows[0] is not None
+        if not self._has_lipid:
+            return
         lengths = torch.tensor([row.shape[0] for row in lipid_rows], dtype=torch.long)
         longest = int(lengths.max())
         width = lipid_rows[0].shape[1]
@@ -189,6 +204,9 @@ class PreassembledLoader:
             elif picked.dim() == 2:
                 picked = picked.reshape(-1)
             protein[key] = picked
+        protein["num_graphs"] = len(indices)
+        if not self._has_lipid:
+            return PreassembledBatch(protein), PreassembledBatch({"x": None, "batch": None})
         lengths = self._lengths.index_select(0, host_index)
         longest = int(lengths.max())
         lipid = {
@@ -197,7 +215,6 @@ class PreassembledLoader:
             "lengths": lengths,
             "batch": None,
         }
-        protein["num_graphs"] = len(indices)
         return (
             PreassembledBatch(protein),
             PreassembledBatch(lipid, host_fields=("lengths",)),

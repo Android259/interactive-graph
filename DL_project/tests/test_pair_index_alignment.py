@@ -414,3 +414,38 @@ def test_tanimoto_weights_align_with_id2pos_positions():
     assert weights.shape == (len(dataset.id2pos),)
     # Identical fingerprints (255 everywhere) mean zero distinctiveness.
     assert torch.allclose(weights, torch.zeros(2))
+
+
+def test_marginal_balance_weights_flatten_protein_class_and_lipid_rates():
+    # Protein A is 3:1 positive, protein B 1:3 -- a live protein prior. Every lipid
+    # carries one label of each kind, and the weights that flatten all three margins
+    # exist (the PE(36:1) pair must weigh as much as A's three positives together).
+    lipids = [
+        "Phosphatidylcholine (34:1)", "Phosphatidylcholine (36:1)",
+        "Phosphatidylethanolamine (34:1)", "Phosphatidylethanolamine (36:1)",
+    ]
+    rows = {
+        "pair_id": list(range(8)),
+        "LTPProtein": ["A"] * 4 + ["B"] * 4,
+        "FullIdentityOfLipid": lipids + lipids,
+        "Interaction": [1, 1, 1, 0, 0, 0, 0, 1],
+    }
+    dataset = make_dataset(rows, ordered_pair_ids=[7, 6, 5, 4, 3, 2, 1, 0])
+
+    weights = dataset.get_marginal_balance_weights()
+
+    assert weights.shape == (8,)
+    assert weights.mean().item() == pytest.approx(1.0)
+    row_weight = pd.Series(
+        [weights[dataset.id2pos[pair_id]].item() for pair_id in rows["pair_id"]]
+    )
+    table = pd.DataFrame(rows).assign(
+        weight=row_weight,
+        lipid_class=lambda frame: frame["FullIdentityOfLipid"].str.split(" ").str[0],
+    )
+    for key in ("LTPProtein", "lipid_class", "FullIdentityOfLipid"):
+        weighted_rate = (
+            (table["weight"] * table["Interaction"]).groupby(table[key]).sum()
+            / table["weight"].groupby(table[key]).sum()
+        )
+        assert weighted_rate.to_numpy() == pytest.approx(0.5, abs=1e-3), key

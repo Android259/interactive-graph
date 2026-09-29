@@ -480,6 +480,22 @@ def resolve_requested_tokens(*raw_lists):
     return tuple(sorted(union))
 
 
+def descriptor_catalog_only(config):
+    """True when descriptor_catalog_input is ALL the model reads of a sample.
+
+    --descriptors_head with --descriptor_names: Final_Layer runs NamedDescriptorHead on
+    that one tensor and returns (architecture/final_layer.py), so the protein graph
+    (1536-wide ESM3 rows per residue) and the MoLFormer lipid encoding were built,
+    collated into every batch and then ignored -- ~26 MB of torch.cat per batch of 16
+    against 0.3 kB per sample actually read. Dataloader builds lean samples under this,
+    and new_train.py preassembles them exactly as it does for --deepclip.
+    """
+    return bool(
+        getattr(config, "descriptors_head", False)
+        and getattr(config, "descriptor_names", "")
+    )
+
+
 def full_catalog_order(config):
     """Every raw name-list that feeds the ONE shared descriptor_catalog_input tensor for
     this config, resolved through resolve_requested_tokens to the single deterministic
@@ -1309,7 +1325,7 @@ def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
     chain_lengths_by_row -- an entry the cache has never seen is computed here exactly
     as without a cache.
     """
-    from dataloader.pocket_lipid_compatibility import candidates_for_row
+    from dataloader.pocket_lipid_compatibility import candidate_fields_by_row
 
     fn = _MEASURES[measure]
     raw_to_canonical = cache["raw_to_canonical"] if cache else {}
@@ -1317,8 +1333,7 @@ def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
     by_field = {}
     by_smiles = {}
     per_row = []
-    for _, row in csv.iterrows():
-        field = tuple(candidates_for_row(row))
+    for field in candidate_fields_by_row(csv):
         values = by_field.get(field)
         if values is None:
             values = []

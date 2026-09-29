@@ -190,6 +190,11 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
   batches, order and drawn candidates are those of the DataLoader.
   `get()` = draw + `sample_for_candidate(idx, candidate)`; keep that split if either
   changes. Verified bit-identical end to end with `analysis/compare_run_outputs.py`.
+- `--descriptors_head --descriptor_names` (`pair_descriptors.descriptor_catalog_only`)
+  takes the same path with less still: no protein graph, no lipid encoding (empty lipid
+  `Data`, no MoLFormer table or protein tensor cache loaded) -- the model reads only
+  `descriptor_catalog_input`. Train is preassembled under the 1740-row cap too when
+  `num_workers=0`. Bit-identical on `dh_s15_mbw_hid32` (2 epochs), ~2x per epoch.
 
 ## Invariants (do not break)
 

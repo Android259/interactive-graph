@@ -15,11 +15,27 @@ three places: a config option added here reaches training, validation and profil
 once, or fails in all three at once, which is the honest outcome.
 """
 
-from dataloader.pair_descriptors import full_catalog_order
+from dataloader.pair_descriptors import descriptor_catalog_only, full_catalog_order
 
 
 def build_forward_args(config, prot, lipid):
     """Model kwargs for one protein/lipid batch under this configuration."""
+    if descriptor_catalog_only(config):
+        # The model reads descriptor_catalog_input alone (Final_Layer.forward's
+        # NamedDescriptorHead branch), and the dataset builds neither the protein graph
+        # nor the lipid encoding under this (Dataloader.sample_for_candidate).
+        return dict(
+            config=config,
+            plm=None,
+            bury=None,
+            prot=None,
+            prot_edgidx=None,
+            prot_e_attr=None,
+            prot_batch=None,
+            lip=None,
+            lip_batch=None,
+            descriptor_catalog_input=prot.descriptor_catalog_input,
+        )
     if getattr(config, "deepclip", False):
         # DeepCLIP reads the lipid and, under --deepclip_protein_gate/--deepclip_
         # lipid_descriptors, the descriptor catalog -- nothing else. Under this flag
@@ -48,6 +64,9 @@ def build_forward_args(config, prot, lipid):
         )
         if full_catalog_order(config):
             forward_args["descriptor_catalog_input"] = prot.descriptor_catalog_input
+        if getattr(config, "deepclip_protein_tokens", ""):
+            forward_args["protein_tokens"] = prot.protein_tokens
+            forward_args["protein_token_count"] = prot.protein_token_count
         return forward_args
     forward_args = dict(
         config=config,

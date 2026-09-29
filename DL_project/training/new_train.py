@@ -63,6 +63,7 @@ from dataloader.sampler import (
 )
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.Dataloader import PLIDataset
+from dataloader.pair_descriptors import descriptor_catalog_only
 from dataloader.preassembled_loader import PreassembledLoader, preassembly_mode
 from dataloader.lipid_classes import class_level_positive_labels
 from dataloader.protein_graph_builder import FAMILY_NAMES
@@ -171,6 +172,10 @@ if conf.protein_class_sqrt_weight:
 if conf.lipid_propensity_weight:
     common_weights_parts.append(
         train_dataset.get_lipid_propensity_weights().to(device)
+    )
+if conf.marginal_balance_weight:
+    common_weights_parts.append(
+        train_dataset.get_marginal_balance_weights().to(device)
     )
 common_weights = (
     torch.stack(common_weights_parts).mean(dim=0)
@@ -402,7 +407,7 @@ if rotating_sampler is not None and train_batches_to_run < len(train_loader):
     )
 valid_batches_to_run = len(valid_loader)
 test_batches_to_run = len(test_loader)
-if conf.deepclip:
+if conf.deepclip or descriptor_catalog_only(conf):
     # Each split as a few tensors on the device, batched by indexing, instead of PyG
     # re-collating the same cached samples every batch (dataloader/preassembled_
     # loader.py). Same batches in the same order, and the same lipid candidate drawn
@@ -410,12 +415,13 @@ if conf.deepclip:
     # generator, and the draws are replayed on the generator get() would have used
     # (this process's; a split that draws with num_workers > 0 keeps its DataLoader).
     # Skipped for a split whose samples change in any other way per access, and for
-    # train when the 1740-row cap cuts epochs short -- the DataLoader then stops
-    # mid-sampler (and its workers prefetch past the stop), which this does not mirror.
+    # train when the 1740-row cap cuts epochs short AND workers run -- they prefetch
+    # past the stop, which this does not mirror. Without workers both loaders stop the
+    # same way: the loop fetches one batch past the cap (drawing its candidates) and
+    # breaks, and a generator is left mid-sampler exactly like the DataLoader iterator.
     preassembled_splits = []
-    if (
-        preassembly_mode(train_dataset, conf.num_workers)
-        and train_batches_to_run == len(train_loader)
+    if preassembly_mode(train_dataset, conf.num_workers) and (
+        train_batches_to_run == len(train_loader) or conf.num_workers == 0
     ):
         train_loader = PreassembledLoader(train_loader, device)
         preassembled_splits.append("train")

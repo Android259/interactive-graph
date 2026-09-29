@@ -31,6 +31,7 @@ from dataloader.pocket_lipid_compatibility import (
 from dataloader.pair_descriptors import (
     as_arrays,
     chain_length_angstrom,
+    descriptor_catalog_only,
     descriptor_values_by_row,
     full_catalog_order,
 )
@@ -50,6 +51,10 @@ from dataloader.protein_graph_builder import (
     restrict_parts_to_mask,
 )
 from dataloader.protein_graph_tensor_cache import load_protein_graph_tensor_cache
+from dataloader.protein_tokens import (
+    build_protein_token_table,
+    parse_protein_token_alphabets,
+)
 from dataloader.lipid_graph_tensor_cache import load_lipid_graph_tensor_cache
 from dataloader.tanimoto_compact import load_compact
 from dataloader.lipid_isolation_blocks import (
@@ -336,8 +341,12 @@ class PLIDataset(
         # the MoLFormer table: its encoding is built from the canonical SMILES string
         # itself (dataloader/smiles_tokens.py), so loading 267 MiB of per-token
         # embeddings here would be pure startup cost with no reader.
-        if not getattr(self.config, "lipid_graph_isomers", False) and not getattr(
-            self.config, "lipid_smiles_tokens", False
+        # descriptor_catalog_only (--descriptors_head --descriptor_names) joins them:
+        # its samples carry no lipid encoding at all (sample_for_candidate).
+        if (
+            not getattr(self.config, "lipid_graph_isomers", False)
+            and not getattr(self.config, "lipid_smiles_tokens", False)
+            and not descriptor_catalog_only(self.config)
         ):
             # The non-isomeric table is the deterministic rebuild: 1226 entries, every
             # candidate of every row (the previous one held 434 and covered all
@@ -388,9 +397,10 @@ class PLIDataset(
         # tensors are not even loaded for it. protein_graph_parts still works without
         # them if anything asks: it falls back to the source files, as it does
         # whenever this cache is absent.
+        # Same for descriptor_catalog_only, whose samples carry no protein graph either.
         self._protein_tensor_cache = (
             {}
-            if getattr(config, "deepclip", False)
+            if getattr(config, "deepclip", False) or descriptor_catalog_only(config)
             else load_protein_graph_tensor_cache(
                 self.ROOT_DIR, protein_node_columns(config)
             )
@@ -398,6 +408,19 @@ class PLIDataset(
         # --deepclip's replacement for the family one-hot protein_graph_parts would
         # otherwise have produced, keyed by LTPProtein (protein_family_one_hot).
         self._protein_family_cache = {}
+        # --deepclip_protein_tokens: each protein's pocket as token codes (dataloader/
+        # protein_tokens.py), built once for every protein this table can serve and
+        # padded to the longest of them, so every sample has the same shape.
+        protein_token_alphabets = parse_protein_token_alphabets(
+            getattr(config, "deepclip_protein_tokens", "")
+        )
+        self._protein_tokens, self._protein_token_counts = (
+            build_protein_token_table(
+                self.ROOT_DIR, self.protein_names, protein_token_alphabets
+            )
+            if protein_token_alphabets
+            else ({}, {})
+        )
         # Same idea for --lipid_graph_isomers' per-graph_id tensors (dataloader/
         # lipid_graph_tensor_cache.py, built by data/build_lipid_graph_tensor_cache.py):
         # {} when no cache has been built or data/lipid_graphs/ changed since, which
@@ -1893,6 +1916,86 @@ class PLIDataset(
 
         return weights / weights.mean().clamp_min(1e-8)
 
+    MARGINAL_BALANCE_ITERATIONS = 100
+
+    def get_marginal_balance_weights(self):
+        """Per-row weights under which no protein, lipid class or lipid is "usually positive".
+
+        Iterative proportional fitting (raking) over three keys of the train rows --
+        ``LTPProtein``, the lipid class (``lipid_class_series``) and
+        ``FullIdentityOfLipid`` -- rescales the positives and the negatives of every key
+        so that the key's weighted positive rate equals the train-wide rate, one key
+        after another, until all three hold at once. Each one-dimensional prior then
+        carries no information about the label, while the joint of two keys (which
+        protein takes which class) is not a margin and is left alone: on
+        --lipid_species_coldsplit=0.15, npp=5, the protein and class priors fall from
+        AUC 0.634/0.615 to 0.458/0.471 on the held-out block and protein x class stays
+        at 0.930.
+
+        The target is the train-wide rate rather than 0.5, so the positive:negative
+        balance the loss already sees -- and that --class_weights corrects -- is not
+        moved a second time.
+
+        A key whose rows are all of one label cannot be rebalanced by weighting and
+        keeps its weights; how many there are is printed. Converges to ~1e-4 in 20
+        iterations on this table; 100 are run.
+
+        Returned normalized by the mean and indexed by ``id2pos``, like the other
+        weight tables here.
+        """
+        labels = self.csvtrain["Interaction"].astype(int).to_numpy()
+        keys = {
+            "protein": self.csvtrain["LTPProtein"].astype(str).str.lower(),
+            "lipid class": lipid_class_series(self.csvtrain).astype(str).str.lower(),
+            "lipid": self.csvtrain["FullIdentityOfLipid"].astype(str),
+        }
+        codes = {name: pandas.factorize(values)[0] for name, values in keys.items()}
+        positive = labels == 1
+        target = float(positive.mean())
+        row_weight = np.ones(len(labels), dtype=np.float64)
+
+        def cell_sums(code):
+            positive_sum = np.bincount(code, weights=row_weight * positive)
+            total_sum = np.bincount(code, weights=row_weight)
+            return positive_sum, total_sum
+
+        for _ in range(self.MARGINAL_BALANCE_ITERATIONS):
+            for code in codes.values():
+                positive_sum, total_sum = cell_sums(code)
+                negative_sum = total_sum - positive_sum
+                mixed = (positive_sum > 0) & (negative_sum > 0)
+                positive_factor = np.where(
+                    mixed, target * total_sum / np.maximum(positive_sum, 1e-12), 1.0
+                )
+                negative_factor = np.where(
+                    mixed, (1.0 - target) * total_sum / np.maximum(negative_sum, 1e-12), 1.0
+                )
+                row_weight *= np.where(positive, positive_factor[code], negative_factor[code])
+            row_weight /= row_weight.mean()
+
+        report = []
+        for name, code in codes.items():
+            positive_sum, total_sum = cell_sums(code)
+            mixed = (positive_sum > 0) & (positive_sum < total_sum)
+            residual = (
+                float(np.abs(positive_sum[mixed] / total_sum[mixed] - target).max())
+                if mixed.any() else 0.0
+            )
+            report.append(
+                f"{name} {int(mixed.sum())} keys (residual {residual:.1e}, "
+                f"{int((~mixed).sum())} single-label)"
+            )
+        print(
+            f"marginal balance weights : target positive rate {target:.3f} | "
+            + " | ".join(report)
+            + f" | weight range {row_weight.min():.3f}-{row_weight.max():.3f}"
+        )
+
+        weights = torch.zeros(len(self.id2pos), dtype=torch.float32)
+        for pair_id, weight in zip(self.csvtrain["pair_id"].astype(int), row_weight):
+            weights[self.id2pos[int(pair_id)]] = float(weight)
+        return weights / weights.mean().clamp_min(1e-8)
+
     def get_protein_class_weights(self, square_root=False):
         """Return normalized inverse-frequency weights by protein and class."""
         protein_names = self.csvtrain["LTPProtein"].str.lower()
@@ -1930,8 +2033,9 @@ class PLIDataset(
         Returns the entry count of each cache, for reporting.
         """
         frame = self.csv if csv is None else csv
+        catalog_only = descriptor_catalog_only(self.config)
         for prot_file in frame["LTPProtein"].dropna().unique().tolist():
-            if getattr(self.config, "deepclip", False):
+            if getattr(self.config, "deepclip", False) or catalog_only:
                 # Here and not lazily: protein_family reads csvt, which
                 # release_source_artifacts() drops right after this call.
                 self.protein_family_one_hot(prot_file)
@@ -1945,7 +2049,13 @@ class PLIDataset(
                 if key in seen:
                     continue
                 seen.add(key)
-                if isomer_graphs:
+                if catalog_only:
+                    # No encoding is ever read; only the candidate keys the draw
+                    # picks from (RDKit canonicalization, no random draw).
+                    self.candidate_keys_for_row(
+                        row["SmileGlobal"], row["SmileFragment"]
+                    )
+                elif isomer_graphs:
                     self.make_graph_lipid(
                         row["SmileGlobal"], row["SmileFragment"]
                     )
@@ -2460,8 +2570,11 @@ class PLIDataset(
         if cached is not None:
             return cached
 
-        if getattr(self.config, "lipid_graph_isomers", False) or getattr(
-            self.config, "no_embeddings", False
+        catalog_only = descriptor_catalog_only(self.config)
+        if (
+            getattr(self.config, "lipid_graph_isomers", False)
+            or getattr(self.config, "no_embeddings", False)
+            or catalog_only
         ):
             # no_embeddings: MolFormer is not used at all -- finish_sample builds the
             # lipid graph's single node from pair_descriptor_input instead (see
@@ -2479,8 +2592,10 @@ class PLIDataset(
             )
             lipid_batch = None
 
-        if getattr(self.config, "deepclip", False):
-            # DeepCLIP's input is the lipid alone (architecture/deepclip.py), so the
+        if getattr(self.config, "deepclip", False) or catalog_only:
+            # descriptor_catalog_only reads less still: only descriptor_catalog_input,
+            # which finish_sample attaches. DeepCLIP's input is the lipid alone
+            # (architecture/deepclip.py), so the
             # protein graph -- residue nodes, 1536-wide ESM3 rows, edges, pocket
             # masks -- used to be built, collated into every batch and moved to the
             # device only for the model to ignore it. What remains are the per-row
@@ -2490,6 +2605,11 @@ class PLIDataset(
                 inter=self._interaction_tensor[idx],
                 family=self.protein_family_one_hot(protein),
             )
+            if self._protein_tokens:
+                # Graph-level, [1, longest, 3]: collation stacks them into [batch,
+                # longest, 3] like any other per-sample field.
+                protein_graph.protein_tokens = self._protein_tokens[protein]
+                protein_graph.protein_token_count = self._protein_token_counts[protein]
         else:
             parts, tenfam = self.protein_graph_parts(protein)
             parts = self._subsample_residues(parts, pair_id)
@@ -2563,7 +2683,11 @@ class PLIDataset(
             protein_graph.descriptor_catalog_input = (
                 self._descriptor_catalog_tensor[position].view(1, -1)
             )
-        if getattr(self.config, "lipid_graph_isomers", False):
+        if descriptor_catalog_only(self.config):
+            # Nothing of the lipid is read beyond the descriptor columns attached to
+            # protein_graph above, so the lipid side is an empty Data.
+            lipid_graph = Data()
+        elif getattr(self.config, "lipid_graph_isomers", False):
             lipid_graph = self.make_graph_lipid(
                 smile_global, smile_fragment
             )

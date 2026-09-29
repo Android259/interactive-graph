@@ -314,7 +314,9 @@ class InteractionClassification(torch.nn.Module):
         recon_index=None,
         recon_target=None,
         lip_lengths=None,
-        lip_mask=None):
+        lip_mask=None,
+        protein_tokens=None,
+        protein_token_count=None):
         """Encode a batched protein-lipid input and return binary logits."""
 
         if config.deepclip:
@@ -324,6 +326,8 @@ class InteractionClassification(torch.nn.Module):
             return self.deepclip(
                 lip, lip_batch, descriptor_catalog_input,
                 lip_lengths=lip_lengths, lip_mask=lip_mask,
+                protein_tokens=protein_tokens,
+                protein_token_count=protein_token_count,
             )
 
         if (
