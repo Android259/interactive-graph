@@ -489,9 +489,17 @@ def descriptor_catalog_only(config):
     collated into every batch and then ignored -- ~26 MB of torch.cat per batch of 16
     against 0.3 kB per sample actually read. Dataloader builds lean samples under this,
     and new_train.py preassembles them exactly as it does for --deepclip.
+
+    --descriptor_mlp (architecture/descriptor_mlp_head.py) reads the exact same
+    descriptor_catalog_input tensor by name, through the same --descriptor_names --
+    it is DescriptorMLPHead in place of NamedDescriptorHead, not a different input, so
+    it gets the identical lean-loading/preassembly treatment.
     """
     return bool(
-        getattr(config, "descriptors_head", False)
+        (
+            getattr(config, "descriptors_head", False)
+            or getattr(config, "descriptor_mlp", False)
+        )
         and getattr(config, "descriptor_names", "")
     )
 

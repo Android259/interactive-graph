@@ -31,14 +31,15 @@ class InteractionClassification(torch.nn.Module):
 
         if not (
             self.config.descriptors_head or self.config.two_pair_descriptors_paths
-            or self.config.thematical_paths
+            or self.config.thematical_paths or self.config.descriptor_mlp
         ):
-            # --descriptors_head, --two_pair_descriptors_paths and --thematical_paths
-            # (training/read_configuration.py) are all sufficiency tests -- one for
-            # --pair_descriptors alone, one for --good_descriptors/--bad_descriptors,
-            # one for --geometric_descriptors/--chemical_descriptors -- so none of them
-            # builds the usual encoder/attention modules, and forward() below never
-            # reaches the code that would use them.
+            # --descriptors_head, --two_pair_descriptors_paths, --thematical_paths and
+            # --descriptor_mlp (training/read_configuration.py) are all sufficiency
+            # tests -- one for --pair_descriptors alone, one for --good_descriptors/
+            # --bad_descriptors, one for --geometric_descriptors/--chemical_
+            # descriptors, one a plain-MLP sibling of --descriptors_head -- so none of
+            # them builds the usual encoder/attention modules, and forward() below
+            # never reaches the code that would use them.
             self.lipid1 = Lipid_encoder(self.config)
             self.protein1 = Protein_encoder(self.config)
             # --protein_hiddim/--lipid_hiddim: one Linear per branch whose width differs
@@ -332,7 +333,7 @@ class InteractionClassification(torch.nn.Module):
 
         if (
             config.descriptors_head or config.two_pair_descriptors_paths
-            or config.thematical_paths
+            or config.thematical_paths or config.descriptor_mlp
         ):
             # No protein1/lipid1/cross_attention1 exist under any of these flags
             # (__init__ above); every other argument here is ignored. Final_Layer.

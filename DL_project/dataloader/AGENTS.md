@@ -195,6 +195,10 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
   `Data`, no MoLFormer table or protein tensor cache loaded) -- the model reads only
   `descriptor_catalog_input`. Train is preassembled under the 1740-row cap too when
   `num_workers=0`. Bit-identical on `dh_s15_mbw_hid32` (2 epochs), ~2x per epoch.
+  `--descriptor_mlp --descriptor_names` (architecture/descriptor_mlp_head.py, the plain-
+  MLP sibling of `--descriptors_head`) reads `descriptor_catalog_input` through the same
+  `descriptor_catalog_only` predicate, so it gets the identical lean-loading/preassembly
+  path -- nothing here is specific to which head reads the tensor.
 
 ## Invariants (do not break)
 

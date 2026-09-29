@@ -1767,6 +1767,93 @@ def test_descriptors_head_rejects_the_full_architecture_options():
         config.validate()
 
 
+def test_descriptor_mlp_auto_enables_pair_descriptors():
+    """--descriptor_mlp has no meaning without --pair_descriptors -- same reasoning as
+    --descriptors_head's own auto-enable just above."""
+    config = make_config()
+    config.descriptor_mlp = True
+    config.descriptor_names = "chain,unsaturation,aromatic_share"
+    assert config.pair_descriptors is False  # not yet, before validate()
+    config.validate()
+    assert config.pair_descriptors is True
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+
+def test_descriptor_mlp_requires_descriptor_names():
+    """Unlike --descriptors_head, DescriptorMLPHead has no fixed-token
+    PairDescriptorHead fallback -- it always reads a caller-named token set."""
+    config = make_config()
+    config.descriptor_mlp = True
+    with pytest.raises(ValueError, match="descriptor_mlp requires --descriptor_names"):
+        config.validate()
+
+
+def test_descriptor_mlp_builds_no_encoder_or_cross_attention_modules():
+    from architecture.descriptor_mlp_head import DescriptorMLPHead
+
+    config = make_config()
+    config.descriptor_mlp = True
+    config.descriptor_names = "chain,unsaturation,aromatic_share"
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert not hasattr(model, "lipid1")
+    assert not hasattr(model, "protein1")
+    assert not hasattr(model, "cross_attention1")
+    assert isinstance(model.final_layer.descriptor_mlp_head, DescriptorMLPHead)
+    assert model.final_layer.descriptor_mlp_head.token_names == (
+        "chain", "unsaturation", "aromatic_share",
+    )
+    assert model.final_layer.descriptor_mlp_head.token_count == 3
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
+
+    output = model(**synthetic_forward_args(config))
+    F.cross_entropy(output, torch.tensor([0, 1])).backward()
+    unused = [
+        name for name, parameter in model.named_parameters()
+        if parameter.requires_grad and parameter.grad is None
+    ]
+    assert unused == []
+
+
+def test_descriptor_mlp_conflicts_with_descriptors_head():
+    config = make_config()
+    config.descriptor_mlp = True
+    config.descriptors_head = True
+    config.pocket_descriptors = True
+    config.descriptor_names = "chain,unsaturation,aromatic_share"
+    with pytest.raises(ValueError, match="descriptor_mlp, descriptors_head"):
+        config.validate()
+
+
+def test_descriptor_mlp_rejects_the_full_architecture_options():
+    config = make_config()
+    config.descriptor_mlp = True
+    config.descriptor_names = "chain,unsaturation,aromatic_share"
+    config.dann_family = True
+    with pytest.raises(ValueError, match="descriptor_mlp"):
+        config.validate()
+
+
+def test_descriptor_mlp_does_not_build_named_descriptor_head():
+    """The whole point: DescriptorMLPHead in place of NamedDescriptorHead's shared
+    per-token Linear(1, dim) embedding (files/descriptors_head_bottleneck.md)."""
+    from architecture.named_descriptor_head import NamedDescriptorHead
+
+    config = make_config()
+    config.descriptor_mlp = True
+    config.descriptor_names = "chain,unsaturation,aromatic_share"
+    config.validate()
+
+    model = InteractionClassification(config)
+    assert not isinstance(model.final_layer.descriptor_mlp_head, NamedDescriptorHead)
+    assert not hasattr(model.final_layer, "pair_descriptor_head")
+
+
 def test_single_attention_pooling_uses_only_pocket_nodes():
     config = make_config()
     config.protein_pooling = "pooling_by_pockets"

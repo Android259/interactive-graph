@@ -758,12 +758,15 @@ for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     if args_file_has_flag "${_label_args_file}" --descriptors_head \
         || args_file_has_flag "${_label_args_file}" --pair_descriptors_only \
         || args_file_has_flag "${_label_args_file}" --two_pair_descriptors_paths \
-        || args_file_has_flag "${_label_args_file}" --thematical_paths; then
-        # --two_pair_descriptors_paths/--thematical_paths are the same no-encoder-
-        # towers shape as --descriptors_head/--pair_descriptors_only (architecture/
-        # final_layer.py builds only a tiny descriptor head + classifier under any
-        # of the four) -- same measured 9x slowdown risk from over-threading a
-        # too-small model applies.
+        || args_file_has_flag "${_label_args_file}" --thematical_paths \
+        || args_file_has_flag "${_label_args_file}" --descriptor_mlp; then
+        # --two_pair_descriptors_paths/--thematical_paths/--descriptor_mlp are the
+        # same no-encoder-towers shape as --descriptors_head/--pair_descriptors_only
+        # (architecture/final_layer.py builds only a tiny descriptor head +
+        # classifier under any of the five) -- same measured 9x slowdown risk from
+        # over-threading a too-small model applies. descriptor_mlp's own head
+        # (architecture/descriptor_mlp_head.py) is smaller still, no per-token
+        # self-attention at all.
         default_max_omp_threads_per_job=1
         break
     fi

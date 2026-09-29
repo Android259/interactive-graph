@@ -289,6 +289,15 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
         printf "Detected --two_pair_descriptors_paths in %s; per-experiment walltime=%s.\n" \
             "${args_file}" "${this_walltime}"
+    elif args_file_has_flag "${args_file}" --descriptor_mlp; then
+        # Same no-encoder-towers cost class as --descriptors_head (Final_Layer
+        # builds only DescriptorMLPHead + a small classifier, architecture/
+        # descriptor_mlp_head.py) -- smaller still than NamedDescriptorHead
+        # (no per-token self-attention), so DESCRIPTORS_HEAD_WALLTIME is not an
+        # underestimate here.
+        this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
+        printf "Detected --descriptor_mlp in %s; per-experiment walltime=%s.\n" \
+            "${args_file}" "${this_walltime}"
     elif args_file_has_flag "${args_file}" --thematical_paths; then
         # Third sibling of the same sufficiency-test/no-towers shape (architecture/
         # thematic_descriptor_head.py) -- see THEMATICAL_PATHS_WALLTIME's own comment

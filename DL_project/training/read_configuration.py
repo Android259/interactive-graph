@@ -779,6 +779,29 @@ class ModelConfig:
     # optimizer group at THEMATICAL_INTERACTION_LR_MULTIPLIER x the base --lr, instead
     # of raising --lr globally.
     thematical_interaction_lr: bool = False
+    # --descriptor_mlp: a fourth sufficiency-test branch, sibling to descriptors_head/
+    # two_pair_descriptors_paths/thematical_paths above (mutually exclusive, see
+    # validate()). Final_Layer builds architecture.descriptor_mlp_head.DescriptorMLPHead
+    # -- an ordinary feedforward network, config.hiddim wide -- over --descriptor_names'
+    # own tokens instead of NamedDescriptorHead's self-attention (--descriptors_head
+    # --descriptor_names). Requires --descriptor_names (validate()): unlike
+    # --descriptors_head there is no fixed-token PairDescriptorHead fallback here, since
+    # the whole point is to read the identical named descriptors --descriptors_head
+    # would, through a plain MLP instead.
+    #
+    # files/descriptors_head_bottleneck.md: NamedDescriptorHead's token_embed is one
+    # Linear(1, dim) shared by every token, so its reaction to a descriptor's value
+    # cannot depend on which descriptor it is (only the additive token_identity
+    # constant differs) -- measured there at test BA 0.535 on an 11-descriptor
+    # species15 block where an ordinary 2-hidden-layer MLP of the SAME 11 columns
+    # reaches 0.853. This flag makes that comparison a --descriptor_names sweep,
+    # like --descriptors_head's own, instead of the one-off script that first found it.
+    # Configurable the same way every other gated MLP block here is -- config.hiddim
+    # (output width), config.m (inner hidden width = m * hiddim), config.
+    # third_layers_in_mlps (an optional extra hidden layer, mlp_utils.
+    # make_extra_hidden_layer), config.dropout/config.final_dropout, config.act_fn --
+    # not a bespoke width/depth flag of its own.
+    descriptor_mlp: bool = False
     # Feeds the SAME protein-only/lipid-only tokens --pair_descriptors' self-attention
     # head reads (aromatic_share, polar_share, and coarsened extent when
     # --pair_descriptor_extent is on, from POCKET_DESCRIPTOR_NAMES for protein; chain,
@@ -2158,7 +2181,8 @@ class ModelConfig:
             # that gates it.
             for name in (
                 "lipid_only", "protein_only", "descriptors_head", "thematical_paths",
-                "two_pair_descriptors_paths", "lipid_graph_isomers", "no_embeddings",
+                "two_pair_descriptors_paths", "descriptor_mlp", "lipid_graph_isomers",
+                "no_embeddings",
                 "structural_pretrain", "adversarial_grl", "bilinear_fusion",
                 "double_attention", "attention_pooling", "swe_pooling",
                 "dann_family", "chem_adversary", "lipid_path_handicap",
@@ -2721,6 +2745,18 @@ class ModelConfig:
             # scenario ever wants one without the other, so this is set here rather
             # than demanded as a separate flag the caller has to remember to pass too.
             self.pair_descriptors = True
+        if self.descriptor_mlp:
+            # Same reasoning as descriptors_head just above: descriptor_mlp names
+            # WHICH sufficiency-test branch Final_Layer builds (DescriptorMLPHead
+            # instead of NamedDescriptorHead), not a capability of its own.
+            self.pair_descriptors = True
+            if not self.descriptor_names.strip():
+                raise ValueError(
+                    "descriptor_mlp requires --descriptor_names to name at least one "
+                    "descriptor -- unlike descriptors_head, there is no fixed-token "
+                    "PairDescriptorHead fallback: DescriptorMLPHead always reads a "
+                    "caller-named token set"
+                )
         if self.pair_descriptors and self.bilinear_fusion:
             # Same reasoning as compatibility_input/compatibility_split_input above:
             # the descriptor head's pooled vector is concatenated after fusion, which
@@ -2995,6 +3031,39 @@ class ModelConfig:
                     "interaction groups and a small classifier -- protein1/lipid1/"
                     "cross_attention1/final_layer's usual modules are never built, so "
                     "these options have nothing to attach to: " + ", ".join(unsupported)
+                )
+        if self.descriptor_mlp and (
+            self.descriptors_head or self.two_pair_descriptors_paths
+            or self.thematical_paths
+        ):
+            raise ValueError(
+                "descriptor_mlp, descriptors_head, two_pair_descriptors_paths and "
+                "thematical_paths are four different sufficiency-test branches "
+                "Final_Layer can build -- pick one"
+            )
+        if self.descriptor_mlp:
+            # Same reasoning as descriptors_head/two_pair_descriptors_paths/
+            # thematical_paths above: Final_Layer builds only DescriptorMLPHead + a
+            # small binar under this flag, so nothing else has a pooled representation
+            # to attach to.
+            unsupported = [
+                name for name in (
+                    "bilinear_fusion", "adversarial_grl", "dann_family", "chem_prior",
+                    "chem_adversary", "pocket_compat_prior", "compatibility_input",
+                    "compatibility_split_input", "attention_pooling", "swe_pooling",
+                    "lipid_only", "protein_only", "pair_descriptors_only",
+                    "lipid_path_handicap", "double_attention", "protein_descriptors",
+                    "lipid_descriptors", "node_bilinear_fusion",
+                )
+                if getattr(self, name)
+            ]
+            if unsupported:
+                raise ValueError(
+                    "descriptor_mlp builds only the descriptor MLP head and a small "
+                    "classifier -- protein1/lipid1/cross_attention1/final_layer's "
+                    "usual modules (and PairDescriptorHead/NamedDescriptorHead's "
+                    "self-attention head) are never built, so these options have "
+                    "nothing to attach to: " + ", ".join(unsupported)
                 )
         if self.compatibility_split_input:
             named = [n.strip() for n in self.compat_input_parts.split(",") if n.strip()]
@@ -3310,6 +3379,8 @@ SIMPLE_BOOL_FLAGS = {
     "--pair_descriptors_only": "pair_descriptors_only",
     "descriptors_head": "descriptors_head",
     "--descriptors_head": "descriptors_head",
+    "descriptor_mlp": "descriptor_mlp",
+    "--descriptor_mlp": "descriptor_mlp",
     "two_pair_descriptors_paths": "two_pair_descriptors_paths",
     "--two_pair_descriptors_paths": "two_pair_descriptors_paths",
     "thematical_paths": "thematical_paths",

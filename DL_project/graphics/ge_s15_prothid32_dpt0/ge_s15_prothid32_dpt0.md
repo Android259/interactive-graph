@@ -3,6 +3,8 @@
 ## Summary (analysis/summarize_label.py)
 
 ```
+conda is not available in this environment.
+Could not activate Kalinin_project_LP (create it with: source /home/andrei/DL_project_5/DL_project/scripts/tools/enter_project_env.sh); using current python3: /usr/bin/python3
 Summary: 'ge_s15_prothid32_dpt0'
 rows: 5
 
@@ -57,4 +59,4 @@ groups_species15 (n=5):
 
 ## AUC vs chemistry null model, in-sample increment
 
-Failed: species15/seed0: split reproduced here does not match the scored rows -- rerun for the full output: `python3 analysis/full_label_report.py --label ge_s15_prothid32_dpt0 --seeds=0,1,2,3,4`
+Failed: FileNotFoundError: [Errno 2] No usable temporary directory found in ['/tmp', '/var/tmp', '/usr/tmp', '/home/andrei/DL_project_5/DL_project'] -- rerun for the full output: `python3 analysis/full_label_report.py --label ge_s15_prothid32_dpt0 --seeds=0,1,2,3,4`
