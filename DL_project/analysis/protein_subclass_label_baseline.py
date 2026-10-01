@@ -19,6 +19,7 @@ Reads only. Writes nothing.
 Usage:
   python3 analysis/protein_subclass_label_baseline.py
   python3 analysis/protein_subclass_label_baseline.py --label ge_s15_prothid32_hid64_noreg
+  python3 analysis/protein_subclass_label_baseline.py --rule a   # a | b (default) | c
 """
 from __future__ import annotations
 
@@ -41,6 +42,12 @@ from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.lipid_subclass_blocks import article_subclass_species  # noqa: E402
 
 DEFAULT_LABEL = "mlp_s15_nomb_hid64"
+# Lookup rules over the train rows of a (protein, subclass) cell. All three read train
+# labels only; an uncovered cell falls back to the train majority class.
+#   a  predict 1 if the cell holds at least one train positive
+#   b  predict 1 if the cell's train positive rate is > 0.5 (the canonical recipe)
+#   c  predict 1 if the cell's train positive rate is >= 0.5
+RULES = ("a", "b", "c")
 DEFAULT_SEEDS = (0, 1, 2, 3, 4)
 
 
@@ -89,7 +96,20 @@ def confusion_metrics(prediction, truth):
     return ba, f1, sensitivity, specificity, precision
 
 
-def one_seed(seed, base_lines, full_csv, subclass_of):
+def lookup_prediction(rule, train_csv, key_train, key_test, fallback):
+    rate = train_csv.groupby(key_train)["Interaction"].mean()
+    looked_up = key_test.map(rate)
+    seen = looked_up.notna()
+    if rule == "a":
+        positive = looked_up > 0
+    elif rule == "b":
+        positive = looked_up > 0.5
+    else:
+        positive = looked_up >= 0.5
+    return positive.astype(int).where(seen, fallback), seen
+
+
+def one_seed(seed, base_lines, full_csv, subclass_of, rule="b"):
     argv = ["protein_subclass_label_baseline"] + base_lines + [
         f"--seed={seed}", "--num_workers=0",
     ]
@@ -106,11 +126,8 @@ def one_seed(seed, base_lines, full_csv, subclass_of):
 
     key_train = protein_subclass_key(train_csv, subclass_of)
     key_test = protein_subclass_key(test_csv, subclass_of)
-    rate = train_csv.groupby(key_train)["Interaction"].mean()
     fallback = int(train_csv["Interaction"].mean() > 0.5)
-    looked_up = key_test.map(rate)
-    seen = looked_up.notna()
-    prediction = (looked_up > 0.5).astype(int).where(seen, fallback)
+    prediction, seen = lookup_prediction(rule, train_csv, key_train, key_test, fallback)
     truth = test_csv["Interaction"].astype(int)
 
     ba, f1, sens, spec, prec = confusion_metrics(prediction, truth)
@@ -133,6 +150,7 @@ def mean_sem(values):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--label", default=DEFAULT_LABEL)
+    parser.add_argument("--rule", default="b", choices=RULES)
     parser.add_argument("--seeds", default=",".join(str(s) for s in DEFAULT_SEEDS))
     args = parser.parse_args()
     seeds = [int(s) for s in args.seeds.split(",")]
@@ -142,9 +160,9 @@ def main():
     full_csv = pd.read_csv(interaction_csv_path(data_dir))
     subclass_of = species_to_subclass_map()
 
-    rows = [one_seed(seed, base_lines, full_csv, subclass_of) for seed in seeds]
+    rows = [one_seed(seed, base_lines, full_csv, subclass_of, args.rule) for seed in seeds]
 
-    print(f"label={args.label} seeds={seeds}")
+    print(f"label={args.label} rule={args.rule} seeds={seeds}")
     print(f"{'seed':>4s} {'BA':>7s} {'F1':>7s} {'sens':>7s} {'spec':>7s} "
           f"{'prec':>7s} {'coverage':>9s} {'n':>5s}")
     for row in rows:

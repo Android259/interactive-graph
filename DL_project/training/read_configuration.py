@@ -1253,6 +1253,24 @@ class ModelConfig:
     # therefore the connected component of the name-structure graph, which is the finest
     # structure-disjoint cut that exists; see dataloader/lipid_species_blocks.py.
     lipid_species_coldsplit: float = 0.0
+    # Drop from valid/test every row whose (LTPProtein, article lipid subclass) cell has
+    # no training row at all, instead of scoring it.
+    #
+    # Such a row is not a hard case, it is an unanswerable one: the no-model planka this
+    # project measures the network against -- the train positive rate of that cell,
+    # analysis/protein_subclass_label_baseline.py -- has nothing to estimate from and
+    # falls back to "negative", so it scores balanced accuracy 0.500 there by
+    # construction. Measured on --lipid_species_coldsplit=0.15 over the five standard
+    # seeds, those rows are 10.1% of test and 9.8% of valid but carry only 2.9%/2.5% of
+    # the positives, so dropping them moves the planka 0.871 -> 0.879 and the block's
+    # positive rate 0.335 -> 0.362, keeping 90% of the rows and 97% of the positives
+    # (files/species15_information_above_protein_subclass.md sections 1-2).
+    #
+    # The point is comparability, not a higher number: with these rows in, part of what
+    # separates a model from the planka is which side of an uninformative fallback each
+    # happens to land on. The key is the JOINT (protein, subclass) cell, matching that
+    # baseline exactly, so the two are measured on the same rows.
+    drop_uncovered_protein_subclass: bool = False
     # How much of the held-out family's positives the derived class set has to cover.
     #
     # 0.8 rather than 0.7: the value decides how many of a family's own classes leave
@@ -1333,6 +1351,27 @@ class ModelConfig:
     # its own pool still draws its full quota instead of concentrating on whatever is
     # least-far-from-zero similarity.
     hard_negative_share: float = 0.5
+    # The opposite direction on the same axis: bias the negatives drawn for a protein's
+    # TRAIN-side rows AWAY from its own chemistry -- unlabeled lipids Tanimoto-DISTANT
+    # from every lipid that protein is positive for -- instead of drawing them
+    # uniformly. Mutually exclusive with --hard_negative_mining, which steers the same
+    # draw the other way; everything else about it is that flag's, including the
+    # exemption of --excluded_groups families, so the evaluated block is drawn exactly
+    # as a run without either flag would draw it. See dataloader/sampler.py's
+    # _dissimilar_negative_weights.
+    #
+    # What it is for: this panel's lipids are largely congeneric, so a uniform draw
+    # hands a protein near-duplicates of its own positives as negatives and leaves the
+    # base rate as the only thing that separates them. Steering away spreads each
+    # protein's negatives over the panel's chemistry instead. The class ratio is
+    # untouched -- --negatives_per_positive still fixes it per group, so the pool stays
+    # balanced 0/1 exactly as it was; only WHICH negatives fill the quota changes.
+    dissimilar_negative_mining: bool = False
+    # Sampling-weight mass steered toward the most distant candidates; the rest
+    # (1 - share) stays uniform, so a protein whose positives are close to everything in
+    # its own pool still draws its full quota instead of concentrating on the handful
+    # that happen to be least-close.
+    dissimilar_negative_share: float = 0.5
     test_group: str = ""
     cold_split: bool = False
     # Relabels sampled negatives whose (protein, lipid class) cell Reuter et al.'s
@@ -1844,6 +1883,20 @@ class ModelConfig:
                 f"Got {self.lipid_species_coldsplit}"
             )
 
+        if self.drop_uncovered_protein_subclass and not self.lipid_species_coldsplit:
+            # Tied to this one split rather than offered generally. The filter is only
+            # meaningful when every protein stays in training -- otherwise the held-out
+            # proteins have no cells in train at all and it would delete the whole of
+            # valid and test -- and lipid_species_coldsplit is the split it was measured
+            # on. Requiring it also inherits the check above, which already forbids
+            # combining it with any protein-axis holdout.
+            raise ValueError(
+                "drop_uncovered_protein_subclass is a rule for the "
+                "lipid_species_coldsplit block (see "
+                "files/species15_information_above_protein_subclass.md) and needs "
+                "--lipid_species_coldsplit set"
+            )
+
         if self.lipid_coldsplit and (self.double_coldsplit or self.mixed_coldsplit):
             raise ValueError(
                 "lipid_coldsplit holds a fixed chemical family out with every protein "
@@ -1916,6 +1969,28 @@ class ModelConfig:
                 "hard_negative_share is the sampling-weight mass steered toward "
                 f"chemistry-hard candidates and belongs in [0, 1]; got "
                 f"{self.hard_negative_share}"
+            )
+
+        if self.dissimilar_negative_mining and not (
+            self.balanced_proteins or self.balance_negatives_by_family
+        ):
+            raise ValueError(
+                "dissimilar_negative_mining reweights the per-group negative draw in "
+                "_sample_group_balanced_negatives and needs one of "
+                "balanced_proteins/balance_negatives_by_family to select that draw"
+            )
+
+        if self.dissimilar_negative_mining and self.hard_negative_mining:
+            raise ValueError(
+                "hard_negative_mining and dissimilar_negative_mining steer the same "
+                "per-group negative draw in opposite directions; pass one of them"
+            )
+
+        if not 0.0 <= self.dissimilar_negative_share <= 1.0:
+            raise ValueError(
+                "dissimilar_negative_share is the sampling-weight mass steered toward "
+                f"chemistry-DISTANT candidates and belongs in [0, 1]; got "
+                f"{self.dissimilar_negative_share}"
             )
 
         if (self.double_coldsplit or self.mixed_coldsplit) and not self.excluded_groups:
@@ -3369,6 +3444,8 @@ SIMPLE_BOOL_FLAGS = {
     "--cross_attention_forced_interaction": "cross_attention_forced_interaction",
     "hard_negative_mining": "hard_negative_mining",
     "--hard_negative_mining": "hard_negative_mining",
+    "dissimilar_negative_mining": "dissimilar_negative_mining",
+    "--dissimilar_negative_mining": "dissimilar_negative_mining",
     "adversarial_grl": "adversarial_grl",
     "--adversarial_grl": "adversarial_grl",
     "adv_deep": "adv_deep",
@@ -3662,6 +3739,8 @@ SIMPLE_BOOL_FLAGS = {
     "--balanced_batches": "balanced_batches",
     "rotate_train_negatives": "rotate_train_negatives",
     "--rotate_train_negatives": "rotate_train_negatives",
+    "drop_uncovered_protein_subclass": "drop_uncovered_protein_subclass",
+    "--drop_uncovered_protein_subclass": "drop_uncovered_protein_subclass",
     "cold_split": "cold_split",
     "--cold_split": "cold_split",
     "relabel_fig3a_disputed_negatives": "relabel_fig3a_disputed_negatives",
@@ -3752,6 +3831,9 @@ VALUE_HANDLERS = {
     "--negatives_per_positive=": set_config_field("negatives_per_positive", int),
     "--rotate_negatives_per_epoch=": set_config_field("rotate_negatives_per_epoch", int),
     "--hard_negative_share=": set_config_field("hard_negative_share", float),
+    "--dissimilar_negative_share=": set_config_field(
+        "dissimilar_negative_share", float
+    ),
     "--eval_candidates_per_pair=": set_config_field(
         "eval_candidates_per_pair", int
     ),

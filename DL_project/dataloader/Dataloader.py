@@ -534,6 +534,16 @@ class PLIDataset(
         self.hard_negative_share = float(
             getattr(config, "hard_negative_share", 0.5) or 0.5
         )
+        # The same per-group draw steered the other way: negatives Tanimoto-DISTANT from
+        # the group's own positives instead of close to them. Mutually exclusive with
+        # hard_negative_mining (read_configuration.validate refuses the pair), so the
+        # two share one similarity pool and one share value below.
+        self.dissimilar_negative_mining = bool(
+            getattr(config, "dissimilar_negative_mining", False)
+        )
+        self.dissimilar_negative_share = float(
+            getattr(config, "dissimilar_negative_share", 0.5) or 0.5
+        )
         # Head-group classes held out of training alongside excluded_groups: the second
         # axis of the cold split. Compared case-insensitively, as the groups are.
         # The second axis of the cold split; the classes themselves are derived in
@@ -571,6 +581,12 @@ class PLIDataset(
             getattr(config, "lipid_species_coldsplit", 0.0) or 0.0
         )
         self.excluded_lipid_species = set()
+        # --drop_uncovered_protein_subclass: see _covered_protein_subclass below for what
+        # it removes and why. Read here with the rest of the split decisions; it changes
+        # the evaluated block, never train.
+        self.drop_uncovered_protein_subclass = bool(
+            getattr(config, "drop_uncovered_protein_subclass", False)
+        )
         self.test_group = str(getattr(config, "test_group", "") or "").lower()
 
     def _cold_chemistry(self, frame):
@@ -592,6 +608,46 @@ class PLIDataset(
     @property
     def _has_cold_chemistry(self):
         return bool(self.excluded_lipid_classes or self.excluded_lipid_species)
+
+    @staticmethod
+    def _protein_subclass_key(frame):
+        """(LTPProtein, article lipid subclass) of every row, as one string key.
+
+        The SAME key analysis/protein_subclass_label_baseline.py builds -- same article
+        classification, same "?unclassified" fallback, same "|" join -- because the only
+        reason this key exists here is to keep the rows the network is scored on
+        identical to the rows that no-model planka is scored on. A different spelling of
+        the key would make the two incomparable, which is the one thing the filter below
+        is for.
+        """
+        from dataloader.lipid_subclass_blocks import article_subclass_species
+
+        subclass_of = {
+            name: subclass
+            for subclass, species in article_subclass_species().items()
+            for name in species
+        }
+        subclass = frame["FullIdentityOfLipid"].map(subclass_of).fillna("?unclassified")
+        return frame["LTPProtein"].astype(str) + "|" + subclass.astype(str)
+
+    def _covered_protein_subclass(self, frame, csvtrain):
+        """Which rows of `frame` have their (protein, subclass) cell present in train.
+
+        A row whose cell is absent from train is not a hard case but an unanswerable
+        one: the planka this project reads the network against is that cell's train
+        positive rate, and with no train row it has nothing to estimate from and falls
+        back to "negative" -- balanced accuracy 0.500 on those rows by construction.
+        Keeping them in means part of the model-vs-planka difference is which side of an
+        uninformative fallback each lands on, not which is the better predictor.
+
+        Measured on --lipid_species_coldsplit=0.15 over the five standard seeds: 10.1% of
+        test rows and 9.8% of valid rows, but only 2.9%/2.5% of the positives, so the
+        filter costs little of what is actually being predicted
+        (files/species15_information_above_protein_subclass.md sections 1-2).
+        """
+        return self._protein_subclass_key(frame).isin(
+            set(self._protein_subclass_key(csvtrain))
+        )
 
     @staticmethod
     def _label_only_baseline(csvtrain, held, key_train, key_held):
@@ -1628,13 +1684,19 @@ class PLIDataset(
         if self._has_cold_chemistry:
             strata = self._cold_chemistry(csv)
 
-        # --hard_negative_mining: built once per dataset (not per group) since it is
-        # the same Tanimoto matrix every group's weighting reads. Only the samplers
+        # --hard_negative_mining / --dissimilar_negative_mining: one pool, built once
+        # per dataset (not per group) since it is the same Tanimoto matrix every group's
+        # weighting reads, in either direction. Only the samplers
         # that go through _sample_group_balanced_negatives accept it; validate()
         # already requires one of them to be active whenever the flag is set.
         hard_negative_pool = None
-        if self.hard_negative_mining:
+        negative_mode = "hard"
+        negative_share = self.hard_negative_share
+        if self.hard_negative_mining or self.dissimilar_negative_mining:
             hard_negative_pool = species_similarity(csv, self.ROOT_DIR)
+            if self.dissimilar_negative_mining:
+                negative_mode = "dissimilar"
+                negative_share = self.dissimilar_negative_share
 
         if self.balanced_lipid_classes:
             csvtrue, csvfalse = split_and_sample_lipid_class_balanced_interactions(
@@ -1643,12 +1705,14 @@ class PLIDataset(
         elif self.balanced_proteins:
             csvtrue, csvfalse = split_and_sample_protein_balanced_interactions(
                 csv, seed, self.negatives_per_positive, strata,
-                hard_negative_pool, self.excluded_groups, self.hard_negative_share,
+                hard_negative_pool, self.excluded_groups, negative_share,
+                negative_mode,
             )
         elif self.balance_negatives_by_family:
             csvtrue, csvfalse = split_and_sample_family_balanced_interactions(
                 csv, seed, self.negatives_per_positive, strata,
-                hard_negative_pool, self.excluded_groups, self.hard_negative_share,
+                hard_negative_pool, self.excluded_groups, negative_share,
+                negative_mode,
             )
         else:
             csvtrue, csvfalse = split_and_sample_interactions(csv, seed)
@@ -1738,6 +1802,32 @@ class PLIDataset(
             else:
                 held_out_protein = pandas.Series(True, index=excluded_data.index)
             excluded_data = excluded_data[in_cold_chemistry & held_out_protein]
+
+        # --drop_uncovered_protein_subclass. Applied to the whole block BEFORE the
+        # label-wise halving below, not to valid and test separately: the halving is what
+        # makes the two carry the same positive rate by construction, and filtering after
+        # it would break that for no reason, since coverage is a property of train and is
+        # already fixed here. Nothing moves to train -- these rows are dropped, exactly
+        # like --double_coldsplit's own drops above, because their lipid is what the split
+        # holds out.
+        if self.drop_uncovered_protein_subclass:
+            covered = self._covered_protein_subclass(excluded_data, csvtrain)
+            dropped = excluded_data[~covered]
+            excluded_data = excluded_data[covered]
+            print(
+                "drop_uncovered_protein_subclass : "
+                f"{len(dropped)} of {len(dropped) + len(excluded_data)} block rows "
+                f"dropped ({int(dropped['Interaction'].sum())} positives) -- their "
+                "(protein, subclass) cell has no training row, so the no-model planka "
+                "scores 0.500 on them by construction; "
+                f"{len(excluded_data)} rows and "
+                f"{int(excluded_data['Interaction'].sum())} positives remain"
+            )
+            if excluded_data.empty:
+                raise ValueError(
+                    "drop_uncovered_protein_subclass removed every valid/test row -- no "
+                    "(protein, subclass) cell of the block appears in training at all"
+                )
         if self.test_group:
             domain_lower = excluded_data["ProteinDomain"].str.lower()
             csvtest = excluded_data[domain_lower == self.test_group].sample(frac=1)

@@ -3,8 +3,6 @@
 ## Summary (analysis/summarize_label.py)
 
 ```
-conda is not available in this environment.
-Could not activate Kalinin_project_LP (create it with: source /home/andrei/DL_project_5/DL_project/scripts/tools/enter_project_env.sh); using current python3: /usr/bin/python3
 Summary: 'ge_s15_prothid32_hid64_noreg_doubleattn'
 rows: 5
 

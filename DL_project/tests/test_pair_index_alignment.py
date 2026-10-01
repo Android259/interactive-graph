@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 import torch
@@ -449,3 +450,87 @@ def test_marginal_balance_weights_flatten_protein_class_and_lipid_rates():
             / table["weight"].groupby(table[key]).sum()
         )
         assert weighted_rate.to_numpy() == pytest.approx(0.5, abs=1e-3), key
+
+
+def _chemistry_table():
+    # One protein, one positive on L0, four negative candidates at known Tanimoto
+    # distances from it: L1/L2 close, L3/L4 far.
+    return pd.DataFrame(
+        {
+            "Interaction": [1, 0, 0, 0, 0],
+            "LTPProtein": ["P1"] * 5,
+            "ProteinDomain": ["A"] * 5,
+            "FullIdentityOfLipid": ["L0", "L1", "L2", "L3", "L4"],
+        },
+        index=[200, 201, 202, 203, 204],
+    )
+
+
+def _chemistry_pool():
+    names = ["L0", "L1", "L2", "L3", "L4"]
+    similarity = np.array(
+        [
+            [1.00, 0.95, 0.90, 0.00, 0.05],
+            [0.95, 1.00, 0.92, 0.02, 0.03],
+            [0.90, 0.92, 1.00, 0.01, 0.04],
+            [0.00, 0.02, 0.01, 1.00, 0.10],
+            [0.05, 0.03, 0.04, 0.10, 1.00],
+        ],
+        dtype=np.float32,
+    )
+    return similarity, {name: position for position, name in enumerate(names)}
+
+
+def test_dissimilar_negatives_draw_the_chemistry_farthest_from_the_positives():
+    negatives = sample_protein_balanced_negatives(
+        _chemistry_table(),
+        seed=3,
+        ratio=2,
+        hard_negative_pool=_chemistry_pool(),
+        hard_negative_share=1.0,
+        negative_mode="dissimilar",
+    )
+
+    # All the steered mass on 1 - similarity, so the two far lipids take the quota.
+    assert sorted(negatives["FullIdentityOfLipid"]) == ["L3", "L4"]
+
+
+def test_hard_negatives_draw_the_opposite_end_of_the_same_pool():
+    negatives = sample_protein_balanced_negatives(
+        _chemistry_table(),
+        seed=3,
+        ratio=2,
+        hard_negative_pool=_chemistry_pool(),
+        hard_negative_share=1.0,
+        negative_mode="hard",
+    )
+
+    assert sorted(negatives["FullIdentityOfLipid"]) == ["L1", "L2"]
+
+
+def test_dissimilar_negatives_keep_the_per_protein_class_balance():
+    table = _protein_balanced_table().assign(
+        FullIdentityOfLipid=lambda frame: "L" + frame["pair"]
+    )
+    names = sorted(table["FullIdentityOfLipid"].unique())
+    pool = (
+        np.eye(len(names), dtype=np.float32),
+        {name: position for position, name in enumerate(names)},
+    )
+
+    negatives = sample_protein_balanced_negatives(
+        table,
+        seed=3,
+        hard_negative_pool=pool,
+        negative_mode="dissimilar",
+    )
+
+    per_protein = negatives["LTPProtein"].str.lower().value_counts().to_dict()
+    assert per_protein == {"p1": 2, "p3": 1}
+
+
+def test_unknown_negative_mode_is_refused():
+    with pytest.raises(ValueError, match="negative_mode"):
+        sample_protein_balanced_negatives(
+            _chemistry_table(), seed=3, negative_mode="sideways"
+        )

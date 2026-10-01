@@ -860,3 +860,64 @@ def test_marginal_balance_weight_rejects_other_per_protein_weights(other):
 
     with pytest.raises(ValueError, match="marginal_balance_weight"):
         config.validate()
+
+
+def test_drop_uncovered_protein_subclass_defaults_off_and_parses():
+    assert ModelConfig().drop_uncovered_protein_subclass is False
+
+    config = read_configuration(
+        [
+            "test",
+            "--lipid_species_coldsplit=0.15",
+            "--drop_uncovered_protein_subclass",
+        ]
+    )
+
+    assert config.drop_uncovered_protein_subclass is True
+    assert config.lipid_species_coldsplit == 0.15
+
+
+def test_drop_uncovered_protein_subclass_requires_the_species_coldsplit():
+    with pytest.raises(ValueError, match="lipid_species_coldsplit"):
+        ModelConfig(drop_uncovered_protein_subclass=True).validate()
+
+
+def test_dissimilar_negative_mining_defaults_off_and_parses():
+    assert ModelConfig().dissimilar_negative_mining is False
+    assert ModelConfig().dissimilar_negative_share == 0.5
+
+    config = read_configuration(
+        [
+            "test",
+            "--balanced_proteins",
+            "--dissimilar_negative_mining",
+            "--dissimilar_negative_share=0.8",
+        ]
+    )
+
+    assert config.dissimilar_negative_mining is True
+    assert config.dissimilar_negative_share == 0.8
+    config.validate()
+
+
+def test_dissimilar_negative_mining_requires_a_per_group_sampler():
+    with pytest.raises(ValueError, match="dissimilar_negative_mining"):
+        ModelConfig(dissimilar_negative_mining=True).validate()
+
+
+def test_dissimilar_negative_mining_excludes_hard_negative_mining():
+    with pytest.raises(ValueError, match="opposite directions"):
+        ModelConfig(
+            balanced_proteins=True,
+            dissimilar_negative_mining=True,
+            hard_negative_mining=True,
+        ).validate()
+
+
+def test_dissimilar_negative_share_is_a_fraction():
+    with pytest.raises(ValueError, match="dissimilar_negative_share"):
+        ModelConfig(
+            balanced_proteins=True,
+            dissimilar_negative_mining=True,
+            dissimilar_negative_share=1.5,
+        ).validate()

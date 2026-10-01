@@ -47,6 +47,47 @@ def _hard_negative_weights(candidates, positive_lipid_names, similarity, species
     return share * similarity_mass + (1 - share) * uniform_mass
 
 
+def _dissimilar_negative_weights(
+    candidates, positive_lipid_names, similarity, species_index, share
+):
+    """Sampling weight per candidate, blending chemistry-DISTANCE with uniform.
+
+    The mirror of `_hard_negative_weights`: the same max-over-the-group's-positives
+    Tanimoto reduction, steered the other way -- `share` of the mass goes to candidates
+    by `1 - similarity`, so the negatives a protein trains against are the lipids
+    chemically furthest from anything it is known to bind. The rest of the mass stays
+    uniform for the same reason as there, and None means "fall back to plain uniform".
+
+    Why one would want this rather than hard negatives: a uniform draw over a panel
+    whose lipids are largely congeneric hands a protein many near-duplicates of its own
+    positives as negatives, so a decision rule can only separate them by the base rate.
+    Steering AWAY spreads the negatives over the panel's chemistry instead, which is the
+    opposite trade from hard mining -- an easier separation per pair, over a wider span
+    of chemistry. The two directions are mutually exclusive by configuration.
+    """
+    positive_positions = [
+        species_index[name]
+        for name in positive_lipid_names.unique()
+        if name in species_index
+    ]
+    if not positive_positions:
+        return None
+    n = len(candidates)
+    sims = np.array(
+        [
+            similarity[species_index[name], positive_positions].max()
+            if name in species_index
+            else 0.0
+            for name in candidates["FullIdentityOfLipid"]
+        ]
+    )
+    distances = np.clip(1.0 - np.clip(sims, 0.0, 1.0), 0.0, None)
+    total = distances.sum()
+    distance_mass = distances / total if total > 0 else np.full(n, 1.0 / n)
+    uniform_mass = np.full(n, 1.0 / n)
+    return share * distance_mass + (1 - share) * uniform_mass
+
+
 def _sample_group_balanced_negatives(
     csv,
     seed,
@@ -56,6 +97,7 @@ def _sample_group_balanced_negatives(
     hard_negative_pool=None,
     excluded_groups=None,
     hard_negative_share=0.5,
+    negative_mode="hard",
 ):
     """Sample `ratio` negatives per positive within each group.
 
@@ -69,15 +111,22 @@ def _sample_group_balanced_negatives(
 
     `hard_negative_pool`, if given, is `(similarity, species_index)` from
     `dataloader.chemistry_prior.species_similarity`: negatives are then drawn weighted
-    toward chemistry-hard candidates (see `_hard_negative_weights`) instead of
-    uniformly. `excluded_groups`, if given alongside it, exempts any group whose
-    ProteinDomain is in it from the reweighting -- those rows become validation/test
-    after the coming split, and must be drawn exactly as a run without
-    `--hard_negative_mining` would draw them, so enabling the flag changes what
-    training sees and nothing about what is measured.
+    by that chemistry instead of uniformly. `negative_mode` picks the direction --
+    "hard" steers the draw TOWARD candidates similar to the group's own positives
+    (`_hard_negative_weights`, `--hard_negative_mining`), "dissimilar" steers it AWAY
+    from them (`_dissimilar_negative_weights`, `--dissimilar_negative_mining`) -- and
+    `hard_negative_share` is the steered mass in either direction. `excluded_groups`,
+    if given alongside the pool, exempts any group whose ProteinDomain is in it from
+    the reweighting -- those rows become validation/test after the coming split, and
+    must be drawn exactly as a run without either flag would draw them, so enabling one
+    changes what training sees and nothing about what is measured.
     """
     if ratio < 1:
         raise ValueError(f"negatives per positive must be at least 1, got {ratio}")
+    if negative_mode not in ("hard", "dissimilar"):
+        raise ValueError(
+            f"negative_mode must be 'hard' or 'dissimilar', got {negative_mode!r}"
+        )
     groups = csv[group_column].str.lower()
     family_of_group = None
     if hard_negative_pool is not None and excluded_groups:
@@ -113,7 +162,12 @@ def _sample_group_balanced_negatives(
             if not group_excluded:
                 similarity, species_index = hard_negative_pool
                 positive_lipids = csv.loc[is_positive & group_mask, "FullIdentityOfLipid"]
-                weights = _hard_negative_weights(
+                weigh = (
+                    _dissimilar_negative_weights
+                    if negative_mode == "dissimilar"
+                    else _hard_negative_weights
+                )
+                weights = weigh(
                     candidates, positive_lipids, similarity, species_index, hard_negative_share
                 )
         if weights is None:
@@ -138,7 +192,7 @@ def _sample_group_balanced_negatives(
 
 def sample_family_balanced_negatives(
     csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
-    hard_negative_share=0.5,
+    hard_negative_share=0.5, negative_mode="hard",
 ):
     """Sample negatives per protein family to match its positive count (1:1).
 
@@ -153,25 +207,26 @@ def sample_family_balanced_negatives(
     """
     return _sample_group_balanced_negatives(
         csv, seed, "ProteinDomain", ratio, strata,
-        hard_negative_pool, excluded_groups, hard_negative_share,
+        hard_negative_pool, excluded_groups, hard_negative_share, negative_mode,
     )
 
 
 def split_and_sample_family_balanced_interactions(
     csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
-    hard_negative_share=0.5,
+    hard_negative_share=0.5, negative_mode="hard",
 ):
     """Keep every positive and sample per-family-matched negatives (1:1)."""
     csvtrue = csv[csv["Interaction"] == 1].copy()
     csvfalse = sample_family_balanced_negatives(
-        csv, seed, ratio, strata, hard_negative_pool, excluded_groups, hard_negative_share
+        csv, seed, ratio, strata, hard_negative_pool, excluded_groups,
+        hard_negative_share, negative_mode,
     ).copy()
     return csvtrue, csvfalse
 
 
 def sample_protein_balanced_negatives(
     csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
-    hard_negative_share=0.5,
+    hard_negative_share=0.5, negative_mode="hard",
 ):
     """Sample negatives per protein to match its positive count (1:1).
 
@@ -190,18 +245,19 @@ def sample_protein_balanced_negatives(
     """
     return _sample_group_balanced_negatives(
         csv, seed, "LTPProtein", ratio, strata,
-        hard_negative_pool, excluded_groups, hard_negative_share,
+        hard_negative_pool, excluded_groups, hard_negative_share, negative_mode,
     )
 
 
 def split_and_sample_protein_balanced_interactions(
     csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
-    hard_negative_share=0.5,
+    hard_negative_share=0.5, negative_mode="hard",
 ):
     """Keep every positive and sample per-protein-matched negatives (1:1)."""
     csvtrue = csv[csv["Interaction"] == 1].copy()
     csvfalse = sample_protein_balanced_negatives(
-        csv, seed, ratio, strata, hard_negative_pool, excluded_groups, hard_negative_share
+        csv, seed, ratio, strata, hard_negative_pool, excluded_groups,
+        hard_negative_share, negative_mode,
     ).copy()
     return csvtrue, csvfalse
 

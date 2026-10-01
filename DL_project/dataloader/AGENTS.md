@@ -60,6 +60,16 @@ is decided in `PLIDataset.__init__`, most specific first:
   excluded groups (validation/test); train rows pass through untouched.
 - `balanced_batches` (`dataloader/sampler.py`) is a separate
   layer: these flags balance the pool, that one balances each batch drawn from it.
+- `hard_negative_mining` / `dissimilar_negative_mining` only reweight the draw inside
+  `_sample_group_balanced_negatives` (so they require `balanced_proteins` or
+  `balance_negatives_by_family`, and are mutually exclusive with each other). Both read
+  one `species_similarity` pool and steer `*_negative_share` of the mass by a group's
+  own positives: toward chemically close candidates, or away from them. The quota per
+  group is untouched, so the pool stays balanced exactly as it was -- only which
+  negatives fill it changes. Measured on the table, seed 42, ratio 2, share 1.0: the
+  mean best Tanimoto from a drawn negative to its protein's own positives moves 0.657
+  (uniform) -> 0.714 (hard) / 0.534 (dissimilar). Groups whose family is in
+  `excluded_groups` are exempt from either direction.
 
 ## Tanimoto Files
 

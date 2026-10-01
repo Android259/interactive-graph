@@ -265,3 +265,145 @@ candidate -- it is not, on the evidence gathered here.
   verdict as reassurance about this one figure, not as a full audit of
   `preprocessing/`'s positive/negative assignment against the whole Reuter
   supplement.
+
+## The other direction: Figure 3a marks it, this table does not (2026-10-01)
+
+Everything above checks one direction -- *is every positive here documented
+there* -- and answers yes, 104/104 (128 unique (protein, class) cells on the
+current table). The reverse direction was never written down, although the
+artefact that encodes it has existed all along:
+`data/fig3a_disputed_negative_pair_ids.csv`, 1159 rows, read by
+`--relabel_fig3a_disputed_negatives` (`dataloader/Dataloader.py:159-190`).
+
+**Correction 2026-10-01, second pass.** An earlier version of this section said these
+are cells "where this table carries no positive at all". That was wrong, and it was an
+unverified gloss rather than a measurement. Checked directly: **all 1159 rows sit in
+cells where this table already records a positive of the same class** -- 1159 of 1159,
+none in an empty cell. The dispute is therefore at the SPECIES level, not the cell
+level.
+
+The exact rule the artefact encodes, reproduced from the matrix above
+(1159 of 1159 verified, see "How the rows are selected" below):
+
+> a row is listed when it is labelled `Interaction=0`, its (protein, Figure-3a-row)
+> cell carries a mark, and -- in practice -- that cell also already holds a positive of
+> this table's own.
+
+| | |
+|---|---|
+| distinct (protein, Figure-3a-row) cells | **81** |
+| rows they cover | **1159**, all labelled `Interaction=0` |
+| of those, in cells that already hold a positive | **1159 (all)** |
+| share of the table's 9271 negatives | **12.5%** |
+| proteins affected | 30 of 35 |
+| Figure-3a rows affected | 15 |
+
+What this means for how strongly the rows are "disputed": Figure 3a does **not**
+contradict any of these labels. It records that the protein binds *something* in the
+class, which this table also records. It says nothing about the particular chain length
+on the listed row. So the set is best read as **negatives that are unverified inside a
+class the protein demonstrably binds** -- the subpopulation most likely to contain
+hidden positives -- and not as documented false negatives.
+
+By protein family:
+
+| family | cells | proteins | rows |
+|---|---:|---:|---:|
+| CRAL-TRIO | 10 | 8 | 383 |
+| lipocalin | 9 | 8 | 179 |
+| LBP_BPI_CETP | 5 | 2 | 133 |
+| START | 6 | 3 | 124 |
+| scp2 | 7 | 3 | 119 |
+| ML | 4 | 1 | 96 |
+| IP_trans | 4 | 3 | 88 |
+| OSBP | 1 | 1 | 19 |
+| GLTP | 3 | 1 | 18 |
+
+By lipid subclass: PC 430 rows / 13 proteins, PC-O 188/8, PE 164/11, PG 130/9,
+FA 96/12, LPC 34/3, LPE 28/5, PI 26/5, PA 18/4, SM 16/1, LPG 11/5, TAG 8/2.
+
+Worst single proteins: GM2A 96 rows over 4 subclasses, TTPAL 92 over 9,
+SEC14L6 84 over 3, BPI 79 over 5, RLBP1 67 over 5, LCN1 66 over 3,
+STARD10 66 over 5, FABP1 60 over 6.
+
+### Why this is not simply "1159 missing positives"
+
+The asymmetry is explainable and is not evidence that the table is wrong.
+Figure 3a's unit is a (protein, SUBCLASS) cell: one mark says the protein was
+seen to bind *something* in that subclass. This table's unit is a (protein,
+SPECIES) pair. A protein that binds `PC(34:1)` and nothing else in PC produces
+one Figure 3a mark and, correctly, dozens of negative PC rows here. Promoting
+every row of a marked cell to positive would assert something Figure 3a never
+claims.
+
+What the number does measure is **how much of the negative class is unverified
+rather than verified**: 12.5% of negatives sit in cells where the article
+documents binding, so their negativity rests on "this particular chain length
+was not among the hits", not on "this protein does not bind this chemistry".
+
+### How much of the measured metrics rests on them
+
+Measured on `ge_s15_prothid32_hid64_noreg` (`--lipid_species_coldsplit=0.15`,
+`--balanced_proteins`), pooled over the five standard seeds -- the sampler draws
+negatives, so the share in the evaluated pool is not the table's 12.5%:
+
+| split | rows | negatives | disputed | of negatives | of all rows |
+|---|---:|---:|---:|---:|---:|
+| train | 8058 | 5372 | 1088 | **20.3%** | 13.5% |
+| valid | 724 | 482 | 102 | **21.2%** | 14.1% |
+| test | 723 | 481 | 83 | **17.3%** | 11.5% |
+
+So roughly **one negative in five**, on both sides of the split, is a row that sits in
+a class the protein is documented to bind. That is the practically relevant figure:
+specificity, F1 and the (protein, subclass) planka all read partly off labels
+the source publication disputes, and the planka is affected in the same
+direction as the model, since both are keyed on the same cells.
+
+Nothing here is a reason to relabel: see the previous subsection for why the
+cell-vs-species grain makes a blanket flip wrong. It is a reason to report
+`--relabel_fig3a_disputed_negatives` as a sensitivity check alongside any
+headline specificity number, which no run on the current table has done.
+
+### How the rows are selected
+
+No script in the repository builds `data/fig3a_disputed_negative_pair_ids.csv` -- it is
+only ever read (`dataloader/Dataloader.py:159-190`, `training/read_configuration.py`).
+The selection rule was therefore recovered by reproducing the file from the matrix in
+this document, and it reproduces exactly:
+
+1. **The matrix.** The 108 `X` marks of the table above, over 35 proteins and 27
+   Figure-3a rows. (One of the 108 has no corresponding row in this table at all.)
+2. **The class of a row.** Taken from the `Lipid` column, not `FullIdentityOfLipid`:
+   the head before the parenthesis, with `(O-...)` promoting it to the ether row --
+   `PC(O-34:1)` -> `PC-O`, not `PC`. A naive prefix gets 933 of the 1159 right and the
+   other 226 wrong, so this step is load-bearing.
+3. **Isobaric combined names contribute BOTH candidate rows.** `PC(O-30:0)/LPC(30:0)`
+   is a candidate for `PC-O` and for `LPC`; `PG/BMP(34:1)` is a candidate for the
+   single `PG/BMP` row. This is the same both-rows rule the consistency check above
+   uses in the other direction.
+4. **Keep the negatives whose (protein, candidate row) is marked.** That yields 1321
+   rows.
+5. **Drop the `PG/BMP` ones.** The 162 rows that 1321 has over 1159 are *all* of class
+   `PG/BMP`, and all 162 sit in cells this table already satisfies with a
+   `PG/BMP`-format positive of its own -- the exact 11-protein set match documented in
+   the consistency check above. With the mark already accounted for, the remaining
+   negatives of those cells were not listed.
+
+Verified on the current table: every one of the 1159 `pair_id`s resolves to a row with
+`Interaction == 0`, whose `LTPProtein` matches the file's own column, and whose
+(protein, `fig3a_class`) pair carries a mark -- 1159 of 1159 on each check. `pair_id`
+is the row position in
+`Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed_CandidatesCompleted_Deduplicated.csv`,
+the same `pair_id` convention the loader uses.
+
+Two consequences worth stating:
+
+- **The artefact is not regenerable from code.** It depends on a 600-DPI pixel reading
+  of `files/Reuter.pdf` page 22 that exists only as the markdown matrix in this
+  document. If the interaction table is ever rebuilt with different row order, every
+  `pair_id` in the file silently points somewhere else. The steps above are enough to
+  rebuild it, and they are written here for that reason.
+- **Step 5 is a judgement, not a derivation.** `PG/BMP` was excluded because its mark
+  was already explained; the same argument would apply to every other class, since all
+  1159 rows sit in already-satisfied cells. It is not applied to them. Anyone using
+  this file should know that its boundary is set by that one asymmetry.

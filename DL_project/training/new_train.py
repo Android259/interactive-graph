@@ -842,6 +842,16 @@ if conf.lipid_species_coldsplit:
     excluded_set_parts.append(
         "groups_species%02d" % int(conf.lipid_species_coldsplit * 100 + 0.5)
     )
+if conf.drop_uncovered_protein_subclass:
+    # Same block, a different EVALUATED SET of it: the rows whose (protein, subclass)
+    # cell is absent from training are dropped instead of scored. That changes what every
+    # test number means, so it has to change the path too -- without this a filtered and
+    # an unfiltered run of the same label share one run/ directory, one test_metrics
+    # folder and one (exclusion_set, seed) key in metrics_summary.csv, and whichever
+    # finished last would silently stand for both. Appended rather than folded into the
+    # "groups_species%02d" part so the "groups_" prefix every consumer keys on still
+    # starts the name.
+    excluded_set_parts.append("covered")
 if conf.family_only:
     # Third axis, same argument as --lipid_coldsplit just above. --family_only excludes
     # nothing, it RESTRICTS training to one family, so without this every family landed
