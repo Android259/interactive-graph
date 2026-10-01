@@ -101,6 +101,68 @@ def logit_adjustment_bias(class_counts, tau=1.0):
     return tau * class_prior.log()
 
 
+def _grouped_pu_loss(
+    outl, interaction_labels, group_priors, group_ids,
+    beta, gamma, sample_weights, tau, cap,
+):
+    """nnPU with one prior per group: the estimator run inside each group, then combined.
+
+    Group weight is the group's share of the batch -- of the sample weights when they
+    are given, of the row count otherwise -- so the combination is the same convex
+    combination sum_g w_g R_g the population risk decomposes into. A group carrying no
+    labeled positive contributes its unlabeled risk, which is what the ungrouped
+    estimator does in that situation too.
+    """
+    if group_ids is None:
+        raise ValueError("PU per-group prior requires group_ids")
+    if group_priors.dim() != 1:
+        raise ValueError(
+            f"PU per-group prior must be 1-D, got shape {tuple(group_priors.shape)}"
+        )
+    interaction_labels = interaction_labels.to(outl.device)
+    if interaction_labels.shape != (outl.shape[0],):
+        raise ValueError(
+            "PU labels must have shape "
+            f"({outl.shape[0]},), got {tuple(interaction_labels.shape)}"
+        )
+    group_ids = group_ids.to(outl.device).long()
+    if group_ids.shape != (outl.shape[0],):
+        raise ValueError(
+            "PU group_ids must have shape "
+            f"({outl.shape[0]},), got {tuple(group_ids.shape)}"
+        )
+    present = torch.unique(group_ids)
+    if int(present.min()) < 0 or int(present.max()) >= group_priors.shape[0]:
+        raise ValueError(
+            f"PU group_ids index outside the {group_priors.shape[0]} supplied priors"
+        )
+
+    weights = sample_weights.to(outl.device).float() if sample_weights is not None else None
+    total_risk = None
+    total_weight = 0.0
+    for group in present.tolist():
+        rows = group_ids == group
+        group_weight = float(weights[rows].sum()) if weights is not None else float(rows.sum())
+        if group_weight <= 0.0:
+            continue
+        group_risk = Non_Negative_Positive_Unlabeled_loss(
+            outl[rows],
+            interaction_labels[rows],
+            float(group_priors[group]),
+            beta=beta,
+            gamma=gamma,
+            sample_weights=weights[rows] if weights is not None else None,
+            tau=tau,
+            cap=cap,
+        )
+        scaled = group_weight * group_risk
+        total_risk = scaled if total_risk is None else total_risk + scaled
+        total_weight += group_weight
+    if total_risk is None:
+        raise ValueError("PU per-group prior received a batch with no weighted rows")
+    return total_risk / total_weight
+
+
 def Non_Negative_Positive_Unlabeled_loss(
     outl,
     interaction_labels,
@@ -110,6 +172,7 @@ def Non_Negative_Positive_Unlabeled_loss(
     sample_weights=None,
     tau=1.0,
     cap=float("inf"),
+    group_ids=None,
 ):
     """nnPU risk estimator (Kiryo et al., 2017).
 
@@ -139,7 +202,28 @@ def Non_Negative_Positive_Unlabeled_loss(
     (so Kiryo's estimation-error theory still applies) while the gradient stays
     alive up to a margin ~cap, and it limits how far negative_risk can dive
     (floor ~ (batch_positive_fraction - prior) * cap).
+
+    prior may instead be a 1-D tensor of per-GROUP priors, in which case group_ids
+    (one index per row) is required and the risk is estimated per group and combined
+    by group weight -- the estimator each group's own prior belongs to, not a pooled
+    one with a per-row number substituted in. That distinction is the whole point:
+    in the population limit a per-row prior inside the POOLED means changes nothing,
+    because sum_g w_g pi_g E_{P_g}[l] = pi_global E_P[l] exactly. What does differ is
+    running the estimator itself per group: the non-negativity correction is nonlinear,
+    so a group whose unlabeled rows are mostly hidden positives gets its own negative
+    risk clamped instead of being averaged against groups where it is not.
+
+    Each group is evaluated by a recursive call with that group's scalar prior, so the
+    arithmetic above is not duplicated -- which also means the diagnostics record one
+    entry per (call, group present in the batch) rather than one per call.
     """
+    if isinstance(prior, torch.Tensor) and prior.dim() > 0:
+        return _grouped_pu_loss(
+            outl, interaction_labels, prior, group_ids,
+            beta=beta, gamma=gamma, sample_weights=sample_weights, tau=tau, cap=cap,
+        )
+    if group_ids is not None:
+        raise ValueError("PU group_ids requires a per-group prior tensor")
     if outl.dim() != 2 or outl.shape[1] != 2:
         raise ValueError(f"PU logits must have shape (batch, 2), got {tuple(outl.shape)}")
     if not 0.0 < float(prior) < 1.0:

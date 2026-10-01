@@ -2224,14 +2224,16 @@ class PLIDataset(
         orig_indexes = self.csv["pair_id"].to_numpy()
         # The sample cache's key, per row of this split (see get()).
         self._pair_id_by_idx = orig_indexes
-        # Only the GRAB loss reads a sample's original row id: it keys the pair-graph
-        # coefficients by it (batch_pair_ids in new_train.py). ProteinGraphData.__inc__
-        # exempts it from PyG's node-index shifting, which is handling of the field, not a
-        # second use of it -- nothing else in the project touches it. Without --grab_loss
-        # it is therefore built, sliced per sample and concatenated per batch for nobody.
+        # Two readers of a sample's original row id: GRAB loss (keys the pair-graph
+        # coefficients by it, batch_pair_ids in new_train.py) and --pu_rho_by_subclass
+        # (looks up each row's lipid subclass by it, pu_prior_and_groups in
+        # new_train.py). ProteinGraphData.__inc__ exempts it from PyG's node-index
+        # shifting, which is handling of the field, not a third use of it -- nothing
+        # else in the project touches it. Without either consumer it is therefore
+        # built, sliced per sample and concatenated per batch for nobody.
         self._pair_id_tensor = (
             torch.tensor(orig_indexes, dtype=torch.long).view(-1, 1)
-            if self.config.grab_loss
+            if self.config.grab_loss or getattr(self.config, "pu_rho_by_subclass", False)
             else None
         )
         # Which samples of a batch are the same pair seen through different candidates.

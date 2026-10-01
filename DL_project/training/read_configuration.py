@@ -48,7 +48,7 @@ FROZEN_PROTEIN_EMBEDDINGS = (
     ("esmif1_replace_esm3", "ESMIF1", "esmif1_embedding_dim"),
     ("saprot_replace_esm3", "SAPROT", "saprot_embedding_dim"),
 )
-ACT_FNS = ("leakyrelu", "gelu", "prelu")
+ACT_FNS = ("leakyrelu", "gelu", "prelu", "relu")
 
 
 def parse_deepclip_widths(widths):
@@ -1597,6 +1597,17 @@ class ModelConfig:
     testmode: bool = False
     pu_rho: float = 0.2
     pu_unlabeled_positive_fraction: float | None = None
+    # One PU class prior per lipid subclass of the source paper instead of one for the
+    # whole train set: the same pu_unlabeled_positive_fraction formula applied to each
+    # subclass's own train counts (training/new_train.py), and the nnPU estimator then
+    # run inside each subclass (architecture/loss.py's _grouped_pu_loss). The reason the
+    # grain is the subclass: within one the head groups are the same, so "does this
+    # protein take this subclass" is close to settled while "which species of it" is
+    # not, and an unlabeled row in a subclass the protein does take is a likely hidden
+    # positive, which a single train-wide prior cannot express -- per-subclass positive
+    # rates run 0.25-0.68 (dataloader/AGENTS.md). Subclass membership is read from
+    # data/lipid_article_classification.json, the same file --lipid_subclass uses.
+    pu_rho_by_subclass: bool = False
     pu_beta: float = 0.0
     pu_gamma: float = 1.0
     pu_tau: float = 1.0
@@ -2607,6 +2618,15 @@ class ModelConfig:
                 raise ValueError(
                     "pu_unlabeled_positive_fraction must be in the range [0, 1)"
                 )
+        if self.pu_rho_by_subclass:
+            if not self.pu_loss:
+                raise ValueError("pu_rho_by_subclass requires pu_loss")
+            if self.pu_unlabeled_positive_fraction is None:
+                raise ValueError(
+                    "pu_rho_by_subclass derives each subclass's prior from its own "
+                    "train counts, which needs pu_unlabeled_positive_fraction; a "
+                    "single manual pu_rho has nothing to vary by subclass"
+                )
         if self.pu_beta < 0.0:
             raise ValueError("pu_beta must be non-negative")
         if self.pu_gamma <= 0.0:
@@ -3272,6 +3292,8 @@ class ModelConfig:
             # its own negative slope per call site (each make_activation() call
             # creates an independent PReLU with its own parameter).
             return torch.nn.PReLU(init=0.01)
+        if self.act_fn == "relu":
+            return torch.nn.ReLU()
         return torch.nn.GELU()
 
     @property
@@ -3596,6 +3618,8 @@ SIMPLE_BOOL_FLAGS = {
     "--grab_loss": "grab_loss",
     "pu_loss": "pu_loss",
     "--pu_loss": "pu_loss",
+    "pu_rho_by_subclass": "pu_rho_by_subclass",
+    "--pu_rho_by_subclass": "pu_rho_by_subclass",
     "focal_loss": "focal_loss",
     "--focal_loss": "focal_loss",
     "logit_adjustment": "logit_adjustment",
@@ -3791,6 +3815,7 @@ VALUE_HANDLERS = {
     "--pu_unlabeled_positive_fraction=": set_config_field(
         "pu_unlabeled_positive_fraction", float
     ),
+    "--pu_rho_by_subclass=": set_config_field("pu_rho_by_subclass", read_bool),
     "--pu_beta=": set_config_field("pu_beta", float),
     "--pu_gamma=": set_config_field("pu_gamma", float),
     "--pu_tau=": set_config_field("pu_tau", float),

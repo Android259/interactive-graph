@@ -148,6 +148,103 @@ def test_pu_loss_rejects_invalid_labels():
         Non_Negative_Positive_Unlabeled_loss(outl, labels, prior=0.2)
 
 
+def test_pu_loss_per_group_prior_matches_weighted_mean_of_per_group_losses():
+    outl = torch.tensor([[0.0, 2.0], [0.0, -1.0], [0.0, 0.5], [0.0, -2.0], [0.0, 1.5]])
+    labels = torch.tensor([1, 0, 0, 1, 0])
+    group_ids = torch.tensor([0, 0, 0, 1, 1])
+    group_priors = torch.tensor([0.25, 0.60])
+
+    first = Non_Negative_Positive_Unlabeled_loss(outl[:3], labels[:3], 0.25)
+    second = Non_Negative_Positive_Unlabeled_loss(outl[3:], labels[3:], 0.60)
+
+    loss = Non_Negative_Positive_Unlabeled_loss(
+        outl, labels, group_priors, group_ids=group_ids
+    )
+
+    assert torch.allclose(loss, (3.0 * first + 2.0 * second) / 5.0)
+
+
+def test_pu_loss_per_group_prior_differs_from_pooled_prior():
+    outl = torch.tensor([[0.0, 2.0], [0.0, -1.0], [0.0, 0.5], [0.0, -2.0], [0.0, 1.5]])
+    labels = torch.tensor([1, 0, 0, 1, 0])
+    group_ids = torch.tensor([0, 0, 0, 1, 1])
+
+    pooled = Non_Negative_Positive_Unlabeled_loss(outl, labels, 0.4)
+    grouped = Non_Negative_Positive_Unlabeled_loss(
+        outl, labels, torch.tensor([0.25, 0.60]), group_ids=group_ids
+    )
+
+    assert not torch.allclose(pooled, grouped)
+
+
+def test_pu_loss_per_group_prior_weights_groups_by_sample_weight():
+    outl = torch.tensor([[0.0, 2.0], [0.0, -1.0], [0.0, 0.5], [0.0, -2.0], [0.0, 1.5]])
+    labels = torch.tensor([1, 0, 0, 1, 0])
+    group_ids = torch.tensor([0, 0, 0, 1, 1])
+    weights = torch.tensor([2.0, 1.0, 1.0, 3.0, 1.0])
+
+    first = Non_Negative_Positive_Unlabeled_loss(
+        outl[:3], labels[:3], 0.25, sample_weights=weights[:3]
+    )
+    second = Non_Negative_Positive_Unlabeled_loss(
+        outl[3:], labels[3:], 0.60, sample_weights=weights[3:]
+    )
+
+    loss = Non_Negative_Positive_Unlabeled_loss(
+        outl,
+        labels,
+        torch.tensor([0.25, 0.60]),
+        group_ids=group_ids,
+        sample_weights=weights,
+    )
+
+    assert torch.allclose(loss, (4.0 * first + 4.0 * second) / 8.0)
+
+
+def test_pu_loss_per_group_prior_group_without_positives_uses_unlabeled_risk():
+    outl = torch.tensor([[0.0, 2.0], [0.0, -1.0], [0.0, 0.5]])
+    labels = torch.tensor([1, 0, 0])
+    group_ids = torch.tensor([0, 0, 1])
+    logits = outl[:, 1] - outl[:, 0]
+
+    with_positives = Non_Negative_Positive_Unlabeled_loss(outl[:2], labels[:2], 0.25)
+    without_positives = F.softplus(logits[2:]).mean()
+
+    loss = Non_Negative_Positive_Unlabeled_loss(
+        outl, labels, torch.tensor([0.25, 0.60]), group_ids=group_ids
+    )
+
+    assert torch.allclose(loss, (2.0 * with_positives + 1.0 * without_positives) / 3.0)
+
+
+def test_pu_loss_per_group_prior_requires_group_ids():
+    outl = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
+    labels = torch.tensor([1, 0])
+
+    with pytest.raises(ValueError, match="group_ids"):
+        Non_Negative_Positive_Unlabeled_loss(outl, labels, torch.tensor([0.25, 0.60]))
+
+
+def test_pu_loss_group_ids_require_a_per_group_prior():
+    outl = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
+    labels = torch.tensor([1, 0])
+
+    with pytest.raises(ValueError, match="per-group prior tensor"):
+        Non_Negative_Positive_Unlabeled_loss(
+            outl, labels, 0.25, group_ids=torch.tensor([0, 1])
+        )
+
+
+def test_pu_loss_rejects_group_ids_outside_the_supplied_priors():
+    outl = torch.tensor([[0.0, 1.0], [1.0, 0.0]])
+    labels = torch.tensor([1, 0])
+
+    with pytest.raises(ValueError, match="outside"):
+        Non_Negative_Positive_Unlabeled_loss(
+            outl, labels, torch.tensor([0.25]), group_ids=torch.tensor([0, 1])
+        )
+
+
 def test_grab_loss_without_graph_coefficients_matches_cross_entropy():
     outl = torch.tensor([[2.0, 0.0], [0.0, 2.0]])
     labels = torch.tensor([0, 1])

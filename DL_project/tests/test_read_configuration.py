@@ -331,6 +331,7 @@ def test_read_configuration_parses_named_loss_type():
     [
         ("Leakyrelu", "leakyrelu", "LeakyReLU"),
         ("gelu", "gelu", "GELU"),
+        ("relu", "relu", "ReLU"),
     ],
 )
 def test_read_configuration_parses_named_activation_function(
@@ -384,7 +385,7 @@ def test_read_configuration_rejects_numeric_loss_type():
 
 def test_read_configuration_rejects_unknown_activation_function():
     with pytest.raises(ValueError, match="act_fn"):
-        read_named_configuration(["train.py", "--act_fn=relu"])
+        read_named_configuration(["train.py", "--act_fn=swish"])
 
 
 def test_read_configuration_rejects_numeric_lipid_fragments_treatment():
@@ -460,6 +461,35 @@ def test_manual_pu_rho_is_used_without_unlabeled_positive_fraction():
 def test_read_configuration_rejects_invalid_pu_loss_parameters(argument, message):
     with pytest.raises(ValueError, match=message):
         read_named_configuration(["train.py", argument])
+
+
+def test_read_configuration_parses_pu_rho_by_subclass():
+    config = read_named_configuration([
+        "train.py",
+        "--pu_loss",
+        "--pu_unlabeled_positive_fraction=0.05",
+        "--pu_rho_by_subclass",
+    ])
+
+    assert config.pu_rho_by_subclass is True
+
+
+def test_pu_rho_by_subclass_is_off_by_default():
+    assert ModelConfig().pu_rho_by_subclass is False
+
+
+def test_pu_rho_by_subclass_requires_pu_loss():
+    with pytest.raises(ValueError, match="pu_rho_by_subclass requires pu_loss"):
+        read_named_configuration([
+            "train.py",
+            "--pu_rho_by_subclass",
+            "--pu_unlabeled_positive_fraction=0.05",
+        ])
+
+
+def test_pu_rho_by_subclass_requires_an_unlabeled_positive_fraction():
+    with pytest.raises(ValueError, match="pu_unlabeled_positive_fraction"):
+        read_named_configuration(["train.py", "--pu_loss", "--pu_rho_by_subclass"])
 
 
 def test_model_config_weight_decay_defaults_to_small_nonzero():

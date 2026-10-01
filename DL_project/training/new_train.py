@@ -66,6 +66,7 @@ from dataloader.Dataloader import PLIDataset
 from dataloader.pair_descriptors import descriptor_catalog_only
 from dataloader.preassembled_loader import PreassembledLoader, preassembly_mode
 from dataloader.lipid_classes import class_level_positive_labels
+from dataloader.lipid_subclass_blocks import article_subclass_species
 from dataloader.protein_graph_builder import FAMILY_NAMES
 from candidate_averaging import (
     CandidateAccumulator,
@@ -216,6 +217,101 @@ def batch_sample_weights(prot, sample_count):
             f"{invalid_positions}"
         )
     return common_weights[pos]
+# Below this many train rows a subclass's count-derived prior is noise, not a prior --
+# the classification file puts one or two species in several of its 23 subclasses.
+PU_SUBCLASS_MINIMUM_TRAIN_ROWS = 20
+
+
+def build_pu_subclass_priors(conf, dataset, train_labels):
+    """(per-subclass PU priors, pair_id -> prior slot) for --pu_rho_by_subclass.
+
+    Each subclass of the source paper gets conf.effective_pu_rho applied to its OWN
+    train counts, so a subclass the proteins mostly do take carries a higher prior than
+    one they mostly do not, instead of both being told the train-wide number.
+
+    Two deliberate fallbacks, both onto the train-wide conf.pu_rho, both reported:
+    a subclass with fewer than PU_SUBCLASS_MINIMUM_TRAIN_ROWS train rows (of 23
+    subclasses, several hold one or two species, where a count-derived prior is noise),
+    and a species the classification file does not name. They share the last slot.
+
+    The returned row vector is indexed by pair_id (original interaction-table row
+    position) and covers train, validation and test rows: the priors are derived from
+    train only, but the reported valid/test PU loss has to look a row's subclass up too.
+    """
+    subclass_of_species = {
+        species: name
+        for name, members in article_subclass_species().items()
+        for species in members
+    }
+    frames = [dataset.csvtrain, dataset.csvalidate, dataset.csvtest]
+    names = sorted({
+        subclass_of_species[species]
+        for frame in frames
+        for species in frame["FullIdentityOfLipid"].astype(str)
+        if species in subclass_of_species
+    })
+    fallback_slot = len(names)
+    slot_of_name = {name: slot for slot, name in enumerate(names)}
+
+    train_species = dataset.csvtrain["FullIdentityOfLipid"].astype(str).to_numpy()
+    train_slots = torch.as_tensor(
+        [
+            slot_of_name.get(subclass_of_species.get(species), fallback_slot)
+            for species in train_species
+        ],
+        dtype=torch.long,
+    )
+    labels = train_labels.view(-1)
+    if labels.shape[0] != train_slots.shape[0]:
+        raise ValueError(
+            f"train labels {labels.shape[0]} do not match train rows {train_slots.shape[0]}"
+        )
+
+    priors = torch.full((fallback_slot + 1,), float(conf.pu_rho), dtype=torch.float32)
+    derived, fell_back = [], []
+    for slot, name in enumerate(names):
+        rows = train_slots == slot
+        positive_count = float((rows & (labels == 1)).sum())
+        unlabeled_count = float((rows & (labels == 0)).sum())
+        if positive_count + unlabeled_count < PU_SUBCLASS_MINIMUM_TRAIN_ROWS:
+            fell_back.append(f"{name}={int(positive_count + unlabeled_count)}rows")
+            continue
+        # effective_pu_rho's formula lands on exactly 1.0 for a subclass whose train rows
+        # are all labeled positives and on exactly 0.0 when it has no positives and the
+        # fraction is 0, and it rejects both. Those are the only two degenerate cases:
+        # with unlabeled rows present and a fraction below 1 the value is always interior.
+        if not (unlabeled_count > 0.0 and (
+            positive_count > 0.0 or conf.pu_unlabeled_positive_fraction > 0.0
+        )):
+            fell_back.append(f"{name}=one class only")
+            continue
+        priors[slot] = conf.effective_pu_rho(
+            positive_count=positive_count, unlabeled_count=unlabeled_count
+        )
+        derived.append(f"{name}={float(priors[slot]):.4f}")
+
+    highest_pair_id = max(int(frame["pair_id"].max()) for frame in frames)
+    row_group = torch.full((highest_pair_id + 1,), fallback_slot, dtype=torch.long)
+    for frame in frames:
+        pair_ids = torch.as_tensor(frame["pair_id"].to_numpy(), dtype=torch.long)
+        species = frame["FullIdentityOfLipid"].astype(str)
+        row_group[pair_ids] = torch.as_tensor(
+            [
+                slot_of_name.get(subclass_of_species.get(value), fallback_slot)
+                for value in species
+            ],
+            dtype=torch.long,
+        )
+
+    print(f"PU rho by subclass : {', '.join(derived)}")
+    print(
+        "PU rho by subclass fallback to "
+        f"{conf.pu_rho:.6f} : {', '.join(fell_back) if fell_back else 'none'}"
+        " + unclassified species"
+    )
+    return priors, row_group
+
+
 train_labels = torch.as_tensor(
     class_level_positive_labels(train_dataset.csvtrain).values
     if conf.lipid_class_targets
@@ -229,6 +325,23 @@ if conf.pu_loss:
         unlabeled_count=class_counts[0].item(),
     )
     print(f"PU rho : {conf.pu_rho:.6f}")
+pu_group_priors, pu_row_group = (
+    build_pu_subclass_priors(conf, train_dataset, train_labels)
+    if conf.pu_loss and conf.pu_rho_by_subclass
+    else (None, None)
+)
+
+
+def pu_prior_and_groups(prot, sample_count):
+    """(prior, group_ids) for one nnPU call.
+
+    The train-wide scalar unless --pu_rho_by_subclass, in which case the per-subclass
+    prior vector plus this batch's subclass index per row, looked up by pair_id.
+    """
+    if pu_group_priors is None:
+        return conf.pu_rho, None
+    pair_ids = prot.pair_id.view(-1)[:sample_count].detach().cpu()
+    return pu_group_priors, pu_row_group[pair_ids]
 class_weights = None
 if conf.class_weights:
     class_weights = (
@@ -1199,7 +1312,13 @@ def _build_forward_args(prot, lipid):
 
 
 def _eval_task_loss(outl, labels):
-    """Validation-style task loss (mirrors the validation branch), no sample weighting."""
+    """Validation-style task loss (mirrors the validation branch), no sample weighting.
+
+    Keeps the train-wide PU prior even under --pu_rho_by_subclass: it is handed logits
+    and labels without the pair ids a subclass lookup needs, so a bilevel step scores
+    with the pooled prior while the epoch's own train/valid/test losses use per-subclass
+    ones.
+    """
     if conf.pu_loss:
         return Non_Negative_Positive_Unlabeled_loss(
             outl,
@@ -1596,15 +1715,17 @@ def epoch(idx,counttrain,countval):
                         focal_gamma=conf.focal_gamma if conf.focal_loss else None)
                 elif conf.pu_loss:
                     sample_weights = batch_sample_weights(prot, sample_count)
+                    pu_prior, pu_groups = pu_prior_and_groups(prot, sample_count)
                     los = Non_Negative_Positive_Unlabeled_loss(
                         loss_logits,
                         interaction_labels.long(),
-                        conf.pu_rho,
+                        pu_prior,
                         beta=conf.pu_beta,
                         gamma=conf.pu_gamma,
                         tau=conf.pu_tau,
                         cap=conf.pu_loss_cap,
                         sample_weights=sample_weights,
+                        group_ids=pu_groups,
                     )
                 elif conf.loss_type == "pairwise_rank":
                     sample_weights = batch_sample_weights(prot, sample_count)
@@ -1846,14 +1967,16 @@ def epoch(idx,counttrain,countval):
                     model._recon_prediction, prot.recon_target
                 )
             elif conf.pu_loss:
+                pu_prior, pu_groups = pu_prior_and_groups(prot, sample_count)
                 los = Non_Negative_Positive_Unlabeled_loss(
                     outl,
                     interaction_labels.long(),
-                    conf.pu_rho,
+                    pu_prior,
                     beta=conf.pu_beta,
                     gamma=conf.pu_gamma,
                     tau=conf.pu_tau,
                     cap=conf.pu_loss_cap,
+                    group_ids=pu_groups,
                 )
             elif conf.loss_type == "pairwise_rank":
                 los = pairwise_ranking_loss(
@@ -2089,14 +2212,16 @@ def run_test(run_summary):
             )
 
             if conf.pu_loss:
+                pu_prior, pu_groups = pu_prior_and_groups(prot, sample_count)
                 los = Non_Negative_Positive_Unlabeled_loss(
                     outl,
                     interaction_labels.long(),
-                    conf.pu_rho,
+                    pu_prior,
                     beta=conf.pu_beta,
                     gamma=conf.pu_gamma,
                     tau=conf.pu_tau,
                     cap=conf.pu_loss_cap,
+                    group_ids=pu_groups,
                 )
                 sample_losses = torch.full(
                     (sample_count,),
