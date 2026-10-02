@@ -64,7 +64,6 @@ FIG3_SUBCLASS_BLOCKS = (
     "PI",
     "LPC+LPE+LPG",
     "PA",
-    "PS+PGP+DAG+TAG",
 )
 
 # How ISOLATED each block is from whatever stays in training, measured once by

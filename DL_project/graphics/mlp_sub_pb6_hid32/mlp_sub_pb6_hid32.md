@@ -215,3 +215,4 @@ groups_PS+PGP+DAG+TAG (n=5):
 
 ## AUC vs chemistry null model, in-sample increment
 
+Failed: PC/seed0: split reproduced here does not match the scored rows -- rerun for the full output: `python3 analysis/full_label_report.py --label mlp_sub_pb6_hid32 --seeds=0,1,2,3,4`

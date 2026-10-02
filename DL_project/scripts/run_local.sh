@@ -461,7 +461,7 @@ for requested in "${POSITIONALS[@]}"; do
     # The flag itself stays in the template.
     # --lipid_subclass is the same lipid axis cut by the SOURCE PAPER'S own subclass
     # (Titeca et al.'s LTP x lipid-subclass matrix) rather than by the four hand-built
-    # sets above. Bare marker -> the grid iterates the nine blocks (kept in step with
+    # sets above. Bare marker -> the grid iterates the eight blocks (kept in step with
     # dataloader/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS and with
     # scripts/launch/submit_grid.sh's copy of the same list); --lipid_subclass=<spec>
     # in the file -> that one block alone, flag left in the template.
@@ -481,12 +481,11 @@ for requested in "${POSITIONALS[@]}"; do
         else
             if [[ -n "${GROUPS_ARG:-}${SKIP_GROUPS_ARG:-}" ]]; then
                 printf -- '--lipid_subclass runs over lipid subclasses, not protein '\
-'groups; ignoring --groups/--no_groups for %s -- all nine blocks will run.\n' \
+'groups; ignoring --groups/--no_groups for %s -- all eight blocks will run.\n' \
                     "${this_args_file}" >&2
             fi
             this_excl_groups=(
-                PC PG FA PE "Cer+CerP+HexCer+Hex2Cer+SHexCer+SM" PI "LPC+LPE+LPG" PA \
-                "PS+PGP+DAG+TAG"
+                PC PG FA PE "Cer+CerP+HexCer+Hex2Cer+SHexCer+SM" PI "LPC+LPE+LPG" PA
             )
             this_args_template="$(printf '%s' "${this_args_template}" \
                 | sed -E 's/(^|[[:space:]])--lipid_subclass([[:space:]]|$)/\1/g')"

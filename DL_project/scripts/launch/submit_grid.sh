@@ -202,7 +202,7 @@ LIPID_COLDSPLIT_SETS_LIST=(sphingolipids phosphorus_free choline anionic)
 # this list in step with dataloader/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS --
 # a spec absent from data/lipid_article_classification.json is rejected at parse time.
 LIPID_SUBCLASS_BLOCKS_LIST=(
-    PC PG FA PE "Cer+CerP+HexCer+Hex2Cer+SHexCer+SM" PI "LPC+LPE+LPG" PA "PS+PGP+DAG+TAG"
+    PC PG FA PE "Cer+CerP+HexCer+Hex2Cer+SHexCer+SM" PI "LPC+LPE+LPG" PA
 )
 
 # --family_only, bare (no value), in the args file switches the grid to a third axis:
