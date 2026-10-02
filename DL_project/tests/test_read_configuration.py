@@ -79,7 +79,6 @@ def test_read_configuration_parses_new_boolean_flags():
     config = read_named_configuration([
         "train.py",
         "--lipid_isomers",
-        "--grab_loss",
         "--type_opt",
         "--bidirectional_edges",
         "--single_gat_layer",
@@ -95,7 +94,6 @@ def test_read_configuration_parses_new_boolean_flags():
     ])
 
     assert config.lipid_isomers is True
-    assert config.grab_loss is True
     assert config.type_opt is True
     assert config.bidirectional_edges is True
     assert config.single_gat_layer is True

@@ -40,7 +40,7 @@
 # Safety rules:
 # - The input file is never overwritten; the result goes to a new CSV.
 # - Row order is preserved through stages 1-3: original row positions are active pair
-#   IDs used by Tanimoto weights and GRAB edges. Stage 4 changes them, and says so.
+#   IDs used by Tanimoto weights. Stage 4 changes them, and says so.
 # - A component whose candidates do not all share one molecular formula is NOT a single
 #   lipid. Those are left untouched and reported, rather than silently merged. There are
 #   9 on this table, every one a CxHyNO8 against a CxHyNO9 -- a sphingolipid annotated
@@ -565,8 +565,8 @@ def merge_duplicate_pairs(table, isomeric=True, keep_screen_duplicates=False):
     takes the label as the maximum -- positive wins over unlabelled, which matters if
     this is ever run on a table whose repeated rows disagree.
 
-    Row positions change, and they are the pair IDs the Tanimoto artifacts and the GRAB
-    edges are indexed by, so both have to be rebuilt against the new file. The Tanimoto
+    Row positions change, and they are the pair IDs the Tanimoto artifacts are
+    indexed by, so they have to be rebuilt against the new file. The Tanimoto
     loader checks its manifest against the table and falls back rather than serving
     weights for the wrong rows, but the fallback is no substitute for a rebuild.
     """
@@ -822,9 +822,8 @@ def main():
         )
         if dropped:
             print(
-                "row positions changed: rebuild the Tanimoto compact artifacts and "
-                "the GRAB pair-graph edges against the new table, since both are "
-                "indexed by row position"
+                "row positions changed: rebuild the Tanimoto compact artifacts "
+                "against the new table, since they are indexed by row position"
             )
 
     if args.dry_run:

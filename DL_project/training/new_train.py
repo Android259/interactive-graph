@@ -26,7 +26,6 @@ torch.set_flush_denormal(True)
 
 import torch.nn.functional as F
 import torch_geometric
-from torch.optim.swa_utils import AveragedModel, SWALR
 from torch.utils.tensorboard import SummaryWriter
 
 TRAINING_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -48,7 +47,6 @@ from architecture.mlp_utils import (
     ConcreteDropout,
 )
 from architecture.loss import (
-    GRAB_loss,
     GroupDROState,
     Non_Negative_Positive_Unlabeled_loss,
     focal_loss,
@@ -776,17 +774,6 @@ if conf.lr_warmup_cosine:
         )
     else:
         lr_scheduler = cosine_scheduler
-
-swa_model = None
-swa_scheduler = None
-swa_start_epoch = None
-if conf.swa:
-    swa_model = AveragedModel(model)
-    swa_scheduler = SWALR(
-        optimizer,
-        swa_lr=conf.swa_lr if conf.swa_lr is not None else conf.lr * conf.lr_min_factor,
-    )
-    swa_start_epoch = int(conf.ep * conf.swa_start_frac)
 
 SAFE_PATH_PART = re.compile(r"[^A-Za-z0-9._=-]+")
 config_name = f"{'addLayers' if conf.third_layers_in_mlps else 'base'}_{'protSA' if conf.protein_self_attention else ''}_{'lipSA' if conf.lipid_self_attention else ''}_{'CA' if conf.cross_attention else ''}_{'doubleAtt' if conf.double_attention else ''}_{'protPosBias' if conf.prot_attention_pos_bias else ''}"
@@ -1712,17 +1699,6 @@ def epoch(idx,counttrain,countval):
                     los = conf.protein_recon_weight * F.mse_loss(
                         model._recon_prediction, prot.recon_target
                     )
-                elif conf.grab_loss:
-                    batch_pair_ids = prot.pair_id.view(-1)[:sample_count]
-                    grab_label_coefficients = train_dataset.get_grab_batch_inputs(batch_pair_ids, device)
-                    sample_weights = batch_sample_weights(prot, sample_count)
-                    los = GRAB_loss(
-                        loss_logits,
-                        interaction_labels.long(),
-                        grab_label_coefficients,
-                        class_weights=class_weights,
-                        sample_weights=sample_weights,
-                        focal_gamma=conf.focal_gamma if conf.focal_loss else None)
                 elif conf.pu_loss:
                     sample_weights = batch_sample_weights(prot, sample_count)
                     pu_prior, pu_groups = pu_prior_and_groups(prot, sample_count)
@@ -1768,7 +1744,7 @@ def epoch(idx,counttrain,countval):
                         los = group_dro_state.step(los_unred, family_index)
                     else:
                         # The None branch is the same number, not an approximation of it:
-                        # see batch_sample_weights. It matches what focal_loss, GRAB_loss and
+                        # see batch_sample_weights. It matches what focal_loss and
                         # the PU loss already do when handed no weights.
                         los = (
                             los_unred.mean()
@@ -1789,7 +1765,7 @@ def epoch(idx,counttrain,countval):
                 interaction_labels.long(),
                 los,
                 sample_count,
-                loss_count=1 if conf.grab_loss else sample_count,
+                loss_count=sample_count,
             )
 
             # Gate penalty on the TRAIN loss only when NOT bilevel; in bilevel mode the
@@ -2639,10 +2615,7 @@ for eepoch in range(EPOCHS):
         epochs_without_checkpoint_improvement = 0
     else:
         epochs_without_checkpoint_improvement += 1
-    if conf.swa and epoch_number >= swa_start_epoch:
-        swa_model.update_parameters(model)
-        swa_scheduler.step()
-    elif lr_scheduler is not None:
+    if lr_scheduler is not None:
         lr_scheduler.step()
     #plot_metrics()
     epoch_number += 1
@@ -2674,11 +2647,7 @@ run_summary = summarize_training_run(epoch_history, training_duration_sec, run_s
 # and rankprot off epoch-120 milestones because their selected weights were never saved,
 # and every comparison against them then carried a weights-rule mismatch as a caveat.
 final_model_state = copy.deepcopy(model.state_dict())
-if conf.swa and swa_model.n_averaged > 0:
-    print(f"SWA: using weights averaged over {int(swa_model.n_averaged)} epochs")
-    model.load_state_dict(swa_model.module.state_dict())
-else:
-    model.load_state_dict(best_model_state)
+model.load_state_dict(best_model_state)
 # Discovered hyperparameters (read off the final weights): surviving group widths from
 # the gates and per-block Concrete Dropout rates. Empty dicts when the features are off.
 # Consumed by run_test() below to record them into the metrics report/table.
@@ -2694,8 +2663,8 @@ if discovered_dropout_report:
         print(f"  {site_name}: {p:.4f}")
 if conf.save_checkpoint:
     # Two files, both under checkpoints/<label>/<excluded_set>/: seed<N>.pt holds the
-    # weights this run is judged on (the rolling-valid-BA pick loaded just above, or the
-    # SWA average when --swa is on), seed<N>_final.pt the last epoch's.
+    # weights this run is judged on (the rolling-valid-BA pick loaded just above),
+    # seed<N>_final.pt the last epoch's.
     checkpoint_dir = os.path.join(checkpoints_root, label_name, excluded_set_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
     checkpoint_path = os.path.join(checkpoint_dir, f"seed{conf.seed}.pt")

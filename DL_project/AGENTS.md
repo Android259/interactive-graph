@@ -13,7 +13,7 @@
 ```text
 training/                 active entry point, CLI config parser, reproducibility
 architecture/             model modules (InteractionClassification + encoders)
-dataloader/               active PLIDataset (Dataloader.py) + GRAB graph; legacy loaders
+dataloader/               active PLIDataset (Dataloader.py); legacy loaders
 data/                     input artifacts (CSVs, ESM3/PLM embeddings, graphs) + lipid graph generator
 preprocessing/            offline data prep (embeddings, negatives, PDB/FASTA, graphs)
 analysis/                 canonical metrics-table build / analysis / plots
@@ -62,11 +62,6 @@ training/new_train.py
        -> architecture/final_layer.py
   -> architecture/loss.py
 
-dataloader/GRAB_graph.py
-  -> data/grab_pair_graph_edges.csv
-  -> dataloader/Dataloader.py
-  -> architecture/loss.py through training/new_train.py
-
 data/build_lipid_isomer_graphs.py
   -> data/lipid_graphs/*
   -> dataloader/Dataloader.py
@@ -77,8 +72,7 @@ data/build_lipid_isomer_graphs.py
 - `training/read_configuration.py`: `ModelConfig` and custom CLI parser.
 - `training/reproducibility.py`: Python, NumPy, PyTorch, worker, and DataLoader seeds.
 - `training/new_train.py`: active train/validation/test entry point; importing it causes runtime side effects.
-- `dataloader/Dataloader.py`: active dataset, protein/lipid loading, pair graph, GRAB coefficient precomputation.
-- `dataloader/GRAB_graph.py`: pair-edge generation.
+- `dataloader/Dataloader.py`: active dataset, protein/lipid loading, pair graph.
 - `architecture/interaction_classification.py`: top-level model.
 - `architecture/protein_encoder.py`: protein GATv2 encoder.
 - `architecture/lipid_encoder.py`: legacy lipid embeddings and optional chemical-graph GATv2 encoder.
@@ -86,7 +80,7 @@ data/build_lipid_isomer_graphs.py
 - `architecture/cross_attention.py`: bidirectional protein/lipid attention.
 - `architecture/final_layer.py`: graph pooling, binary logits, and both gradient-reversal
   heads (per-partner anti-shortcut adversary, family DANN).
-- `architecture/loss.py`: active `GRAB_loss`.
+- `architecture/loss.py`: active losses.
 - `data/build_lipid_isomer_graphs.py`: offline lipid graph generation.
 - `tests/`: unit and synthetic CPU integration tests.
 
@@ -96,8 +90,6 @@ data/build_lipid_isomer_graphs.py
   after sampling and splitting.
 - `tanimoto_pos` is the compact train-only position used to index Tanimoto and
   protein-group sample-weight vectors.
-- GRAB graph sources and targets must both belong to train; validation and test
-  labels never contribute to GRAB coefficients.
 - `prot_batch` and `lip_batch` identify samples. `lipid_batch` identifies lipid
   fragments and is only an additional attention restriction.
 - Attention masks use `True` for forbidden query-key pairs.

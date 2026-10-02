@@ -2,7 +2,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from architecture.loss import GRAB_loss, GroupDROState, Non_Negative_Positive_Unlabeled_loss
+from architecture.loss import GroupDROState, Non_Negative_Positive_Unlabeled_loss
 
 
 def test_pu_loss_uses_positive_and_unlabeled_risks():
@@ -243,98 +243,6 @@ def test_pu_loss_rejects_group_ids_outside_the_supplied_priors():
         Non_Negative_Positive_Unlabeled_loss(
             outl, labels, torch.tensor([0.25]), group_ids=torch.tensor([0, 1])
         )
-
-
-def test_grab_loss_without_graph_coefficients_matches_cross_entropy():
-    outl = torch.tensor([[2.0, 0.0], [0.0, 2.0]])
-    labels = torch.tensor([0, 1])
-    coefficients = torch.zeros((2, 2))
-
-    loss = GRAB_loss(outl, labels, coefficients)
-
-    assert torch.allclose(loss, F.cross_entropy(outl, labels))
-
-
-def test_grab_loss_rejects_coefficient_batch_mismatch():
-    outl = torch.tensor([[2.0, 0.0], [0.0, 2.0]])
-    labels = torch.tensor([0, 1])
-    coefficients = torch.zeros((1, 2))
-
-    with pytest.raises(ValueError, match="coefficients must match logits"):
-        GRAB_loss(outl, labels, coefficients)
-
-
-def test_grab_loss_rejects_invalid_labels():
-    outl = torch.tensor([[2.0, 0.0], [0.0, 2.0]])
-    labels = torch.tensor([0, 2])
-    coefficients = torch.zeros((2, 2))
-
-    with pytest.raises(ValueError, match="classes 0 and 1"):
-        GRAB_loss(outl, labels, coefficients)
-
-
-def test_grab_loss_rejects_negative_coefficients():
-    outl = torch.tensor([[2.0, 0.0], [0.0, 2.0]])
-    labels = torch.tensor([0, 1])
-    coefficients = torch.tensor([[0.0, -1.0], [0.0, 1.0]])
-
-    with pytest.raises(ValueError, match="negative"):
-        GRAB_loss(outl, labels, coefficients)
-
-
-def test_grab_loss_normalizes_sample_weights_by_weight_sum():
-    outl = torch.tensor([[2.0, 0.0], [0.0, 2.0]])
-    labels = torch.tensor([0, 1])
-    coefficients = torch.zeros((2, 2))
-    sample_weights = torch.tensor([0.2, 0.8])
-    unreduced = F.cross_entropy(outl, labels, reduction="none")
-    expected = (unreduced * sample_weights).sum() / sample_weights.sum()
-
-    loss = GRAB_loss(outl, labels, coefficients, sample_weights=sample_weights)
-
-    assert torch.allclose(loss, expected)
-
-
-def test_grab_loss_adds_graph_term_for_valid_label_coefficients():
-    outl = torch.tensor([[2.0, 0.0], [1.0, 2.0]])
-    labels = torch.tensor([0, 1])
-    coefficients = torch.tensor([[3.0, 1.0], [0.0, 2.0]])
-    target_loss = F.cross_entropy(outl, labels)
-    log_probs = F.log_softmax(outl, dim=1)
-    normalized_coefficients = coefficients / coefficients.sum(dim=1, keepdim=True)
-    graph_loss = -(normalized_coefficients * log_probs).sum(dim=1).mean()
-
-    loss = GRAB_loss(outl, labels, coefficients)
-
-    assert torch.allclose(loss, target_loss + graph_loss)
-
-
-def test_grab_loss_does_not_apply_class_weights_to_graph_term():
-    outl = torch.tensor([[2.0, 0.0], [1.0, 2.0]])
-    labels = torch.tensor([0, 1])
-    coefficients = torch.tensor([[3.0, 1.0], [0.0, 2.0]])
-    class_weights = torch.tensor([0.5, 4.0])
-    target_loss = F.cross_entropy(outl, labels, weight=class_weights, reduction="none").mean()
-    log_probs = F.log_softmax(outl, dim=1)
-    normalized_coefficients = coefficients / coefficients.sum(dim=1, keepdim=True)
-    graph_loss = -(normalized_coefficients * log_probs).sum(dim=1).mean()
-
-    loss = GRAB_loss(outl, labels, coefficients, class_weights=class_weights)
-
-    assert torch.allclose(loss, target_loss + graph_loss)
-
-
-def test_grab_loss_ignores_targets_with_zero_coefficients():
-    outl = torch.tensor([[2.0, 0.0], [0.0, 2.0]])
-    labels = torch.tensor([0, 1])
-    coefficients = torch.tensor([[0.0, 0.0], [0.0, 1.0]])
-    target_loss = F.cross_entropy(outl, labels)
-    log_probs = F.log_softmax(outl[1:], dim=1)
-    graph_loss = -log_probs[0, 1]
-
-    loss = GRAB_loss(outl, labels, coefficients)
-
-    assert torch.allclose(loss, target_loss + graph_loss)
 
 
 def test_group_dro_state_rejects_invalid_hyperparameters():

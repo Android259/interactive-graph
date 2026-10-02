@@ -53,7 +53,6 @@ from pandas import read_csv
 from architecture.final_layer import family_dann_loss
 from architecture.interaction_classification import InteractionClassification
 from architecture.loss import (
-    GRAB_loss,
     Non_Negative_Positive_Unlabeled_loss,
     focal_loss,
     logit_adjustment_bias,
@@ -276,17 +275,7 @@ def main():
                 loss_logits = outl + logit_adjustment_bias_tensor if conf.logit_adjustment else outl
 
                 with torch.profiler.record_function("loss"):
-                    if conf.grab_loss:
-                        batch_pair_ids = prot.pair_id.view(-1)[:sample_count]
-                        grab_label_coefficients = train_dataset.get_grab_batch_inputs(batch_pair_ids, device)
-                        pos = prot.tanimoto_pos.view(-1).to(device, non_blocking=True)[:sample_count]
-                        sample_weights = common_weights[pos]
-                        los = GRAB_loss(
-                            loss_logits, interaction_labels.long(), grab_label_coefficients,
-                            class_weights=class_weights, sample_weights=sample_weights,
-                            focal_gamma=conf.focal_gamma if conf.focal_loss else None,
-                        )
-                    elif conf.pu_loss:
+                    if conf.pu_loss:
                         pos = prot.tanimoto_pos.view(-1).to(device, non_blocking=True)[:sample_count]
                         sample_weights = common_weights[pos]
                         los = Non_Negative_Positive_Unlabeled_loss(

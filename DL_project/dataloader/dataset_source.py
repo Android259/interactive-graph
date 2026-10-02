@@ -14,7 +14,7 @@ Row order and row count are NOT those of the earlier table -- merging the 92 rep
 measured cells removed 98 rows -- so pair IDs, which are original row positions, changed
 with it. Everything indexed by them has to be rebuilt against this file: the compact
 Tanimoto artifacts (their manifest records the source and the loader refuses a stale
-one), the full Tanimoto matrix and its row-id vector, and the GRAB pair-graph edges.
+one), the full Tanimoto matrix and its row-id vector.
 """
 
 import os

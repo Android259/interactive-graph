@@ -36,7 +36,6 @@ from dataloader.pair_descriptors import (
     full_catalog_order,
 )
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
-from dataloader.grab_dataset_graph import GrabDatasetGraphMixin
 from dataloader.lipid_embedding_store import load_lipid_embedding_store
 from dataloader.lipid_graph_builder import LipidGraphBuilder
 from dataloader.lipid_isomer_graph_builder import (
@@ -141,7 +140,6 @@ def ragged_rows(values, rows):
 
 
 class PLIDataset(
-    GrabDatasetGraphMixin,
     LipidGraphBuilder,
     LipidIsomerGraphBuilder,
     ProteinGraphBuilder,
@@ -160,7 +158,7 @@ class PLIDataset(
         # files/reuter_fig3a_dataset_consistency.md). Must run before --family_only/
         # --drop_proteins reset the index just below (pair_id only means "row position
         # in the fresh-read table" until then) and before _sample_interactions,
-        # _derive_lipid_class_holdout, GRAB-graph construction and chemistry-prior
+        # _derive_lipid_class_holdout and chemistry-prior
         # fitting ever read csv["Interaction"], so every one of them sees the
         # relabelled positives consistently rather than some stages working off the
         # old label.
@@ -473,7 +471,6 @@ class PLIDataset(
         if getattr(self.config, "lipid_propensity_weight", False):
             self._lipid_propensity_weights = self._compute_lipid_propensity_weights(csv)
         self.csv = self.csvtrain
-        self.pair_graph = None
         
         self.labelOH = {'PC':[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                         'PC-O':[0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -2314,16 +2311,14 @@ class PLIDataset(
         orig_indexes = self.csv["pair_id"].to_numpy()
         # The sample cache's key, per row of this split (see get()).
         self._pair_id_by_idx = orig_indexes
-        # Two readers of a sample's original row id: GRAB loss (keys the pair-graph
-        # coefficients by it, batch_pair_ids in new_train.py) and --pu_rho_by_subclass
-        # (looks up each row's lipid subclass by it, pu_prior_and_groups in
-        # new_train.py). ProteinGraphData.__inc__ exempts it from PyG's node-index
-        # shifting, which is handling of the field, not a third use of it -- nothing
-        # else in the project touches it. Without either consumer it is therefore
-        # built, sliced per sample and concatenated per batch for nobody.
+        # Read by --pu_rho_by_subclass (looks up each row's lipid subclass by it,
+        # pu_prior_and_groups in new_train.py). ProteinGraphData.__inc__ exempts it from
+        # PyG's node-index shifting, which is handling of the field, not a second use of
+        # it -- nothing else in the project touches it. Without that consumer it is
+        # therefore built, sliced per sample and concatenated per batch for nobody.
         self._pair_id_tensor = (
             torch.tensor(orig_indexes, dtype=torch.long).view(-1, 1)
-            if self.config.grab_loss or getattr(self.config, "pu_rho_by_subclass", False)
+            if getattr(self.config, "pu_rho_by_subclass", False)
             else None
         )
         # Which samples of a batch are the same pair seen through different candidates.
@@ -2544,9 +2539,6 @@ class PLIDataset(
         train_dataset._prepare_indexed_fields()
         valid_dataset._prepare_indexed_fields()
         test_dataset._prepare_indexed_fields()
-        train_dataset.pair_graph = train_dataset.build_current_pair_graph() if self.config.grab_loss else None
-        valid_dataset.pair_graph = None
-        test_dataset.pair_graph = None
         return iter((train_dataset, valid_dataset, test_dataset))
 
     def set_epoch(self, epoch):

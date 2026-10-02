@@ -7,7 +7,7 @@ import torch.nn.functional as F
 import torch_geometric
 
 from architecture.interaction_classification import InteractionClassification
-from architecture.loss import GRAB_loss, Non_Negative_Positive_Unlabeled_loss
+from architecture.loss import Non_Negative_Positive_Unlabeled_loss
 from architecture.mlp_utils import export_surviving_structure
 from architecture.protein_edge_geometry import (
     STRUCTURED_EDGE_DIM, rbf, structured_edge_features,
@@ -22,7 +22,6 @@ def make_config(
     lipid_graph_isomers=False,
     lipid_mode="concat",
     lipid_self_attention=False,
-    grab_loss=False,
 ):
     config = ModelConfig(
         hiddim=8,
@@ -33,7 +32,6 @@ def make_config(
         lipid_isomers=lipid_isomers,
         lipid_graph_isomers=lipid_graph_isomers,
         lipid_self_attention=lipid_self_attention,
-        grab_loss=grab_loss,
         pool_type="mean",
     )
     config.lipid_fragments_treatment = lipid_mode
@@ -155,13 +153,7 @@ def one_training_step(config):
     assert out.shape == (2, 2)
     assert torch.isfinite(out).all()
 
-    if config.grab_loss:
-        grab_coefficients = torch.tensor(
-            [[1.0, 0.5], [0.25, 1.0]],
-            dtype=torch.float32,
-        )
-        loss = GRAB_loss(out, labels, grab_coefficients)
-    elif config.pu_loss:
+    if config.pu_loss:
         loss = Non_Negative_Positive_Unlabeled_loss(
             out,
             labels,
@@ -294,7 +286,6 @@ def test_fast_attention_with_mlp_in_place_of_sa_builds_no_layouts_and_real_masks
             lipid_mode="fragments_mask",
             lipid_self_attention=True,
         ),
-        make_config(lipid_isomers=True, lipid_mode="fragments_mask", grab_loss=True),
         make_config(lipid_graph_isomers=True, lipid_mode="concat"),
         ModelConfig(hiddim=8, HEADS=2, m=2, batch=2, num_workers=0, pu_loss=True),
     ],

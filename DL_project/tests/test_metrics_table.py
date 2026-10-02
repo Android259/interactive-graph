@@ -140,7 +140,6 @@ def test_metric_row_extracts_configuration_and_warnings(tmp_path):
     assert row["cross_attention"] == "0"
     assert row["pocket_attention"] == "0"
     assert row["lipid_isomers"] == "1"
-    assert row["grab_loss"] == "1"
     assert row["class_weights"] == "1"
     assert row["HEADS"] == "8"
     assert row["exclusion_set"] == "subgroups_RLBP1-GLTPD1"
@@ -308,12 +307,12 @@ def test_append_metric_writes_values_from_config_object(tmp_path):
     metric_file.write_text(
         "\n".join(
             line for line in REPORT.splitlines()
-            if not line.startswith(("grab_loss:", "lipid_isomers:", "batch:", "HEADS:"))
+            if not line.startswith(("lipid_isomers:", "batch:", "HEADS:"))
         ),
         encoding="utf-8",
     )
     table = tmp_path / "metrics_summary.csv"
-    config = ModelConfig(grab_loss=True, lipid_isomers=True, batch=64, HEADS=4)
+    config = ModelConfig(lipid_isomers=True, batch=64, HEADS=4)
 
     append_metric(
         metric_file,
@@ -330,7 +329,6 @@ def test_append_metric_writes_values_from_config_object(tmp_path):
     # The table now mirrors every ModelConfig field, so run-environment settings like
     # num_workers come along too rather than being filtered out.
     assert "num_workers" in reader.fieldnames
-    assert row["grab_loss"] == "1"
     assert row["lipid_isomers"] == "1"
     assert row["batch"] == "64"
     assert row["HEADS"] == "4"

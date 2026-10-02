@@ -4,7 +4,7 @@
 - Do not run them or overwrite their outputs unless explicitly requested.
 - Preserve file naming and identifiers expected by `dataloader/Dataloader.py`.
 - Preserve interaction-table row order: original row positions are active pair
-  IDs used by Tanimoto weights and GRAB edges.
+  IDs used by Tanimoto weights.
 - Protein graph generation must keep node identifiers, edge endpoints,
   pocket-residue order, and PLM residue order aligned.
 - Never silently replace an edge endpoint missing from the generated node

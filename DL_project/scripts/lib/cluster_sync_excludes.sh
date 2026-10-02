@@ -83,7 +83,6 @@ SYNC_EXCLUDES=(
     #   the interaction tables themselves;
     #   the compact Tanimoto artifacts, whose manifests name the table they were built
     #     from and which the loader refuses when that name or timestamp does not match;
-    #   the GRAB pair-graph edges, indexed by the table's row positions;
     #   data/*.py -- these are code (the build_*.py cache/graph generators), not data;
     #     excluding them only because they live under data/ was the bug behind the
     #     KeyError above, so they sync like any other .py file in the project;
@@ -111,7 +110,6 @@ SYNC_EXCLUDES=(
     --include='/data/'
     --include='/data/Processed_*.csv'
     --include='/data/Tanimoto_compact*'
-    --include='/data/grab_pair_graph_edges.csv'
     --include='/data/*.py'
     # Small, external-source lookup tables the running model reads directly rather
     # than deriving on the fly -- neither is reproducible from something else already

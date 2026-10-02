@@ -3,8 +3,6 @@
 ## Active vs Legacy
 
 - `Dataloader.py` — **active** loader used by `training/new_train.py`.
-- `GRAB_graph.py` — pair-edge generation for the GRAB loss (train-only).
-- `grab_dataset_graph.py` — train-only GRAB graph filtering and batch coefficients.
 - `Dataloader.py`, `tanimoto_Dataloader.py` — **legacy** `PLIDataset` variants, not
   used by the active pipeline. Do not mirror active changes into them.
 
@@ -20,8 +18,6 @@ train_dataset, valid_dataset, test_dataset = PLIDataset(root_dir, csv, seed,
 - `__iter__` returns `(train, valid, test)` — three `copy.copy` clones of the same
   loaded artifacts, each pointing at a different `csv` slice (`csvtrain`,
   `csvalidate`, `csvtest`).
-- `pair_graph` (GRAB) is built **only** for the train clone, and only when
-  `config.grab_loss`; valid/test get `None`.
 - `sampler.py` owns interaction-pool sampling and `ClassBalancedBatchSampler`.
 - `lipid_graph_builder.py` owns the legacy SMILES-embedding path.
 - `lipid_isomer_graph_builder.py` owns the atom/bond graph path selected by
@@ -215,8 +211,6 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
 - Pair IDs are original interaction-CSV row positions and stay stable after
   sampling/splitting. `tanimoto_pos` is the compact train-only index into Tanimoto
   and protein-group weight vectors.
-- GRAB edge endpoints must both be train rows; validation/test labels never
-  contribute to GRAB coefficients.
 - `prot_batch` / `lip_batch` identify samples; `lipid_batch` identifies lipid
   fragments (only an extra attention restriction under `lipid_fragments_mask`).
 - Per-protein file lookups in `get()` use the interaction table's own protein name
@@ -259,5 +253,4 @@ parses but is absent from the embedding table raises rather than being skipped.
 
 ```bash
 python3 -m pytest tests/test_new_dataloader_lipid_graphs.py tests/test_pair_index_alignment.py
-python3 -m pytest tests/test_grab_graph.py
 ```

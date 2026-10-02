@@ -6,7 +6,6 @@ import pytest
 import torch
 from torch_geometric.loader import DataLoader
 
-from architecture.loss import GRAB_loss
 from dataloader.Dataloader import (
     PLIDataset,
     ProteinGraphData,
@@ -282,105 +281,6 @@ def test_batch_positions_resolve_back_to_the_same_pair_ids():
     batch_positions = torch.tensor([id2pos[int(pair_id)] for pair_id in batch_pair_ids])
 
     assert pair_ids_by_position[batch_positions].tolist() == batch_pair_ids.tolist()
-
-
-def test_grab_labels_and_coefficients_use_original_pair_ids(tmp_path):
-    dataset = make_dataset(
-        {
-            "pair_id": [30, 10, 20],
-            "LTPProtein": ["P3", "P1", "P2"],
-            "Interaction": [1, 0, 1],
-        },
-        ordered_pair_ids=[10, 20, 30],
-    )
-    dataset.ROOT_DIR = str(tmp_path)
-    pd.DataFrame(
-        {
-            "source_pair_id": [10, 20, 30],
-            "target_pair_id": [30, 30, 10],
-            "edge_weight": [1.0, 2.0, 3.0],
-        }
-    ).to_csv(tmp_path / "grab_pair_graph_edges.csv", index=False)
-
-    graph = dataset.build_current_pair_graph()
-    dataset.pair_graph = graph
-    labels_by_pair_id = {
-        int(pair_id): int(graph.y[node_id])
-        for node_id, pair_id in enumerate(graph.pair_id.tolist())
-    }
-
-    assert labels_by_pair_id == {10: 0, 20: 1, 30: 1}
-    coefficients = dataset.get_grab_batch_inputs(
-        torch.tensor([30, 10]),
-        torch.device("cpu"),
-    )
-    assert coefficients.tolist() == [[1.0, 2.0], [0.0, 3.0]]
-
-
-@pytest.mark.parametrize("seed", [0, 1, 2, 3, 4])
-def test_local_grab_generation_feeds_loss_without_training(tmp_path, seed):
-    dataset = make_dataset(
-        {
-            "pair_id": [10, 20, 30, 40],
-            "LTPProtein": ["P1", "P2", "P3", "P4"],
-            "Interaction": [0, 1, 1, 0],
-        },
-        ordered_pair_ids=[10, 20, 30, 40],
-    )
-    dataset.seed = seed
-    dataset.ROOT_DIR = str(tmp_path)
-    pd.DataFrame(
-        {
-            "source_pair_id": [10, 20, 30, 99, 20],
-            "target_pair_id": [40, 40, 40, 40, 10],
-            "edge_weight": [1.0, 3.0, 2.0, 100.0, 4.0],
-        }
-    ).to_csv(tmp_path / "grab_pair_graph_edges.csv", index=False)
-
-    dataset.pair_graph = dataset.build_current_pair_graph()
-    coefficients = dataset.get_grab_batch_inputs(
-        torch.tensor([40, 10]),
-        torch.device("cpu"),
-    )
-    loss = GRAB_loss(
-        torch.tensor([[0.0, 1.0], [1.0, 0.0]]),
-        torch.tensor([0, 0]),
-        coefficients,
-    )
-    positive_neighbor_fraction = (
-        coefficients[:, 1] / coefficients.sum(dim=1).clamp_min(1e-8)
-    )
-
-    print(
-        "GRAB local seed="
-        f"{seed}: coefficients={coefficients.tolist()}, "
-        f"positive_neighbor_fraction={positive_neighbor_fraction.tolist()}, "
-        f"mean_positive_neighbor_fraction={positive_neighbor_fraction.mean().item():.4f}"
-    )
-
-    assert coefficients.tolist() == [[1.0, 5.0], [0.0, 4.0]]
-    assert positive_neighbor_fraction.tolist() == pytest.approx([5.0 / 6.0, 1.0])
-    assert torch.isfinite(loss)
-
-
-def test_missing_pair_id_is_rejected_before_weight_lookup():
-    dataset = make_dataset(
-        {
-            "pair_id": [10],
-            "LTPProtein": ["P1"],
-            "Interaction": [1],
-        },
-        ordered_pair_ids=[10],
-    )
-    dataset.pair_graph = SimpleNamespace(
-        label_coefficients_by_target={10: torch.tensor([0.0, 1.0])}
-    )
-
-    with pytest.raises(ValueError, match=r"absent.*\[99\]"):
-        dataset.get_grab_batch_inputs(
-            torch.tensor([10, 99]),
-            torch.device("cpu"),
-        )
 
 
 def test_tanimoto_matrix_is_optional_and_only_the_weights_need_it():

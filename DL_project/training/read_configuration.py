@@ -1378,8 +1378,8 @@ class ModelConfig:
     # Figure 3a documents as a known interaction (data/fig3a_disputed_negative_pair_ids
     # .csv, 1159 pair_ids -- built and explained in files/reuter_fig3a_dataset_
     # consistency.md). Applied in PLIDataset.__init__ to the raw table's Interaction
-    # column BEFORE --family_only/--drop_proteins filtering, sampling, GRAB-graph
-    # construction, chemistry-prior fitting, and lipid-class-holdout selection, so every
+    # column BEFORE --family_only/--drop_proteins filtering, sampling,
+    # chemistry-prior fitting, and lipid-class-holdout selection, so every
     # one of those sees the relabelled positives consistently rather than some stages
     # working off the old label. Off by default: a run with this set is not directly
     # comparable to one without it (634 positives becomes 1793, and the lipid-class
@@ -1630,7 +1630,6 @@ class ModelConfig:
     # (files/descriptors_head_species15_run_plan.md). A loss weight, so it works under
     # every architecture. See PLIDataset.get_marginal_balance_weights.
     marginal_balance_weight: bool = False
-    grab_loss: bool = False
     pu_loss: bool = False
     disable_early_stopping: bool = True
     testmode: bool = False
@@ -1674,7 +1673,7 @@ class ModelConfig:
     # family the model currently fits worst dominates the gradient instead of being
     # averaged away by families already easy. Requires loss_type=cross_entropy (the
     # branch that already has an unreduced per-sample loss to regroup by family) and
-    # is mutually exclusive with grab_loss/pu_loss, whose loss terms are population-
+    # is mutually exclusive with pu_loss, whose loss terms are population-
     # or pair-level rather than per-row. See architecture.loss.GroupDROState.
     group_dro: bool = False
     group_dro_step_size: float = 0.01
@@ -1761,9 +1760,6 @@ class ModelConfig:
     lr_warmup_cosine: bool = False
     lr_warmup_epochs: int = 0
     lr_min_factor: float = 0.1
-    swa: bool = False
-    swa_start_frac: float = 0.75
-    swa_lr: float | None = None
     save_checkpoint: bool = False
     # ON by default: these are the weights run_test() is measured on (new_train.py picks
     # best_model_state by rolling validation and loads it before testing), and nothing
@@ -2367,10 +2363,6 @@ class ModelConfig:
             raise ValueError("lr_warmup_epochs must be non-negative")
         if not 0.0 < self.lr_min_factor <= 1.0:
             raise ValueError("lr_min_factor must be in the range (0, 1]")
-        if not 0.0 < self.swa_start_frac < 1.0:
-            raise ValueError("swa_start_frac must be in the range (0, 1)")
-        if self.swa_lr is not None and self.swa_lr <= 0.0:
-            raise ValueError("swa_lr must be greater than zero")
         if self.plm_compression_dim <= 0:
             raise ValueError("plm_compression_dim must be greater than zero")
         if self.rnabang_embedding_dim <= 0:
@@ -2718,12 +2710,8 @@ class ModelConfig:
                 "modulation breaks the bounded, symmetric surrogate the nnPU "
                 "risk estimator relies on"
             )
-        if self.focal_loss and not (
-            self.grab_loss or self.loss_type == "cross_entropy"
-        ):
-            raise ValueError(
-                "focal_loss requires grab_loss or loss_type=cross_entropy"
-            )
+        if self.focal_loss and self.loss_type != "cross_entropy":
+            raise ValueError("focal_loss requires loss_type=cross_entropy")
         if self.logit_adjustment_tau < 0.0:
             raise ValueError("logit_adjustment_tau must be non-negative")
         if self.logit_adjustment and self.pu_loss:
@@ -2731,10 +2719,8 @@ class ModelConfig:
                 "logit_adjustment is not supported together with pu_loss "
                 "(pu_rho already encodes the class prior)"
             )
-        if self.logit_adjustment and not (self.grab_loss or self.loss_type == "cross_entropy"):
-            raise ValueError(
-                "logit_adjustment requires grab_loss or loss_type=cross_entropy"
-            )
+        if self.logit_adjustment and self.loss_type != "cross_entropy":
+            raise ValueError("logit_adjustment requires loss_type=cross_entropy")
         if self.prot_pos_bias_per_head and not (
             self.prot_attention_pos_bias or self.prot_pooling_by_pockets
         ):
@@ -2802,8 +2788,6 @@ class ModelConfig:
         if self.group_dro:
             if self.loss_type != "cross_entropy":
                 raise ValueError("group_dro requires loss_type=cross_entropy")
-            if self.grab_loss:
-                raise ValueError("group_dro is incompatible with grab_loss")
             if self.pu_loss:
                 raise ValueError("group_dro is incompatible with pu_loss")
             if self.group_dro_step_size <= 0.0:
@@ -3691,8 +3675,6 @@ SIMPLE_BOOL_FLAGS = {
     "--protein_class_weight": "protein_class_weight",
     "protein_class_sqrt_weight": "protein_class_sqrt_weight",
     "--protein_class_sqrt_weight": "protein_class_sqrt_weight",
-    "grab_loss": "grab_loss",
-    "--grab_loss": "grab_loss",
     "pu_loss": "pu_loss",
     "--pu_loss": "pu_loss",
     "pu_rho_by_subclass": "pu_rho_by_subclass",
@@ -3715,8 +3697,6 @@ SIMPLE_BOOL_FLAGS = {
     "--buryon": "buryon",
     "lr_warmup_cosine": "lr_warmup_cosine",
     "--lr_warmup_cosine": "lr_warmup_cosine",
-    "swa": "swa",
-    "--swa": "swa",
     "save_checkpoint": "save_checkpoint",
     "--save_checkpoint": "save_checkpoint",
     "save_model": "save_model",
@@ -3936,8 +3916,6 @@ VALUE_HANDLERS = {
     "--HEADS=": set_config_field("HEADS", int),
     "--lr_warmup_epochs=": set_config_field("lr_warmup_epochs", int),
     "--lr_min_factor=": set_config_field("lr_min_factor", float),
-    "--swa_start_frac=": set_config_field("swa_start_frac", float),
-    "--swa_lr=": set_config_field("swa_lr", float),
 }
 
 

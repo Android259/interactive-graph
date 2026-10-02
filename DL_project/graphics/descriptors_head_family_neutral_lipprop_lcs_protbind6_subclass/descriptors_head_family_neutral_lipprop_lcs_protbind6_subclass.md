@@ -8,210 +8,211 @@ rows: 45
 
 === Sensitivity / specificity by group (test / train / valid) ===
 group                                        n   test_sens   test_spec  train_sens  train_spec  valid_sens  valid_spec
-groups_Cer+CerP+HexCer+Hex2Cer+SHexCer+SM    5      0.5818      0.5317      0.4074      0.6864      0.5697      0.6400
-groups_FA                                    5      0.4083      0.6865      0.3689      0.7750      0.4000      0.7389
-groups_LPC+LPE+LPG                           5      0.8250      0.6194      0.5153      0.6940      0.8500      0.6467
-groups_PA                                    5      0.5538      0.9385      0.4069      0.7090      0.6000      0.9154
-groups_PC                                    5      0.4275      0.6782      0.6447      0.4739      0.5321      0.6558
-groups_PE                                    5      0.6350      0.7875      0.4368      0.7006      0.7100      0.8000
-groups_PG                                    5      0.7298      0.7097      0.5578      0.6688      0.7464      0.7292
-groups_PI                                    5      0.5250      0.5500      0.5294      0.5083      0.5750      0.6500
-groups_PS+PGP+DAG+TAG                        5      0.2000      0.7467      0.3974      0.6857      0.2250      0.8125
-ALL                                         45      0.5429      0.6942      0.4739      0.6557      0.5787      0.7321
+groups_Cer+CerP+HexCer+Hex2Cer+SHexCer+SM    5      0.5939      0.5268      0.4944      0.5966      0.5939      0.5900
+groups_FA                                    5      0.4000      0.6757      0.3724      0.7739      0.3917      0.7444
+groups_LPC+LPE+LPG                           5      0.8000      0.6516      0.4887      0.7352      0.7750      0.7200
+groups_PA                                    5      0.5077      0.9231      0.4095      0.7366      0.5846      0.9462
+groups_PC                                    5      0.4881      0.6325      0.6856      0.4325      0.5541      0.6447
+groups_PE                                    5      0.6650      0.7950      0.4769      0.7191      0.7250      0.8575
+groups_PG                                    5      0.7404      0.7080      0.5286      0.6841      0.7571      0.7257
+groups_PI                                    5      0.5250      0.5625      0.5178      0.5658      0.5250      0.7125
+groups_PS+PGP+DAG+TAG                        5      0.1556      0.7333      0.3507      0.7373      0.2250      0.8250
+ALL                                         45      0.5417      0.6898      0.4805      0.6646      0.5702      0.7518
 
 === Overall ===
 metric                        mean      median        std  n
-checkpoint valid BA         0.6368      0.6806     0.1085  45
-max valid BA                0.6554      0.6875     0.1101  45
-best valid F1               0.5695      0.6016     0.1334  45
-test BA                     0.6186      0.6242     0.1184  45
-test AUC                    0.6138      0.6351     0.1491  45
-test AUC in-protein         0.5661      0.5877     0.2436  32
+checkpoint valid BA         0.6435      0.6528     0.1145  45
+max valid BA                0.6610      0.6875     0.1113  45
+best valid F1               0.5754      0.6066     0.1359  45
+test BA                     0.6158      0.6199     0.1233  45
+test AUC                    0.6195      0.6391     0.1643  45
+test AUC in-protein         0.5744      0.6351     0.2546  32
   (proteins averaged)       3.0000      2.0000     3.5162  45
-test AUC in-protein (pairs)      0.5305      0.5972     0.2243  45
+test AUC in-protein (pairs)      0.5424      0.6000     0.2443  45
   (proteins contributing)      5.4444      3.0000     4.0819  45
-test F1                     0.4917      0.5303     0.1995  45
-test sensitivity            0.5429      0.6154     0.2726  45
-test specificity            0.6942      0.7333     0.2406  45
-test precision              0.5469      0.5000     0.2101  43
-test loss                   0.7193      0.6745     0.1829  45
-FPR (FP/(FP+TN))            0.3058      0.2667     0.2406  45
-FNR (FN/(FN+TP))            0.4571      0.3846     0.2726  45
+test F1                     0.4918      0.5022     0.1958  45
+test sensitivity            0.5417      0.5614     0.2722  45
+test specificity            0.6898      0.7333     0.2347  45
+test precision              0.5370      0.5407     0.2126  44
+test loss                   0.7208      0.6707     0.1801  45
+FPR (FP/(FP+TN))            0.3102      0.2667     0.2347  45
+FNR (FN/(FN+TP))            0.4583      0.4386     0.2722  45
 
-=== abs(sensitivity-specificity) gap: mean=0.3872 median=0.3250 n=45 ===
-sensitivity std across seeds (by group): mean=0.2077 median=0.2044 n=9
-specificity std across seeds (by group): mean=0.1947 median=0.1726 n=9
+=== abs(sensitivity-specificity) gap: mean=0.3878 median=0.3462 n=45 ===
+sensitivity std across seeds (by group): mean=0.2023 median=0.1710 n=9
+specificity std across seeds (by group): mean=0.1826 median=0.1293 n=9
 
 === By group ===
 groups_Cer+CerP+HexCer+Hex2Cer+SHexCer+SM (n=5):
   metric                        mean      median        std  n
-  checkpoint valid BA         0.5798      0.5939     0.1088  5
-  max valid BA                0.6048      0.5939     0.0953  5
-  best valid F1               0.5808      0.6222     0.0805  5
-  test BA                     0.5568      0.5632     0.0663  5
-  test AUC                    0.5967      0.5935     0.0672  5
-  test AUC in-protein         0.6355      0.5036     0.2061  5
+  checkpoint valid BA         0.5595      0.5568     0.0840  5
+  max valid BA                0.5920      0.6068     0.0885  5
+  best valid F1               0.5835      0.6042     0.0836  5
+  test BA                     0.5604      0.5661     0.0688  5
+  test AUC                    0.5831      0.5928     0.0651  5
+  test AUC in-protein         0.6460      0.5091     0.2393  5
     (proteins averaged)       2.0000      2.0000     0.0000  5
-  test AUC in-protein (pairs)      0.7274      0.7110     0.1166  5
+  test AUC in-protein (pairs)      0.7392      0.7139     0.1556  5
     (proteins contributing)      2.0000      2.0000     0.0000  5
-  test F1                     0.5078      0.4878     0.1196  5
-  test sensitivity            0.5818      0.6061     0.3101  5
-  test specificity            0.5317      0.3171     0.3540  5
-  test precision              0.5779      0.5000     0.1926  5
-  test loss                   0.7183      0.6828     0.0730  5
-  FPR (FP/(FP+TN))            0.4683      0.6829     0.3540  5
-  FNR (FN/(FN+TP))            0.4182      0.3939     0.3101  5
+  test F1                     0.5155      0.4878     0.1175  5
+  test sensitivity            0.5939      0.6061     0.3124  5
+  test specificity            0.5268      0.3171     0.3486  5
+  test precision              0.5771      0.5077     0.1916  5
+  test loss                   0.7171      0.6913     0.0793  5
+  FPR (FP/(FP+TN))            0.4732      0.6829     0.3486  5
+  FNR (FN/(FN+TP))            0.4061      0.3939     0.3124  5
 
 groups_FA (n=5):
   metric                        mean      median        std  n
-  checkpoint valid BA         0.5569      0.5556     0.0780  5
-  max valid BA                0.5694      0.5625     0.0725  5
-  best valid F1               0.4644      0.4667     0.1191  5
-  test BA                     0.5474      0.5417     0.0303  5
-  test AUC                    0.5358      0.5462     0.0735  5
+  checkpoint valid BA         0.5500      0.5417     0.0679  5
+  max valid BA                0.5681      0.5625     0.0744  5
+  best valid F1               0.4707      0.4483     0.1224  5
+  test BA                     0.5378      0.5208     0.0492  5
+  test AUC                    0.5268      0.5146     0.0895  5
   test AUC in-protein         0.3333      0.1833     0.3115  4
     (proteins averaged)       0.8000      1.0000     0.4472  5
-  test AUC in-protein (pairs)      0.4156      0.5000     0.1818  5
+  test AUC in-protein (pairs)      0.3656      0.3182     0.1870  5
     (proteins contributing)      4.0000      4.0000     1.8708  5
-  test F1                     0.3969      0.4324     0.1443  5
-  test sensitivity            0.4083      0.3333     0.2401  5
-  test specificity            0.6865      0.7568     0.2713  5
-  test precision              0.5826      0.4706     0.2475  5
-  test loss                   0.6857      0.6909     0.0277  5
-  FPR (FP/(FP+TN))            0.3135      0.2432     0.2713  5
-  FNR (FN/(FN+TP))            0.5917      0.6667     0.2401  5
+  test F1                     0.3823      0.4737     0.1735  5
+  test sensitivity            0.4000      0.3750     0.2422  5
+  test specificity            0.6757      0.7568     0.2847  5
+  test precision              0.5806      0.4706     0.2554  5
+  test loss                   0.6935      0.6905     0.0322  5
+  FPR (FP/(FP+TN))            0.3243      0.2432     0.2847  5
+  FNR (FN/(FN+TP))            0.6000      0.6250     0.2422  5
 
 groups_LPC+LPE+LPG (n=5):
   metric                        mean      median        std  n
-  checkpoint valid BA         0.7150      0.7500     0.0641  5
-  max valid BA                0.7483      0.7667     0.0579  5
-  best valid F1               0.6686      0.6957     0.0775  5
-  test BA                     0.7222      0.7419     0.0784  5
-  test AUC                    0.7498      0.7702     0.0544  5
-  test AUC in-protein         0.7291      0.7222     0.0984  4
+  checkpoint valid BA         0.7333      0.7458     0.0698  5
+  max valid BA                0.7475      0.7562     0.0609  5
+  best valid F1               0.6676      0.6842     0.0741  5
+  test BA                     0.7258      0.7319     0.0864  5
+  test AUC                    0.7929      0.7893     0.0469  5
+  test AUC in-protein         0.7476      0.7639     0.0789  4
     (proteins averaged)       1.6000      2.0000     0.8944  5
-  test AUC in-protein (pairs)      0.6264      0.6364     0.0645  5
+  test AUC in-protein (pairs)      0.6452      0.6364     0.0628  5
     (proteins contributing)      3.4000      3.0000     0.5477  5
-  test F1                     0.6379      0.6667     0.0964  5
-  test sensitivity            0.8250      0.9375     0.2044  5
-  test specificity            0.6194      0.6452     0.1194  5
-  test precision              0.5306      0.5000     0.0735  5
-  test loss                   0.6614      0.6759     0.0345  5
-  FPR (FP/(FP+TN))            0.3806      0.3548     0.1194  5
-  FNR (FN/(FN+TP))            0.1750      0.0625     0.2044  5
+  test F1                     0.6391      0.6452     0.1023  5
+  test sensitivity            0.8000      0.9375     0.2227  5
+  test specificity            0.6516      0.6452     0.1278  5
+  test precision              0.5487      0.5714     0.0870  5
+  test loss                   0.6565      0.6527     0.0222  5
+  FPR (FP/(FP+TN))            0.3484      0.3548     0.1278  5
+  FNR (FN/(FN+TP))            0.2000      0.0625     0.2227  5
 
 groups_PA (n=5):
   metric                        mean      median        std  n
-  checkpoint valid BA         0.7385      0.7500     0.0349  5
-  max valid BA                0.7577      0.7500     0.0349  5
-  best valid F1               0.6784      0.6667     0.0518  5
-  test BA                     0.7462      0.7500     0.0672  5
-  test AUC                    0.6574      0.6627     0.0347  5
-  test AUC in-protein         0.4417      0.3833     0.4500  4
+  checkpoint valid BA         0.7500      0.7500     0.0430  5
+  max valid BA                0.7654      0.7692     0.0439  5
+  best valid F1               0.6883      0.7000     0.0685  5
+  test BA                     0.7154      0.7115     0.0551  5
+  test AUC                    0.6799      0.6538     0.0627  5
+  test AUC in-protein         0.3917      0.2833     0.4375  4
     (proteins averaged)       1.0000      1.0000     0.7071  5
-  test AUC in-protein (pairs)      0.4539      0.6364     0.3083  5
+  test AUC in-protein (pairs)      0.3451      0.2667     0.2693  5
     (proteins contributing)      2.8000      3.0000     1.0954  5
-  test F1                     0.6570      0.6667     0.1093  5
-  test sensitivity            0.5538      0.5385     0.1141  5
-  test specificity            0.9385      0.9615     0.0344  5
-  test precision              0.8156      0.8750     0.0996  5
-  test loss                   0.6309      0.6242     0.0263  5
-  FPR (FP/(FP+TN))            0.0615      0.0385     0.0344  5
-  FNR (FN/(FN+TP))            0.4462      0.4615     0.1141  5
+  test F1                     0.6096      0.6087     0.0911  5
+  test sensitivity            0.5077      0.5385     0.0877  5
+  test specificity            0.9231      0.9231     0.0385  5
+  test precision              0.7690      0.7143     0.1047  5
+  test loss                   0.6401      0.6542     0.0283  5
+  FPR (FP/(FP+TN))            0.0769      0.0769     0.0385  5
+  FNR (FN/(FN+TP))            0.4923      0.4615     0.0877  5
 
 groups_PC (n=5):
   metric                        mean      median        std  n
-  checkpoint valid BA         0.5733      0.5365     0.0799  5
-  max valid BA                0.5940      0.6108     0.0720  5
-  best valid F1               0.4949      0.5224     0.0984  5
-  test BA                     0.5528      0.5125     0.0653  5
-  test AUC                    0.5547      0.5414     0.0362  5
-  test AUC in-protein         0.4769      0.4723     0.0816  5
+  checkpoint valid BA         0.5734      0.5473     0.0574  5
+  max valid BA                0.5994      0.6027     0.0677  5
+  best valid F1               0.4956      0.5179     0.1005  5
+  test BA                     0.5603      0.5722     0.0493  5
+  test AUC                    0.5303      0.5415     0.0727  5
+  test AUC in-protein         0.5041      0.4667     0.1300  5
     (proteins averaged)      10.8000     11.0000     0.8367  5
-  test AUC in-protein (pairs)      0.4910      0.5214     0.0561  5
+  test AUC in-protein (pairs)      0.5080      0.5302     0.0835  5
     (proteins contributing)     13.6000     13.0000     1.3416  5
-  test F1                     0.3728      0.3863     0.2251  5
-  test sensitivity            0.4275      0.4128     0.2755  5
-  test specificity            0.6782      0.5990     0.1818  5
-  test precision              0.4168      0.4116     0.0585  4
-  test loss                   0.7730      0.7336     0.1231  5
-  FPR (FP/(FP+TN))            0.3218      0.4010     0.1818  5
-  FNR (FN/(FN+TP))            0.5725      0.5872     0.2755  5
+  test F1                     0.4484      0.4819     0.0801  5
+  test sensitivity            0.4881      0.5229     0.1264  5
+  test specificity            0.6325      0.6041     0.0614  5
+  test precision              0.4200      0.4286     0.0512  5
+  test loss                   0.7864      0.7305     0.1092  5
+  FPR (FP/(FP+TN))            0.3675      0.3959     0.0614  5
+  FNR (FN/(FN+TP))            0.5119      0.4771     0.1264  5
 
 groups_PE (n=5):
   metric                        mean      median        std  n
-  checkpoint valid BA         0.7300      0.7375     0.0615  5
-  max valid BA                0.7550      0.7688     0.0758  5
-  best valid F1               0.6873      0.6944     0.0845  5
-  test BA                     0.7112      0.6937     0.0547  5
-  test AUC                    0.7814      0.7803     0.0184  5
-  test AUC in-protein         0.7351      0.6974     0.1378  5
+  checkpoint valid BA         0.7775      0.7875     0.0452  5
+  max valid BA                0.7913      0.8000     0.0404  5
+  best valid F1               0.7202      0.7234     0.0542  5
+  test BA                     0.7300      0.7125     0.0643  5
+  test AUC                    0.7893      0.7794     0.0305  5
+  test AUC in-protein         0.7760      0.7384     0.0807  5
     (proteins averaged)       4.2000      4.0000     0.4472  5
-  test AUC in-protein (pairs)      0.7022      0.7313     0.1203  5
+  test AUC in-protein (pairs)      0.7516      0.7612     0.0513  5
     (proteins contributing)      8.6000      9.0000     1.6733  5
-  test F1                     0.6144      0.5952     0.0695  5
-  test sensitivity            0.6350      0.6250     0.1294  5
-  test specificity            0.7875      0.7625     0.0980  5
-  test precision              0.6138      0.6333     0.0928  5
-  test loss                   0.6227      0.6166     0.0236  5
-  FPR (FP/(FP+TN))            0.2125      0.2375     0.0980  5
-  FNR (FN/(FN+TP))            0.3650      0.3750     0.1294  5
+  test F1                     0.6326      0.6154     0.0869  5
+  test sensitivity            0.6650      0.6000     0.1710  5
+  test specificity            0.7950      0.7875     0.0520  5
+  test precision              0.6182      0.6207     0.0300  5
+  test loss                   0.6135      0.6212     0.0260  5
+  FPR (FP/(FP+TN))            0.2050      0.2125     0.0520  5
+  FNR (FN/(FN+TP))            0.3350      0.4000     0.1710  5
 
 groups_PG (n=5):
   metric                        mean      median        std  n
-  checkpoint valid BA         0.7254      0.7111     0.0351  5
-  max valid BA                0.7378      0.7469     0.0338  5
-  best valid F1               0.6532      0.6618     0.0398  5
-  test BA                     0.7198      0.7226     0.0450  5
-  test AUC                    0.7287      0.7323     0.0345  5
-  test AUC in-protein         0.5720      0.6243     0.1087  5
+  checkpoint valid BA         0.7289      0.7336     0.0372  5
+  max valid BA                0.7414      0.7336     0.0285  5
+  best valid F1               0.6553      0.6475     0.0346  5
+  test BA                     0.7242      0.7310     0.0466  5
+  test AUC                    0.7377      0.7441     0.0436  5
+  test AUC in-protein         0.5721      0.6318     0.1250  5
     (proteins averaged)       6.6000      6.0000     1.5166  5
-  test AUC in-protein (pairs)      0.5682      0.6076     0.0866  5
+  test AUC in-protein (pairs)      0.5666      0.6215     0.0979  5
     (proteins contributing)      9.4000     10.0000     2.4083  5
-  test F1                     0.6353      0.6349     0.0502  5
-  test sensitivity            0.7298      0.7368     0.0520  5
-  test specificity            0.7097      0.7257     0.0886  5
-  test precision              0.5668      0.5542     0.0739  5
-  test loss                   0.6455      0.6522     0.0261  5
-  FPR (FP/(FP+TN))            0.2903      0.2743     0.0886  5
-  FNR (FN/(FN+TP))            0.2702      0.2632     0.0520  5
+  test F1                     0.6398      0.6475     0.0504  5
+  test sensitivity            0.7404      0.7544     0.1105  5
+  test specificity            0.7080      0.6726     0.1293  5
+  test precision              0.5800      0.5488     0.0965  5
+  test loss                   0.6488      0.6350     0.0246  5
+  FPR (FP/(FP+TN))            0.2920      0.3274     0.1293  5
+  FNR (FN/(FN+TP))            0.2596      0.2456     0.1105  5
 
 groups_PI (n=5):
   metric                        mean      median        std  n
-  checkpoint valid BA         0.6062      0.5625     0.1050  5
-  max valid BA                0.6125      0.5625     0.1003  5
-  best valid F1               0.5151      0.4800     0.1254  5
-  test BA                     0.5375      0.4688     0.1277  5
-  test AUC                    0.4266      0.4375     0.1957  5
+  checkpoint valid BA         0.6062      0.5625     0.1073  5
+  max valid BA                0.6188      0.5625     0.0948  5
+  best valid F1               0.5183      0.5000     0.1241  5
+  test BA                     0.5437      0.4688     0.1391  5
+  test AUC                    0.4203      0.4297     0.1865  5
     (proteins averaged)       0.0000      0.0000     0.0000  5
   test AUC in-protein (pairs)      0.3600      0.3000     0.2994  5
     (proteins contributing)      2.6000      3.0000     0.5477  5
-  test F1                     0.3854      0.4286     0.2334  5
+  test F1                     0.3924      0.4286     0.2429  5
   test sensitivity            0.5250      0.7500     0.3791  5
-  test specificity            0.5500      0.6875     0.4317  5
-  test precision              0.4327      0.3182     0.3717  5
-  test loss                   1.0433      1.1039     0.4152  5
-  FPR (FP/(FP+TN))            0.4500      0.3125     0.4317  5
+  test specificity            0.5625      0.7500     0.4375  5
+  test precision              0.4436      0.3182     0.3766  5
+  test loss                   1.0344      1.0497     0.4111  5
+  FPR (FP/(FP+TN))            0.4375      0.2500     0.4375  5
   FNR (FN/(FN+TP))            0.4750      0.2500     0.3791  5
 
 groups_PS+PGP+DAG+TAG (n=5):
   metric                        mean      median        std  n
-  checkpoint valid BA         0.5062      0.4688     0.0559  5
-  max valid BA                0.5188      0.4688     0.0685  5
-  best valid F1               0.3824      0.3636     0.1031  5
-  test BA                     0.4733      0.4778     0.0651  5
-  test AUC                    0.4933      0.4444     0.1945  5
+  checkpoint valid BA         0.5125      0.5000     0.0523  5
+  max valid BA                0.5250      0.5312     0.0464  5
+  best valid F1               0.3792      0.3636     0.0810  5
+  test BA                     0.4444      0.4222     0.0671  5
+  test AUC                    0.5156      0.4148     0.2332  5
     (proteins averaged)       0.0000      0.0000     0.0000  5
-  test AUC in-protein (pairs)      0.4300      0.4000     0.3457  5
+  test AUC in-protein (pairs)      0.6000      0.8000     0.4000  5
     (proteins contributing)      2.6000      3.0000     0.8944  5
-  test F1                     0.2174      0.2222     0.1623  5
-  test sensitivity            0.2000      0.2222     0.1648  5
-  test specificity            0.7467      0.7333     0.1726  5
-  test precision              0.3125      0.2917     0.0998  4
-  test loss                   0.6934      0.6967     0.0433  5
-  FPR (FP/(FP+TN))            0.2533      0.2667     0.1726  5
-  FNR (FN/(FN+TP))            0.8000      0.7778     0.1648  5
+  test F1                     0.1664      0.1429     0.1544  5
+  test sensitivity            0.1556      0.1111     0.1685  5
+  test specificity            0.7333      0.7333     0.1633  5
+  test precision              0.2357      0.2000     0.1128  4
+  test loss                   0.6967      0.7014     0.0429  5
+  FPR (FP/(FP+TN))            0.2667      0.2667     0.1633  5
+  FNR (FN/(FN+TP))            0.8444      0.8889     0.1685  5
 ```
 
 ## AUC vs chemistry null model, in-sample increment
 
+Failed: PC/seed0: split reproduced here does not match the scored rows -- rerun for the full output: `python3 analysis/full_label_report.py --label descriptors_head_family_neutral_lipprop_lcs_protbind6_subclass --seeds=0,1,2,3,4`

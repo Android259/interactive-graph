@@ -21,7 +21,7 @@ python3 -m pytest tests/test_read_configuration.py
 python3 -m pytest tests/test_lipid_encoder.py
 python3 -m pytest tests/test_new_dataloader_lipid_graphs.py
 python3 -m pytest tests/test_pair_index_alignment.py
-python3 -m pytest tests/test_grab_graph.py tests/test_loss.py
+python3 -m pytest tests/test_loss.py
 python3 -m pytest tests/test_reproducibility.py
 python3 -m pytest tests/test_training_smoke_integration.py
 ```

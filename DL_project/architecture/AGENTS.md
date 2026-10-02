@@ -104,7 +104,6 @@ default and neither changes the classifier's output.
   - `dataloader/Dataloader.py`;
   - `tests/test_lipid_encoder.py`;
   - `tests/test_training_smoke_integration.py`.
-- Preserve `GRAB_loss` normalization and commented historical loss unless explicitly changed.
 - Do not refactor duplicated or suspicious existing behavior unless it is part of the request.
 
 ## Verify

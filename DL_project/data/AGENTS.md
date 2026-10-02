@@ -16,7 +16,6 @@ Processed_Negative_Interaction_Without_Duplicates.csv
 Total_tanimoto_matrix_uint8.npy
 Total_multiple_lipid_batch.npy
 lipid_SMILES_embedding.pkl
-grab_pair_graph_edges.csv
 embedding_ESM3/*
 graphs/*
 lipid_graphs/*
@@ -41,8 +40,6 @@ The following cross-file relationships are part of the data contract:
   `Total_multiple_lipid_batch.npy`;
 - both dimensions of `Total_tanimoto_matrix_uint8.npy` align with
   `Total_multiple_lipid_batch.npy`;
-- every endpoint in `grab_pair_graph_edges.csv` is an original interaction CSV
-  row position;
 - protein graph edge residue IDs must exist in the matching node table;
 - protein node rows, `embedding_ESM3` residues, and `pocketness.pdb` residues
   must have equal lengths and order.
