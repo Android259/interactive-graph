@@ -1,0 +1,227 @@
+# ge_protgeom_family_neutral_normalized_bilinear_fusion_bilinear_norm_rim_ev28
+
+## Summary (analysis/summarize_label.py)
+
+```
+conda is not available in this environment.
+Could not activate Kalinin_project_LP (create it with: source /home/andrei/DL_project_5/DL_project/scripts/tools/enter_project_env.sh); using current python3: /usr/bin/python3
+Summary: 'ge_protgeom_family_neutral_normalized_bilinear_fusion_bilinear_norm_rim_ev28'
+rows: 35
+
+=== Sensitivity / specificity by group (test / train / valid) ===
+group                  n   test_sens   test_spec  train_sens  train_spec  valid_sens  valid_spec
+groups_CRAL-TRIO       5      0.4269      0.6820      0.6914      0.7104      0.4537      0.6581
+groups_GLTP            5      0.3040      0.6400      0.5629      0.5897      0.4231      0.6538
+groups_IP_trans        5      0.3043      0.8426      0.6485      0.6628      0.4167      0.8681
+groups_LBP_BPI_CETP    5      0.1913      0.9106      0.7438      0.6389      0.2833      0.8511
+groups_START           5      0.4185      0.5551      0.6020      0.5164      0.4375      0.5685
+groups_lipocalin       5      0.2444      0.7722      0.5768      0.6639      0.3778      0.7806
+groups_scp2            5      0.2824      0.8647      0.6396      0.6946      0.3412      0.8824
+ALL                   35      0.3103      0.7524      0.6379      0.6395      0.3905      0.7518
+
+=== Overall ===
+metric                        mean      median        std  n
+checkpoint valid BA         0.5720      0.5577     0.0688  35
+max valid BA                0.6072      0.5981     0.0797  35
+best valid F1               0.5379      0.5600     0.1427  35
+test BA                     0.5314      0.5222     0.0631  35
+test F1                     0.3077      0.3333     0.2098  35
+test sensitivity            0.3103      0.2537     0.3000  35
+test specificity            0.7524      0.8085     0.2698  35
+test precision              0.4322      0.4615     0.1532  33
+test loss                   0.6987      0.6878     0.1199  35
+FPR (FP/(FP+TN))            0.2476      0.1915     0.2698  35
+FNR (FN/(FN+TP))            0.6897      0.7463     0.3000  35
+
+=== abs(sensitivity-specificity) gap: mean=0.6509 median=0.7200 n=35 ===
+sensitivity std across seeds (by group): mean=0.2931 median=0.2731 n=7
+specificity std across seeds (by group): mean=0.2134 median=0.1804 n=7
+
+=== By group ===
+groups_CRAL-TRIO (n=5):
+  metric                        mean      median        std  n
+  checkpoint valid BA         0.5559      0.5593     0.0459  5
+  max valid BA                0.5947      0.5981     0.0449  5
+  best valid F1               0.6802      0.6957     0.0483  5
+  test BA                     0.5544      0.5487     0.0221  5
+  test F1                     0.4664      0.4381     0.1387  5
+  test sensitivity            0.4269      0.3433     0.2731  5
+  test specificity            0.6820      0.7869     0.2355  5
+  test precision              0.6037      0.6053     0.0246  5
+  test loss                   0.6986      0.6969     0.0209  5
+  FPR (FP/(FP+TN))            0.3180      0.2131     0.2355  5
+  FNR (FN/(FN+TP))            0.5731      0.6567     0.2731  5
+
+groups_GLTP (n=5):
+  metric                        mean      median        std  n
+  checkpoint valid BA         0.5385      0.5577     0.0272  5
+  max valid BA                0.5538      0.5577     0.0316  5
+  best valid F1               0.5773      0.6269     0.1327  5
+  test BA                     0.4720      0.4800     0.0303  5
+  test F1                     0.2927      0.1935     0.2134  5
+  test sensitivity            0.3040      0.1200     0.3716  5
+  test specificity            0.6400      0.8000     0.3476  5
+  test precision              0.4229      0.4286     0.0884  5
+  test loss                   0.7156      0.7242     0.0212  5
+  FPR (FP/(FP+TN))            0.3600      0.2000     0.3476  5
+  FNR (FN/(FN+TP))            0.6960      0.8800     0.3716  5
+
+groups_IP_trans (n=5):
+  metric                        mean      median        std  n
+  checkpoint valid BA         0.6424      0.6649     0.0509  5
+  max valid BA                0.7145      0.7367     0.0521  5
+  best valid F1               0.6195      0.6545     0.0750  5
+  test BA                     0.5735      0.5782     0.0368  5
+  test F1                     0.3682      0.3889     0.0868  5
+  test sensitivity            0.3043      0.3043     0.0972  5
+  test specificity            0.8426      0.8511     0.0323  5
+  test precision              0.4794      0.4706     0.0557  5
+  test loss                   0.6253      0.6219     0.0133  5
+  FPR (FP/(FP+TN))            0.1574      0.1489     0.0323  5
+  FNR (FN/(FN+TP))            0.6957      0.6957     0.0972  5
+
+groups_LBP_BPI_CETP (n=5):
+  metric                        mean      median        std  n
+  checkpoint valid BA         0.5672      0.5612     0.0409  5
+  max valid BA                0.6131      0.6037     0.0417  5
+  best valid F1               0.4466      0.5053     0.1191  5
+  test BA                     0.5510      0.5222     0.0805  5
+  test F1                     0.2160      0.1481     0.2301  5
+  test sensitivity            0.1913      0.0870     0.2655  5
+  test specificity            0.9106      0.9574     0.1057  5
+  test precision              0.3881      0.5000     0.2353  5
+  test loss                   0.8025      0.6412     0.3034  5
+  FPR (FP/(FP+TN))            0.0894      0.0426     0.1057  5
+  FNR (FN/(FN+TP))            0.8087      0.9130     0.2655  5
+
+groups_START (n=5):
+  metric                        mean      median        std  n
+  checkpoint valid BA         0.5030      0.5000     0.0056  5
+  max valid BA                0.5110      0.5044     0.0133  5
+  best valid F1               0.4410      0.3594     0.1364  5
+  test BA                     0.4868      0.5000     0.0277  5
+  test F1                     0.2661      0.1136     0.3019  5
+  test sensitivity            0.4185      0.0769     0.5316  5
+  test specificity            0.5551      0.7978     0.5127  5
+  test precision              0.3487      0.3777     0.0970  4
+  test loss                   0.7055      0.7000     0.0188  5
+  FPR (FP/(FP+TN))            0.4449      0.2022     0.5127  5
+  FNR (FN/(FN+TP))            0.5815      0.9231     0.5316  5
+
+groups_lipocalin (n=5):
+  metric                        mean      median        std  n
+  checkpoint valid BA         0.5792      0.5278     0.0993  5
+  max valid BA                0.6042      0.6250     0.0943  5
+  best valid F1               0.4368      0.5000     0.1989  5
+  test BA                     0.5083      0.5000     0.0705  5
+  test F1                     0.2194      0.0870     0.2308  5
+  test sensitivity            0.2444      0.0556     0.2909  5
+  test specificity            0.7722      0.7778     0.1804  5
+  test precision              0.2812      0.2977     0.1498  4
+  test loss                   0.6954      0.6938     0.0669  5
+  FPR (FP/(FP+TN))            0.2278      0.2222     0.1804  5
+  FNR (FN/(FN+TP))            0.7556      0.9444     0.2909  5
+
+groups_scp2 (n=5):
+  metric                        mean      median        std  n
+  checkpoint valid BA         0.6176      0.6324     0.0819  5
+  max valid BA                0.6588      0.6618     0.0661  5
+  best valid F1               0.5641      0.5484     0.0617  5
+  test BA                     0.5735      0.6029     0.0757  5
+  test F1                     0.3249      0.4000     0.2130  5
+  test sensitivity            0.2824      0.2941     0.2217  5
+  test specificity            0.8647      0.9118     0.0795  5
+  test precision              0.4542      0.5294     0.1560  5
+  test loss                   0.6480      0.6516     0.0186  5
+  FPR (FP/(FP+TN))            0.1353      0.0882     0.0795  5
+  FNR (FN/(FN+TP))            0.7176      0.7059     0.2217  5
+```
+
+## AUC vs chemistry null model, in-sample increment
+
+```
+########## split = valid ##########
+
+--- null model (null_model.py), features = lipid4 (chain,hbond,heavy,unsaturation), epoch 120 ---
+=== mean over seeds ===
+              sim_to_train_pos  null_AUC_k15  net_AUC  proteins  null_AUC_prot_k15  net_AUC_prot  lipids  null_AUC_lipid_k15  net_AUC_lipid  null_AUC_pair_k15  net_AUC_pair
+fam                                                                                                                                                                         
+CRAL-TRIO                0.630         0.484    0.482       4.0              0.369         0.474     5.0               0.458          0.451              0.432         0.495
+GLTP                     0.605         0.521    0.510       2.0              0.512         0.506     3.0               0.523          0.478              0.526         0.454
+IP_trans                 0.722         0.680    0.662       3.0              0.677         0.680     2.4               0.590          0.546              0.669         0.613
+LBP_BPI_CETP             0.719         0.798    0.609       2.0              0.798         0.597     1.6               0.784          0.537              0.821         0.599
+START                    0.576         0.508    0.499       3.0              0.474         0.471     4.0               0.536          0.570              0.524         0.498
+lipocalin                0.565         0.331    0.591       5.0              0.246         0.623     2.2               0.646          0.633              0.622         0.633
+scp2                     0.651         0.489    0.551       2.8              0.593         0.509     2.6               0.642          0.628              0.577         0.595
+
+=== mean AUC (files/signal_state.md 6.4: fam column in the raw table/cache carries the WORKING-three/other-four split) ===
+              all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+null_AUC_k15      0.545               0.503                  0.065                     0.151
+net_AUC           0.558               0.552                  0.065                     0.066
+
+=== the same rows ranked INSIDE each protein ===
+109 protein blocks across 35 family-seed splits carry a usable ranking (median 3 protein groups per split)
+                   all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+null_AUC_prot_k15      0.524               0.493                  0.065                     0.186
+net_AUC_prot           0.551               0.533                  0.072                     0.082
+
+=== the same rows ranked INSIDE each lipid class ===
+104 lipid class blocks across 35 family-seed splits carry a usable ranking (median 3 lipid class groups per split)
+                    all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+null_AUC_lipid_k15      0.597               0.581                  0.085                     0.106
+net_AUC_lipid           0.549               0.563                  0.128                     0.069
+
+=== the same rows ranked INSIDE each protein AND inside each lipid class jointly (per_pair_auc) ===
+                   all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+null_AUC_pair_k15      0.596               0.561                  0.058                     0.125
+net_AUC_pair           0.555               0.545                  0.078                     0.071
+
+--- increment over chemistry (interaction_increment.py) ---
+=== valid block, k=15, null-model entity = FullIdentityOfLipid ===
+
+1. Each score on its own, mean over family+seed, by epoch
+        chem    net  chem_prot  net_prot
+epoch                                   
+1      0.545  0.531      0.524     0.503
+10     0.545  0.549      0.524     0.547
+49     0.545  0.560      0.524     0.539
+51     0.545  0.555      0.524     0.531
+120    0.545  0.558      0.524     0.551
+
+2. Increment of the network over chemistry (in-sample fit = UPPER BOUND), mean over family+seed, by epoch
+       fit_chem  fit_chem_net  increment  fit_chem_prot  fit_chem_net_prot  increment_prot
+epoch                                                                                     
+1         0.618         0.662      0.044          0.653              0.690           0.037
+10        0.618         0.650      0.032          0.653              0.682           0.029
+49        0.618         0.658      0.040          0.653              0.690           0.036
+51        0.618         0.656      0.038          0.653              0.691           0.038
+120       0.618         0.647      0.029          0.653              0.681           0.028
+
+3. mean over seeds, epoch 120
+               chem    net  chem_prot  net_prot  fit_chem  fit_chem_net  increment  fit_chem_prot  fit_chem_net_prot  increment_prot
+fam                                                                                                                                 
+CRAL-TRIO     0.484  0.482      0.369     0.474     0.539         0.607      0.069          0.613              0.672           0.059
+GLTP          0.521  0.510      0.512     0.506     0.543         0.568      0.025          0.565              0.577           0.012
+IP_trans      0.680  0.662      0.677     0.680     0.680         0.719      0.039          0.693              0.728           0.035
+LBP_BPI_CETP  0.798  0.609      0.798     0.597     0.798         0.811      0.012          0.801              0.819           0.018
+START         0.508  0.499      0.474     0.471     0.536         0.560      0.024          0.606              0.636           0.030
+lipocalin     0.331  0.591      0.246     0.623     0.669         0.684      0.015          0.673              0.692           0.018
+scp2          0.489  0.551      0.593     0.509     0.562         0.579      0.017          0.622              0.644           0.022
+
+=== mean AUC + increment, epoch 120 (files/signal_state.md 6.4: fam column in the raw table carries the WORKING-three/other-four split) ===
+              all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+chem              0.545               0.503                  0.065                     0.151
+net               0.558               0.552                  0.065                     0.066
+fit_chem          0.618               0.590                  0.052                     0.101
+fit_chem_net      0.647               0.631                  0.056                     0.094
+increment         0.029               0.019                  0.032                     0.020
+
+=== the same rows ranked INSIDE each protein, epoch 120 ===
+109 protein blocks across 35 family-seed splits carry a usable ranking (median 3 protein groups per split)
+                   all seven  all seven (median)  all seven (std seeds)  all seven (std families)
+chem_prot              0.524               0.493                  0.065                     0.186
+net_prot               0.551               0.533                  0.072                     0.082
+fit_chem_prot          0.653               0.662                  0.055                     0.078
+fit_chem_net_prot      0.681               0.681                  0.051                     0.077
+increment_prot         0.028               0.016                  0.034                     0.016
+```

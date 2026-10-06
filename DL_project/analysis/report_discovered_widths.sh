@@ -16,7 +16,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TABLE="$PROJECT_ROOT/metrics_summary.csv"
+TABLE="$PROJECT_ROOT/results/tables/metrics_summary.csv"
 LABEL="${DISCOVERY_LABEL:-}"
 AS_CSV=0
 

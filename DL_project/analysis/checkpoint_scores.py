@@ -5,11 +5,11 @@ Why this exists. Every number a run reports about the held-out block is a decisi
 fixed 0.5 threshold: balanced accuracy, sensitivity, specificity. That cannot separate
 "the model ranks the block no better than chance" from "the model ranks it fine and the
 threshold sits in the wrong place", and on this split the two are not academic -- the
-chemistry null model in `files/marginals_and_cold_split.md` scores BA 0.512 with a
+chemistry null model in `files/reference/marginals_and_cold_split.md` scores BA 0.512 with a
 threshold fitted on training and AUC 0.59 on the same rows. Comparing a network to it
 therefore needs the network's *ranking*, which needs per-row scores, which no run writes.
 
-What it does. Rebuilds the configuration from `scripts/arg_files/<label>.md` plus the
+What it does. Rebuilds the configuration from `arg_files/<label>.md` plus the
 `--excluded_groups`/`--seed` the sweep varied, rebuilds the split from that (the loader
 is deterministic in the seed, so the rows come back identical), loads a checkpoint into
 a freshly constructed model, and writes one CSV row per
@@ -31,6 +31,7 @@ training/new_train.py, currently 1, 10, 49, 51, 120. Missing files are reported 
 skipped rather than raising, so a partially finished sweep still yields what it has.
 """
 import argparse
+import glob
 import os
 import sys
 
@@ -41,6 +42,7 @@ import torch
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "training"))
 sys.path.insert(0, PROJECT_ROOT)
+from training.results_layout import label_family  # noqa: E402
 
 # Same reason as new_train.py: set before any thread exists, so intra-op workers inherit
 # it. Without it a checkpoint whose dead blocks decayed into denormals evaluates orders
@@ -74,7 +76,7 @@ DEFAULT_FAMILIES = (
 # sit under the same "groups_<name>" directory name, so `families` throughout this file
 # is really "the excluded-group axis", whichever axis the label holds out.
 DEFAULT_LIPID_SETS = tuple(LIPID_COLDSPLIT_SETS)
-# training/new_train.py:DYNAMICS_CHECKPOINT_EPOCHS
+# training/branch_dynamics.py:DYNAMICS_CHECKPOINT_EPOCHS
 DEFAULT_EPOCHS = "1,10,49,51,120"
 
 
@@ -89,7 +91,10 @@ def arg_lines(label):
     parameter. Any other line -- unindented, or indented with no flag currently open
     -- is commentary and is dropped, unchanged from before this convention existed.
     """
-    path = os.path.join(PROJECT_ROOT, "scripts", "arg_files", f"{label}.md")
+    # arg_files/<family>/<label>.md; "**" also matches a config left at the top level.
+    path = glob.glob(
+        os.path.join(PROJECT_ROOT, "arg_files", "**", f"{label}.md"), recursive=True
+    )[0]
     lines = []
     pending = None
     for raw in open(path):
@@ -226,7 +231,7 @@ def label_descriptor_features(label, families):
     --features (see dataloader.pair_descriptors.resolve_similarity_feature_names) --
     the chemistry null model then runs on exactly the descriptor set the network
     itself was trained to see, instead of a fixed guess (analysis/full_label_report.py,
-    analysis/build_rand_results_tables.py). Empty string when the label's config sets
+    analysis/probes/build_rand_results_tables.py). Empty string when the label's config sets
     none of the three (most labels, historically -- no --descriptors_head at all).
 
     --descriptor_names (ModelConfig docstring) is --descriptors_head's own single-
@@ -346,7 +351,7 @@ def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, ver
 
             for epoch in epochs:
                 checkpoint = os.path.join(
-                    PROJECT_ROOT, "models", label, f"groups_{family}",
+                    PROJECT_ROOT, "models", label_family(label), label, f"groups_{family}",
                     "dynamics", f"seed{seed}_epoch{epoch}.pt",
                 )
                 if not os.path.exists(checkpoint):

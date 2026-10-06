@@ -1,4 +1,22 @@
 #!/usr/bin/env python3
+"""Train one configuration, select a checkpoint, test it and record the result.
+
+    python training/new_train.py --label=<name> [options]
+
+Options are parsed by training/read_configuration.py (ModelConfig documents each one).
+main() runs these steps; their order is part of reproducibility, because every step
+that draws random numbers draws them in this order after seed_everything():
+
+  1. configuration and seeds
+  2. dataset split                  dataloader/Dataloader.py (PLIDataset)
+  3. model                          architecture/interaction_classification.py
+  4. loss weights from train rows   task_losses.py
+  5. loaders, cache warm-up         dataloader/sampler.py, dataloader/preassembled_loader.py
+  6. optimizer and lr schedule      optimizer_setup.py
+  7. run directories, TensorBoard   run_paths.py
+  8. epochs + checkpoint selection  epoch_loop.py, run_metrics.py
+  9. saved weights, test report     final_evaluation.py -> results/tables/metrics_summary.csv
+"""
 import os
 import sys
 import time
@@ -7,7 +25,6 @@ import ctypes
 import gc
 import json
 import re
-from datetime import datetime
 
 from pandas import read_csv
 import torch
@@ -24,7 +41,6 @@ import torch
 # inherit this, while setting it after the pool exists leaves them on the slow path.
 torch.set_flush_denormal(True)
 
-import torch.nn.functional as F
 import torch_geometric
 from torch.utils.tensorboard import SummaryWriter
 
@@ -32,29 +48,13 @@ TRAINING_DIR = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, TRAINING_DIR)
 sys.path.insert(0, PROJECT_ROOT)
+# Appended, not inserted: analysis/ modules import their siblings by bare name, but
+# nothing there may shadow a training/ or architecture/ module of the same name.
+sys.path.append(os.path.join(PROJECT_ROOT, 'analysis'))
 
 from read_configuration import read_configuration
-from forward_args import build_forward_args
-from append_metric_to_table import append_metric
-from architecture.final_layer import chem_adversary_loss, family_dann_loss
-from architecture.thematic_descriptor_head import thematical_orthogonality_loss
 from architecture.interaction_classification import InteractionClassification
-from architecture.mlp_utils import (
-    collect_sparsity_penalty,
-    export_surviving_structure,
-    collect_gate_parameters,
-    collect_concrete_dropout_reg,
-    ConcreteDropout,
-)
-from architecture.loss import (
-    GroupDROState,
-    Non_Negative_Positive_Unlabeled_loss,
-    focal_loss,
-    get_pu_loss_diagnostics,
-    logit_adjustment_bias,
-    pairwise_ranking_loss,
-    reset_pu_loss_diagnostics,
-)
+from architecture.mlp_utils import export_surviving_structure
 from dataloader.sampler import (
     ClassBalancedBatchSampler,
     RotatingNegativeBatchSampler,
@@ -63,53 +63,28 @@ from dataloader.dataset_source import interaction_csv_path
 from dataloader.Dataloader import PLIDataset
 from dataloader.pair_descriptors import descriptor_catalog_only
 from dataloader.preassembled_loader import PreassembledLoader, preassembly_mode
-from dataloader.lipid_classes import class_level_positive_labels
-from dataloader.lipid_subclass_blocks import article_subclass_species
-from dataloader.protein_graph_builder import FAMILY_NAMES
-from candidate_averaging import (
-    CandidateAccumulator,
-    average_candidate_predictions,
-)
+from branch_dynamics import BranchDynamics
+from epoch_loop import endless_batches, train_one_epoch
+from optimizer_setup import OptimizerSetup, build_lr_scheduler
 from reproducibility import seed_everything, seed_worker, seeded_generator
+from run_context import RunContext
 from run_metrics import (
-    RUN_METRIC_FIELDS,
     metric_has_positive_trend,
     rolling_metric_mean,
     summarize_training_run,
 )
+from run_paths import create_run_paths, excluded_set_name, run_label
+from task_losses import TaskLosses
+from final_evaluation import run_test
 
 
-conf = read_configuration()
-if conf.final_m is None:
-    conf.final_m = conf.m
+# Per-epoch cap on training rows: an epoch stops after this many rows' worth of batches.
+TRAIN_ROWS_PER_EPOCH_CAP = 1740
+EARLY_STOPPING_PATIENCE = 60
 
-seed_everything(conf.seed)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print()
-
-path=os.path.join(PROJECT_ROOT, "data") + os.sep
-
-csv = read_csv(interaction_csv_path(path))
-
-train_dataset, valid_dataset, test_dataset = PLIDataset(root_dir=path, csv = csv, seed=conf.seed,excluded_subgroups=conf.excluded_subgroups, config=conf, excluded_groups=conf.excluded_groups)
-del csv
-# Model construction stays after the split so frozen normalization cannot see
-# validation/test proteins.
-model = InteractionClassification(conf)
-if conf.rnabang_frozen_node_adapter:
-    model.set_pocket_descriptor_normalization(
-        train_dataset.pocket_descriptor_stats()
-    )
-    model.set_rnabang_normalization(
-        train_dataset.rnabang_normalization_stats()
-    )
-if conf.pair_descriptor_pocket_shares_split:
-    model.set_pair_descriptor_pocket_share_normalization(
-        train_dataset.pocket_descriptor_stats()
-    )
-model = model.to(device)
-if conf.pretrained_checkpoint:
+def load_pretrained_protein_encoder(conf, model, device):
+    """Load --pretrained_checkpoint into the model, refusing any partial protein1 load."""
     # protein1's weights are only meaningful for the exact module structure they were
     # saved with (backend, hiddim, HEADS, single_gat_layer, protein_extra_node_
     # features, ...). Rather than re-deriving and comparing that flag list by hand
@@ -145,339 +120,139 @@ if conf.pretrained_checkpoint:
         f"{len(load_result.unexpected_keys)} unexpected keys overall, none of the "
         f"missing ones under protein1.)"
     )
-if conf.freeze_pretrained_encoders:
-    for parameter in model.protein1.parameters():
-        parameter.requires_grad = False
-number_of_parameters=sum(p.numel() for p in model.parameters() if p.requires_grad)
-print(f"number of parameters : {number_of_parameters}")
-common_weights_parts = []
-if conf.tanimoto_weight:
-    common_weights_parts.append(train_dataset.get_tanimoto_weights().to(device))
-if conf.protein_group_weight:
-    protein_group_weights = train_dataset.get_protein_weights().to(device)
-    common_weights_parts.append(protein_group_weights)
-if conf.protein_balance_weight:
-    common_weights_parts.append(
-        train_dataset.get_protein_balance_weights().to(device)
-    )
-if conf.protein_class_weight:
-    protein_class_weights = train_dataset.get_protein_class_weights().to(device)
-    common_weights_parts.append(protein_class_weights)
-if conf.protein_class_sqrt_weight:
-    protein_class_sqrt_weights = train_dataset.get_protein_class_weights(
-        square_root=True,
-    ).to(device)
-    common_weights_parts.append(protein_class_sqrt_weights)
-if conf.lipid_propensity_weight:
-    common_weights_parts.append(
-        train_dataset.get_lipid_propensity_weights().to(device)
-    )
-if conf.marginal_balance_weight:
-    common_weights_parts.append(
-        train_dataset.get_marginal_balance_weights().to(device)
-    )
-common_weights = (
-    torch.stack(common_weights_parts).mean(dim=0)
-    if common_weights_parts
-    else None
-)
 
 
-def batch_sample_weights(prot, sample_count):
-    """Per-row loss weights for this batch, or None when the run weights nothing.
-
-    None rather than a vector of ones. Every loss below already has a None branch that
-    takes the plain mean, and that is the *same number*: multiplying by 1.0 is exact in
-    IEEE 754, so `(x * ones).sum() / ones.sum().clamp_min(1e-8)` and `x.mean()` agree bit
-    for bit -- checked over 8000 random batches at sizes 8, 16, 64 and 1300, zero
-    disagreements. What it removes is a weight vector as long as the train split, a
-    gather per batch, an elementwise multiply and a second reduction, none of which could
-    ever change an unweighted run's result.
-
-    Only reachable from the training loop. Validation and test never pass sample weights,
-    which matters because id2pos covers train rows alone: a validation row's tanimoto_pos
-    is -1, and -1 indexes the last weight instead of raising.
-    """
-    if common_weights is None:
-        return None
-    pos = prot.tanimoto_pos.view(-1).to(device, non_blocking=True)[:sample_count]
-    if pos.shape[0] != sample_count:
-        raise ValueError(
-            f"tanimoto positions count {pos.shape[0]} "
-            f"does not match batch size {sample_count}"
+def build_model(conf, train_dataset, device):
+    """The classifier, normalised on train statistics, optionally with a pretrained protein1."""
+    # Model construction stays after the split so frozen normalization cannot see
+    # validation/test proteins.
+    model = InteractionClassification(conf)
+    if conf.rnabang_frozen_node_adapter:
+        model.set_pocket_descriptor_normalization(
+            train_dataset.pocket_descriptor_stats()
         )
-    if (pos < 0).any() or (pos >= common_weights.shape[0]).any():
-        invalid_positions = pos[
-            (pos < 0) | (pos >= common_weights.shape[0])
-        ].detach().cpu().tolist()
-        raise ValueError(
-            "tanimoto positions are outside the train weight table: "
-            f"{invalid_positions}"
+        model.set_rnabang_normalization(
+            train_dataset.rnabang_normalization_stats()
         )
-    return common_weights[pos]
-# Below this many train rows a subclass's count-derived prior is noise, not a prior --
-# the classification file puts one or two species in several of its 23 subclasses.
-PU_SUBCLASS_MINIMUM_TRAIN_ROWS = 20
+    if conf.pair_descriptor_pocket_shares_split:
+        model.set_pair_descriptor_pocket_share_normalization(
+            train_dataset.pocket_descriptor_stats()
+        )
+    model = model.to(device)
+    if conf.pretrained_checkpoint:
+        load_pretrained_protein_encoder(conf, model, device)
+    if conf.freeze_pretrained_encoders:
+        for parameter in model.protein1.parameters():
+            parameter.requires_grad = False
+    return model
 
 
-def build_pu_subclass_priors(conf, dataset, train_labels):
-    """(per-subclass PU priors, pair_id -> prior slot) for --pu_rho_by_subclass.
+def build_loaders(conf, device, train_dataset, valid_dataset, test_dataset, train_labels):
+    """(train, valid, test) DataLoaders and the rotating-negatives sampler, if any."""
+    loader_kwargs = {
+            "batch_size": conf.batch,
+            "shuffle": True,
+            # Pinned memory only buys the async host-to-device copy; with no accelerator
+            # PyTorch ignores the request and warns once per loader, so ask for it only on
+            # CUDA. Same tensors either way.
+            "pin_memory": device.type == "cuda",
+            "num_workers": conf.num_workers,
+            "persistent_workers": conf.num_workers > 0,
+            "worker_init_fn": seed_worker,
+            }
+    if conf.num_workers > 0:
+        loader_kwargs["prefetch_factor"] = 4
 
-    Each subclass of the source paper gets conf.effective_pu_rho applied to its OWN
-    train counts, so a subclass the proteins mostly do take carries a higher prior than
-    one they mostly do not, instead of both being told the train-wide number.
-
-    Two deliberate fallbacks, both onto the train-wide conf.pu_rho, both reported:
-    a subclass with fewer than PU_SUBCLASS_MINIMUM_TRAIN_ROWS train rows (of 23
-    subclasses, several hold one or two species, where a count-derived prior is noise),
-    and a species the classification file does not name. They share the last slot.
-
-    The returned row vector is indexed by pair_id (original interaction-table row
-    position) and covers train, validation and test rows: the priors are derived from
-    train only, but the reported valid/test PU loss has to look a row's subclass up too.
-    """
-    subclass_of_species = {
-        species: name
-        for name, members in article_subclass_species().items()
-        for species in members
-    }
-    frames = [dataset.csvtrain, dataset.csvalidate, dataset.csvtest]
-    names = sorted({
-        subclass_of_species[species]
-        for frame in frames
-        for species in frame["FullIdentityOfLipid"].astype(str)
-        if species in subclass_of_species
-    })
-    fallback_slot = len(names)
-    slot_of_name = {name: slot for slot, name in enumerate(names)}
-
-    train_species = dataset.csvtrain["FullIdentityOfLipid"].astype(str).to_numpy()
-    train_slots = torch.as_tensor(
-        [
-            slot_of_name.get(subclass_of_species.get(species), fallback_slot)
-            for species in train_species
-        ],
-        dtype=torch.long,
-    )
-    labels = train_labels.view(-1)
-    if labels.shape[0] != train_slots.shape[0]:
-        raise ValueError(
-            f"train labels {labels.shape[0]} do not match train rows {train_slots.shape[0]}"
+    # A batch_sampler carries batch composition itself, so batch_size/shuffle must
+    # not be passed alongside it.
+    train_loader_kwargs = dict(loader_kwargs)
+    rotating_sampler = None
+    if conf.rotate_train_negatives:
+        # Takes precedence over the plain balanced-batch branch below and does not replace
+        # it: --balanced_batches is passed through, so batch composition is still decided by
+        # ClassBalancedBatchSampler -- over this epoch's active rows instead of over a
+        # draw fixed for the whole run. Chunk default: the same number of negatives an epoch
+        # would have held without the flag, so the per-epoch cost and class ratio are
+        # unchanged and only WHICH negatives is different.
+        del train_loader_kwargs["batch_size"], train_loader_kwargs["shuffle"]
+        _train_positives = int((train_labels == 1).sum())
+        rotating_chunk = conf.rotate_negatives_per_epoch or (
+            conf.negatives_per_positive * _train_positives
+        )
+        rotating_sampler = RotatingNegativeBatchSampler(
+            train_labels,
+            conf.batch,
+            rotating_chunk,
+            conf.balanced_batches,
+            generator=seeded_generator(conf.seed),
+        )
+        train_loader_kwargs["batch_sampler"] = rotating_sampler
+        print(
+            f"rotating negatives : {int(rotating_sampler.negative_order.numel())} train "
+            f"negatives, {rotating_sampler.chunk} per epoch, one full pass every "
+            f"{rotating_sampler.epochs_per_pass} epochs "
+            f"({conf.ep / rotating_sampler.epochs_per_pass:.1f} passes over {conf.ep} "
+            f"epochs), {len(rotating_sampler)} batches per epoch, "
+            f"balanced_batches={bool(conf.balanced_batches)}"
+        )
+    elif conf.balanced_batches:
+        del train_loader_kwargs["batch_size"], train_loader_kwargs["shuffle"]
+        train_loader_kwargs["batch_sampler"] = ClassBalancedBatchSampler(
+            train_labels,
+            conf.batch,
+            generator=seeded_generator(conf.seed),
+        )
+        # What the batches actually hold, not what --batch asked for. The sampler covers
+        # every row once per epoch and takes its batch count from the LARGER class, so equal
+        # pools give batch//2 of each and unequal pools give batch//2 of the larger class and
+        # proportionally less of the smaller: at negatives_per_positive=2 a --batch=8 run
+        # yields about 2 positive + 4 unlabeled, not 4 + 4. Printing the requested split
+        # instead of the real one made the log say 4 + 4 regardless.
+        _sampler = train_loader_kwargs["batch_sampler"]
+        _positives = int(_sampler.positive_indices.numel())
+        _unlabeled = int(_sampler.unlabeled_indices.numel())
+        print(
+            f"balanced batches : {len(_sampler)} per epoch "
+            f"covering all {train_labels.numel()} train rows, "
+            f"{_positives / len(_sampler):.1f} positive + "
+            f"{_unlabeled / len(_sampler):.1f} unlabeled per batch "
+            f"({(_positives + _unlabeled) / len(_sampler):.1f} rows, --batch={conf.batch})"
         )
 
-    priors = torch.full((fallback_slot + 1,), float(conf.pu_rho), dtype=torch.float32)
-    derived, fell_back = [], []
-    for slot, name in enumerate(names):
-        rows = train_slots == slot
-        positive_count = float((rows & (labels == 1)).sum())
-        unlabeled_count = float((rows & (labels == 0)).sum())
-        if positive_count + unlabeled_count < PU_SUBCLASS_MINIMUM_TRAIN_ROWS:
-            fell_back.append(f"{name}={int(positive_count + unlabeled_count)}rows")
-            continue
-        # effective_pu_rho's formula lands on exactly 1.0 for a subclass whose train rows
-        # are all labeled positives and on exactly 0.0 when it has no positives and the
-        # fraction is 0, and it rejects both. Those are the only two degenerate cases:
-        # with unlabeled rows present and a fraction below 1 the value is always interior.
-        if not (unlabeled_count > 0.0 and (
-            positive_count > 0.0 or conf.pu_unlabeled_positive_fraction > 0.0
-        )):
-            fell_back.append(f"{name}=one class only")
-            continue
-        priors[slot] = conf.effective_pu_rho(
-            positive_count=positive_count, unlabeled_count=unlabeled_count
-        )
-        derived.append(f"{name}={float(priors[slot]):.4f}")
+    train_loader = torch_geometric.loader.DataLoader(
+            train_dataset,
+            generator=seeded_generator(conf.seed),
+            **train_loader_kwargs,
+            )
+    valid_loader = torch_geometric.loader.DataLoader(
+            valid_dataset,
+            generator=seeded_generator(conf.seed + 1),
+            **loader_kwargs,
+            )
+    test_loader = torch_geometric.loader.DataLoader(
+            test_dataset,
+            generator=seeded_generator(conf.seed + 2),
+            **loader_kwargs,
+            )
+    return train_loader, valid_loader, test_loader, rotating_sampler
 
-    highest_pair_id = max(int(frame["pair_id"].max()) for frame in frames)
-    row_group = torch.full((highest_pair_id + 1,), fallback_slot, dtype=torch.long)
-    for frame in frames:
-        pair_ids = torch.as_tensor(frame["pair_id"].to_numpy(), dtype=torch.long)
-        species = frame["FullIdentityOfLipid"].astype(str)
-        row_group[pair_ids] = torch.as_tensor(
-            [
-                slot_of_name.get(subclass_of_species.get(value), fallback_slot)
-                for value in species
-            ],
-            dtype=torch.long,
-        )
 
-    print(f"PU rho by subclass : {', '.join(derived)}")
+def warm_caches(train_dataset, valid_dataset, test_dataset):
+    """Fill every per-sample cache once, then drop the source artifacts they came from."""
+    # Build every protein graph and lipid encoding once, here, so the DataLoader workers
+    # fork with the caches already filled and share them copy-on-write instead of each
+    # rebuilding its own during the first epoch.
+    cache_counts = train_dataset.warm_caches(train_dataset.csvt)
+    released_artifacts = set()
+    for dataset in (train_dataset, valid_dataset, test_dataset):
+        released_artifacts.update(dataset.release_source_artifacts())
     print(
-        "PU rho by subclass fallback to "
-        f"{conf.pu_rho:.6f} : {', '.join(fell_back) if fell_back else 'none'}"
-        " + unclassified species"
+        f"cache warmed : {cache_counts['proteins']} proteins, "
+        f"{cache_counts['lipid_encodings']} lipid encodings, "
+        f"{cache_counts['lipid_graphs']} lipid graphs, "
+        f"{train_dataset.cache_memory_bytes() / 2**20:.0f} MiB"
     )
-    return priors, row_group
-
-
-train_labels = torch.as_tensor(
-    class_level_positive_labels(train_dataset.csvtrain).values
-    if conf.lipid_class_targets
-    else train_dataset.csvtrain["Interaction"].values,
-    dtype=torch.long,
-)
-class_counts = torch.bincount(train_labels, minlength=2).float()
-if conf.pu_loss:
-    conf.pu_rho = conf.effective_pu_rho(
-        positive_count=class_counts[1].item(),
-        unlabeled_count=class_counts[0].item(),
-    )
-    print(f"PU rho : {conf.pu_rho:.6f}")
-pu_group_priors, pu_row_group = (
-    build_pu_subclass_priors(conf, train_dataset, train_labels)
-    if conf.pu_loss and conf.pu_rho_by_subclass
-    else (None, None)
-)
-
-
-def pu_prior_and_groups(prot, sample_count):
-    """(prior, group_ids) for one nnPU call.
-
-    The train-wide scalar unless --pu_rho_by_subclass, in which case the per-subclass
-    prior vector plus this batch's subclass index per row, looked up by pair_id.
-    """
-    if pu_group_priors is None:
-        return conf.pu_rho, None
-    pair_ids = prot.pair_id.view(-1)[:sample_count].detach().cpu()
-    return pu_group_priors, pu_row_group[pair_ids]
-class_weights = None
-if conf.class_weights:
-    class_weights = (
-        class_counts.sum() / (2.0 * class_counts.clamp_min(1.0))
-    ).to(device)
-    print(f"class weights : {class_weights.detach().cpu().tolist()}")
-else:
-    print("class weights : disabled")
-
-logit_adjustment_bias_tensor = None
-if conf.logit_adjustment:
-    logit_adjustment_bias_tensor = logit_adjustment_bias(
-        class_counts, tau=conf.logit_adjustment_tau
-    ).to(device)
-    print(f"logit adjustment bias : {logit_adjustment_bias_tensor.detach().cpu().tolist()}")
-
-group_dro_state = None
-if conf.group_dro:
-    family_train_counts = torch.tensor(
-        [
-            float((train_dataset.csvtrain["ProteinDomain"] == name).sum())
-            for name in FAMILY_NAMES
-        ],
-        dtype=torch.float32,
-    ).to(device)
-    group_dro_state = GroupDROState(
-        family_train_counts,
-        step_size=conf.group_dro_step_size,
-        group_adj=conf.group_dro_adj,
-    )
-    print(
-        "group DRO train counts : "
-        + ", ".join(
-            f"{name}={int(count)}"
-            for name, count in zip(FAMILY_NAMES, family_train_counts.tolist())
-        )
-    )
-
-
-loader_kwargs = {
-        "batch_size": conf.batch,
-        "shuffle": True,
-        # Pinned memory only buys the async host-to-device copy; with no accelerator
-        # PyTorch ignores the request and warns once per loader, so ask for it only on
-        # CUDA. Same tensors either way.
-        "pin_memory": device.type == "cuda",
-        "num_workers": conf.num_workers,
-        "persistent_workers": conf.num_workers > 0,
-        "worker_init_fn": seed_worker,
-        }
-if conf.num_workers > 0:
-    loader_kwargs["prefetch_factor"] = 4
-
-# A batch_sampler carries batch composition itself, so batch_size/shuffle must
-# not be passed alongside it.
-train_loader_kwargs = dict(loader_kwargs)
-rotating_sampler = None
-if conf.rotate_train_negatives:
-    # Takes precedence over the plain balanced-batch branch below and does not replace
-    # it: --balanced_batches is passed through, so batch composition is still decided by
-    # ClassBalancedBatchSampler -- over this epoch's active rows instead of over a
-    # draw fixed for the whole run. Chunk default: the same number of negatives an epoch
-    # would have held without the flag, so the per-epoch cost and class ratio are
-    # unchanged and only WHICH negatives is different.
-    del train_loader_kwargs["batch_size"], train_loader_kwargs["shuffle"]
-    _train_positives = int((train_labels == 1).sum())
-    rotating_chunk = conf.rotate_negatives_per_epoch or (
-        conf.negatives_per_positive * _train_positives
-    )
-    rotating_sampler = RotatingNegativeBatchSampler(
-        train_labels,
-        conf.batch,
-        rotating_chunk,
-        conf.balanced_batches,
-        generator=seeded_generator(conf.seed),
-    )
-    train_loader_kwargs["batch_sampler"] = rotating_sampler
-    print(
-        f"rotating negatives : {int(rotating_sampler.negative_order.numel())} train "
-        f"negatives, {rotating_sampler.chunk} per epoch, one full pass every "
-        f"{rotating_sampler.epochs_per_pass} epochs "
-        f"({conf.ep / rotating_sampler.epochs_per_pass:.1f} passes over {conf.ep} "
-        f"epochs), {len(rotating_sampler)} batches per epoch, "
-        f"balanced_batches={bool(conf.balanced_batches)}"
-    )
-elif conf.balanced_batches:
-    del train_loader_kwargs["batch_size"], train_loader_kwargs["shuffle"]
-    train_loader_kwargs["batch_sampler"] = ClassBalancedBatchSampler(
-        train_labels,
-        conf.batch,
-        generator=seeded_generator(conf.seed),
-    )
-    # What the batches actually hold, not what --batch asked for. The sampler covers
-    # every row once per epoch and takes its batch count from the LARGER class, so equal
-    # pools give batch//2 of each and unequal pools give batch//2 of the larger class and
-    # proportionally less of the smaller: at negatives_per_positive=2 a --batch=8 run
-    # yields about 2 positive + 4 unlabeled, not 4 + 4. Printing the requested split
-    # instead of the real one made the log say 4 + 4 regardless.
-    _sampler = train_loader_kwargs["batch_sampler"]
-    _positives = int(_sampler.positive_indices.numel())
-    _unlabeled = int(_sampler.unlabeled_indices.numel())
-    print(
-        f"balanced batches : {len(_sampler)} per epoch "
-        f"covering all {train_labels.numel()} train rows, "
-        f"{_positives / len(_sampler):.1f} positive + "
-        f"{_unlabeled / len(_sampler):.1f} unlabeled per batch "
-        f"({(_positives + _unlabeled) / len(_sampler):.1f} rows, --batch={conf.batch})"
-    )
-
-train_loader = torch_geometric.loader.DataLoader(
-        train_dataset,
-        generator=seeded_generator(conf.seed),
-        **train_loader_kwargs,
-        )
-valid_loader = torch_geometric.loader.DataLoader(
-        valid_dataset,
-        generator=seeded_generator(conf.seed + 1),
-        **loader_kwargs,
-        )
-test_loader = torch_geometric.loader.DataLoader(
-        test_dataset,
-        generator=seeded_generator(conf.seed + 2),
-        **loader_kwargs,
-        )
-# Build every protein graph and lipid encoding once, here, so the DataLoader workers
-# fork with the caches already filled and share them copy-on-write instead of each
-# rebuilding its own during the first epoch.
-cache_counts = train_dataset.warm_caches(train_dataset.csvt)
-released_artifacts = set()
-for dataset in (train_dataset, valid_dataset, test_dataset):
-    released_artifacts.update(dataset.release_source_artifacts())
-print(
-    f"cache warmed : {cache_counts['proteins']} proteins, "
-    f"{cache_counts['lipid_encodings']} lipid encodings, "
-    f"{cache_counts['lipid_graphs']} lipid graphs, "
-    f"{train_dataset.cache_memory_bytes() / 2**20:.0f} MiB"
-)
-print(f"source artifacts released : {sorted(released_artifacts)}")
+    print(f"source artifacts released : {sorted(released_artifacts)}")
 
 
 def _return_freed_heap_to_kernel():
@@ -503,2016 +278,31 @@ def _return_freed_heap_to_kernel():
     return True
 
 
-_return_freed_heap_to_kernel()
-train_batches_to_run = min(len(train_loader), (1740 + conf.batch - 1) // conf.batch)
-if rotating_sampler is not None and train_batches_to_run < len(train_loader):
-    # The 1740-row cap above predates this flag and is silent: it simply stops the
-    # training loop early (`if i < train_batches_to_run`). A rotating epoch larger than
-    # the cap is therefore not the epoch that was asked for -- the slice still MOVES, so
-    # the pool is still covered, but each epoch trains on the cap's worth of it. Said out
-    # loud rather than left to be inferred from the batch counter.
-    print(
-        f"rotating negatives : --rotate_negatives_per_epoch asks for "
-        f"{len(train_loader)} batches, the {1740}-row per-epoch cap allows "
-        f"{train_batches_to_run}; the remaining batches of each epoch are skipped"
-    )
-valid_batches_to_run = len(valid_loader)
-test_batches_to_run = len(test_loader)
-if conf.deepclip or descriptor_catalog_only(conf):
-    # Each split as a few tensors on the device, batched by indexing, instead of PyG
-    # re-collating the same cached samples every batch (dataloader/preassembled_
-    # loader.py). Same batches in the same order, and the same lipid candidate drawn
-    # for each row: the loader built above still supplies its own sampler and
-    # generator, and the draws are replayed on the generator get() would have used
-    # (this process's; a split that draws with num_workers > 0 keeps its DataLoader).
-    # Skipped for a split whose samples change in any other way per access, and for
-    # train when the 1740-row cap cuts epochs short AND workers run -- they prefetch
-    # past the stop, which this does not mirror. Without workers both loaders stop the
-    # same way: the loop fetches one batch past the cap (drawing its candidates) and
-    # breaks, and a generator is left mid-sampler exactly like the DataLoader iterator.
-    preassembled_splits = []
-    if preassembly_mode(train_dataset, conf.num_workers) and (
-        train_batches_to_run == len(train_loader) or conf.num_workers == 0
-    ):
-        train_loader = PreassembledLoader(train_loader, device)
-        preassembled_splits.append("train")
-    if preassembly_mode(valid_dataset, conf.num_workers):
-        valid_loader = PreassembledLoader(valid_loader, device)
-        preassembled_splits.append("valid")
-    if preassembly_mode(test_dataset, conf.num_workers):
-        test_loader = PreassembledLoader(test_loader, device)
-        preassembled_splits.append("test")
-    print(f"preassembled splits : {preassembled_splits or 'none'}")
-print("data extracted")
-# Parameter split for bilevel width search. Gate params (lambda) are optimized on the
-# validation split; theta (weights) on train. ConcreteDropout logits are trained on the
-# train objective (like theta) but always excluded from weight decay.
-gate_params = collect_gate_parameters(model)
-gate_param_ids = {id(p) for p in gate_params}
-dropout_logit_params = [
-    module.logit for module in model.modules() if isinstance(module, ConcreteDropout)
-]
-dropout_logit_ids = {id(p) for p in dropout_logit_params}
-# --bilinear_weight_decay: self.bilinear's weight/bias get their own optimizer group
-# instead of following the global --weight_decay, so that one tensor (the only one
-# whose output has no built-in ceiling, and whose size grows cubically with --hiddim
-# under bilinear_fusion) can be reined in harder without over-penalising the rest of
-# the network. Empty list, no-op group, when bilinear_fusion is off.
-# getattr on the MODEL, not just on final_layer: --deepclip builds architecture/
-# deepclip.py alone and has no Final_Layer at all (InteractionClassification.__init__
-# returns before building one), so this and the thematic lookup below have nothing to
-# read. Both resolve to None there, which is the same no-op empty optimizer group a
-# run with bilinear_fusion/thematical_paths off already gets.
-final_layer = getattr(model, "final_layer", None)
-bilinear_module = getattr(final_layer, "bilinear", None)
-bilinear_params = list(bilinear_module.parameters()) if bilinear_module is not None else []
-bilinear_param_ids = {id(p) for p in bilinear_params}
-# --deepclip_gate_weight_decay: architecture/deepclip.py's DeepCLIP.gate (the
-# --deepclip_protein_gate MLP) gets its own optimizer group the same way bilinear_
-# module does just above -- getattr on the MODEL so a non-deepclip run (no
-# self.deepclip attribute at all) resolves to the same no-op empty group.
-deepclip_module = getattr(model, "deepclip", None)
-deepclip_gate_module = getattr(deepclip_module, "gate", None)
-deepclip_gate_params = (
-    list(deepclip_gate_module.parameters()) if deepclip_gate_module is not None else []
-)
-deepclip_gate_param_ids = {id(p) for p in deepclip_gate_params}
-# --thematical_interaction_lr (ModelConfig docstring, files/thematical_paths_dynamics_
-# and_pair_auc.md section 7): ForcedInteraction's parameters sit behind two chained
-# hard-normalisation ops MLB's own paper reports as slow/hyperparameter-sensitive to
-# converge -- give all three sites (geom/chem/level2) their own optimizer group at a
-# higher lr instead of raising --lr globally. Empty list, no-op group, when off or
-# not a thematical_paths run.
-THEMATICAL_INTERACTION_LR_MULTIPLIER = 5.0
-thematic_head = getattr(final_layer, "thematical_head", None)
-thematic_interaction_params = (
-    list(thematic_head.geom_interaction.parameters())
-    + list(thematic_head.chem_interaction.parameters())
-    + list(thematic_head.group_interaction.parameters())
-    if (thematic_head is not None and conf.thematical_interaction_lr)
-    else []
-)
-thematic_interaction_param_ids = {id(p) for p in thematic_interaction_params}
-bilinear_weight_decay = (
-    conf.weight_decay if conf.bilinear_weight_decay is None else conf.bilinear_weight_decay
-)
-deepclip_gate_weight_decay = (
-    conf.weight_decay
-    if conf.deepclip_gate_weight_decay is None
-    else conf.deepclip_gate_weight_decay
-)
-theta_params = [
-    p
-    for p in model.parameters()
-    if id(p) not in gate_param_ids
-    and id(p) not in dropout_logit_ids
-    and id(p) not in bilinear_param_ids
-    and id(p) not in thematic_interaction_param_ids
-    and id(p) not in deepclip_gate_param_ids
-]
-
-lipid_branch_param_ids = (
-    {id(p) for p in model.lipid_branch_parameters()}
-    if conf.lipid_path_handicap
-    else set()
-)
-
-
-def split_lipid_branch(groups):
-    """Give the lipid branch its own optimizer group so its lr can be handicapped.
-
-    Splitting by PARAMETER, not by a hook on the graph, is what makes the handicap
-    stay off the protein: past cross-attention the lipid activations are a function of
-    both partners, so anything attached there would slow the protein encoder too. Each
-    split group inherits its parent's settings (weight decay above all) and differs
-    only in lr, and is tagged so apply_lipid_path_handicap can find it again.
-    """
-    if not lipid_branch_param_ids:
-        return groups
-    split = []
-    for group in groups:
-        lipid = [p for p in group["params"] if id(p) in lipid_branch_param_ids]
-        rest = [p for p in group["params"] if id(p) not in lipid_branch_param_ids]
-        if rest:
-            split.append({**group, "params": rest})
-        if lipid:
-            split.append({**group, "params": lipid, "lipid_branch": True})
-    return split
-
-
-hyper_optimizer = None
-if conf.bilevel and gate_params:
-    # theta (with weight decay) + dropout logits (no weight decay) on train; the main
-    # optimizer never touches the gate params -- those are stepped on validation below.
-    main_groups = [{"params": theta_params, "weight_decay": conf.weight_decay}]
-    if bilinear_params:
-        main_groups.append(
-            {"params": bilinear_params, "weight_decay": bilinear_weight_decay}
-        )
-    if deepclip_gate_params:
-        main_groups.append(
-            {"params": deepclip_gate_params, "weight_decay": deepclip_gate_weight_decay}
-        )
-    if dropout_logit_params:
-        main_groups.append({"params": dropout_logit_params, "weight_decay": 0.0})
-    if thematic_interaction_params:
-        main_groups.append({
-            "params": thematic_interaction_params,
-            "weight_decay": conf.weight_decay,
-            "lr": conf.lr * THEMATICAL_INTERACTION_LR_MULTIPLIER,
-        })
-    optimizer = torch.optim.Adam(split_lipid_branch(main_groups), lr=conf.lr)
-    hyper_optimizer = torch.optim.Adam(gate_params, lr=conf.bilevel_lr)
-elif dropout_logit_params:
-    # Not bilevel: everything trains on the train objective, but keep dropout logits out
-    # of weight decay. Gates (if any) are learned via the train-loss penalty below.
-    groups = [
-        {
-            "params": theta_params + gate_params,
-            "weight_decay": conf.weight_decay,
-        },
-        {"params": dropout_logit_params, "weight_decay": 0.0},
-    ]
-    if bilinear_params:
-        groups.append({"params": bilinear_params, "weight_decay": bilinear_weight_decay})
-    if deepclip_gate_params:
-        groups.append(
-            {"params": deepclip_gate_params, "weight_decay": deepclip_gate_weight_decay}
-        )
-    if thematic_interaction_params:
-        groups.append({
-            "params": thematic_interaction_params,
-            "weight_decay": conf.weight_decay,
-            "lr": conf.lr * THEMATICAL_INTERACTION_LR_MULTIPLIER,
-        })
-    optimizer = torch.optim.Adam(split_lipid_branch(groups), lr=conf.lr)
-else:
-    # No bilevel, no ConcreteDropout: everything (including gate_params, if any exist
-    # without bilevel search being on) trains as one plain group at the top-level
-    # weight_decay, same as before this split existed -- only bilinear_params and
-    # deepclip_gate_params are carved out, not theta_params, since theta_params also
-    # drops gate_param_ids/dropout_logit_ids that this branch never re-adds.
-    base_params = [
-        p for p in model.parameters()
-        if id(p) not in bilinear_param_ids
-        and id(p) not in thematic_interaction_param_ids
-        and id(p) not in deepclip_gate_param_ids
-    ]
-    groups = [{"params": base_params}]
-    if bilinear_params:
-        groups.append({"params": bilinear_params, "weight_decay": bilinear_weight_decay})
-    if deepclip_gate_params:
-        groups.append(
-            {"params": deepclip_gate_params, "weight_decay": deepclip_gate_weight_decay}
-        )
-    if thematic_interaction_params:
-        groups.append({
-            "params": thematic_interaction_params,
-            "lr": conf.lr * THEMATICAL_INTERACTION_LR_MULTIPLIER,
-        })
-    optimizer = torch.optim.Adam(
-        split_lipid_branch(groups),
-        lr=conf.lr,
-        weight_decay=conf.weight_decay,
-    )
-
-
-# Rewritten at the top of every epoch from conf.ramped_lipid_path_weight; defined here
-# so the TensorBoard logger has it whatever order the first epoch runs in.
-lipid_path_weight_now = conf.lipid_path_weight
-# Resolved once. param_groups is a stable list of stable dicts, so holding the dicts
-# themselves saves rescanning it on every epoch and every log line, and keeps the
-# handicap's two call sites from each re-deriving which group is which.
-lipid_lr_groups = [g for g in optimizer.param_groups if g.get("lipid_branch")]
-lipid_lr_reference = next(
-    (g for g in optimizer.param_groups if not g.get("lipid_branch")), None
-)
-
-
-def apply_lipid_path_handicap(weight):
-    """Set the lipid branch's lr to ``weight`` times the rest of the model's.
-
-    Read off a sibling group rather than off conf.lr so whatever the lr schedule has
-    done this epoch is inherited: lr_warmup_cosine rewrites every group's lr from its
-    own previous value, so anchoring to conf.lr would silently undo the warm-up and the
-    cosine decay for the lipid branch alone. Called at the top of each epoch, after the
-    previous epoch's scheduler step.
-    """
-    for group in lipid_lr_groups:
-        group["lr"] = lipid_lr_reference["lr"] * weight
-
-
-def _endless_batches(loader):
-    """Yield validation batches forever for the bilevel lambda step."""
-    while True:
-        for batch in loader:
-            yield batch
-
-
-hyper_val_iter = _endless_batches(valid_loader) if hyper_optimizer is not None else None
-
-use_amp = conf.type_opt and device.type == "cuda"
-scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
-
-lr_scheduler = None
-if conf.lr_warmup_cosine:
-    warmup_epochs = min(conf.lr_warmup_epochs, max(conf.ep - 1, 0))
-    cosine_epochs = max(conf.ep - warmup_epochs, 1)
-    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=cosine_epochs, eta_min=conf.lr * conf.lr_min_factor
-    )
-    if warmup_epochs > 0:
-        lr_scheduler = torch.optim.lr_scheduler.SequentialLR(
-            optimizer,
-            schedulers=[
-                torch.optim.lr_scheduler.LinearLR(
-                    optimizer, start_factor=0.1, total_iters=warmup_epochs
-                ),
-                cosine_scheduler,
-            ],
-            milestones=[warmup_epochs],
-        )
-    else:
-        lr_scheduler = cosine_scheduler
-
-SAFE_PATH_PART = re.compile(r"[^A-Za-z0-9._=-]+")
-config_name = f"{'addLayers' if conf.third_layers_in_mlps else 'base'}_{'protSA' if conf.protein_self_attention else ''}_{'lipSA' if conf.lipid_self_attention else ''}_{'CA' if conf.cross_attention else ''}_{'doubleAtt' if conf.double_attention else ''}_{'protPosBias' if conf.prot_attention_pos_bias else ''}"
-raw_label = conf.label.strip()
-if not raw_label:
-    oar_job_name = os.environ.get("OAR_JOB_NAME", "").strip()
-    if oar_job_name:
-        group_suffix = (
-            r"_(CRAL-TRIO|START|lipocalin|GLTP|IP_trans|"
-            r"LBP_BPI_CETP|scp2|ML|OSBP)_s-?\d+$"
-        )
-        raw_label = re.sub(group_suffix, "", oar_job_name)
-    else:
-        raw_label = config_name
-label_name = SAFE_PATH_PART.sub("_", raw_label).strip("._")
-if not label_name:
-    raise ValueError(f"Invalid label value: {raw_label!r}")
-conf.label = label_name
-excluded_set_parts = []
-if conf.excluded_groups:
-    excluded_set_parts.append("groups_" + "-".join(conf.excluded_groups))
-if conf.lipid_coldsplit:
-    # Under --lipid_coldsplit no protein group is excluded, so without this every set
-    # would land in the same "random" directory: four different experiments sharing one
-    # test_metrics folder, and a progress table that cannot tell their event files apart
-    # and reports n/a for all of them. The "groups_" prefix is deliberate even though a
-    # lipid set is not a protein group -- it is the prefix every consumer of this path
-    # already keys on (the progress table's dirs_by_set, list_completed_experiments,
-    # build_metrics_table, the plotting scripts), and what the directory really names is
-    # the exclusion set, whichever axis it lies on.
-    excluded_set_parts.append("groups_" + conf.lipid_coldsplit)
-if conf.lipid_isolation:
-    # Same reasoning as --lipid_coldsplit just above, and the same "groups_" prefix
-    # every consumer of this path keys on. The key is the requested isolation, so the
-    # directory reads "groups_iso0.85" and says what the block is without a lookup.
-    excluded_set_parts.append("groups_iso" + conf.lipid_isolation)
-if conf.lipid_subclass:
-    # Same axis again, cut by the source paper's own subclass -- same "groups_" prefix
-    # and the same reason for it. The spec goes in verbatim ("groups_PC",
-    # "groups_LPC+LPE+LPG"), so the directory says which block was held out without a
-    # lookup; SAFE_PATH_PART is not applied here because a spec is only letters,
-    # digits and "+", all safe in a path.
-    excluded_set_parts.append("groups_" + conf.lipid_subclass)
-if conf.lipid_species_coldsplit:
-    # Same axis, same "groups_" prefix, same reason. The share goes in as two digits
-    # ("groups_species15") because that is what identifies the split here -- the block
-    # itself is a per-seed draw, so unlike a subclass spec there is no name to put in
-    # the path, and the seed already has its own place in every consumer of it.
-    # int(x + 0.5), not round(): the launchers name the same directory from awk, which
-    # rounds halves up, while Python's round() rounds them to even. The two disagree at
-    # exactly the halfway shares (0.125 -> 13 against 12), and a disagreement here puts
-    # the job's log in one directory and its run/ and test_metrics/ in another.
-    excluded_set_parts.append(
-        "groups_species%02d" % int(conf.lipid_species_coldsplit * 100 + 0.5)
-    )
-if conf.drop_uncovered_protein_subclass:
-    # Same block, a different EVALUATED SET of it: the rows whose (protein, subclass)
-    # cell is absent from training are dropped instead of scored. That changes what every
-    # test number means, so it has to change the path too -- without this a filtered and
-    # an unfiltered run of the same label share one run/ directory, one test_metrics
-    # folder and one (exclusion_set, seed) key in metrics_summary.csv, and whichever
-    # finished last would silently stand for both. Appended rather than folded into the
-    # "groups_species%02d" part so the "groups_" prefix every consumer keys on still
-    # starts the name.
-    excluded_set_parts.append("covered")
-if conf.family_only:
-    # Third axis, same argument as --lipid_coldsplit just above. --family_only excludes
-    # nothing, it RESTRICTS training to one family, so without this every family landed
-    # in the same "random" directory under one label: nine runs sharing one
-    # test_metrics folder, one models/<label>/random/seed0.pt that each family
-    # overwrote in turn, and nine metrics_summary.csv rows that
-    # analysis/compare_labels.py's latest_rows_for_label -- keyed on
-    # (exclusion_set, seed) -- collapsed to whichever finished last. Eight of the nine
-    # families were invisible to every summary.
-    # "groups_" and not "family_" because that prefix is what every consumer of this
-    # path keys on (the progress table's dirs_by_set, list_completed_experiments,
-    # build_metrics_table, the plotting scripts); as with the lipid sets above, what
-    # the directory names is the run's own axis, not necessarily a held-OUT group.
-    excluded_set_parts.append("groups_" + conf.family_only)
-if conf.excluded_subgroups:
-    excluded_set_parts.append("subgroups_" + "-".join(conf.excluded_subgroups))
-excluded_set_name = "_".join(excluded_set_parts) if excluded_set_parts else "random"
-artifact_root = os.path.join(PROJECT_ROOT, "testmode_outputs") if conf.testmode else PROJECT_ROOT
-run_root = os.path.join(artifact_root, "run")
-test_metrics_root = os.path.join(artifact_root, "test_metrics")
-checkpoints_root = os.path.join(artifact_root, "checkpoints")
-models_root = os.path.join(artifact_root, "models")
-metrics_table_path = os.path.join(artifact_root, "metrics_summary.csv")
-while True:
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_dir = os.path.join(
-        run_root,
-        label_name,
-        excluded_set_name,
-        f'train{timestamp}_{number_of_parameters}parameters_{conf.m}_{conf.HEADS}_{conf.seed}_{conf.lr}_{conf.batch}_{conf.hiddim}',
-    )
-    try:
-        os.makedirs(log_dir, exist_ok=False)
-        break
-    except FileExistsError:
-        time.sleep(1)
-test_metrics_dir = os.path.join(test_metrics_root, label_name, excluded_set_name)
-os.makedirs(test_metrics_dir, exist_ok=True)
-writer_tb = SummaryWriter(log_dir)
-TENSORBOARD_FLUSH_EVERY_EPOCHS = 5
-
-sig=torch.nn.Sigmoid()
-
-def safe_div(num, denom):
-    """Divide two values and return None for a zero denominator."""
-    return None if denom == 0 else num / denom
-
-def format_metric(value):
-    """Format an optional metric for logs and report files."""
-    return "undefined" if value is None else f"{value:.6f}"
-
-def binary_auc(scores, labels):
-    """Rank-based ROC AUC over one binary split, or None when a class is missing.
-
-    The only metric in this file that is NOT a function of the confusion counts:
-    everything else answers "how good is the split at threshold 0.5", this one answers
-    "how good is the ordering, whatever the threshold". That distinction is the reason
-    it exists here -- on the cold splits sensitivity sits at 0.2-0.35 against
-    specificity 0.77, so a fixed 0.5 threshold cannot separate "learned nothing" from
-    "learned something, threshold in the wrong place", and balanced_accuracy alone
-    reports both as the same number.
-
-    Mann-Whitney U over midranks:
-        AUC = (sum of positive midranks - n_pos*(n_pos+1)/2) / (n_pos * n_neg)
-    Tied scores share the average of the ranks they span, which is what makes this
-    agree with the trapezoidal ROC integral instead of depending on input order --
-    it matters here because a collapsed model emits long runs of identical scores.
-
-    Written out rather than imported: scikit-learn is not a dependency of this project
-    anywhere, and this is the whole of what would be taken from it. `scores` may be any
-    monotone function of the model's confidence (probability or logit margin) -- only
-    their order is read.
-    """
-    pairs = sorted(zip(scores, labels), key=lambda item: item[0])
-    positives = sum(1 for _, label in pairs if label == 1)
-    negatives = len(pairs) - positives
-    if positives == 0 or negatives == 0:
-        return None
-    positive_rank_sum = 0.0
-    start = 0
-    while start < len(pairs):
-        stop = start
-        while stop + 1 < len(pairs) and pairs[stop + 1][0] == pairs[start][0]:
-            stop += 1
-        # One 1-based midrank shared by the whole tie group [start, stop].
-        midrank = (start + stop) / 2.0 + 1.0
-        for position in range(start, stop + 1):
-            if pairs[position][1] == 1:
-                positive_rank_sum += midrank
-        start = stop + 1
-    return (
-        positive_rank_sum - positives * (positives + 1) / 2.0
-    ) / (positives * negatives)
-
-# per_protein_auc's own bar (analysis/null_model.py): a protein with fewer rows, or with
-# only one class present, carries no ranking to read.
-WITHIN_PROTEIN_MINIMUM_ROWS = 6
-
-
-def within_protein_auc(subgroup_stats):
-    """(mean AUC inside a protein, how many proteins that mean is over).
-
-    THE metric for a lipid cold split, and the reason it is computed by the run itself
-    rather than only post-hoc: under --lipid_coldsplit every protein is in training, so
-    the pooled AUC can be won outright by "which protein is this" -- a protein marginal
-    that says nothing about which lipid it binds. Measured on
-    ..._lcs_esm3_balanced_lipid_classes: pooled AUC 0.568 while this number is 0.480, and
-    on the two sets with enough protein blocks to read (11 and 10) it is 0.460 and 0.457
-    -- chance. The pooled figure was almost entirely the marginal
-    (files/lipid_coldsplit_architecture_direction.md section 7j).
-
-    Comparisons never cross a protein boundary here, so that marginal cannot contribute:
-    a protein is ranked only against its own candidate lipids. It is the quantity a
-    ranking objective (--rank_within_protein) optimises, and the one to read first on
-    this split.
-
-    The block count travels with the value on purpose -- a mean over two proteins is not
-    the same claim as a mean over eleven, and both occur across the four lipid sets.
-    """
-    values = []
-    for stats in subgroup_stats.values():
-        labels = stats.get("labels") or []
-        if len(labels) < WITHIN_PROTEIN_MINIMUM_ROWS or len(set(labels)) < 2:
-            continue
-        value = binary_auc(stats["scores"], labels)
-        if value is not None:
-            values.append(value)
-    if not values:
-        return None, 0
-    return sum(values) / len(values), len(values)
-
-
-def within_protein_pair_auc(subgroup_stats):
-    """Same question as within_protein_auc, counted over PAIRS instead of proteins.
-
-    The per-protein average needs a protein to carry a readable ranking on its own
-    (>= WITHIN_PROTEIN_MINIMUM_ROWS rows, both classes), and on this data most do not:
-    on the sphingolipids and phosphorus_free blocks only about two proteins qualify per
-    run, so that column came out empty for half the seeds and its per-group means were
-    over one to five runs. A number that absent cannot be the metric a split is judged
-    by.
-
-    This pools the comparisons themselves: every (positive, negative) pair of rows
-    SHARING a protein, concordant pairs over total pairs, ties counted as half -- the
-    rank-based AUC identity, applied to the union of the per-protein pair sets. A
-    protein contributes as soon as it has one row of each class, so nearly every protein
-    in the block contributes, and a protein with more candidates weighs more, which is
-    what "how well are this block's within-protein comparisons ordered" should mean.
-
-    Comparisons still never cross a protein boundary, so the protein marginal cannot
-    contribute -- the property the whole metric exists for is unchanged.
-    """
-    concordant = 0.0
-    total = 0
-    proteins = 0
-    for stats in subgroup_stats.values():
-        scores, labels = stats.get("scores") or [], stats.get("labels") or []
-        positives = [s for s, y in zip(scores, labels) if y == 1]
-        negatives = [s for s, y in zip(scores, labels) if y != 1]
-        if not positives or not negatives:
-            continue
-        proteins += 1
-        for positive in positives:
-            for negative in negatives:
-                if positive > negative:
-                    concordant += 1.0
-                elif positive == negative:
-                    concordant += 0.5
-                total += 1
-    if total == 0:
-        return None, 0
-    return concordant / total, proteins
-
-
-def metric_values(tp, fp, tn, fn, total_loss, total_loss_count, auc=None):
-    """Compute aggregate binary-classification metrics from confusion counts.
-
-    `auc` is passed in rather than computed here because it is the one metric the
-    counts do not determine -- it needs the per-sample scores, which only the test
-    path keeps. Callers that have no scores (the per-epoch train/valid aggregates)
-    leave it None and it reports as "undefined", exactly like precision on an empty
-    predicted-positive set.
-    """
-    sensitivity = safe_div(tp, tp + fn)
-    specificity = safe_div(tn, tn + fp)
-    return {
-        "total": tp + fp + tn + fn,
-        "real_positive": tp + fn,
-        "real_negative": tn + fp,
-        "predicted_positive": tp + fp,
-        "predicted_negative": tn + fn,
-        "TP": tp,
-        "FP": fp,
-        "TN": tn,
-        "FN": fn,
-        "accuracy": safe_div(tp + tn, tp + fp + tn + fn),
-        "sensitivity": sensitivity,
-        "precision": safe_div(tp, tp + fp),
-        "specificity": specificity,
-        "IoU": safe_div(tp, tp + fp + fn),
-        "FAR": safe_div(fp, fp + tn),
-        "F1": safe_div(2 * tp, 2 * tp + fp + fn),
-        "balanced_accuracy": None if sensitivity is None or specificity is None else (sensitivity + specificity) / 2,
-        "AUC": auc,
-        "loss": safe_div(total_loss, total_loss_count),
-    }
-
-def update_aggregate(
-    stats,
-    pred_class,
-    labels,
-    loss,
-    sample_count,
-    loss_count=None,
-    scores=None,
-):
-    """Accumulate confusion counts and sample-weighted loss for one batch.
-
-    `scores` is the per-row positive-class probability, and it is optional because the
-    confusion counts below throw the ordering away: everything the counts answer is a
-    question about the 0.5 threshold, and AUC is the one question about the ORDER. A
-    caller that wants a per-epoch AUC (the validation pass does; see the epoch print and
-    RUN_METRIC_FIELDS' *_valid_AUC entries) passes them and gets `stats["scores"]`/
-    `stats["score_labels"]` filled; a caller that does not passes nothing and pays no
-    memory for lists it will not read.
-    """
-    if loss_count is None:
-        loss_count = sample_count
-    if scores is not None:
-        # Sliced the same way the caller sliced the scores: a forward pass can return
-        # more rows than the batch has labels (validate_prediction_label_shapes), and a
-        # score paired with the wrong label would be a silently wrong AUC, not a crash.
-        stats["scores"].extend(scores)
-        stats["score_labels"].extend(
-            int(value) for value in labels[: len(scores)].detach().cpu().tolist()
-        )
-    # Two comparisons and three reductions instead of eight and four. Predictions come
-    # from argmax over two classes, so "predicted positive" and "correct" each split the
-    # batch in two and the four cells are fixed by three of them:
-    #   predicted positives = TP + FP,  correct = TP + TN,  batch = TP + FP + TN + FN.
-    # Pure integer counting, so this is the same arithmetic identity either way -- there
-    # is no rounding here to preserve, only work to skip.
-    correct = pred_class == labels
-    predicted_positive = pred_class == 1
-    true_positive = int((correct & predicted_positive).sum())
-    false_positive = int(predicted_positive.sum()) - true_positive
-    true_negative = int(correct.sum()) - true_positive
-    stats["TP"] += true_positive
-    stats["FP"] += false_positive
-    stats["TN"] += true_negative
-    stats["FN"] += (
-        pred_class.numel() - true_positive - false_positive - true_negative
-    )
-    stats["loss"] += (
-        loss.item() if isinstance(loss, torch.Tensor) else loss
-    ) * loss_count
-    stats["count"] += sample_count
-    stats["loss_count"] += loss_count
-
-
-def aggregate_values(stats):
-    """Convert accumulated counts and loss into aggregate metrics.
-
-    AUC only when `update_aggregate` was given scores (the validation pass) -- otherwise
-    `metric_values` leaves the field None exactly as before, so train-side callers and
-    the branch-dynamics passes are unchanged.
-    """
-    return metric_values(
-        stats["TP"],
-        stats["FP"],
-        stats["TN"],
-        stats["FN"],
-        stats["loss"],
-        stats["loss_count"],
-        auc=(
-            binary_auc(stats["scores"], stats["score_labels"])
-            if stats.get("scores")
-            else None
-        ),
-    )
-
-
-def log_epoch_metrics(writer, epoch_index, mode, metrics):
-    """Write aggregate epoch metrics to TensorBoard.
-
-    AUC included here for the first time: aggregate_values() has always computed it on
-    the validation pass (metrics.get("AUC") is None on train, where no scores are
-    collected -- see aggregate_values' own docstring), but nothing wrote the value out,
-    so no run before this change has an "epoch/valid AUC" scalar to plot a learning
-    curve from. analysis/plot_group_learning_curve.py's METRIC_SERIES/read logic is
-    updated alongside this to read a valid-only series for AUC.
-    """
-    for key in ("accuracy", "sensitivity", "precision", "specificity", "F1", "balanced_accuracy", "AUC", "loss"):
-        value = metrics.get(key)
-        if value is not None:
-            writer.add_scalar(f"epoch/{mode} {key}", value, epoch_index + 1)
-
-
-def log_adversary_metrics(writer, epoch_index, stats):
-    """Write the epoch's mean adversary penalties, plus the reversal strengths in force.
-
-    Read the losses as leakage gauges, not as objectives. Each per-partner adversary is
-    a 2-class problem, so ln 2 = 0.693 means the partner alone says nothing about the
-    label and there is no shortcut left to suppress; well below that means there is.
-    The family head is 9-class, where the corresponding no-information value is
-    ln 9 = 2.197. The chem head is a regression, so there is no analogous
-    no-information constant -- read it relative to Var(s_chem) on this run's batches
-    instead. Logging the lambdas alongside them makes a ramped run readable after the
-    fact -- otherwise the schedule is invisible and the loss curve uninterpretable.
-    """
-    for key, batches_key, name in (
-        ("adv", "adv_batches", "adversary loss"),
-        ("dann", "dann_batches", "family dann loss"),
-        ("chem", "chem_batches", "chem adversary loss"),
-        ("thematical_orth", "thematical_orth_batches", "thematical orthogonality penalty"),
-    ):
-        batches = stats.get(batches_key, 0)
-        if batches:
-            writer.add_scalar(
-                f"epoch/train {name}", stats[key] / batches, epoch_index + 1
-            )
-    if conf.adversarial_grl:
-        writer.add_scalar(
-            "epoch/adv lambda", model.final_layer.adv_lambda_now, epoch_index + 1
-        )
-    if conf.dann_family:
-        writer.add_scalar(
-            "epoch/dann lambda", model.final_layer.dann_lambda_now, epoch_index + 1
-        )
-    if conf.chem_adversary:
-        writer.add_scalar(
-            "epoch/chem lambda", model.final_layer.chem_lambda_now, epoch_index + 1
-        )
-    if conf.lipid_path_handicap:
-        # The lr the handicap actually produced, not just the multiplier: the multiplier
-        # alone would hide whatever the lr schedule did underneath it.
-        writer.add_scalar(
-            "epoch/lipid path weight", lipid_path_weight_now, epoch_index + 1
-        )
-        writer.add_scalar(
-            "epoch/lipid branch lr", lipid_lr_groups[0]["lr"], epoch_index + 1
-        )
-
-
-def log_tb(writer,step,los,mode,pred,label, print_metrics=True):
-    """Compute and log per-batch metrics for the requested phase."""
-    #might hve to round at this very step
-    if mode == "train":
-        
-        pred_class = pred.argmax(dim=1)
-        acc = (pred_class == label).float().mean()
-
-        TP = ((pred_class==label) & (pred_class==1)).float().sum()
-        FP = ((pred_class !=label) & (pred_class ==1)).float().sum()
-        TN = ((pred_class == label) & (pred_class == 0)).float().sum()
-        FN = ((pred_class != label) & (pred_class == 0)).float().sum()
-        sensitivity = TP / (TP+FN)#proportion of true 1 to all genuine 1 
-
-        precision = TP / (TP+FP)#proportion of correct 1 to all predicted 1
-        specificity = TN / (TN + FP) # proportion of corrrect 0 to all the real 0
-        F1 = (2*TP) / (2*TP + FP + FN)
-        balanced_acc = (sensitivity + specificity) / 2
-        if print_metrics:
-            print(f"train accuracy : {acc}")
-            print(
-                f"train pred 0/1 : {int((pred_class == 0).sum().item())}/{int((pred_class == 1).sum().item())} "
-                f"label 0/1 : {int((label == 0).sum().item())}/{int((label == 1).sum().item())}"
-            )
-        writer.add_scalar("train sensitivity", sensitivity.item(),step)
-        writer.add_scalar("train precision", precision.item(),step)
-        writer.add_scalar("train specificity", specificity.item(),step)
-        writer.add_scalar("train accuracy",acc.item(),step)
-        writer.add_scalar("train F1 score",F1.item(),step)
-        writer.add_scalar("train balanced accuracy",balanced_acc.item(),step)
-        writer.add_scalar("train loss",los,step)
-       #writer_tb.flush()
-    if mode == "valid":
-
-        pred_class = pred.argmax(dim=1)
-        acc = (pred_class == label).float().mean()
-        if print_metrics:
-            print(f"valid accuracy : {acc}")
-            print(
-                f"valid pred 0/1 : {int((pred_class == 0).sum().item())}/{int((pred_class == 1).sum().item())} "
-                f"label 0/1 : {int((label == 0).sum().item())}/{int((label == 1).sum().item())}"
-            )
-        TP = ((pred_class==label) & (pred_class==1)).float().sum()
-        FP = ((pred_class !=label) & (pred_class ==1)).float().sum()
-        TN = ((pred_class == label) & (pred_class == 0)).float().sum()
-        FN = ((pred_class != label) & (pred_class == 0)).float().sum()
-        sensitivity = TP / (TP+FN)#proportion of true 1 to all genuine 1 
-
-        precision = TP / (TP+FP)#proportion of correct 1 to all predicted 1
-        specificity = TN / (TN + FP) # proportion of corrrect 0 to all the real 0
-
-        F1 = (2*TP) / (2*TP + FP + FN)
-        balanced_acc = (sensitivity + specificity) / 2
-        writer.add_scalar("valid sensitivity", sensitivity.item(),step)
-        writer.add_scalar("valid precision", precision.item(),step)
-        writer.add_scalar("valid specificity", specificity.item(),step)
-        writer.add_scalar("valid accuracy",acc.item(),step)
-        writer.add_scalar("valid F1 score",F1.item(),step)
-        writer.add_scalar("valid balanced accuracy",balanced_acc.item(),step)
-        writer.add_scalar("valid loss",los,step)
-
-    if mode == "test":
-
-        pred_class = pred.argmax(dim=1)
-        acc = (pred_class == label).float().mean()
-        print(f"test accuracy : {acc}")
-        TP = ((pred_class==label) & (pred_class==1)).float().sum()
-        FP = ((pred_class !=label) & (pred_class ==1)).float().sum()
-        TN = ((pred_class == label) & (pred_class == 0)).float().sum()
-        FN = ((pred_class != label) & (pred_class == 0)).float().sum()
-        sensitivity = TP / (TP+FN)#proportion of true 1 to all genuine 1 
-        precision = TP / (TP+FP)#proportion of correct 1 to all predicted 1
-        specificity = TN / (TN + FP) # proportion of corrrect 0 to all the real 0
-        F1 = (2*TP) / (2*TP + FP + FN)
-        balanced_acc = (sensitivity + specificity) / 2
-        metrics = {
-            "accuracy": acc.item(),
-            "sensitivity": sensitivity.item(),
-            "precision": precision.item(),
-            "specificity": specificity.item(),
-            "F1": F1.item(),
-            "balanced_accuracy": balanced_acc.item(),
-            "loss": los.item() if isinstance(los, torch.Tensor) else los
-        }
-        return metrics
-        #writer_tb.flush()
-        
-sof2 = torch.nn.Softmax(-1)
-
-
-def validate_prediction_label_shapes(predictions, labels, phase, batch_index):
-    """Validate one-to-one alignment between binary logits and labels."""
-    if predictions.ndim != 2 or predictions.shape[1] != 2:
-        raise ValueError(
-            f"{phase} batch {batch_index}: expected predictions shaped [batch, 2], "
-            f"got {tuple(predictions.shape)}"
-        )
-    if labels.ndim != 1:
-        raise ValueError(
-            f"{phase} batch {batch_index}: expected labels shaped [batch], "
-            f"got {tuple(labels.shape)}"
-        )
-    if predictions.shape[0] != labels.shape[0]:
-        raise ValueError(
-            f"{phase} batch {batch_index}: prediction count "
-            f"{predictions.shape[0]} does not match label count {labels.shape[0]}"
-        )
-    return labels.shape[0]
-
-
-def _build_forward_args(prot, lipid):
-    """Assemble the model forward kwargs for a protein/lipid batch.
-
-    Delegates to training/forward_args.py -- the shared copy also used by
-    analysis/checkpoint_scores.py and analysis/compat_input_ablation.py. This module
-    used to carry its own copy of the same conditional dict, which drifted from the
-    shared one (missing the protein_edge_attention/protein_edge_mlp frame-rotation
-    condition and the cross_attention_chain_bias chain_rank wiring) exactly the way the
-    shared module's own docstring warns a duplicate does. One function, called from
-    everywhere, so a new config option reaches training, validation, test and analysis
-    at once instead of failing in whichever copy nobody updated.
-    """
-    return build_forward_args(conf, prot, lipid)
-
-
-def _eval_task_loss(outl, labels):
-    """Validation-style task loss (mirrors the validation branch), no sample weighting.
-
-    Keeps the train-wide PU prior even under --pu_rho_by_subclass: it is handed logits
-    and labels without the pair ids a subclass lookup needs, so a bilevel step scores
-    with the pooled prior while the epoch's own train/valid/test losses use per-subclass
-    ones.
-    """
-    if conf.pu_loss:
-        return Non_Negative_Positive_Unlabeled_loss(
-            outl,
-            labels.long(),
-            conf.pu_rho,
-            beta=conf.pu_beta,
-            gamma=conf.pu_gamma,
-            tau=conf.pu_tau,
-            cap=conf.pu_loss_cap,
-        )
-    if conf.loss_type == "pairwise_rank":
-        # Pooled pairing even under --rank_within_protein: this helper is reached only
-        # from _bilevel_lambda_step, which is handed logits and labels without the
-        # protein graph they came from. Combining --bilevel with --rank_within_protein
-        # therefore tunes lambda against the pooled ranking while training minimises the
-        # per-protein one; plumb prot through if that combination is ever run for real.
-        return pairwise_ranking_loss(outl, labels.long())
-    return conf.loss(outl, labels.long())
-
-
-def _bilevel_lambda_step():
-    """First-order validation update of the width gates (the bilevel lambda params).
-
-    Theta is held fixed: its grads from this step are discarded on the next
-    optimizer.zero_grad(); hyper_optimizer only steps the gate params. The gate grads
-    left by the preceding train-loss backward are cleared here before the val backward.
-    """
-    prot_v, lipid_v = next(hyper_val_iter)
-    prot_v = prot_v.to(device, non_blocking=True)
-    lipid_v = lipid_v.to(device, non_blocking=True)
-    labels_v = prot_v.inter.to(device, non_blocking=True)
-    hyper_optimizer.zero_grad()
-    outl_v = model(**_build_forward_args(prot_v, lipid_v))
-    # The bilevel step reads the validation split, so on an expanded one its batches are
-    # candidate copies; averaging them here keeps the hyper loss a per-pair quantity,
-    # the same one the reported validation loss is.
-    outl_v, labels_v, _ = average_candidate_predictions(outl_v, prot_v, labels_v)
-    validate_prediction_label_shapes(outl_v, labels_v, "bilevel", 0)
-    val_loss = _eval_task_loss(outl_v, labels_v)
-    val_loss = val_loss + conf.sparsity_lambda * collect_sparsity_penalty(model).to(val_loss.device)
-    val_loss.backward()
-    hyper_optimizer.step()
-
-
-# --- Branch diagnostics (--save_dynamics) ----------------------------------------
-#
-# One question: does the protein half of the model influence the decision, and if it
-# stops, at which epoch and through which mechanism. Answered by scalars written every
-# epoch rather than by weights, because the answer is a curve -- the endpoint alone
-# cannot distinguish a branch that never learned anything from one that was learning
-# and then got out-competed.
-#
-# Four measurements, each aimed at a different culprit:
-#   contribution   what the balanced accuracy loses when one pooled half is zeroed,
-#                  i.e. how much the classifier's decision rests on that partner
-#   gradient norm  whether the branch is receiving a learning signal at all
-#   head weights   whether the classifier itself is discounting the protein columns
-#   between-protein variance  whether the protein branch still tells proteins apart
-#
-# Read them together: a protein contribution of zero with healthy protein gradients and
-# a collapsed between-protein variance is a representation problem; the same zero with
-# vanishing protein gradients is an optimisation problem; the same zero appearing only
-# after the lipid handicap is released is the lipid branch taking the decision over.
-
-# Epochs whose weights --save_model_in_dynamics keeps, placed around the lipid
-# handicap's default 50-epoch ramp (ModelConfig.lipid_path_weight_ramp_epochs): the
-# first epoch, an early-training point, the two epochs either side of the release, and
-# the end of a 120-epoch run. Five files of a few MB, not one per epoch.
-DYNAMICS_CHECKPOINT_EPOCHS = (1, 10, 49, 51, 120)
-
-# The model's top-level submodules are lipid1/protein1/cross_attention1 (plus the *2
-# twins under double_attention) and final_layer, so a parameter's branch is decided by
-# its name prefix and nothing else has to be maintained here.
-DYNAMICS_BRANCH_PREFIXES = {
-    "protein": ("protein1.", "protein2."),
-    "lipid": ("lipid1.", "lipid2."),
-    "cross": ("cross_attention1.", "cross_attention2."),
-    "head": ("final_layer.",),
-}
-dynamics_branch_parameters = (
-    {
-        branch: [
-            parameter
-            for name, parameter in model.named_parameters()
-            if name.startswith(prefixes)
-        ]
-        for branch, prefixes in DYNAMICS_BRANCH_PREFIXES.items()
-    }
-    if conf.save_dynamics
-    else {}
-)
-dynamics_grad_stats = {
-    branch: {"sum": 0.0, "batches": 0} for branch in dynamics_branch_parameters
-}
-
-
-def reset_dynamics_grad_stats():
-    """Start a fresh epoch's gradient-norm average."""
-    for accumulator in dynamics_grad_stats.values():
-        accumulator["sum"] = 0.0
-        accumulator["batches"] = 0
-
-
-def accumulate_branch_grad_norms():
-    """Add this batch's per-branch gradient norm to the epoch's running mean.
-
-    Called between backward() and the optimizer step, so the gradients read are the ones
-    the step is about to apply. Under AMP the caller unscales first: otherwise every
-    number would carry the loss scaler's factor, which changes on its own schedule and
-    would show up as branch dynamics that never happened.
-    """
-    for branch, parameters in dynamics_branch_parameters.items():
-        squared = 0.0
-        for parameter in parameters:
-            if parameter.grad is not None:
-                squared += float(parameter.grad.detach().pow(2).sum())
-        accumulator = dynamics_grad_stats[branch]
-        accumulator["sum"] += squared ** 0.5
-        accumulator["batches"] += 1
-
-
-def _dynamics_valid_pass(collect_pooled=False):
-    """One validation pass under whatever ablation flags are currently set.
-
-    Built from the same update_aggregate/aggregate_values pair the real validation uses,
-    so the balanced accuracies compared across these passes are one quantity rather than
-    two definitions of it.
-    """
-    model.eval()
-    stats = {
-        "TP": 0,
-        "FP": 0,
-        "TN": 0,
-        "FN": 0,
-        "loss": 0.0,
-        "count": 0,
-        "loss_count": 0,
-    }
-    pooled_lipid = []
-    pooled_protein = []
-    protein_ids = []
-    # On an expanded split the rows are candidates, not pairs, so the pass collects them
-    # and the metric is computed once from the per-pair averages (see run_test for the
-    # same shape). Without the flag this is None and nothing changes.
-    accumulator = CandidateAccumulator() if conf.eval_average_candidates else None
-    seen_pairs = set()
-    with torch.no_grad():
-        for prot, lipid in valid_loader:
-            prot = prot.to(device, non_blocking=True)
-            lipid = lipid.to(device, non_blocking=True)
-            labels = prot.inter.to(device, non_blocking=True).long()
-            outl = model(**_build_forward_args(prot, lipid))
-            if accumulator is not None:
-                accumulator.add(outl, prot, labels)
-            else:
-                loss = _eval_task_loss(outl, labels)
-                update_aggregate(stats, outl.argmax(dim=1), labels, loss, labels.shape[0])
-            # None under --deepclip, which builds no Final_Layer to stash them on --
-            # and has no two pooled partners to stash either, the lipid being its whole
-            # input. Everything downstream of `partners is not None` (the pooled-vector
-            # diagnostics, _head_input_weight_norms) is skipped for it as a result.
-            partners = getattr(
-                getattr(model, "final_layer", None), "_pooled_partners", None
-            )
-            if collect_pooled and partners is not None:
-                # One pooled vector per candidate on an expanded split; keeping the first
-                # row of each pair leaves this diagnostic one row per pair, as it is when
-                # nothing is expanded.
-                keep = slice(None)
-                if accumulator is not None:
-                    keep = []
-                    for position, pair in enumerate(
-                        prot.candidate_group.view(-1).tolist()
-                    ):
-                        if pair not in seen_pairs:
-                            seen_pairs.add(pair)
-                            keep.append(position)
-                    keep = torch.tensor(keep, dtype=torch.long)
-                pooled_lipid.append(partners[0][keep].cpu())
-                pooled_protein.append(partners[1][keep].cpu())
-                protein_ids.append(prot.protein_id.view(-1)[keep].cpu())
-    if accumulator is not None:
-        averaged, labels, _ = accumulator.averaged()
-        loss = _eval_task_loss(averaged, labels)
-        update_aggregate(stats, averaged.argmax(dim=1), labels, loss, labels.shape[0])
-    metrics = aggregate_values(stats)
-    if not pooled_protein:
-        return metrics, None
-    return metrics, (
-        torch.cat(pooled_lipid),
-        torch.cat(pooled_protein),
-        torch.cat(protein_ids),
-    )
-
-
-def _dynamics_ablated_valid(field, collect_pooled=False):
-    """Validate with one pooled half zeroed, then put the flag back as it was.
-
-    The flags are the ones Final_Layer already implements for whole-run ablations, read
-    per forward, so switching them here needs nothing from the architecture. What this
-    measures is narrower than a real --lipid_only run: cross-attention stays on, so the
-    protein's influence on the lipid representation survives and only the classifier's
-    direct protein input is removed. That is the intended question -- does the head use
-    the protein channel -- and the narrower reading is the reason it is worth stating.
-    """
-    previous = getattr(conf, field)
-    setattr(conf, field, True)
-    try:
-        return _dynamics_valid_pass(collect_pooled=collect_pooled)
-    finally:
-        setattr(conf, field, previous)
-
-
-def _between_protein_variance_share(vectors, protein_ids):
-    """Share of the pooled protein vector's variance that lies between proteins.
-
-    Near zero means the branch hands the classifier nearly the same vector whichever
-    protein it was given, and no downstream layer can recover a distinction that is not
-    in its input. Total variance is summed over dimensions, so the number cannot be
-    carried by one wide dimension, and lands in [0, 1].
-    """
-    vectors = vectors.double()
-    centered = vectors - vectors.mean(dim=0)
-    total = float((centered ** 2).sum())
-    if total <= 0.0:
-        return 0.0
-    grand_mean = vectors.mean(dim=0)
-    between = 0.0
-    for protein in protein_ids.unique():
-        rows = vectors[protein_ids == protein]
-        between += float(rows.shape[0] * ((rows.mean(dim=0) - grand_mean) ** 2).sum())
-    return between / total
-
-
-def _head_input_weight_norms(lipid_width):
-    """Norms of the classifier's first-layer weights on each half of its input.
-
-    The fusion is a concatenation, [lipid | protein] (Final_Layer.forward), so those
-    columns split by partner and their norms say how much of the decision each half is
-    even allowed to reach. Bilinear fusion mixes the halves before the layer and leaves
-    no such split, hence the None.
-    """
-    if conf.bilinear_fusion:
-        return None
-    linear = next(
-        (
-            layer
-            for layer in model.final_layer.binar
-            if isinstance(layer, torch.nn.Linear)
-        ),
-        None,
-    )
-    if linear is None or linear.weight.shape[1] <= lipid_width:
-        return None
-    weight = linear.weight.detach()
-    return float(weight[:, :lipid_width].norm()), float(weight[:, lipid_width:].norm())
-
-
-def log_branch_dynamics(epoch_index, valid_metrics):
-    """Write this epoch's branch diagnostics to TensorBoard and to the run log."""
-    full_ba = valid_metrics.get("balanced_accuracy")
-    # The pooled halves are collected on the first ablated pass, not on a third full
-    # one: the stash in Final_Layer is taken before the zeroing, so an ablated pass
-    # reports exactly the vectors the unablated model computed.
-    without_protein, pooled = _dynamics_ablated_valid("lipid_only", collect_pooled=True)
-    without_lipid, _ = _dynamics_ablated_valid("protein_only")
-
-    scalars = {
-        "valid BA without protein": without_protein.get("balanced_accuracy"),
-        "valid BA without lipid": without_lipid.get("balanced_accuracy"),
-    }
-    if full_ba is not None:
-        scalars["protein contribution"] = full_ba - without_protein["balanced_accuracy"]
-        scalars["lipid contribution"] = full_ba - without_lipid["balanced_accuracy"]
-
-    for branch, accumulator in dynamics_grad_stats.items():
-        if accumulator["batches"]:
-            scalars[f"grad norm {branch}"] = accumulator["sum"] / accumulator["batches"]
-
-    between_share = None
-    if pooled is not None:
-        pooled_lipid, pooled_protein, protein_ids = pooled
-        between_share = _between_protein_variance_share(pooled_protein, protein_ids)
-        scalars["pooled protein between-protein variance"] = between_share
-        scalars["pooled protein norm"] = float(pooled_protein.norm(dim=1).mean())
-        scalars["pooled lipid norm"] = float(pooled_lipid.norm(dim=1).mean())
-        head_norms = _head_input_weight_norms(pooled_lipid.shape[1])
-        if head_norms is not None:
-            scalars["head weight norm lipid"] = head_norms[0]
-            scalars["head weight norm protein"] = head_norms[1]
-
-    for name, value in scalars.items():
-        if value is not None:
-            writer_tb.add_scalar(f"epoch/{name}", value, epoch_index + 1)
-
-    def show(value):
-        return "n/a" if value is None else f"{value:.4f}"
-
-    print(
-        "dynamics: "
-        f"BA full {show(full_ba)} "
-        f"| no protein {show(scalars.get('valid BA without protein'))} "
-        f"(delta {show(scalars.get('protein contribution'))}) "
-        f"| no lipid {show(scalars.get('valid BA without lipid'))} "
-        f"(delta {show(scalars.get('lipid contribution'))}) "
-        f"| grad protein {show(scalars.get('grad norm protein'))} "
-        f"lipid {show(scalars.get('grad norm lipid'))} "
-        f"| head |W| protein {show(scalars.get('head weight norm protein'))} "
-        f"lipid {show(scalars.get('head weight norm lipid'))} "
-        f"| between-protein variance {show(between_share)}"
-    )
-
-
-def save_dynamics_milestone(epoch_1based):
-    """Keep the weights of a milestone epoch, for probes no scalar can anticipate."""
-    if epoch_1based not in DYNAMICS_CHECKPOINT_EPOCHS:
-        return
-    directory = os.path.join(models_root, label_name, excluded_set_name, "dynamics")
-    os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, f"seed{conf.seed}_epoch{epoch_1based}.pt")
-    torch.save(model.state_dict(), path)
-    print(f"dynamics: saved weights of epoch {epoch_1based} to {path}")
-
-
-def epoch(idx,counttrain,countval):
-    # Batches whose loss carried no gradient (see the skip below).
-    skipped_no_gradient = 0
-    """Run one training epoch followed by full validation."""
-    if conf.pu_loss:
-        reset_pu_loss_diagnostics()
-    train_stats = {
-        "TP": 0,
-        "FP": 0,
-        "TN": 0,
-        "FN": 0,
-        "loss": 0.0,
-        "count": 0,
-        "loss_count": 0,
-    }
-    # Adversary penalties are added to the backward pass after update_aggregate has
-    # already banked the task loss, so without their own accumulators they leave no
-    # trace in TensorBoard at all. They are what says whether a partner is still
-    # individually decodable -- the premise the whole GRL setup rests on -- so they are
-    # tracked separately rather than folded into "epoch/train loss".
-    adversary_stats = {
-        "adv": 0.0, "adv_batches": 0, "dann": 0.0, "dann_batches": 0,
-        "chem": 0.0, "chem_batches": 0,
-        "thematical_orth": 0.0, "thematical_orth_batches": 0,
-    }
-    for i, graph in enumerate(train_loader):
-        #dataset is reduced because of high variety of experience parameters 
-        if i < train_batches_to_run:
-            prot,lipid = graph
-            prot = prot.to(device, non_blocking=True)
-            lipid = lipid.to(device, non_blocking=True)
-
-            interaction_labels = prot.inter
-            interaction_labels = interaction_labels.to(device, non_blocking=True)
-
-            optimizer.zero_grad()
-
-            forward_args = _build_forward_args(prot, lipid)
-            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_amp):
-                outl = model(**forward_args)
-
-                sample_count = validate_prediction_label_shapes(
-                    outl, interaction_labels, "train", i + 1
-                )
-                loss_logits = (
-                    outl + logit_adjustment_bias_tensor
-                    if conf.logit_adjustment
-                    else outl
-                )
-
-                if conf.structural_pretrain:
-                    # No Interaction label is read here -- outl/interaction_labels
-                    # below are computed by the same forward pass but are not this
-                    # run's objective; see model._recon_prediction (Interaction
-                    # Classification.forward), stashed from protein1's pre-pool
-                    # output at the residues _mask_residue_features zeroed.
-                    los = conf.protein_recon_weight * F.mse_loss(
-                        model._recon_prediction, prot.recon_target
-                    )
-                elif conf.pu_loss:
-                    sample_weights = batch_sample_weights(prot, sample_count)
-                    pu_prior, pu_groups = pu_prior_and_groups(prot, sample_count)
-                    los = Non_Negative_Positive_Unlabeled_loss(
-                        loss_logits,
-                        interaction_labels.long(),
-                        pu_prior,
-                        beta=conf.pu_beta,
-                        gamma=conf.pu_gamma,
-                        tau=conf.pu_tau,
-                        cap=conf.pu_loss_cap,
-                        sample_weights=sample_weights,
-                        group_ids=pu_groups,
-                    )
-                elif conf.loss_type == "pairwise_rank":
-                    sample_weights = batch_sample_weights(prot, sample_count)
-                    los = pairwise_ranking_loss(
-                        loss_logits,
-                        interaction_labels.long(),
-                        sample_weights=sample_weights,
-                        protein_ids=(
-                            prot.protein_id.view(-1)[:sample_count]
-                            if conf.rank_within_protein else None
-                        ),
-                    )
-                elif conf.loss_type == "cross_entropy":
-                    sample_weights = batch_sample_weights(prot, sample_count)
-                    if conf.focal_loss:
-                        los_unred = focal_loss(
-                            loss_logits,
-                            interaction_labels.long(),
-                            gamma=conf.focal_gamma,
-                            class_weights=class_weights,
-                            reduction="none",
-                        )
-                    else:
-                        los_unred = F.cross_entropy(loss_logits, interaction_labels.long(), weight=class_weights, reduction="none")
-                    if conf.group_dro:
-                        # Group DRO's own worst-family weighting replaces the plain (or
-                        # tanimoto-weighted) batch mean below; sample_weights is computed
-                        # above unconditionally but not read on this path.
-                        family_index = prot.family.view(sample_count, -1).argmax(dim=1)
-                        los = group_dro_state.step(los_unred, family_index)
-                    else:
-                        # The None branch is the same number, not an approximation of it:
-                        # see batch_sample_weights. It matches what focal_loss and
-                        # the PU loss already do when handed no weights.
-                        los = (
-                            los_unred.mean()
-                            if sample_weights is None
-                            else (los_unred * sample_weights).sum()
-                            / sample_weights.sum().clamp_min(1e-8)
-                        )
-                else:
-                    los=conf.loss(outl,interaction_labels.long())
-            # Batch-level logging is temporarily disabled; keep it for re-enabling.
-            # print(f"epoch : {idx+1}")
-            # print(f"batch : {i+1}/{train_batches_to_run}")
-            # log_tb(writer_tb, counttrain, los,"train",outl,interaction_labels)
-            pred_class = outl.argmax(dim=1)
-            update_aggregate(
-                train_stats,
-                pred_class,
-                interaction_labels.long(),
-                los,
-                sample_count,
-                loss_count=sample_count,
-            )
-
-            # Gate penalty on the TRAIN loss only when NOT bilevel; in bilevel mode the
-            # gate penalty is applied on the validation step (_bilevel_lambda_step).
-            if gate_params and conf.sparsity_lambda > 0.0 and not conf.bilevel:
-                los = los + conf.sparsity_lambda * collect_sparsity_penalty(model).to(los.device)
-            # Per-layer Concrete Dropout KL surrogate is always a train-objective term
-            # (its weight_reg/dropout_reg coefficients are baked into each module).
-            if conf.bilevel_dropout:
-                los = los + collect_concrete_dropout_reg(model).to(los.device)
-
-            # Adversarial anti-shortcut penalty: the per-partner adversary logits
-            # stashed by Final_Layer sit behind a gradient-reversal layer, so
-            # adding their CE here and one backward() trains the heads to predict
-            # the label from one partner while pushing the encoder to make each
-            # partner individually uninformative. Kept out of the logged task loss.
-            if conf.adversarial_grl:
-                adv = model.final_layer._adv
-                if adv is not None:
-                    # A side disabled by --no_adv_lipid / --no_adv_protein comes back
-                    # None and contributes no term. Averaged over the sides in use so
-                    # adv_weight means the same pressure whether one or both are on.
-                    terms = [
-                        F.cross_entropy(logits, interaction_labels.long())
-                        for logits in adv
-                        if logits is not None
-                    ]
-                    adv_loss = torch.stack(terms).mean() if terms else None
-                if adv is not None and adv_loss is not None:
-                    los = los + conf.adv_weight * adv_loss
-                    adversary_stats["adv"] += float(adv_loss.detach())
-                    adversary_stats["adv_batches"] += 1
-
-            # Family DANN on the fused representation. prot.family is a per-graph 9-wide
-            # one-hot, which PyG concatenates flat, so it is reshaped back per sample.
-            if conf.dann_family:
-                dann_features = model.final_layer._dann_features
-                if dann_features is not None:
-                    dann_loss = family_dann_loss(
-                        dann_features,
-                        prot.family.view(dann_features.shape[0], -1),
-                        interaction_labels.long(),
-                        model.final_layer.family_adversaries,
-                        conf.dann_class_conditional,
-                    )
-                    los = los + conf.dann_weight * dann_loss
-                    adversary_stats["dann"] += float(dann_loss.detach())
-                    adversary_stats["dann_batches"] += 1
-
-            # Chemistry adversary, same fused representation, s_chem instead of family.
-            if conf.chem_adversary:
-                chem_features = model.final_layer._chem_features
-                if chem_features is not None:
-                    chem_loss = chem_adversary_loss(
-                        chem_features,
-                        prot.frozen_prior.view(chem_features.shape[0]),
-                        model.final_layer.chem_head,
-                    )
-                    los = los + conf.chem_weight * chem_loss
-                    adversary_stats["chem"] += float(chem_loss.detach())
-                    adversary_stats["chem_batches"] += 1
-
-            # Thematic-interaction non-redundancy penalty: pushes each --thematical_
-            # paths ForcedInteraction's output away from correlating with what a
-            # stop-gradient probe already predicts from ONE side alone. Read as a
-            # narrower leak gauge than adversarial_grl/dann_family, not a replacement
-            # for them -- see thematical_orthogonality_loss's own docstring for the
-            # blind spot it does not close (a fingerprint jointly correlated across
-            # both sides at once).
-            if conf.thematical_paths and conf.thematical_orth_weight:
-                orth_penalty, probe_loss = thematical_orthogonality_loss(
-                    model.final_layer.thematical_head, interaction_labels
-                )
-                if orth_penalty is not None:
-                    los = los + conf.thematical_orth_weight * (orth_penalty + probe_loss)
-                    adversary_stats["thematical_orth"] += float(orth_penalty.detach())
-                    adversary_stats["thematical_orth_batches"] += 1
-
-            # A batch whose loss carries no gradient is a real, documented outcome, not
-            # a bug to crash on: pairwise_ranking_loss returns a plain zero when the
-            # batch holds no rankable pair (under --rank_within_protein, no two rows of
-            # the same protein with opposite labels), and
-            # Non_Negative_Positive_Unlabeled_loss does the same with no labeled
-            # positives. Both docstrings promise that degradation -- and calling
-            # .backward() on it unconditionally defeated the promise one level up:
-            # "element 0 of tensors does not require grad and does not have a grad_fn",
-            # which killed the first --rank_within_protein run under --lipid_coldsplit
-            # at epoch 1. Skipping the step is what those docstrings already describe;
-            # the count is printed at the end of the epoch, because a run skipping most
-            # of its batches is training on almost nothing and must not look healthy.
-            if not getattr(los, "requires_grad", False):
-                skipped_no_gradient += 1
-            elif use_amp:
-                scaler.scale(los).backward()
-                if conf.save_dynamics:
-                    # Before the norms are read, never after: scaler.step() would have
-                    # unscaled them itself, but only inside its own call.
-                    scaler.unscale_(optimizer)
-                    accumulate_branch_grad_norms()
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                los.backward()
-                if conf.save_dynamics:
-                    accumulate_branch_grad_norms()
-                optimizer.step()
-
-            if hyper_optimizer is not None:
-                _bilevel_lambda_step()
-            counttrain+=1
-        else:
-            break
-    if skipped_no_gradient:
-        print(
-            f"batches skipped for having no gradient: {skipped_no_gradient}/{counttrain} "
-            "-- under --rank_within_protein this is batches with no same-protein pair; "
-            "a large share means the run is training on almost nothing, raise --batch"
-        )
-    if conf.pu_loss:
-        pu_diag = get_pu_loss_diagnostics()
-        if pu_diag["calls"] > 0:
-            print(
-                "PU nnPU correction: "
-                f"{pu_diag['corrections']}/{pu_diag['calls']} batches, "
-                f"negative_risk[min={pu_diag['min_negative_loss']:.6f}, "
-                f"mean={pu_diag['sum_negative_loss'] / pu_diag['calls']:.6f}, "
-                f"max={pu_diag['max_negative_loss']:.6f}]"
-            )
-    if conf.group_dro:
-        print(
-            "group DRO weights : "
-            + ", ".join(
-                f"{name}={weight:.4f}"
-                for name, weight in zip(FAMILY_NAMES, group_dro_state.probs.detach().cpu().tolist())
-            )
-        )
-    model.eval()
-    valid_stats = {
-        "TP": 0,
-        "FP": 0,
-        "TN": 0,
-        "FN": 0,
-        "loss": 0.0,
-        "count": 0,
-        "loss_count": 0,
-        # Per-row positive-class probabilities and their labels, for this epoch's AUC.
-        # Only the validation pass keeps them: it is the one pass whose per-epoch number
-        # is read as a curve (checkpoint selection, early stopping, "is it still
-        # learning"), and balanced accuracy alone cannot separate "learned nothing" from
-        # "learned something, threshold in the wrong place" -- under --adversarial_grl it
-        # sits at 0.500 for whole runs while the ordering underneath does move.
-        "scores": [],
-        "score_labels": [],
-    }
-    # No Interaction label in this mode, so an AUC over the classifier head's output
-    # would be a number about nothing, the way balanced_accuracy already is here.
-    collect_valid_scores = not conf.structural_pretrain
-    valid_accumulator = (
-        CandidateAccumulator() if conf.eval_average_candidates else None
-    )
-    with torch.no_grad():
-        print("VALIDATION")
-        for i , graph in enumerate(valid_loader):
-            prot,lipid = graph
-            prot = prot.to(device, non_blocking=True)
-            lipid = lipid.to(device, non_blocking=True)
-            interaction_labels = prot.inter
-            interaction_labels = interaction_labels.to(device, non_blocking=True)
-    
-            forward_args = _build_forward_args(prot, lipid)
-            outl = model(**forward_args)
-            if valid_accumulator is not None:
-                # Candidates of one pair are scattered over the shuffled batches; the
-                # pass collects them and the block is scored once below, so the loss and
-                # the counters see pairs rather than candidates.
-                valid_accumulator.add(outl, prot, interaction_labels)
-                continue
-            sample_count = validate_prediction_label_shapes(
-                outl, interaction_labels, "valid", i + 1
-            )
-            # print(f"valid batch : {i+1}/{valid_batches_to_run}")
-
-            if conf.structural_pretrain:
-                los = conf.protein_recon_weight * F.mse_loss(
-                    model._recon_prediction, prot.recon_target
-                )
-            elif conf.pu_loss:
-                pu_prior, pu_groups = pu_prior_and_groups(prot, sample_count)
-                los = Non_Negative_Positive_Unlabeled_loss(
-                    outl,
-                    interaction_labels.long(),
-                    pu_prior,
-                    beta=conf.pu_beta,
-                    gamma=conf.pu_gamma,
-                    tau=conf.pu_tau,
-                    cap=conf.pu_loss_cap,
-                    group_ids=pu_groups,
-                )
-            elif conf.loss_type == "pairwise_rank":
-                los = pairwise_ranking_loss(
-                    outl,
-                    interaction_labels.long(),
-                    protein_ids=(
-                        prot.protein_id.view(-1) if conf.rank_within_protein else None
-                    ),
-                )
-            else:
-                los = conf.loss(outl, interaction_labels.long())
-            # log_tb(writer_tb, countval, los,"valid",outl,interaction_labels.to(torch.float))
-            pred_class = outl.argmax(dim=1)
-            labels = interaction_labels.long()
-            update_aggregate(
-                valid_stats,
-                pred_class,
-                labels,
-                los,
-                sample_count,
-                scores=(
-                    torch.softmax(outl.float(), dim=1)[:sample_count, 1]
-                    .detach().cpu().tolist()
-                    if collect_valid_scores
-                    else None
-                ),
-            )
-            countval +=1
-    if valid_accumulator is not None:
-        outl, interaction_labels, averaged_protein_ids = valid_accumulator.averaged()
-        sample_count = validate_prediction_label_shapes(
-            outl, interaction_labels, "valid", 1
-        )
-        # Chunked to the training batch size, so a loss defined over a batch keeps its
-        # scale; the ranking loss also needs the protein ids that survived the reduction.
-        los, _ = _batched_block_loss(outl, interaction_labels, averaged_protein_ids)
-        update_aggregate(
-            valid_stats,
-            outl.argmax(dim=1),
-            interaction_labels.long(),
-            los,
-            sample_count,
-            scores=(
-                torch.softmax(outl.float(), dim=1)[:sample_count, 1]
-                .detach().cpu().tolist()
-                if collect_valid_scores
-                else None
-            ),
-        )
-        countval += 1
-    train_metrics = aggregate_values(train_stats)
-    valid_metrics = aggregate_values(valid_stats)
-    log_epoch_metrics(writer_tb, idx, "train", train_metrics)
-    log_epoch_metrics(writer_tb, idx, "valid", valid_metrics)
-    log_adversary_metrics(writer_tb, idx, adversary_stats)
-    if (idx + 1) % TENSORBOARD_FLUSH_EVERY_EPOCHS == 0:
-        writer_tb.flush()
+def checkpoint_selection_metric(conf):
+    """(validation metric that selects the checkpoint, whether lower is better)."""
+    # structural_pretrain has no Interaction label, so balanced_accuracy is undefined
+    # (whatever the untrained classifier head outputs) -- checkpoint selection tracks
+    # the lowest rolling reconstruction loss instead of the highest rolling BA.
+    # valid_metrics["loss"] already IS the mean reconstruction MSE in this mode (see
+    # TaskLosses.valid_loss), so this needs no new metric, only the opposite comparison
+    # direction. --checkpoint_selection_metric overrides the non-structural_pretrain
+    # default (validate() refuses it together with structural_pretrain, which always
+    # selects by loss); "auc" reads valid_metrics' "AUC" key instead of
+    # "balanced_accuracy" -- both are higher-is-better, only loss flips the comparison.
     if conf.structural_pretrain:
-        # This run has no Interaction label, so the balanced_accuracy printed here was
-        # whatever the untrained classifier head happened to emit -- a constant 0.500
-        # for all 120 epochs, which reads in the log exactly like a collapsed run and
-        # says nothing about whether the pretraining objective made progress. The
-        # reconstruction MSE is what the run is actually minimising and what selects
-        # its checkpoint (`selection_metric_name` below), and it was already computed
-        # into valid_metrics["loss"] -- it was simply never printed.
-        print(
-            f"valid epoch reconstruction_loss: {format_metric(valid_metrics['loss'])}"
-            f" | train {format_metric(train_metrics['loss'])}"
-        )
+        selection_metric_name = "loss"
+    elif conf.checkpoint_selection_metric == "auc":
+        selection_metric_name = "AUC"
+    elif conf.checkpoint_selection_metric:
+        selection_metric_name = conf.checkpoint_selection_metric
     else:
-        print(f"valid epoch balanced_accuracy: {format_metric(valid_metrics['balanced_accuracy'])}")
-        # Its own line rather than appended to the one above: scripts/lib/progress_table.sh
-        # parses that line by field position, and the summarize/graphics path reads the
-        # epoch history, not this print.
-        print(f"valid epoch AUC: {format_metric(valid_metrics['AUC'])}")
-    
-    return counttrain, countval, train_metrics, valid_metrics
+        selection_metric_name = "balanced_accuracy"
+    return selection_metric_name, selection_metric_name == "loss"
 
 
-def _batched_block_loss(outl, labels, protein_ids=None):
-    """The evaluation loss of one averaged block, computed the way a pass computes it.
-
-    Cross-entropy decomposes per row, so cutting the block into chunks changes nothing.
-    The ranking loss and the positive-unlabelled risk do not: both are defined over the
-    rows in front of them, and evaluating them once over a whole block forms pairs, and
-    estimates class priors, on a sample the training loss never sees at once. The block
-    is therefore cut into chunks the size of a training batch and the chunk losses are
-    averaged by row count -- the same arithmetic the per-batch path performs, so the
-    validation curve stays comparable with the training one.
-
-    Returns (weighted mean loss, row count).
-    """
-    rows = int(labels.shape[0])
-    if rows == 0:
-        return 0.0, 0
-    size = max(1, int(conf.batch))
-    total = 0.0
-    for start in range(0, rows, size):
-        stop = min(start + size, rows)
-        chunk_labels = labels[start:stop]
-        if (
-            conf.loss_type == "pairwise_rank"
-            and conf.rank_within_protein
-            and protein_ids is not None
-        ):
-            chunk_loss = pairwise_ranking_loss(
-                outl[start:stop],
-                chunk_labels.long(),
-                protein_ids=protein_ids.view(-1)[start:stop],
-            )
-        else:
-            chunk_loss = _eval_task_loss(outl[start:stop], chunk_labels)
-        value = (
-            chunk_loss.item() if isinstance(chunk_loss, torch.Tensor) else chunk_loss
-        )
-        total += value * (stop - start)
-    return total / rows, rows
-
-
-def _score_averaged_block(accumulator):
-    """Confusion counts, loss and per-protein counts for one averaged evaluation block.
-
-    The counterpart of the per-batch bookkeeping in run_test, run once on the per-pair
-    averages instead of once per batch. The per-row loss is the cross-entropy of the
-    averaged probability where the run's loss decomposes per row, and the block loss
-    spread evenly over the rows where it does not -- the same substitution the per-batch
-    path makes for the ranking and positive-unlabelled losses.
-
-    The AUC scores are read off the SAME averaged `outl` the confusion counts come
-    from, so both describe one prediction per pair. Taking them per candidate instead
-    would make AUC and balanced_accuracy describe different objects on the same run.
-    """
-    outl, labels, protein_ids = accumulator.averaged()
-    labels = labels.long()
-    if conf.loss_type == "cross_entropy" and not conf.pu_loss:
-        sample_losses = F.cross_entropy(outl, labels, reduction="none")
-        block_loss = float(sample_losses.mean())
-    else:
-        block_loss, _ = _batched_block_loss(outl, labels, protein_ids)
-        sample_losses = torch.full(labels.shape, block_loss, device=outl.device)
-
-    predictions = outl.argmax(dim=1)
-    correct = predictions == labels
-    positive = predictions == 1
-    total_tp = int((correct & positive).sum())
-    total_fp = int((~correct & positive).sum())
-    total_tn = int((correct & ~positive).sum())
-    total_fn = int((~correct & ~positive).sum())
-
-    label_values = labels.cpu().tolist()
-    score_values = torch.softmax(outl.float(), dim=1)[:, 1].detach().cpu().tolist()
-
-    subgroup_stats = {}
-    if protein_ids is not None:
-        for protein_id, prediction, label, sample_loss, score in zip(
-            protein_ids.view(-1).cpu().tolist(),
-            predictions.cpu().tolist(),
-            label_values,
-            sample_losses.detach().cpu().tolist(),
-            score_values,
-        ):
-            stats = subgroup_stats.setdefault(
-                protein_id,
-                {
-                    "TP": 0, "FP": 0, "TN": 0, "FN": 0, "loss": 0.0, "count": 0,
-                    "scores": [], "labels": [],
-                },
-            )
-            if prediction == label and prediction == 1:
-                stats["TP"] += 1
-            elif prediction != label and prediction == 1:
-                stats["FP"] += 1
-            elif prediction == label and prediction == 0:
-                stats["TN"] += 1
-            else:
-                stats["FN"] += 1
-            stats["loss"] += sample_loss
-            stats["count"] += 1
-            stats["scores"].append(score)
-            stats["labels"].append(label)
-
-    return (
-        total_tp,
-        total_fp,
-        total_tn,
-        total_fn,
-        block_loss * labels.shape[0],
-        int(labels.shape[0]),
-        subgroup_stats,
-        score_values,
-        label_values,
-    )
-
-
-def run_test(run_summary):
-    """Evaluate the test split and write global and per-protein metrics."""
-    
-    model.eval()
-
-    total_tp = 0
-    total_fp = 0
-    total_tn = 0
-    total_fn = 0
-    total_loss = 0.0
-    total_loss_count = 0
-    subgroup_stats = {}
-    # Per-sample positive-class probabilities and their labels, kept only for AUC --
-    # the confusion counts above throw the ordering away, and it cannot be recovered
-    # afterwards from a written report. Two flat lists over the whole test split, in
-    # loader order; binary_auc sorts them itself.
-    test_scores = []
-    test_labels = []
-
-    # Expanded split: one row per candidate structure. The pass collects them and the
-    # block is scored once, below, so a pair contributes one prediction to the totals and
-    # to its protein's subgroup whatever its candidate count.
-    test_accumulator = CandidateAccumulator() if conf.eval_average_candidates else None
-    with torch.no_grad():
-        for i , graph in enumerate(test_loader):
-            prot,lipid = graph
-            prot = prot.to(device, non_blocking=True)
-            lipid = lipid.to(device, non_blocking=True)
-            interaction_labels = prot.inter
-            interaction_labels = interaction_labels.to(device, non_blocking=True)
-
-            forward_args = _build_forward_args(prot, lipid)
-            outl = model(**forward_args)
-            if test_accumulator is not None:
-                test_accumulator.add(outl, prot, interaction_labels)
-                continue
-            sample_count = validate_prediction_label_shapes(
-                outl, interaction_labels, "test", i + 1
-            )
-
-            if conf.pu_loss:
-                pu_prior, pu_groups = pu_prior_and_groups(prot, sample_count)
-                los = Non_Negative_Positive_Unlabeled_loss(
-                    outl,
-                    interaction_labels.long(),
-                    pu_prior,
-                    beta=conf.pu_beta,
-                    gamma=conf.pu_gamma,
-                    tau=conf.pu_tau,
-                    cap=conf.pu_loss_cap,
-                    group_ids=pu_groups,
-                )
-                sample_losses = torch.full(
-                    (sample_count,),
-                    los.item() if isinstance(los, torch.Tensor) else los,
-                    device=outl.device,
-                )
-            elif conf.loss_type == "cross_entropy":
-                sample_losses = F.cross_entropy(
-                    outl,
-                    interaction_labels.long(),
-                    reduction="none",
-                )
-                los = sample_losses.mean()
-            elif conf.loss_type == "pairwise_rank":
-                los = pairwise_ranking_loss(
-                    outl,
-                    interaction_labels.long(),
-                    protein_ids=(
-                        prot.protein_id.view(-1) if conf.rank_within_protein else None
-                    ),
-                )
-                sample_losses = torch.full(
-                    (sample_count,),
-                    los.item() if isinstance(los, torch.Tensor) else los,
-                    device=outl.device,
-                )
-            else:
-                los = conf.loss(outl, interaction_labels.long())
-                sample_losses = torch.full(
-                    (sample_count,),
-                    los.item() if isinstance(los, torch.Tensor) else los,
-                    device=outl.device,
-                )
-            pred_class = outl.argmax(dim=1)
-            labels = interaction_labels.long()
-            protein_ids = prot.protein_id.view(-1)[:sample_count].detach().cpu().tolist()
-            sample_loss_values = sample_losses.detach().cpu().tolist()
-            # Sliced to sample_count for the same reason protein_ids above is: the
-            # forward pass can return more rows than the batch has labels.
-            batch_scores = (
-                torch.softmax(outl.float(), dim=1)[:sample_count, 1]
-                .detach().cpu().tolist()
-            )
-            batch_labels = labels.detach().cpu().tolist()[:sample_count]
-            test_scores.extend(batch_scores)
-            test_labels.extend(batch_labels)
-            total_tp += int(((pred_class == labels) & (pred_class == 1)).sum().item())
-            total_fp += int(((pred_class != labels) & (pred_class == 1)).sum().item())
-            total_tn += int(((pred_class == labels) & (pred_class == 0)).sum().item())
-            total_fn += int(((pred_class != labels) & (pred_class == 0)).sum().item())
-            total_loss += (los.item() if isinstance(los, torch.Tensor) else los) * sample_count
-            total_loss_count += sample_count
-            for protein_id, pred_value, label_value, sample_loss, score_value in zip(
-                protein_ids,
-                pred_class.detach().cpu().tolist(),
-                labels.detach().cpu().tolist(),
-                sample_loss_values,
-                batch_scores,
-            ):
-                stats = subgroup_stats.setdefault(
-                    protein_id,
-                    {
-                        "TP": 0, "FP": 0, "TN": 0, "FN": 0, "loss": 0.0, "count": 0,
-                        "scores": [], "labels": [],
-                    },
-                )
-                if pred_value == label_value and pred_value == 1:
-                    stats["TP"] += 1
-                elif pred_value != label_value and pred_value == 1:
-                    stats["FP"] += 1
-                elif pred_value == label_value and pred_value == 0:
-                    stats["TN"] += 1
-                elif pred_value != label_value and pred_value == 0:
-                    stats["FN"] += 1
-                stats["loss"] += sample_loss
-                stats["count"] += 1
-                stats["scores"].append(score_value)
-                stats["labels"].append(label_value)
-
-    if test_accumulator is not None:
-        (
-            total_tp,
-            total_fp,
-            total_tn,
-            total_fn,
-            total_loss,
-            total_loss_count,
-            subgroup_stats,
-            test_scores,
-            test_labels,
-        ) = _score_averaged_block(test_accumulator)
-
-    metrics = metric_values(
-        total_tp,
-        total_fp,
-        total_tn,
-        total_fn,
-        total_loss,
-        total_loss_count,
-        auc=binary_auc(test_scores, test_labels),
-    )
-
-    print(f"accuracy: {format_metric(metrics['accuracy'])}")
-    print(f"sensitivity: {format_metric(metrics['sensitivity'])}")
-    print(f"precision: {format_metric(metrics['precision'])}")
-    print(f"specificity: {format_metric(metrics['specificity'])}")
-    print(f"IoU: {format_metric(metrics['IoU'])}")
-    print(f"FAR: {format_metric(metrics['FAR'])}")
-    print(f"F1: {format_metric(metrics['F1'])}")
-    print(f"balanced_accuracy: {format_metric(metrics['balanced_accuracy'])}")
-    print(f"AUC: {format_metric(metrics['AUC'])}")
-    within_auc, within_blocks = within_protein_auc(subgroup_stats)
-    metrics["AUC_within_protein"] = within_auc
-    metrics["AUC_within_protein_proteins"] = within_blocks
-    pair_auc, pair_proteins = within_protein_pair_auc(subgroup_stats)
-    metrics["AUC_within_protein_pairs"] = pair_auc
-    metrics["AUC_within_protein_pairs_proteins"] = pair_proteins
-    print(f"AUC_within_protein: {format_metric(within_auc)}")
-    print(f"AUC_within_protein_proteins: {within_blocks}")
-    print(f"AUC_within_protein_pairs: {format_metric(pair_auc)}")
-    print(f"AUC_within_protein_pairs_proteins: {pair_proteins}")
-    print(f"loss: {format_metric(metrics['loss'])}")
-
-    test_metrics_path = os.path.join(test_metrics_dir, f"test_metrics_{timestamp}_{number_of_parameters}parameters_{conf.m}_{conf.HEADS}_{conf.seed}_{conf.lr}_{conf.batch}_{conf.hiddim}.txt")
-    subgroup_columns = [
-        "subgroup",
-        "total",
-        "real_positive",
-        "real_negative",
-        "predicted_positive",
-        "predicted_negative",
-        "TP",
-        "FP",
-        "TN",
-        "FN",
-        "accuracy",
-        "sensitivity",
-        "precision",
-        "specificity",
-        "IoU",
-        "FAR",
-        "F1",
-        "balanced_accuracy",
-        "AUC",
-        "loss",
-    ]
-    subgroup_rows = []
-    for protein_id, stats in sorted(subgroup_stats.items(), key=lambda item: train_dataset.protein_id_to_name[item[0]]):
-        # "undefined" for every protein whose test rows are all one class -- common
-        # here (a protein with no positive in its held-out block), same convention
-        # precision already follows on an empty predicted-positive set.
-        subgroup_metrics = metric_values(
-            stats["TP"], stats["FP"], stats["TN"], stats["FN"], stats["loss"], stats["count"],
-            auc=binary_auc(stats["scores"], stats["labels"]),
-        )
-        subgroup_name = train_dataset.protein_id_to_name[protein_id]
-        subgroup_rows.append([
-            subgroup_name,
-            str(subgroup_metrics["total"]),
-            str(subgroup_metrics["real_positive"]),
-            str(subgroup_metrics["real_negative"]),
-            str(subgroup_metrics["predicted_positive"]),
-            str(subgroup_metrics["predicted_negative"]),
-            str(subgroup_metrics["TP"]),
-            str(subgroup_metrics["FP"]),
-            str(subgroup_metrics["TN"]),
-            str(subgroup_metrics["FN"]),
-            format_metric(subgroup_metrics["accuracy"]),
-            format_metric(subgroup_metrics["sensitivity"]),
-            format_metric(subgroup_metrics["precision"]),
-            format_metric(subgroup_metrics["specificity"]),
-            format_metric(subgroup_metrics["IoU"]),
-            format_metric(subgroup_metrics["FAR"]),
-            format_metric(subgroup_metrics["F1"]),
-            format_metric(subgroup_metrics["balanced_accuracy"]),
-            format_metric(subgroup_metrics["AUC"]),
-            format_metric(subgroup_metrics["loss"]),
-        ])
-    subgroup_widths = [
-        max(len(row[i]) for row in [subgroup_columns] + subgroup_rows)
-        for i in range(len(subgroup_columns))
-    ]
-
-    def format_subgroup_row(row):
-        """Format one fixed-width per-protein metrics table row."""
-        formatted = [row[0].ljust(subgroup_widths[0])]
-        formatted.extend(row[i].rjust(subgroup_widths[i]) for i in range(1, len(row)))
-        return "  ".join(formatted)
-
-    with open(test_metrics_path, "w") as f:
-        for key, value in vars(conf).items():
-            if isinstance(value, bool):
-                value = int(value)
-            elif isinstance(value, (list, dict)):
-                # Compact JSON (no ": ") so the "key: value" report parser splits cleanly.
-                value = json.dumps(value, separators=(",", ":"))
-            f.write(f"{key}: {value}\n")
-        for key in RUN_METRIC_FIELDS:
-            value = run_summary[key]
-            if isinstance(value, bool):
-                value = int(value)
-            if isinstance(value, float):
-                value = format_metric(value)
-            elif value is None:
-                value = "undefined"
-            f.write(f"{key}: {value}\n")
-        # Discovered hyperparameters (aggregatable across seeds/groups), each keyed by the
-        # module path so it is clear which layer it belongs to. Compact JSON (no ": ") so
-        # the report parser splits cleanly. Blank when the discovery features are off.
-        discovered_widths_value = (
-            json.dumps(
-                {name: info["active"] for name, info in surviving_structure.items()},
-                separators=(",", ":"),
-            )
-            if surviving_structure
-            else ""
-        )
-        discovered_dropout_value = (
-            json.dumps(
-                {name: round(p, 6) for name, p in discovered_dropout_report.items()},
-                separators=(",", ":"),
-            )
-            if discovered_dropout_report
-            else ""
-        )
-        f.write(f"discovered_widths: {discovered_widths_value}\n")
-        f.write(f"discovered_dropout: {discovered_dropout_value}\n")
-        for key in ["total", "real_positive", "real_negative", "predicted_positive", "predicted_negative", "TP", "FP", "TN", "FN"]:
-            f.write(f"{key}: {metrics[key]}\n")
-        for key in ["accuracy", "sensitivity", "precision", "specificity", "IoU", "FAR", "F1", "balanced_accuracy", "AUC", "AUC_within_protein", "AUC_within_protein_pairs", "loss"]:
-            f.write(f"{key}: {format_metric(metrics[key])}\n")
-        # An integer count, not a rate -- format_metric would print it as 11.000000.
-        f.write(f"AUC_within_protein_proteins: {metrics['AUC_within_protein_proteins']}\n")
-        f.write(f"AUC_within_protein_pairs_proteins: {metrics['AUC_within_protein_pairs_proteins']}\n")
-        # What --lipid_isolation actually removed from training. The flag's value is a
-        # key into a registry (dataloader/lipid_isolation_blocks.py), so the report
-        # would otherwise record "0.85" and nothing about which chemistry that was --
-        # and a report has to be readable years after the registry moved on. Taken from
-        # the dataset rather than re-read from the registry: this is what the run held
-        # out, not what a lookup says it should have.
-        held_species = sorted(getattr(train_dataset, "excluded_lipid_species", set()) or [])
-        if held_species:
-            f.write(f"lipid_isolation_species_count: {len(held_species)}\n")
-            # Counted on the run's own working set (positives plus the negatives its
-            # sampler drew), not on the full table: that is what this run actually
-            # removed from training, and it is also what the held-out block then holds.
-            pool = getattr(train_dataset, "csvt", None)
-            if pool is not None:
-                held_rows = pool["FullIdentityOfLipid"].isin(held_species)
-                f.write(f"lipid_isolation_rows: {int(held_rows.sum())}\n")
-                f.write(
-                    "lipid_isolation_positives: "
-                    f"{int(pool.loc[held_rows, 'Interaction'].sum())}\n"
-                )
-        f.write("\nper_protein_subgroup_metrics:\n")
-        f.write(format_subgroup_row(subgroup_columns) + "\n")
-        f.write(format_subgroup_row(["-" * width for width in subgroup_widths]) + "\n")
-        for row in subgroup_rows:
-            f.write(format_subgroup_row(row) + "\n")
-        # After the per-protein table on purpose: analysis/build_metrics_table.py's
-        # parser stops reading key/value pairs at that heading, so a list this long
-        # cannot turn into a metrics_summary.csv column by accident. One name per line,
-        # because a species name carries commas and colons of its own.
-        if held_species:
-            f.write(
-                f"\nlipid_isolation_species ({len(held_species)} held out of "
-                "training for every protein):\n"
-            )
-            for name in held_species:
-                f.write(f"  {name}\n")
-    writer_tb.flush()
-    append_metric(
-        test_metrics_path,
-        metrics_root=test_metrics_root,
-        run_root=run_root,
-        table=metrics_table_path,
-        config=conf,
-    )
-
-
-epoch_number = 0
-EPOCHS = conf.ep
-countrain =0
-countval =0
-best_valid_selection_metric = None
-best_epoch = None
-best_model_state = None
-epoch_history = []
-epochs_without_checkpoint_improvement = 0
-checkpoint_window = conf.checkpoint_window
-early_stopping_patience = 60
-training_started_at = time.perf_counter()
-# Ratcheted fit progress for the *_lambda_ramp_by_fit schedules: the highest train
-# balanced accuracy seen so far, as a [0, 1] fraction. Never decreases, so lambda stays
-# a schedule instead of feeding back into the fit it is derived from. One counter serves
-# both reversals -- it measures the model, not a head.
-fit_progress = 0.0
-uses_fit_ramp = (
-    (conf.adversarial_grl and conf.adv_lambda_ramp_by_fit)
-    or (conf.dann_family and conf.dann_lambda_ramp_by_fit)
-    or (conf.chem_adversary and conf.chem_lambda_ramp_by_fit)
-)
-for eepoch in range(EPOCHS):
-    print('EPOCH {}:'.format(epoch_number + 1))
-    epoch_progress = epoch_number / max(EPOCHS - 1, 1)
+def set_epoch_schedules(run, epoch_number, epoch_progress, fit_progress, rotating_sampler):
+    """Everything that changes at the top of an epoch, before its first batch."""
+    conf, model = run.conf, run.model
     if rotating_sampler is not None:
         # Before the loader is iterated, the way DistributedSampler.set_epoch is used:
         # the sampler lives in this process and is re-walked at the start of every
@@ -2535,159 +325,293 @@ for eepoch in range(EPOCHS):
     if conf.lipid_path_handicap:
         # Epoch index rather than epoch_progress: this is a warm-up measured in epochs,
         # so its length must not change when EPOCHS does.
-        lipid_path_weight_now = conf.ramped_lipid_path_weight(epoch_number)
-        apply_lipid_path_handicap(lipid_path_weight_now)
+        run.lipid_path_weight_now = conf.ramped_lipid_path_weight(epoch_number)
+        run.optim.apply_lipid_path_handicap(run.lipid_path_weight_now)
     if conf.save_dynamics:
-        reset_dynamics_grad_stats()
+        run.dynamics.reset_grad_stats()
     # Rotates the residue subsample when --protein_residue_subsample is set; a no-op
     # otherwise. Before the epoch runs, so the masks belong to the epoch they are
     # numbered with.
-    train_dataset.set_epoch(epoch_number)
+    run.train_dataset.set_epoch(epoch_number)
     model.train(True)
     if conf.freeze_pretrained_encoders:
         # requires_grad=False stops protein1's weights from updating, but train(True)
         # above still leaves its own dropout/batchnorm submodules stochastic -- eval()
         # here keeps it acting exactly as it did when structural_pretrain saved it.
         model.protein1.eval()
-    countrain, countval, train_metrics, valid_metrics = epoch(epoch_number,countrain,countval)
-    if conf.save_dynamics:
-        # After the epoch's own validation, so the ablated passes are compared against a
-        # full-model number measured on the same weights.
-        log_branch_dynamics(epoch_number, valid_metrics)
-    if conf.save_model_in_dynamics:
-        # No longer nested under save_dynamics: the checkpoint itself does not depend on
-        # the curve-logging pass above (save_dynamics_milestone only reads model/conf),
-        # so a run that wants milestones without the two extra ablated validation passes
-        # (e.g. --descriptors_head, where those passes are no-ops -- see read_
-        # configuration.py's save_dynamics docstring) can set this flag alone.
-        save_dynamics_milestone(epoch_number + 1)
-    if uses_fit_ramp:
-        fit_progress = max(
-            fit_progress,
-            conf.adv_fit_progress(train_metrics.get("balanced_accuracy")),
-        )
-    # structural_pretrain has no Interaction label, so balanced_accuracy is undefined
-    # (whatever the untrained classifier head outputs) -- checkpoint selection tracks
-    # the lowest rolling reconstruction loss instead of the highest rolling BA.
-    # valid_metrics["loss"] already IS the mean reconstruction MSE in this mode (see
-    # the structural_pretrain branch in the validation loop above), so this needs no
-    # new metric, only the opposite comparison direction. --checkpoint_selection_metric
-    # overrides the non-structural_pretrain default (validate() refuses it together with
-    # structural_pretrain, which always selects by loss); "auc" reads valid_metrics'
-    # "AUC" key instead of "balanced_accuracy" -- both are higher-is-better, only loss
-    # flips the comparison.
-    if conf.structural_pretrain:
-        selection_metric_name = "loss"
-    elif conf.checkpoint_selection_metric == "auc":
-        selection_metric_name = "AUC"
-    elif conf.checkpoint_selection_metric:
-        selection_metric_name = conf.checkpoint_selection_metric
-    else:
-        selection_metric_name = "balanced_accuracy"
-    lower_selection_metric_is_better = selection_metric_name == "loss"
-    rolling_valid_selection_metric = rolling_metric_mean(
-        [
-            *epoch_history,
-            {"train": train_metrics, "valid": valid_metrics},
-        ],
-        "valid",
-        selection_metric_name,
-        window=checkpoint_window,
-    )
-    valid_metrics["checkpoint_selection_metric"] = rolling_valid_selection_metric
-    epoch_history.append({"train": train_metrics, "valid": valid_metrics})
-    is_new_best_metric = (
-        rolling_valid_selection_metric is not None
-        and best_valid_selection_metric is not None
-        and (
-            rolling_valid_selection_metric < best_valid_selection_metric
-            if lower_selection_metric_is_better
-            else rolling_valid_selection_metric > best_valid_selection_metric
-        )
-    )
-    if best_model_state is None or (
-        rolling_valid_selection_metric is not None
-        and (best_valid_selection_metric is None or is_new_best_metric)
-    ):
-        best_valid_selection_metric = rolling_valid_selection_metric
-        best_epoch = epoch_number
-        best_model_state = copy.deepcopy(model.state_dict())
-        epochs_without_checkpoint_improvement = 0
-    else:
-        epochs_without_checkpoint_improvement += 1
-    if lr_scheduler is not None:
-        lr_scheduler.step()
-    #plot_metrics()
-    epoch_number += 1
-    torch.cuda.empty_cache()
-    if (
-        not conf.disable_early_stopping
-        and epochs_without_checkpoint_improvement >= early_stopping_patience
-        and metric_has_positive_trend(
-            epoch_history,
-            "valid",
-            "loss",
-            window=early_stopping_patience,
-        )
-    ):
-        print(
-            f"EARLY STOPPING: rolling validation balanced accuracy "
-            f"did not improve for {early_stopping_patience} epochs and "
-            f"validation loss increased over the same window."
-        )
-        break
 
-training_duration_sec = time.perf_counter() - training_started_at
-run_summary = summarize_training_run(epoch_history, training_duration_sec, run_status="complete")
-# The weights as the last epoch left them, captured before the line below overwrites them
-# with the selected ones. Both are written out by --save_checkpoint/--save_model:
-# seed<N>.pt is what run_test actually measures, seed<N>_final.pt is where training was
-# still heading. Keeping only one of the two has already cost this project a result --
-# files/lcs_marginal_removal_and_solo_on_one_metric.md section 2 had to score the baseline
-# and rankprot off epoch-120 milestones because their selected weights were never saved,
-# and every comparison against them then carried a weights-rule mismatch as a caveat.
-final_model_state = copy.deepcopy(model.state_dict())
-model.load_state_dict(best_model_state)
-# Discovered hyperparameters (read off the final weights): surviving group widths from
-# the gates and per-block Concrete Dropout rates. Empty dicts when the features are off.
-# Consumed by run_test() below to record them into the metrics report/table.
-surviving_structure = export_surviving_structure(model)
-discovered_dropout_report = model.discovered_dropout()
-if surviving_structure:
-    print("Discovered surviving group widths (pruned architecture):")
-    for gate_name, info in surviving_structure.items():
-        print(f"  {gate_name}: {info['active']}/{info['total']} active")
-if discovered_dropout_report:
-    print("Discovered per-layer dropout:")
-    for site_name, p in discovered_dropout_report.items():
-        print(f"  {site_name}: {p:.4f}")
-if conf.save_checkpoint:
-    # Two files, both under checkpoints/<label>/<excluded_set>/: seed<N>.pt holds the
-    # weights this run is judged on (the rolling-valid-BA pick loaded just above),
-    # seed<N>_final.pt the last epoch's.
-    checkpoint_dir = os.path.join(checkpoints_root, label_name, excluded_set_name)
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    checkpoint_path = os.path.join(checkpoint_dir, f"seed{conf.seed}.pt")
-    torch.save(model.state_dict(), checkpoint_path)
-    print(f"Saved checkpoint to {checkpoint_path}")
-    final_checkpoint_path = os.path.join(checkpoint_dir, f"seed{conf.seed}_final.pt")
-    torch.save(final_model_state, final_checkpoint_path)
-    print(f"Saved end-of-training weights to {final_checkpoint_path}")
-if conf.save_model:
-    # Persist the weights under models/<label>/<excluded_set>/ so they can later be
-    # replayed for rho estimation (see analysis/estimate_rho_elkan_noto.py) or rescored
-    # for a metric added after the run (analysis/checkpoint_scores.py). seed<seed>.pt is
-    # the tested pick; seed<seed>_final.pt is the last epoch. The CLI args are stored
-    # alongside as args.json so the exact model + dataset split can be reconstructed --
-    # one args.json covers both, the weights differ but the run does not.
-    model_dir = os.path.join(models_root, label_name, excluded_set_name)
-    os.makedirs(model_dir, exist_ok=True)
-    model_path = os.path.join(model_dir, f"seed{conf.seed}.pt")
-    torch.save(model.state_dict(), model_path)
-    final_model_path = os.path.join(model_dir, f"seed{conf.seed}_final.pt")
-    torch.save(final_model_state, final_model_path)
-    with open(os.path.join(model_dir, f"seed{conf.seed}.args.json"), "w") as f:
-        json.dump(sys.argv[1:], f)
-    print(f"Saved model to {model_path}")
-    print(f"Saved end-of-training weights to {final_model_path}")
-run_test(run_summary)
+
+def save_weights(conf, paths, model, final_model_state):
+    """--save_checkpoint / --save_model: the selected weights and the last epoch's."""
+    if conf.save_checkpoint:
+        # Two files, both under checkpoints/<label>/<excluded_set>/: seed<N>.pt holds the
+        # weights this run is judged on (the rolling-valid-BA pick loaded just above),
+        # seed<N>_final.pt the last epoch's.
+        checkpoint_dir = paths.run_checkpoints_dir
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        checkpoint_path = os.path.join(checkpoint_dir, f"seed{conf.seed}.pt")
+        torch.save(model.state_dict(), checkpoint_path)
+        print(f"Saved checkpoint to {checkpoint_path}")
+        final_checkpoint_path = os.path.join(checkpoint_dir, f"seed{conf.seed}_final.pt")
+        torch.save(final_model_state, final_checkpoint_path)
+        print(f"Saved end-of-training weights to {final_checkpoint_path}")
+    if conf.save_model:
+        # Persist the weights under models/<label>/<excluded_set>/ so they can later be
+        # rescored for a metric added after the run (analysis/checkpoint_scores.py). seed<seed>.pt is
+        # the tested pick; seed<seed>_final.pt is the last epoch. The CLI args are stored
+        # alongside as args.json so the exact model + dataset split can be reconstructed --
+        # one args.json covers both, the weights differ but the run does not.
+        model_dir = paths.run_models_dir
+        os.makedirs(model_dir, exist_ok=True)
+        model_path = os.path.join(model_dir, f"seed{conf.seed}.pt")
+        torch.save(model.state_dict(), model_path)
+        final_model_path = os.path.join(model_dir, f"seed{conf.seed}_final.pt")
+        torch.save(final_model_state, final_model_path)
+        with open(os.path.join(model_dir, f"seed{conf.seed}.args.json"), "w") as f:
+            json.dump(sys.argv[1:], f)
+        print(f"Saved model to {model_path}")
+        print(f"Saved end-of-training weights to {final_model_path}")
+
+
+def main():
+    # 1. configuration and seeds
+    conf = read_configuration()
+    if conf.final_m is None:
+        conf.final_m = conf.m
+
+    seed_everything(conf.seed)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print()
+
+    # 2. dataset split
+    path=os.path.join(PROJECT_ROOT, "data") + os.sep
+
+    csv = read_csv(interaction_csv_path(path))
+
+    train_dataset, valid_dataset, test_dataset = PLIDataset(root_dir=path, csv = csv, seed=conf.seed,excluded_subgroups=conf.excluded_subgroups, config=conf, excluded_groups=conf.excluded_groups)
+    del csv
+
+    # 3. model
+    model = build_model(conf, train_dataset, device)
+    number_of_parameters=sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"number of parameters : {number_of_parameters}")
+
+    # 4. loss weights, priors and class weights from the train split
+    losses = TaskLosses(conf, train_dataset, device)
+
+    # 5. loaders and caches
+    train_loader, valid_loader, test_loader, rotating_sampler = build_loaders(
+        conf, device, train_dataset, valid_dataset, test_dataset, losses.train_labels
+    )
+    warm_caches(train_dataset, valid_dataset, test_dataset)
+    _return_freed_heap_to_kernel()
+    train_batches_to_run = min(
+        len(train_loader), (TRAIN_ROWS_PER_EPOCH_CAP + conf.batch - 1) // conf.batch
+    )
+    if rotating_sampler is not None and train_batches_to_run < len(train_loader):
+        # The 1740-row cap above predates this flag and is silent: it simply stops the
+        # training loop early (`if i < train_batches_to_run`). A rotating epoch larger than
+        # the cap is therefore not the epoch that was asked for -- the slice still MOVES, so
+        # the pool is still covered, but each epoch trains on the cap's worth of it. Said out
+        # loud rather than left to be inferred from the batch counter.
+        print(
+            f"rotating negatives : --rotate_negatives_per_epoch asks for "
+            f"{len(train_loader)} batches, the {TRAIN_ROWS_PER_EPOCH_CAP}-row per-epoch cap allows "
+            f"{train_batches_to_run}; the remaining batches of each epoch are skipped"
+        )
+    if conf.deepclip or descriptor_catalog_only(conf):
+        # Each split as a few tensors on the device, batched by indexing, instead of PyG
+        # re-collating the same cached samples every batch (dataloader/preassembled_
+        # loader.py). Same batches in the same order, and the same lipid candidate drawn
+        # for each row: the loader built above still supplies its own sampler and
+        # generator, and the draws are replayed on the generator get() would have used
+        # (this process's; a split that draws with num_workers > 0 keeps its DataLoader).
+        # Skipped for a split whose samples change in any other way per access, and for
+        # train when the 1740-row cap cuts epochs short AND workers run -- they prefetch
+        # past the stop, which this does not mirror. Without workers both loaders stop the
+        # same way: the loop fetches one batch past the cap (drawing its candidates) and
+        # breaks, and a generator is left mid-sampler exactly like the DataLoader iterator.
+        preassembled_splits = []
+        if preassembly_mode(train_dataset, conf.num_workers) and (
+            train_batches_to_run == len(train_loader) or conf.num_workers == 0
+        ):
+            train_loader = PreassembledLoader(train_loader, device)
+            preassembled_splits.append("train")
+        if preassembly_mode(valid_dataset, conf.num_workers):
+            valid_loader = PreassembledLoader(valid_loader, device)
+            preassembled_splits.append("valid")
+        if preassembly_mode(test_dataset, conf.num_workers):
+            test_loader = PreassembledLoader(test_loader, device)
+            preassembled_splits.append("test")
+        print(f"preassembled splits : {preassembled_splits or 'none'}")
+    print("data extracted")
+
+    # 6. optimizer and lr schedule
+    optim = OptimizerSetup(conf, model)
+    hyper_val_iter = (
+        endless_batches(valid_loader) if optim.hyper_optimizer is not None else None
+    )
+    use_amp = conf.type_opt and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    lr_scheduler = build_lr_scheduler(conf, optim.optimizer)
+
+    # 7. run directories and TensorBoard
+    label_name = run_label(conf)
+    conf.label = label_name
+    paths = create_run_paths(
+        PROJECT_ROOT, conf, label_name, excluded_set_name(conf), number_of_parameters
+    )
+    writer_tb = SummaryWriter(paths.log_dir)
+
+    run = RunContext(
+        conf=conf,
+        device=device,
+        model=model,
+        train_dataset=train_dataset,
+        train_loader=train_loader,
+        valid_loader=valid_loader,
+        test_loader=test_loader,
+        train_batches_to_run=train_batches_to_run,
+        losses=losses,
+        optim=optim,
+        use_amp=use_amp,
+        scaler=scaler,
+        hyper_val_iter=hyper_val_iter,
+        writer=writer_tb,
+        dynamics=BranchDynamics(conf, model, device, valid_loader, writer_tb, losses),
+        paths=paths,
+        number_of_parameters=number_of_parameters,
+        lipid_path_weight_now=conf.lipid_path_weight,
+    )
+
+    # 8. epochs, with checkpoint selection on the rolling validation metric
+    epoch_number = 0
+    EPOCHS = conf.ep
+    countrain =0
+    countval =0
+    best_valid_selection_metric = None
+    best_epoch = None
+    best_model_state = None
+    epoch_history = []
+    epochs_without_checkpoint_improvement = 0
+    checkpoint_window = conf.checkpoint_window
+    early_stopping_patience = EARLY_STOPPING_PATIENCE
+    selection_metric_name, lower_selection_metric_is_better = checkpoint_selection_metric(conf)
+    training_started_at = time.perf_counter()
+    # Ratcheted fit progress for the *_lambda_ramp_by_fit schedules: the highest train
+    # balanced accuracy seen so far, as a [0, 1] fraction. Never decreases, so lambda stays
+    # a schedule instead of feeding back into the fit it is derived from. One counter serves
+    # both reversals -- it measures the model, not a head.
+    fit_progress = 0.0
+    uses_fit_ramp = (
+        (conf.adversarial_grl and conf.adv_lambda_ramp_by_fit)
+        or (conf.dann_family and conf.dann_lambda_ramp_by_fit)
+        or (conf.chem_adversary and conf.chem_lambda_ramp_by_fit)
+    )
+    for eepoch in range(EPOCHS):
+        print('EPOCH {}:'.format(epoch_number + 1))
+        epoch_progress = epoch_number / max(EPOCHS - 1, 1)
+        set_epoch_schedules(run, epoch_number, epoch_progress, fit_progress, rotating_sampler)
+        countrain, countval, train_metrics, valid_metrics = train_one_epoch(
+            run, epoch_number, countrain, countval
+        )
+        if conf.save_dynamics:
+            # After the epoch's own validation, so the ablated passes are compared against a
+            # full-model number measured on the same weights.
+            run.dynamics.log(epoch_number, valid_metrics)
+        if conf.save_model_in_dynamics:
+            # No longer nested under save_dynamics: the checkpoint itself does not depend on
+            # the curve-logging pass above (save_milestone only reads model/conf), so a run
+            # that wants milestones without the two extra ablated validation passes (e.g.
+            # --descriptors_head, where those passes are no-ops -- see read_
+            # configuration.py's save_dynamics docstring) can set this flag alone.
+            run.dynamics.save_milestone(epoch_number + 1, paths.run_models_dir)
+        if uses_fit_ramp:
+            fit_progress = max(
+                fit_progress,
+                conf.adv_fit_progress(train_metrics.get("balanced_accuracy")),
+            )
+        rolling_valid_selection_metric = rolling_metric_mean(
+            [
+                *epoch_history,
+                {"train": train_metrics, "valid": valid_metrics},
+            ],
+            "valid",
+            selection_metric_name,
+            window=checkpoint_window,
+        )
+        valid_metrics["checkpoint_selection_metric"] = rolling_valid_selection_metric
+        epoch_history.append({"train": train_metrics, "valid": valid_metrics})
+        is_new_best_metric = (
+            rolling_valid_selection_metric is not None
+            and best_valid_selection_metric is not None
+            and (
+                rolling_valid_selection_metric < best_valid_selection_metric
+                if lower_selection_metric_is_better
+                else rolling_valid_selection_metric > best_valid_selection_metric
+            )
+        )
+        if best_model_state is None or (
+            rolling_valid_selection_metric is not None
+            and (best_valid_selection_metric is None or is_new_best_metric)
+        ):
+            best_valid_selection_metric = rolling_valid_selection_metric
+            best_epoch = epoch_number
+            best_model_state = copy.deepcopy(model.state_dict())
+            epochs_without_checkpoint_improvement = 0
+        else:
+            epochs_without_checkpoint_improvement += 1
+        if lr_scheduler is not None:
+            lr_scheduler.step()
+        #plot_metrics()
+        epoch_number += 1
+        torch.cuda.empty_cache()
+        if (
+            not conf.disable_early_stopping
+            and epochs_without_checkpoint_improvement >= early_stopping_patience
+            and metric_has_positive_trend(
+                epoch_history,
+                "valid",
+                "loss",
+                window=early_stopping_patience,
+            )
+        ):
+            print(
+                f"EARLY STOPPING: rolling validation balanced accuracy "
+                f"did not improve for {early_stopping_patience} epochs and "
+                f"validation loss increased over the same window."
+            )
+            break
+
+    # 9. selected weights, saved files and the test report
+    training_duration_sec = time.perf_counter() - training_started_at
+    run_summary = summarize_training_run(epoch_history, training_duration_sec, run_status="complete")
+    # The weights as the last epoch left them, captured before the line below overwrites them
+    # with the selected ones. Both are written out by --save_checkpoint/--save_model:
+    # seed<N>.pt is what run_test actually measures, seed<N>_final.pt is where training was
+    # still heading. Keeping only one of the two has already cost this project a result --
+    # a past comparison had to score two configs off epoch-120 milestones because their
+    # selected weights were never saved, and every comparison against them then carried a
+    # weights-rule mismatch as a caveat.
+    final_model_state = copy.deepcopy(model.state_dict())
+    model.load_state_dict(best_model_state)
+    # Discovered hyperparameters (read off the final weights): surviving group widths from
+    # the gates and per-block Concrete Dropout rates. Empty dicts when the features are off.
+    # Consumed by run_test() below to record them into the metrics report/table.
+    surviving_structure = export_surviving_structure(model)
+    discovered_dropout_report = model.discovered_dropout()
+    if surviving_structure:
+        print("Discovered surviving group widths (pruned architecture):")
+        for gate_name, info in surviving_structure.items():
+            print(f"  {gate_name}: {info['active']}/{info['total']} active")
+    if discovered_dropout_report:
+        print("Discovered per-layer dropout:")
+        for site_name, p in discovered_dropout_report.items():
+            print(f"  {site_name}: {p:.4f}")
+    save_weights(conf, paths, model, final_model_state)
+    run_test(run, run_summary, surviving_structure, discovered_dropout_report)
+
+
+if __name__ == "__main__":
+    main()

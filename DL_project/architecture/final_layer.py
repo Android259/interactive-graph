@@ -103,7 +103,7 @@ def chem_adversary_loss(features, frozen_prior, head):
     score, not a class -- there is no head-per-class analogue of
     dann_class_conditional needed here, because the target is not the label (nothing
     about it inverts in meaning across families the way P(bind | lipid class) does for
-    family identity, files/proposals.md "Почему family-DANN...").
+    family identity, files/history/geometric_edge.md "Почему family-DANN...").
 
     `frozen_prior` is whatever Dataloader attached under --chem_prior and/or
     --pocket_compat_prior -- the SAME combined value added to the logit in forward(),
@@ -167,7 +167,7 @@ class SlicedWassersteinPool(torch.nn.Module):
     Why this exists here. Mean pooling answers one question -- "what is the average
     node" -- and on this dataset every protein answers it almost identically: the
     median ESM3 cosine between the 35 proteins is 0.974 while the median similarity of
-    their binding profiles is 0.000 (files/signal_state.md 4.3). Averaging 300-700
+    their binding profiles is 0.000 (files/results/signal_state.md 4.3). Averaging 300-700
     residue vectors is a lossy summary, and what it keeps is exactly the part that does
     not distinguish these proteins.
 
@@ -384,7 +384,7 @@ class Final_Layer(torch.nn.Module):
             # forces a lipid<->protein interaction within each of --geometric_
             # descriptors/--chemical_descriptors, then forces the two group vectors
             # together -- see architecture/thematic_descriptor_head.py and files/
-            # thematic_interaction_architecture.md.
+            # files/results/thematical_paths_summary.md.
             catalog_order = full_catalog_order(config)
             self.thematical_head = ThematicDescriptorHead(
                 config, config.geometric_descriptors, config.chemical_descriptors,
@@ -412,7 +412,7 @@ class Final_Layer(torch.nn.Module):
             # descriptor_mlp_head.py) instead of NamedDescriptorHead -- an ordinary
             # feedforward network over --descriptor_names' own tokens, with none of
             # NamedDescriptorHead's shared per-token Linear(1, dim) embedding. See
-            # files/descriptors_head_bottleneck.md for why that embedding was
+            # files/results/descriptors_head_bottleneck.md for why that embedding was
             # suspected of bottlenecking --descriptors_head on this same input.
             catalog_order = full_catalog_order(config)
             self.descriptor_mlp_head = DescriptorMLPHead(
@@ -473,7 +473,7 @@ class Final_Layer(torch.nn.Module):
         # Extra columns concatenated into common_out in forward(): one standardised
         # pocket-vs-chain-length difference under --compatibility_input, or the chain
         # length and the clash term separately under --compatibility_split_input
-        # (files/pocket_lipid_compatibility.md, files/compat_input_audit.md). Added
+        # (files/reference/pocket_lipid_compatibility.md, files/results/compat_input_audit.md). Added
         # here, before every head that reads classifier_input_dim (binar,
         # family_adversaries, chem_head) is built, so all of them size correctly for
         # the wider vector without a second special case each. ModelConfig.validate
@@ -641,7 +641,7 @@ class Final_Layer(torch.nn.Module):
             )
             self.dann_lambda_now = self.config.dann_lambda
 
-        # Frozen prior (files/interaction_signal_plan.md 4.1, 4.3; files/
+        # Frozen prior (files/history/geometric_edge.md; files/
         # pocket_lipid_compatibility.md): score = frozen_prior + the ordinary logit.
         # frozen_prior is attached per row by Dataloader under --chem_prior and/or
         # --pocket_compat_prior -- whichever are on -- and it already carries its own
@@ -869,7 +869,7 @@ class Final_Layer(torch.nn.Module):
             common_out = torch.cat([common_out, head_channel], dim=1)
 
         if self.compat_width:
-            # Variant B (files/pocket_lipid_compatibility.md): the standardised,
+            # Variant B (files/reference/pocket_lipid_compatibility.md): the standardised,
             # UNcalibrated pair quantities as actual inputs, not an addition to the
             # logit -- self.binar's own first layer decides how much to trust them and
             # can combine them nonlinearly with everything else. No guaranteed floor

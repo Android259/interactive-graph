@@ -10,7 +10,7 @@
 # Usage: bash scripts/run_local.sh [--complete] [--graphics] [--summarize]
 #                                  [--seeds=LIST] [--groups=LIST]
 #                                  [--no_groups=LIST] ARGS_FILE [ARGS_FILE ...]
-# Example: bash scripts/run_local.sh scripts/arg_files/standard.md
+# Example: bash scripts/run_local.sh arg_files/archive/standard.md
 # Example: bash scripts/run_local.sh --seeds=0,1,2 nps3mlp_gat_residual
 # Example: bash scripts/run_local.sh --no_groups=GLTP nps3mlp_gat_residual
 # Example: bash scripts/run_local.sh descriptors_path descriptors_no_extent \
@@ -115,7 +115,7 @@ cd "${PROJECT_ROOT}"
 
 usage() {
     printf 'Usage: bash %s [--complete] [--graphics] [--summarize] [--seeds=LIST] [--groups=LIST] [--no_groups=LIST] ARGS_FILE [ARGS_FILE ...]\n' "${0##*/}" >&2
-    printf 'Example: bash %s scripts/arg_files/standard.md\n' "${0##*/}" >&2
+    printf 'Example: bash %s arg_files/archive/standard.md\n' "${0##*/}" >&2
     printf 'Example: bash %s --seeds=0,1,2 nps3mlp_gat_residual\n' "${0##*/}" >&2
     printf 'Example: bash %s --no_groups=GLTP nps3mlp_gat_residual\n' "${0##*/}" >&2
     printf 'Example: bash %s label_a label_b label_c   # one shared pool, interleaved\n' "${0##*/}" >&2
@@ -287,7 +287,7 @@ if (( ${#POSITIONALS[@]} < 1 )); then
     exit 2
 fi
 
-# A path as given, a bare stem under scripts/arg_files, or that stem with .md
+# A path as given, a bare stem under arg_files, or that stem with .md
 # appended -- the same three spellings every other launcher accepts, from the one
 # implementation in scripts/lib/args_file_lib.sh.
 # shellcheck source=scripts/lib/args_file_lib.sh
@@ -575,7 +575,8 @@ for requested in "${POSITIONALS[@]}"; do
     LABEL_VARIANT+=("${this_variant}")
     LABEL_ARGS_FILE+=("${this_args_file}")
     LABEL_ARGS_TEMPLATE+=("${this_args_template}")
-    LABEL_OUTPUT_ROOT+=("script_logs/${this_variant}_seeds$(IFS=; echo "${this_seeds[*]}")")
+    # script_logs/<family>/..., like run/ and test_metrics/ (training/results_layout.py).
+    LABEL_OUTPUT_ROOT+=("script_logs/$(label_family "${this_variant}")/${this_variant}_seeds$(IFS=; echo "${this_seeds[*]}")")
     LABEL_IS_LIPID_COLDSPLIT+=("${this_is_lipid_coldsplit}")
     LABEL_IS_LIPID_SUBCLASS+=("${this_is_lipid_subclass}")
     LABEL_IS_RANDOM_SPLIT+=("${this_is_random_split}")
@@ -1144,7 +1145,7 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
 
     # read_configuration.py applies flags in argv order and the last one wins,
     # so appending --num_workers here would silently override an args file
-    # that sets its own (e.g. arg_files/test.md uses --num_workers=0 for
+    # that sets its own (e.g. arg_files/smoke/test.md uses --num_workers=0 for
     # deterministic single-process debugging). Only fill it in when the args
     # file is silent about it.
     num_workers_flag=()

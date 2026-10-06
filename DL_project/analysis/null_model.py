@@ -11,7 +11,7 @@ the line has to be drawn before any number above it means anything.
 
 The null model. For a row (protein p, lipid l) it ignores p entirely and scores l by the
 similarity-weighted train positive rate of its k nearest training lipids, nearest by
-Morgan-fingerprint Tanimoto (`data/Tanimoto_compact_isomeric_*`, the same artifacts the
+Morgan-fingerprint Tanimoto (`data/cache/Tanimoto_compact_isomeric_*`, the same artifacts the
 loader's `--tanimoto_weight` uses). Held-out classes have no training rows whatsoever, so
 every neighbour is necessarily from a different class -- this is extrapolation across
 chemistry, not the class lookup the split already closed.
@@ -62,7 +62,7 @@ from dataloader.sampler import (  # noqa: E402
 
 DEFAULT_FAMILIES = ("CRAL-TRIO", "GLTP", "IP_trans", "LBP_BPI_CETP", "START", "lipocalin", "scp2")
 # The three families whose validation sits above 0.5 in every dcs run, from
-# files/signal_state.md section 4.1. Named here so the summary can report them apart:
+# files/results/signal_state.md section 4.1. Named here so the summary can report them apart:
 # averaging across all seven hides both halves of the split.
 WORKING = ("LBP_BPI_CETP", "scp2", "IP_trans")
 
@@ -545,7 +545,7 @@ def _group_stats(groups, columns):
     `table`'s rows mix two very different sources of spread that a single std over
     all of them conflates: seed-to-seed noise WITHIN one excluded family, and
     family-to-family differences in the underlying chemistry (the whole reason
-    files/signal_state.md 6.4 says never average over all seven at once). Pooling
+    files/results/signal_state.md 6.4 says never average over all seven at once). Pooling
     both into one std answers neither "how noisy is one family's own estimate"
     nor "how much do families genuinely differ" -- it answers a mixture of both,
     same as the "mean over all seven" mistake this file's own aggregation already
@@ -672,7 +672,7 @@ def print_null_model_report(table, split, epoch, entity_column="FullIdentityOfLi
                if (c.endswith("AUC") or "AUC_k" in c)
                and c not in prot_group_all and c not in lipid_group_all
                and c not in pair_group_all]
-    # WORKING/other-four split (files/signal_state.md 6.4: never average over all
+    # WORKING/other-four split (files/results/signal_state.md 6.4: never average over all
     # seven at once) is NOT printed here any more -- `table` (and the on-disk cache
     # when null_model_table was given a `label`) still carries `fam` on every row, so
     # that split is one groupby away for whoever needs it from there. The printout
@@ -680,7 +680,7 @@ def print_null_model_report(table, split, epoch, entity_column="FullIdentityOfLi
     # _group_stats) over all seven at once, which is simpler on the terminal and, for
     # the two std's specifically, still correctly separates seed noise from
     # family-to-family spread regardless of which families are pooled into it.
-    print("=== mean AUC (files/signal_state.md 6.4: fam column in the raw table/cache carries the WORKING-three/other-four split) ===")
+    print("=== mean AUC (files/results/signal_state.md 6.4: fam column in the raw table/cache carries the WORKING-three/other-four split) ===")
     groups = {"all seven": table}
     print(_group_stats(groups, columns).round(3).to_string())
 

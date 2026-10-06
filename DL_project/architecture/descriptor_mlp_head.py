@@ -12,7 +12,7 @@ class DescriptorMLPHead(torch.nn.Module):
     at config.hiddim width (the same dropout/gating/third-layer conventions every other
     MLP block in this project already answers to).
 
-    files/descriptors_head_bottleneck.md: NamedDescriptorHead's `token_embed =
+    files/results/descriptors_head_bottleneck.md: NamedDescriptorHead's `token_embed =
     Linear(1, dim)` is the SAME weight for every token (only the additive
     `token_identity` constant differs between them), so its reaction to a descriptor's
     own value cannot depend on which descriptor it is. Section 1 there measures an

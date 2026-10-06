@@ -2,7 +2,7 @@
 """Build a per-protein PDB with a real per-residue confidence column, for ESM3 input.
 
 WHAT THIS FIXES (found while auditing how ESM3 embeddings are produced for this
-project -- see proposals_plm.md for the full writeup):
+project -- see files/history/geometric_edge.md for the full writeup):
 
   1. `data/graphs/<stem>/pocketness.pdb` is NOT the original structure file. Its
      B-factor column has been overwritten by the Voronota pocket-detection step with

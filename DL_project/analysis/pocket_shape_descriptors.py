@@ -19,7 +19,7 @@ The pocket is defined exactly as the dataloader defines it, so these descriptors
 describe the same site the model sees: side-chain atoms only (backbone C, CA, CB, O, N
 excluded), a residue counts as pocket if any of its side-chain atoms is flagged.
 
-Documented in files/pocket_shape_descriptors.md, which also carries the measurement
+Documented in files/reference/pocket_shape_descriptors.md, which also carries the measurement
 against acyl chain length. Change the descriptor set here and that file changes in the
 same commit -- a description that has fallen behind the code is worse than none, since
 conclusions get drawn from it without rereading this.
@@ -180,7 +180,7 @@ def descriptors_for(protein_dir):
     return row
 
 
-# The printed table is grouped the way files/pocket_shape_descriptors.md section 3
+# The printed table is grouped the way files/reference/pocket_shape_descriptors.md section 3
 # groups it, because the two get read side by side: 31 columns on one 444-character
 # line is a table nobody looks at twice. Header text only -- the CSV keeps every
 # column, in one wide frame, so nothing downstream has to know about this.

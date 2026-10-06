@@ -16,7 +16,7 @@ chemistry is unavailable.
 The key is the REQUESTED isolation and the value --lipid_isolation takes;
 BLOCK_GEOMETRY below records what each block actually measures, which is what
 belongs on a plot -- and a run measures it again for itself anyway
-(analysis/split_similarity_vs_metric.py rebuilds every run's own split).
+(analysis/probes/split_similarity_vs_metric.py rebuilds every run's own split).
 
 This file accumulates across separate `--emit_module` calls (see
 load_existing_module): each call below regenerated or added the keys it names,

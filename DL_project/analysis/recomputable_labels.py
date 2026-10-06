@@ -20,9 +20,8 @@ this project kept them under two different flags with different meanings:
                                        120). A number recomputed from epoch 120 is on a
                                        DIFFERENT weight rule than a reported one -- that
                                        caveat cost this project a comparison already
-                                       (files/lcs_marginal_removal_and_solo_on_one_metric.md
-                                       section 2: it moves the pair metric by 0.00-0.10
-                                       where SEM is 0.02-0.07).
+                                       (measured 2026-09-08: it moves the pair metric by
+                                       0.00-0.10 where SEM is 0.02-0.07).
 
 So the answer to "what else can be recomputed" is per label: is the column missing, are
 there weights, and which of the two kinds.
@@ -43,6 +42,10 @@ import csv
 import re
 from collections import defaultdict
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from training.results_layout import label_dirs  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # The four --lipid_coldsplit held-out sets (dataloader/sampler.LIPID_COLDSPLIT_SETS),
@@ -58,9 +61,8 @@ def scan_models(models_root):
     found = defaultdict(lambda: {"selected": set(), "milestones": set()})
     if not models_root.is_dir():
         return found
-    for label_dir in sorted(models_root.iterdir()):
-        if not label_dir.is_dir():
-            continue
+    # models/<family>/<label>/ (training/results_layout.py)
+    for _family, _label, label_dir in label_dirs(models_root):
         for group_dir in label_dir.iterdir():
             if not group_dir.is_dir() or not group_dir.name.startswith("groups_"):
                 continue
@@ -99,7 +101,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--table", default=str(PROJECT_ROOT / "metrics_summary.csv"))
+    parser.add_argument("--table", default=str(PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv"))
     parser.add_argument("--models", default=str(PROJECT_ROOT / "models"))
     parser.add_argument("--metric", default="AUC_within_protein_pairs",
                         help="the column whose absence makes a label a recompute candidate")

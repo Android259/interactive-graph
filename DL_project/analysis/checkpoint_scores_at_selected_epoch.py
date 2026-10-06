@@ -3,10 +3,10 @@
 every --save_model_in_dynamics milestone: whichever of DYNAMICS_CHECKPOINT_EPOCHS is
 nearest to that run's own true selected checkpoint (metrics_summary.csv's
 "checkpoint_epoch" -- the epoch new_train.py's best_model_state actually came from,
-new_train.py:2404-2453). Scoring all five milestones for every combination, the way a
+training/new_train.py, main). Scoring all five milestones for every combination, the way a
 first pass at this might do, is 5x the CPU a --lipid_subclass sweep (nine blocks, five
 seeds) needs for nothing: only the nearest milestone to each run's own selected epoch
-is ever kept downstream (analysis/lipid_subclass_within_block_report.py's own
+is ever kept downstream (analysis/probes/lipid_subclass_within_block_report.py's own
 select_checkpoint_epochs does the same nearest-pick AFTER scoring all five -- this
 script does the pick BEFORE scoring, so the four unwanted epochs are never scored at
 all).
@@ -64,7 +64,7 @@ def main() -> int:
         "--families", default=None,
         help="held-out group names; default follows the label's own axis",
     )
-    parser.add_argument("--metrics_summary", type=Path, default=PROJECT_ROOT.parent / "metrics_summary.csv")
+    parser.add_argument("--metrics_summary", type=Path, default=PROJECT_ROOT.parent / "results" / "tables" / "metrics_summary.csv")
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument("--out", required=True)
     args = parser.parse_args()

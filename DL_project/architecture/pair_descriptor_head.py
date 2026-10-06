@@ -108,7 +108,7 @@ class PairDescriptorHead(torch.nn.Module):
         # standalone extent token -- the last DATALOADER_TOKENS entry unexamined by
         # --pair_descriptor_pocket_shares_split, and the one with the highest raw
         # family-identity signal of the three protein-only entries (eta^2 0.78,
-        # files/compat_input_audit.md), even after coarsening.
+        # files/results/compat_input_audit.md), even after coarsening.
         base_tokens = ("chain", "unsaturation", "hbond", "heavy", "occupancy")
         if getattr(config, "pair_descriptor_lipid_shape", False):
             base_tokens = base_tokens + LIPID_SHAPE_TOKENS

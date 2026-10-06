@@ -24,7 +24,7 @@ Not independently checked against a real pandas.read_excel/openpyxl reading of t
 same file -- neither is installed on the machine this was written on, which is the
 whole reason this script exists. What WAS checked (see preprocessing/verify_lipid_
 volumes_csv.py): every value this script emits for a structure already present in
-data/pair_descriptor_cache_deterministic_v2.json's experimental_lipid_volume entries
+data/cache/pair_descriptor_cache_deterministic_v2.json's experimental_lipid_volume entries
 (computed earlier, on whichever machine last had openpyxl and ran that cache build)
 agrees with the cached figure. That is real agreement for whatever fraction of this
 sheet the cache happened to already cover, not a guarantee for the rest of it -- if

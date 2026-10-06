@@ -9,7 +9,7 @@ axis that granularity can see: which lipid SPECIES, which lipid CLASS (head grou
 which PROTEIN, and which protein FAMILY (ProteinDomain).
 
 Why this question, before a network is trained. The project's recurring failure mode
-(files/signal_state.md; project memory descriptors-path-fingerprint-leak,
+(files/results/signal_state.md; project memory descriptors-path-fingerprint-leak,
 working-triple-explains-protein-wins) is not "the network scores badly" but "the
 network scores well by keying on identity instead of chemistry", which then fails to
 transfer to an unseen protein-lipid pair. Training a network and reading its

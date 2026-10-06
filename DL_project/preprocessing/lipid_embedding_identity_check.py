@@ -7,14 +7,14 @@ transformer, dataloader/lipid_embedding_store.py's cached table) straight into t
 project's own self-attention (--lipid_self_attention). This is the lipid-side
 analogue of preprocessing/pocket_descriptor_identity_check.py's question on the
 protein side ("is this feature already identity in disguise"), never previously asked
-of the learned lipid embedding -- analysis/lipid_descriptor_class_identity.py only
+of the learned lipid embedding -- analysis/probes/lipid_descriptor_class_identity.py only
 covers the 13 hand-built lipid descriptors, not this.
 
 Representation used: one 768-dim vector per lipid SPECIES (FullIdentityOfLipid), mean-
 pooled over the MolFormer token dimension, then averaged over that species' candidate
 structures (the sn-positional/double-bond isomers one measured species can resolve to,
 dataloader/pocket_lipid_compatibility.candidates_for_row) -- the same candidate-
-averaging analysis/lipid_descriptor_class_identity.py's candidate_matrix already uses
+averaging analysis/probes/lipid_descriptor_class_identity.py's candidate_matrix already uses
 for the 13 hand-built descriptors, and the same "one vector per entity, spread
 resolved by averaging" idea preprocessing/pocket_descriptor_identity_check.py's
 mean_plm_embedding applies on the protein side (there: average over residues; here:
@@ -89,7 +89,7 @@ def species_embeddings(csv, smiles_encoding):
     """{species: 768-dim vector}, mean-pooled over tokens then over candidates.
 
     One row per distinct FullIdentityOfLipid, its FIRST occurrence's candidate list
-    -- same convention analysis/lipid_descriptor_class_identity.py's candidate_matrix
+    -- same convention analysis/probes/lipid_descriptor_class_identity.py's candidate_matrix
     uses (the candidate SMILES field is a property of the species' identity, constant
     across the rows that share it).
     """

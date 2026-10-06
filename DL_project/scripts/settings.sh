@@ -66,7 +66,7 @@ DESCRIPTORS_HEAD_WALLTIME="${DESCRIPTORS_HEAD_WALLTIME:-0:20:00}"
 
 # --thematical_paths budget: same cost class as --descriptors_head (Final_Layer
 # builds only architecture/thematic_descriptor_head.py's ~4-5K-parameter head, no
-# protein/lipid encoders at all -- see files/thematic_interaction_architecture.md).
+# protein/lipid encoders at all -- see files/results/thematical_paths_summary.md).
 # No thematical_paths-specific training_sec_per_epoch rows exist yet in
 # metrics_summary.csv, so this borrows DESCRIPTORS_HEAD_WALLTIME's measured budget
 # rather than guessing a different number; kept as its OWN variable (not a literal

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Label-driven runner for analysis/kronrls_baseline.py -- writes cron_test_metrics/ reports.
+"""Label-driven runner for analysis/baselines/kronrls_baseline.py -- writes results/tables/cron_test_metrics/ reports.
 
 Takes a label (arbitrary name, like a network arg-file's own label) and runs the
 Kron-RLS calculation over it, then writes ONE general report file for the whole run
 under
 
-    cron_test_metrics/cron_<label>.txt
+    results/tables/cron_test_metrics/cron_<label>.txt
 
 -- its own top-level directory, sibling to (not inside) the network's own
 test_metrics/<label>/, so nothing here can ever collide with it or with analysis/
@@ -15,7 +15,7 @@ table (mean +/- std across seeds), not a separate file -- see
 build_general_report_text.
 
 Every kronrls_baseline.py flag works here unchanged (this file reuses its own
-argument parser, analysis.kronrls_baseline.build_parser(), so the two can never
+argument parser, analysis.baselines.kronrls_baseline.build_parser(), so the two can never
 silently drift apart) -- split axis, kernels, lambda grid, threshold metric, etc.
 --families omitted runs every default block for the chosen --split_mode ("without
 groups" -- --split_mode lipid_coldsplit with no --families runs all four
@@ -30,8 +30,8 @@ pocket_extent --lipid_kernel tanimoto_headgroup --lambda_grid 0.01,0.1,1,10,100
 
     python3 scripts/run_cron.py quick_check --split_mode single --seeds 0
 
-Writes to cron_test_metrics/cron_<label>.txt (and, if --out is also given, the usual
-JSON report kronrls_baseline.py's own --out writes). Nothing outside cron_test_metrics/
+Writes to results/tables/cron_test_metrics/cron_<label>.txt (and, if --out is also given, the usual
+JSON report kronrls_baseline.py's own --out writes). Nothing outside results/tables/cron_test_metrics/
 and --out's own path is touched; metrics_summary.csv is never read or written.
 
 Convenience feature-list shorthand. --protein_features and --lipid_features are
@@ -56,7 +56,7 @@ value by construction and does not factor into either kernel alone, so there is 
 well-defined place for it in this method -- passing --pair_features fails fast with
 that explanation rather than silently doing something else with it.
 
---no_logs skips writing the cron_test_metrics/cron_*.txt file -- no label needed then, unless
+--no_logs skips writing the results/tables/cron_test_metrics/cron_*.txt file -- no label needed then, unless
 --set_label is also given. --set_label names the run (same role as the positional
 `label`, provided as a flag for scripting convenience) and, when given, wins over
 the positional if both are present.
@@ -86,7 +86,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from analysis.kronrls_baseline import (  # noqa: E402
+from analysis.baselines.kronrls_baseline import (  # noqa: E402
     build_parser,
     build_report,
     load_table,
@@ -497,7 +497,7 @@ def main() -> None:
     parser.add_argument(
         "label", nargs="?", default=None,
         help=(
-            "run name -- output goes to cron_test_metrics/cron_<label>.txt, one "
+            "run name -- output goes to results/tables/cron_test_metrics/cron_<label>.txt, one "
             "file for the whole run, never test_metrics/<label>/ (that namespace "
             "is the network's own). Optional with --no_logs (nothing is written "
             "then); --set_label overrides it either way."
@@ -511,7 +511,7 @@ def main() -> None:
         "--no_logs", action="store_true",
         help=(
             "print the report to the terminal instead of writing "
-            "cron_test_metrics/cron_<label>.txt"
+            "results/tables/cron_test_metrics/cron_<label>.txt"
         ),
     )
     parser.add_argument(
@@ -527,8 +527,8 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--out_root", type=Path, default=PROJECT_ROOT / "cron_test_metrics",
-        help="parent of cron_<label>.txt (default: the project's cron_test_metrics/)",
+        "--out_root", type=Path, default=PROJECT_ROOT / "results" / "tables" / "cron_test_metrics",
+        help="parent of cron_<label>.txt (default: the project's results/tables/cron_test_metrics/)",
     )
     parser.add_argument(
         "--families_number", type=int, default=None,
@@ -576,10 +576,10 @@ def main() -> None:
             "comma-separated list of INDEPENDENT held-out groups. Each entry is "
             "one group; a group is one name (an exact FullIdentityOfLipid species, "
             "a project head-group class, or an article LTP-lipid subclass "
-            "abbreviation -- \"PC\", \"PG\", \"FA\", ..., see files/data_source.md) "
+            "abbreviation -- \"PC\", \"PG\", \"FA\", ..., see files/reference/data_source.md) "
             "or several such names joined with \"+\" to hold them out TOGETHER as "
             "one combined block (e.g. \"Cer+CerP+HexCer+Hex2Cer+SHexCer+SM\" for "
-            "files/data_source.md's own Sphingolipids sub-group -- useful when a "
+            "files/reference/data_source.md's own Sphingolipids sub-group -- useful when a "
             "single subclass has too few distinct interacting proteins on its own "
             "for AUC_within_protein to average over, but its structural neighbors "
             "combined clear that bar). Each comma-separated group -- single-name or "

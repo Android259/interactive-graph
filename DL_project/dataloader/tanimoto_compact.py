@@ -1,14 +1,15 @@
 """Compact form of the pairwise Tanimoto artifacts.
 
-``Total_tanimoto_matrix_uint8.npy`` is indexed per *candidate structure instance*: a row
-of the interaction table that lists five isomer candidates contributes five entries, and
-the same structure recurs across rows. The current table yields tens of thousands of
+The old full form (``Total_tanimoto_matrix_uint8.npy``, no longer built or read) was
+indexed per *candidate structure instance*: a row of the interaction table that lists
+five isomer candidates contributes five entries, and the same structure recurs across
+rows. The current table yields tens of thousands of
 instances over about twelve hundred distinct structures, so the square matrix stores
 each distinct pair of structures hundreds of times over -- 2.89 GB of almost entirely
 repeated bytes.
 
-Every one of those bytes is a pure function of the two structures. ``build_tanimoto_matrix``
-computes them as ``round(BulkTanimotoSimilarity(fp_a, fp_b) * 255)`` over Morgan
+Every one of those bytes is a pure function of the two structures.
+``preprocessing/build_tanimoto_compact.py`` computes them as ``round(BulkTanimotoSimilarity(fp_a, fp_b) * 255)`` over Morgan
 fingerprints, and a fingerprint is a pure function of the canonical SMILES string, so two
 instances of one structure necessarily have byte-identical rows. Keeping one row per
 distinct structure therefore loses nothing:
@@ -29,7 +30,7 @@ Three files, written together and only meaningful as a set (see the manifest):
     Tanimoto_compact_matrix_uint8.npy      structures x structures similarities
     Tanimoto_compact_structure_index.npy   candidate instance -> structure row
     Tanimoto_compact_row_ids.npy           candidate instance -> interaction table row,
-                                            the same content as Total_multiple_lipid_batch.npy
+                                            the same content as the old Total_multiple_lipid_batch.npy
 """
 
 import json
@@ -39,6 +40,7 @@ import numpy as np
 
 
 COMPACT_FORMAT_VERSION = 1
+CACHE_SUBDIR = "cache"
 # Two disjoint sets, because lipid_isomers changes the candidate list itself, not just
 # the similarities: with stereochemistry kept, isomers that collapse into one candidate
 # under the non-isomeric rule stay separate, so a row contributes a different number of
@@ -76,9 +78,29 @@ class CompactTanimoto:
             self.matrix[np.ix_(structure_rows, structure_rows)], copy=True
         )
 
+    def candidate_view(self):
+        """An object indexed per candidate instance, like the old full matrix.
+
+        ``view[np.ix_(a, b)]`` returns the same uint8 block ``full[np.ix_(a, b)]`` did,
+        gathered from the compact matrix, for callers written against the full form.
+        """
+        return _CandidateView(self)
+
+
+class _CandidateView:
+    def __init__(self, compact):
+        self._matrix = compact.matrix
+        self._structure_index = compact.structure_index
+
+    def __getitem__(self, key):
+        rows, cols = key
+        return self._matrix[self._structure_index[rows], self._structure_index[cols]]
+
 
 def compact_paths(root_dir, isomeric=False):
-    root_dir = Path(root_dir).resolve()
+    """Cache-file paths under ``<root_dir>/cache`` -- see dataloader/cache_builders/
+    tanimoto_compact.py for the builder that writes them."""
+    root_dir = Path(root_dir).resolve() / CACHE_SUBDIR
     prefix = ISOMERIC_COMPACT_PREFIX if isomeric else COMPACT_PREFIX
     return (
         root_dir / f"{prefix}_matrix_uint8.npy",
@@ -88,46 +110,13 @@ def compact_paths(root_dir, isomeric=False):
     )
 
 
-def write_compact(
-    root_dir, matrix, structure_index, row_ids, source_csv, isomeric=False
-):
-    """Write the three arrays plus the manifest that ties them to their source table."""
-    matrix_path, index_path, row_path, manifest_path = compact_paths(
-        root_dir, isomeric=isomeric
-    )
-    np.save(matrix_path, matrix)
-    np.save(index_path, structure_index)
-    np.save(row_path, row_ids)
-    source_csv = Path(source_csv)
-    stat = source_csv.stat()
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "format_version": COMPACT_FORMAT_VERSION,
-                "isomeric": bool(isomeric),
-                "structures": int(matrix.shape[0]),
-                "candidates": int(row_ids.shape[0]),
-                "rows": int(len(set(row_ids.tolist()))),
-                "source": {
-                    "path": source_csv.name,
-                    "size": stat.st_size,
-                    "mtime_ns": stat.st_mtime_ns,
-                },
-            },
-            indent=2,
-        )
-        + "\n"
-    )
-    return matrix_path, index_path, row_path, manifest_path
-
-
 def load_compact(root_dir, source_csv=None, isomeric=False):
     """Map the compact artifacts, or None when they are absent or stale.
 
     ``source_csv``, when given, is checked against the manifest by size and nanosecond
-    mtime, so a rebuilt interaction table falls back to the old full-matrix path instead
-    of silently weighting by similarities computed for a different candidate list --
-    which is the failure the current on-disk matrix is an example of.
+    mtime, so a rebuilt interaction table is refused (the loader then raises and asks for
+    a rebuild) instead of silently weighting by similarities computed for a different
+    candidate list.
     """
     matrix_path, index_path, row_path, manifest_path = compact_paths(
         root_dir, isomeric=isomeric

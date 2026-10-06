@@ -21,7 +21,7 @@ confused:
 `AUC_within_protein_pairs` rides along as the last column without being the headline:
 under --lipid_coldsplit every protein stays in training, so pooled BA/AUC are largely
 "which protein is this" (pooled AUC 0.568 against 0.480 within protein on the same rows,
-files/lipid_coldsplit_architecture_direction.md, the RULE box). Empty for runs before
+files/results/lipid_coldsplit_architecture_direction.md, the RULE box). Empty for runs before
 2026-09-08, which is why it cannot simply replace the pooled columns here.
 
 Reads only: opens metrics_summary.csv, writes nothing, runs no model.
@@ -31,7 +31,7 @@ Examples
     python analysis/label_summary_table.py --preset solo
     python analysis/label_summary_table.py --preset lcs
     python analysis/label_summary_table.py --preset lcs --by-group
-    python analysis/label_summary_table.py --contains geometric_edge_attention --sort BA
+    python analysis/label_summary_table.py --contains geatt --sort BA
     python analysis/label_summary_table.py --labels label_a,label_b --date 2026-09-09
 """
 
@@ -83,7 +83,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--table", default="metrics_summary.csv")
+    parser.add_argument("--table", default="results/tables/metrics_summary.csv")
     parser.add_argument("--preset", choices=sorted(PRESETS),
                         help="substring filters for a known line (solo / lcs)")
     parser.add_argument("--contains", help="keep labels containing this substring")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Label-driven runner for analysis/gbm_baseline.py -- writes test_metrics/ reports.
+"""Label-driven runner for analysis/baselines/gbm_baseline.py -- writes test_metrics/ reports.
 
 The HistGradientBoosting counterpart of scripts/run_cron.py (Kron-RLS): same label/
 --set_label/--no_logs/--complete/--out_root conventions, same --protein_features/
@@ -14,7 +14,7 @@ Kron-RLS runs out of analysis/build_metrics_table.py's own `rglob("test_metrics_
 that glob and run_cron.py's own `cron_*` namespace.
 
 Every gbm_baseline.py flag works here unchanged (this file reuses its own argument
-parser, analysis.gbm_baseline.build_parser(), so the two can never silently drift
+parser, analysis.baselines.gbm_baseline.build_parser(), so the two can never silently drift
 apart) -- split axis, class weighting, hyperparameters, threshold metric, etc.
 --families omitted runs every default block for the chosen --split_mode, same as
 run_cron.py.
@@ -43,7 +43,7 @@ classifier with no separable-kernel constraint, so a joint (protein, lipid) valu
 just one more feature column: --pair_features is a comma-separated list of
 dataloader.pair_descriptors.PAIR_DESCRIPTOR_NAMES entries (occupancy,
 aromatic_contact, hbond_match, ...), each computed via pair_descriptor_value off
-analysis/gbm_baseline.py's build_pair_feature_inputs (the fixed lipid/protein input
+analysis/baselines/gbm_baseline.py's build_pair_feature_inputs (the fixed lipid/protein input
 columns every pair descriptor formula reads).
 
     python3 scripts/run_gbm.py --pair_features=occupancy,aromatic_contact \\
@@ -76,7 +76,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from analysis.gbm_baseline import (  # noqa: E402
+from training.results_layout import label_family  # noqa: E402
+from analysis.baselines.gbm_baseline import (  # noqa: E402
     build_parser,
     build_report,
     load_table,
@@ -527,7 +528,7 @@ def main() -> None:
             "run_cron.py's own flag of the same name, same syntax: each entry is one "
             "group (an exact FullIdentityOfLipid species, a project head-group "
             "class, or an article LTP-lipid subclass abbreviation -- \"PC\", \"PG\", "
-            "..., see files/data_source.md), several names joined with \"+\" held "
+            "..., see files/reference/data_source.md), several names joined with \"+\" held "
             "out TOGETHER as one block. Unlike --excluded_lipids, which merges "
             "everything given into ONE \"custom\" block, comma-separated entries "
             "here stay apart, each its own row. Mutually exclusive with "
@@ -643,7 +644,8 @@ def main() -> None:
     print_standard_summary(report, run_label, complete=args.complete)
 
     if not args.no_logs:
-        run_dir = args.out_root / f"gbm_{run_label}"
+        # test_metrics/<family>/gbm_<label>/ (training/results_layout.py)
+        run_dir = args.out_root / label_family(f"gbm_{run_label}") / f"gbm_{run_label}"
         written = []
         for _, row in report.iterrows():
             group_dir = run_dir / f"groups_{row['family']}"

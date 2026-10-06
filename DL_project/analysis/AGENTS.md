@@ -1,11 +1,15 @@
 # Analysis Contract
 
 Read-only reporting over completed runs. These scripts **consume** artifacts
-(`metrics_summary.csv`, test reports, TensorBoard runs) and **produce** tables,
-text summaries, and figures. They do not train.
+(`results/tables/metrics_summary.csv`, test reports, TensorBoard runs) and **produce**
+tables, text summaries, and figures. They do not train.
 
-- This `analysis/` package is the **canonical** location. Root-level
-  `analyze_*.py` / `plot_*.py` are older siblings — prefer these.
+- `analysis/` holds the shared pipeline below plus two subfolders:
+  `baselines/` (non-neural reference models: Kron-RLS, GBM, the label-level
+  marginal baselines) and `probes/` (one-off research scripts, each reading the
+  table or checkpoints read-only). `tanimoto_groups/` is its own thing (see "Not
+  Here"). Nothing lives outside `analysis/` any more — there are no root-level
+  `analyze_*.py` / `plot_*.py` siblings to prefer against.
 - Do not run training, GPU work, or regenerate the aggregated tables casually;
   most scripts append to or overwrite shared files (see Side Effects).
 
@@ -16,13 +20,16 @@ test reports + TensorBoard runs
   -> build_metrics_table.py        # (re)build normalized metrics_summary.csv
   -> append_metric_to_table.py     # add/replace ONE completed test report
   -> add_new_metrics_to_table.py   # add reports not yet in the table
-metrics_summary.csv
-  -> analyze_metrics_table.py      # validation-based comparison report
+results/tables/metrics_summary.csv
   -> analyze_common_epoch.py       # single epoch best across matched groups/seeds
-  -> analyze_feature_contributions.py  # matched configuration-feature effects -> feature_contributions.csv
   -> summarize_standard_metrics.py / summarize_label.py / analyze_label_metrics.py
   -> compare_labels.py             # matched (exclusion_set, seed) diff of two labels
 ```
+
+Every report path and run directory is `<root>/<family>/<label>/...`, where
+`<family>` is the `arg_files/` subdirectory the label's config lives under
+(`training/results_layout.py`). `build_metrics_table.py` / `add_new_metrics_to_table.py`
+skip anything outside that layout rather than misreading the family as a label.
 
 ## Plots
 
@@ -35,14 +42,14 @@ metrics_summary.csv
 ## Not Here
 
 Tanimoto similarity of the lipids each protein group binds lives in
-`tanimoto_group_analysis/`, next to the CSVs it produces.
+`analysis/tanimoto_groups/`, next to the CSVs it produces.
 
 ## One-Offs
 
 - `scratch_count.py` — rebuilds a run's `ModelConfig` from its test report and
   counts the parameters the discovered gate widths would remove. Reads paths
   relative to the project root, so run it from there:
-  `python3 analysis/scratch_count.py`.
+  `python3 analysis/probes/scratch_count.py`.
 
 ## Run Reorganizers
 
@@ -58,9 +65,8 @@ Preserve this matching; do not average across mismatched exclusion sets or seeds
 
 ## Side Effects (guard these)
 
-- `build_metrics_table.py` overwrites `metrics_summary.csv`; `append_*` /
+- `build_metrics_table.py` overwrites `results/tables/metrics_summary.csv`; `append_*` /
   `add_new_*` mutate it in place. Confirm before running.
-- `analyze_feature_contributions.py` writes `feature_contributions.csv`.
 - `analyze_label_metrics.py` / `summarize_*` append to text files
   (e.g. `metrics_summary_label_analysis.txt`).
 

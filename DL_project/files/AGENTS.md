@@ -8,7 +8,7 @@ prompt below as text to copy verbatim into a task, not as a description of one.
 
 ## Prompt: comprehensive analysis of a finished run batch
 
-Use when a set of cluster jobs (one or more `scripts/arg_files/*.md` labels,
+Use when a set of cluster jobs (one or more `arg_files/*.md` labels,
 run with `--graphics --summarize`) has finished and the ask is "what happened,
 in which direction do we go" — not a from-scratch investigation. Saves the
 exploration this project's layout otherwise costs every time: which files
@@ -25,24 +25,30 @@ each config actually uses, and the training dynamics over the whole run (not
 just the final epoch).
 
 Data sources, in order:
-1. `metrics_summary.csv` — canonical aggregated table (built by
+1. `results/tables/metrics_summary.csv` — canonical aggregated table (built by
    analysis/build_metrics_table.py + friends, see analysis/AGENTS.md). Filter
    to these labels. RANK BY TEST METRICS PER EXCLUDED GROUP, never validation
    -- validation is for early stopping/model selection only, per this
    project's own convention.
-   ON A --lipid_coldsplit LABEL the test metric to rank by is
-   `AUC_within_protein` (with `AUC_within_protein_proteins` beside it), NOT
-   pooled balanced_accuracy/AUC. Every protein stays in training under that
-   split, so "which protein is this" is free and the pooled figure is largely
-   that marginal: measured on the same rows, pooled AUC 0.568 against 0.480
-   within protein, and chance (0.460/0.457) on the two sets with enough
-   protein blocks to read. Full argument and numbers:
-   files/lipid_coldsplit_architecture_direction.md, the RULE box at the top
-   and section 7j. Columns are empty for runs before 2026-09-08.
-2. `graphics/<label>/<label>.md` — already-generated per-label writeup from
+   Current head metric (since 2026-09-30, user decision -- see
+   `files/CURRENT_STATE.md` §2): **test `balanced_accuracy` against the null
+   model**, which is exactly 0.500 on every lipid-axis split
+   (`--lipid_coldsplit`/`--lipid_subclass`/`--lipid_species_coldsplit`). Report
+   `sensitivity`/`specificity` beside it -- BA alone at a fixed 0.5 threshold
+   hides which way the error sits. `AUC_within_protein` (with
+   `AUC_within_protein_proteins` beside it) stays in the table and is worth a
+   look -- on a lipid-axis split every protein stays in training, so pooled
+   balanced_accuracy/AUC partly reads "which protein is this" rather than the
+   lipid decision -- but it is a diagnostic now, not the ranking criterion.
+   Mechanism and numbers:
+   `files/results/lipid_coldsplit_architecture_direction.md`, the RULE box at the top
+   and section 7j (written before the 2026-09-30 change; its own AUC-first framing is
+   historical, the mechanism it documents still holds). Columns are empty for runs
+   before 2026-09-08.
+2. `graphics/<family>/<label>/<label>.md` — already-generated per-label writeup from
    `--graphics --summarize`. Read it, but verify its numbers against
-   metrics_summary.csv rather than trusting it blind.
-3. `script_logs/<label>_seeds*/<excluded_group>/*_seedN_ep*.log` — per-(group,
+   results/tables/metrics_summary.csv rather than trusting it blind.
+3. `script_logs/<family>/<label>_seeds*/<excluded_group>/*_seedN_ep*.log` — per-(group,
    seed) raw log. Format: repeated
        EPOCH k:
        VALIDATION
@@ -60,20 +66,20 @@ Data sources, in order:
        balanced_accuracy: <f>
        loss: <f>
    There is NO gradient-norm logging in these files. If gradient evidence is
-   genuinely needed, `analysis/geometric_edge_attention_diagnostics.py` can
+   genuinely needed, `analysis/probes/geometric_edge_attention_diagnostics.py` can
    recompute real (not fabricated) gradient norms post-hoc from
    `--save_model_in_dynamics` checkpoints under
-   `models/<label>/groups_<group>/dynamics/`; only report gradient claims
+   `models/<family>/<label>/groups_<group>/dynamics/`; only report gradient claims
    backed by its actual output.
-4. `files/descriptor_catalog.md` (which descriptors/edge-geometry columns
+4. `files/reference/descriptor_catalog.md` (which descriptors/edge-geometry columns
    each label's flags actually turn on) and the architecture source
    (`architecture/*.py`) for what a flag mechanically changes.
 
-Write the result to a new `files/*.md` file, in the style of the existing
+Write the result to a new `files/results/*.md` file, in the style of the existing
 files there (technical, evidence-grounded, concrete file/line/number
 references, no generic ML-checklist filler). Give an explicit directional
 recommendation only if asked for one; otherwise present findings/options and
-leave the priority call to the user.
+leave the priority call to the user. Add it to `files/INDEX.md`.
 ```
 
 ## Prompt: proposals for architecture or descriptor-set changes
@@ -97,7 +103,7 @@ specific failure mode>. Required steps, in order:
 3. Reason concretely about which sub-components are likely doing what
    physically -- which carry the target signal vs. which are nuisance/
    identity-correlated -- using this project's own measured analogues (e.g.
-   files/descriptor_catalog.md's per-descriptor eta^2-by-family table) as the
+   files/reference/descriptor_catalog.md's per-descriptor eta^2-by-family table) as the
    template for the kind of reasoning expected, even where the specific
    component in question has not itself been measured yet.
 4. Give concrete, testable proposals, each with: the mechanism by which it
@@ -122,11 +128,11 @@ bash scripts/run_<CLUSTER_NAME>.sh --graphics --summarize --no_groups=<GROUP1>,<
 - `<CLUSTER_NAME>`: `bigfoot` or `kraken` (`scripts/run_bigfoot.sh` /
   `scripts/run_kraken.sh` are the two entry points; both just set
   `CLUSTER_NAME` and exec `scripts/launch/run_cluster.sh`).
-- `<label*>`: bare `scripts/arg_files/<label>.md` basenames (no path, no
+- `<label*>`: bare `arg_files/<label>.md` basenames (no path, no
   `.md`), space-separated, all on one line -- multiple labels queue together
   under one shared OAR queue/drain and run concurrently.
 - `--graphics --summarize`: waits for the whole batch to drain once, then
-  writes `graphics/<label>/<label>.md` and appends to `metrics_summary.csv`
+  writes `graphics/<family>/<label>/<label>.md` and appends to `results/tables/metrics_summary.csv`
   per label -- include these unless the user asked for a bare submit.
 - `--no_groups=A,B`: skip specific excluded groups (default: all 9 canonical
   ones) -- use when a prior batch already covered them and only the

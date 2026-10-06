@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Commit and push run metrics -- run/, script_logs/, metrics_summary.csv and
-# metrics_analysis.txt -- to the git remote branch, so results generated on
+# Commit and push run metrics -- run/, script_logs/ and results/tables/metrics_summary.csv
+# -- to the git remote branch, so results generated on
 # this machine are reachable from git and not only via cluster rsync (see
 # scripts/tools/sync_project.sh, which deliberately skips these
 # paths). Mirrored by scripts/pull_metrics_from_git.sh.
@@ -23,7 +23,7 @@ REMOTE="${REMOTE:-origin}"
 PUSH_BRANCH="${PUSH_BRANCH:-kalinina-main-patch-61030}"
 DRY_RUN="${DRY_RUN:-0}"
 
-METRICS_PATHS=(run script_logs metrics_summary.csv metrics_analysis.txt)
+METRICS_PATHS=(run script_logs results/tables/metrics_summary.csv)
 
 existing_paths=()
 for p in "${METRICS_PATHS[@]}"; do
@@ -54,35 +54,32 @@ changed_paths="$(
         | sed "s#^${prefix}##"
 )"
 
-# Only the SECOND path component is a job label when it names an actual
+# Only the THIRD path component (run/<family>/<label>/...) is a job label when it names an actual
 # directory: run/ and script_logs/ each also hold a few top-level files of
 # their own (script_logs/*.pid, *.log, *.queue from the wait/drain/queue
 # scripts) that must not be mistaken for job labels.
 labels="$(
     printf '%s\n' "${changed_paths}" \
-        | awk -F/ '$1 == "run" || $1 == "script_logs" { print $1"/"$2 }' \
+        | awk -F/ '($1 == "run" || $1 == "script_logs") && NF >= 3 { print $1"/"$2"/"$3 }' \
         | sort -u \
         | while IFS= read -r rel; do
               # `[[ -d ]] && printf` would return non-zero (and, under set -e,
               # silently kill this whole command substitution) on the first
               # non-directory candidate -- an `if` with no else always exits 0.
               if [[ -d "${rel}" ]]; then
-                  printf '%s\n' "${rel#*/}"
+                  printf '%s\n' "${rel##*/}"
               fi
           done
 )"
 
 extra_notes=()
-if printf '%s\n' "${changed_paths}" | grep -qx 'metrics_summary\.csv'; then
+if printf '%s\n' "${changed_paths}" | grep -qx 'results/tables/metrics_summary\.csv'; then
     extra_notes+=("metrics_summary.csv")
-fi
-if printf '%s\n' "${changed_paths}" | grep -qx 'metrics_analysis\.txt'; then
-    extra_notes+=("metrics_analysis.txt")
 fi
 
 label_count="$(printf '%s\n' "${labels}" | grep -c . || true)"
 if [[ -z "${labels}" && ${#extra_notes[@]} -eq 0 ]]; then
-    printf 'Changed files under %s did not match run/<label>/ or script_logs/<label>/, and neither aggregate table changed:\n' "${existing_paths[*]}" >&2
+    printf 'Changed files under %s did not match run/<family>/<label>/ or script_logs/<family>/<label>/, and the aggregate table did not change:\n' "${existing_paths[*]}" >&2
     printf '%s\n' "${changed}" >&2
     exit 1
 fi

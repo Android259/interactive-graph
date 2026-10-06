@@ -410,10 +410,10 @@ update_metrics_table() {
     fi
     # Roots are passed explicitly so it is visible here that testmode_outputs/ is
     # never scanned. "Added 0 ..." is the no-op case and would print every round.
-    ( cd "${LOCAL_PROJECT}" && "${python_bin}" add_new_metrics_to_table.py \
+    ( cd "${LOCAL_PROJECT}" && "${python_bin}" analysis/add_new_metrics_to_table.py \
         --metrics-root "${LOCAL_PROJECT}/test_metrics" \
         --run-root "${LOCAL_PROJECT}/run" \
-        --table "${LOCAL_PROJECT}/metrics_summary.csv" ) \
+        --table "${LOCAL_PROJECT}/results/tables/metrics_summary.csv" ) \
         | grep -v '^Added 0 new metric rows' || true
 }
 

@@ -108,7 +108,7 @@ def format_report(aggregated):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--table", type=Path, default=PROJECT_ROOT / "metrics_summary.csv",
+        "--table", type=Path, default=PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv",
         help="Metrics table CSV produced by analysis/build_metrics_table.py",
     )
     parser.add_argument(

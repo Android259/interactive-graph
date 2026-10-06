@@ -11,6 +11,13 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+import sys
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+from training.results_layout import label_dir, label_family  # noqa: E402
+
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 
@@ -107,11 +114,14 @@ def resolve_run_dir(run_root, row):
     label = row.get("label", "").strip()
     if not label:
         raise ValueError(f"Missing label for run row: {row}")
+    # run/<family>/<label>/<set>/ (training/results_layout.py)
     parents = [
-        run_root / label / row["exclusion_set"],
+        label_dir(run_root, label) / row["exclusion_set"],
     ]
     if row.get("architecture"):
-        parents.append(run_root / row["architecture"] / row["exclusion_set"])
+        parents.append(
+            run_root / label_family(label) / row["architecture"] / row["exclusion_set"]
+        )
     candidates = []
     for parent in parents:
         candidates = sorted(parent.glob(f"train{timestamp}_*"))
@@ -226,7 +236,7 @@ def print_report(histories, selected, window):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--table", type=Path, default=Path("metrics_summary.csv"))
+    parser.add_argument("--table", type=Path, default=Path("results/tables/metrics_summary.csv"))
     parser.add_argument("--run-root", type=Path, default=Path("run"))
     parser.add_argument("--seed", action="append", default=[])
     parser.add_argument("--filter", action="append", default=[])

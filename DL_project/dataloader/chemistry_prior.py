@@ -3,7 +3,7 @@
 One function, two callers. `analysis/null_model.py` uses it as a standalone
 predictor to compare against the network. `Dataloader` (under `--chem_prior`)
 attaches it to every row as a frozen input, so the network is scored against it rather
-than having to re-derive it -- the point files/interaction_signal_plan.md 4.1 makes.
+than having to re-derive it -- the point files/history/geometric_edge.md makes.
 Kept in one place because the two callers must compute the identical number: a null
 model that silently drifted from the number the network is judged against would make
 every AUC in that file wrong without anything failing loudly.
@@ -53,13 +53,14 @@ def species_similarity(csv, data_dir):
     it. Taking the max is the same reduction the loader applies when it turns candidate
     similarities into one number per pair.
     """
+    cache_dir = os.path.join(data_dir, "cache")
     matrix = np.load(
-        os.path.join(data_dir, "Tanimoto_compact_isomeric_matrix_uint8.npy")
+        os.path.join(cache_dir, "Tanimoto_compact_isomeric_matrix_uint8.npy")
     ).astype(np.float32) / 255.0
     structure_index = np.load(
-        os.path.join(data_dir, "Tanimoto_compact_isomeric_structure_index.npy")
+        os.path.join(cache_dir, "Tanimoto_compact_isomeric_structure_index.npy")
     )
-    row_ids = np.load(os.path.join(data_dir, "Tanimoto_compact_isomeric_row_ids.npy"))
+    row_ids = np.load(os.path.join(cache_dir, "Tanimoto_compact_isomeric_row_ids.npy"))
 
     structures_of_row = {}
     for row, structure in zip(row_ids, structure_index):
@@ -104,10 +105,6 @@ def molformer_species_similarity(data_dir):
     return similarity, index
 
 
-def _lipid_descriptor_table_path(data_dir):
-    return Path(data_dir) / "lipid_descriptor_table.json"
-
-
 def _lipid_descriptor_table(csv, data_dir=None):
     """{species: {LIPID_DESCRIPTOR_NAMES: value}}, mean over each species' candidate
     structures (pocket_lipid_compatibility.candidates_for_row's own convention: a
@@ -115,48 +112,31 @@ def _lipid_descriptor_table(csv, data_dir=None):
     counts equally -- taking only the first would report an arbitrary member of the
     ambiguity as if it were the lipid's own property).
 
-    Self-persisting exactly like protein_descriptor_table above (same reasoning: RDKit
-    over every candidate SMILES does not depend on --seed/--excluded_groups, only on
-    the interaction table, so recomputing it in every caller with nothing shared is
-    pure waste) -- `data_dir=None` (every call site inside this module passes the CSV
-    only, not a data_dir) means "no interaction table path known here, do not persist",
-    which callers can opt into by passing data_dir explicitly.
+    No longer self-persists ITS OWN output (the species-mean dict): averaging over a
+    species' candidates is now cheap arithmetic over values that are themselves already
+    cached on disk per candidate (data/lipid_descriptors.csv, see below) -- this is the
+    "caches are built from the values in the table" shape the species-mean dict used to
+    approximate with a second, redundant JSON file. `data_dir` is kept only for call-site
+    compatibility; it was never read for anything but that now-removed persistence (the
+    npr_cache lookup below always reads the project's own data/ regardless of it, exactly
+    as before).
     """
     from dataloader.pocket_lipid_compatibility import candidates_for_row
 
-    if data_dir is not None:
-        table_path = _lipid_descriptor_table_path(data_dir)
-        csv_path = getattr(csv, "attrs", {}).get("source_path")
-        source = None
-        if csv_path and os.path.isfile(csv_path):
-            stat = os.stat(csv_path)
-            source = {"path": os.path.basename(csv_path), "size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
-        if source and table_path.exists():
-            try:
-                manifest = json.loads(table_path.read_text())
-                # Bumped to 2 when the tail-only columns joined LIPID_DESCRIPTOR_NAMES,
-                # and to 3 when experimental_lipid_volume did: a table built under an
-                # older version would be served back missing exactly the column(s) a
-                # caller now asks for.
-                if manifest.get("format_version") == 3 and manifest.get("source") == source:
-                    return manifest["values"]
-            except (OSError, ValueError, json.JSONDecodeError, KeyError):
-                pass
-
     # npr1/npr2 are conformer-based (a 10-conformer ETKDG+MMFF embed per candidate,
     # not microseconds like the other five) -- look them up in the project's on-disk
-    # pair_descriptor_cache first (same cache dataloader/pair_descriptors.py's network
-    # path and training/pair_baseline_common.py's explicit_lipid_features read), and
-    # only fall back to a fresh embed on a cache miss, same fallback discipline as
+    # per-candidate lipid table first (same table dataloader/pair_descriptors.py's
+    # network path and training/pair_baseline_common.py's explicit_lipid_features
+    # read), and only fall back to a fresh embed on a miss, same fallback discipline as
     # descriptor_values_by_row's own `cache` parameter.
     npr_cache = load_pair_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
 
-    # data/build_pair_descriptor_cache.py's on-disk cache already stores every one of
-    # these under the SAME name, except "heavy" (stored as "heavy_atoms" -- see that
-    # module's own build_pair_value_cache comment on the rename). A cache hit is a
-    # dict lookup instead of a live RDKit reparse (or, for experimental_lipid_volume,
-    # a pandas.read_csv of data/Lipid_Volumes.csv) -- generalized from what previously
-    # only covered npr1/npr2.
+    # data/lipid_descriptors.csv (built by data/build_pair_descriptor_cache.py) already
+    # stores every one of these under the SAME name, except "heavy" (stored as
+    # "heavy_atoms" -- see that module's own build_pair_value_cache comment on the
+    # rename). A cache hit is a dict lookup instead of a live RDKit reparse (or, for
+    # experimental_lipid_volume, a pandas.read_csv of data/Lipid_Volumes.csv) --
+    # generalized from what previously only covered npr1/npr2.
     _CACHE_MEASURE_ALIAS = {"heavy": "heavy_atoms"}
 
     def _cached_measure(measure, compute, smiles):
@@ -231,12 +211,16 @@ def _lipid_descriptor_table(csv, data_dir=None):
 _PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 5
 
 
-def _protein_descriptor_table_path(data_dir):
-    return Path(data_dir) / "protein_descriptor_table.json"
+def _protein_descriptors_csv_path(data_dir):
+    return Path(data_dir) / "protein_descriptors.csv"
+
+
+def _protein_descriptor_table_manifest_path(data_dir):
+    return Path(data_dir) / "protein_descriptors.manifest.json"
 
 
 def _protein_descriptor_table_sources(data_dir, protein_names):
-    from dataloader.protein_graph_tensor_cache import _source_record
+    from dataloader.cache_builders.protein_graph_tensor_cache import _source_record
 
     root_dir = Path(data_dir).resolve()
     paths = []
@@ -267,11 +251,14 @@ def protein_descriptor_table(data_dir):
 
     Self-persisting rather than a build-it-first-or-fall-back-slow cache: the first
     call anywhere (any process, any machine sharing this data/ dir) computes the table
-    and writes data/protein_descriptor_table.json; every call after that, in any
-    process, reads it back in milliseconds -- no separate prep script, no args-file
-    flag to detect, nothing to remember to run before a grid launches. Still keyed on
-    each source file's size/mtime (same discipline as protein_graph_tensor_cache.py) so
-    a rebuilt data/graphs/<protein>/ is picked up rather than served stale.
+    and writes data/protein_descriptors.csv (plus a small sidecar manifest,
+    data/protein_descriptors.manifest.json, carrying only the format version and the
+    source files' size/mtime -- never a descriptor value itself); every call after
+    that, in any process, reads the CSV back in milliseconds -- no separate prep
+    script, no args-file flag to detect, nothing to remember to run before a grid
+    launches. Still keyed on each source file's size/mtime (same discipline as
+    protein_graph_tensor_cache.py) so a rebuilt data/graphs/<protein>/ is picked up
+    rather than served stale.
 
     The two derived names (aromatic_share_coarse/polar_share_coarse) are computed
     here too, from the raw aromatic_share/apolar_sasa_share this function already
@@ -293,18 +280,29 @@ def protein_descriptor_table(data_dir):
         and os.path.isfile(os.path.join(graphs_dir, protein, "coarse_graph_nodes.csv"))
     )
 
-    table_path = _protein_descriptor_table_path(data_dir)
-    if table_path.exists():
+    csv_path = _protein_descriptors_csv_path(data_dir)
+    manifest_path = _protein_descriptor_table_manifest_path(data_dir)
+    if csv_path.exists() and manifest_path.exists():
         try:
-            manifest = json.loads(table_path.read_text())
+            manifest = json.loads(manifest_path.read_text())
             current_sources = _protein_descriptor_table_sources(data_dir, protein_names)
             if (
                 manifest.get("format_version") == _PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION
                 and manifest.get("sources") == current_sources
-                and sorted(manifest.get("values", {})) == protein_names
             ):
-                return manifest["values"]
-        except (OSError, ValueError, json.JSONDecodeError, KeyError):
+                # float_precision="round_trip": pandas' default C float parser is
+                # fast but not always exact (it can read back "0.2356687933206558"
+                # for a written "0.23566879332065582", a one-ULP drift on write/read
+                # that `to_csv` itself does not introduce) -- round_trip trades a
+                # slower parse for serving back exactly the value computed below.
+                table = pandas.read_csv(
+                    csv_path, index_col="protein", float_precision="round_trip"
+                )
+                if sorted(table.index) == protein_names:
+                    return {
+                        protein: table.loc[protein].to_dict() for protein in table.index
+                    }
+        except (OSError, ValueError, pandas.errors.ParserError, KeyError):
             pass  # fall through and recompute, same as any other stale/corrupt cache
 
     values = {}
@@ -331,10 +329,12 @@ def protein_descriptor_table(data_dir):
         values[protein] = raw
 
     try:
-        table_path.write_text(json.dumps({
+        table = pd.DataFrame.from_dict(values, orient="index")
+        table.index.name = "protein"
+        table.to_csv(csv_path)
+        manifest_path.write_text(json.dumps({
             "format_version": _PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION,
             "sources": _protein_descriptor_table_sources(data_dir, protein_names),
-            "values": values,
         }))
     except OSError:
         pass  # never fatal -- a read-only data/ (or a race with another process
@@ -704,7 +704,7 @@ def fit_prior_calibration(design_train, labels_train, steps=400, learning_rate=0
     torch.nn.Parameter trained jointly with the rest of the network: a scalar (or a
     handful of them) and a many-parameter encoder competing by gradient descent to
     explain the SAME variance is underdetermined -- nothing pins the split between them,
-    and this project's own measurements (files/signal_state.md, train BA reaching
+    and this project's own measurements (files/results/signal_state.md, train BA reaching
     0.87-0.99 while generalisation collapses) are exactly the evidence that this network
     takes whichever shortcut is available rather than the "correct" one when several
     routes reach the same loss. Fitting on train labels ALONE, before the rest of the
@@ -761,7 +761,7 @@ def null_scores_leave_one_row_out(frame, similarity, index, neighbours,
     one of the two paths.
 
     `null_scores` is safe for held-out rows: under `--double_coldsplit` their species
-    never appears in `train` at all (0% overlap, files/marginals_and_cold_split.md
+    never appears in `train` at all (0% overlap, files/reference/marginals_and_cold_split.md
     section 6), so a held row cannot see its own label. Training rows are not so lucky
     -- every training row's species IS in the training reference set, and a species has
     similarity 1.0 to itself, so its own species is always the nearest (or tied-nearest)

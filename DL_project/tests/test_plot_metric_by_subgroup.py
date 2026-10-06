@@ -21,7 +21,7 @@ PITPNA       10              5              5                   5               
 
 
 def write_report(root, timestamp, seed, metric):
-    directory = root / "model" / "groups_IP_trans"
+    directory = root / "unsorted" / "model" / "groups_IP_trans"
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"test_metrics_{timestamp}_1parameters_4_8_{seed}_0.001_16_64.txt"
     path.write_text(REPORT.format(seed=seed, metric=metric), encoding="utf-8")

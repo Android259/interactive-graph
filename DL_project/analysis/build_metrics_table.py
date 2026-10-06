@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from dataloader.pair_descriptors import parse_descriptor_list
 from training.read_configuration import ModelConfig
 from training.run_metrics import RUN_METRIC_FIELDS
+from training.results_layout import in_family_layout, split_result_path
 MODEL_CONFIG_REPORT_FIELDS = tuple(field.name for field in fields(ModelConfig))
 CONFIG_FIELDS = tuple(
     field_name for field_name in MODEL_CONFIG_REPORT_FIELDS
@@ -149,7 +150,7 @@ CSV_FIELDS = (
     # reports on disk store confusion counts only, and AUC cannot be reconstructed
     # from them -- it needs the per-sample scores, which those runs did not keep.
     "AUC",
-    # THE metric for --lipid_coldsplit (files/lipid_coldsplit_architecture_direction.md
+    # THE metric for --lipid_coldsplit (files/results/lipid_coldsplit_architecture_direction.md
     # section 7j): AUC inside each protein, averaged over proteins, so "which protein is
     # this" -- free under that split, since every protein is in training -- cannot
     # contribute. Empty for runs written before it existed. The block count travels with
@@ -231,7 +232,8 @@ def resolve_label(
     exclusion_dir = exclusion_set.removeprefix("groups_")
     best_variant = ""
     best_delta = None
-    for log_path in script_logs_root.glob(f"*/{exclusion_dir}/*_seed{seed}_ep*_batch*.log"):
+    # script_logs/<family>/<variant>_<axis>/<group>/<log>
+    for log_path in script_logs_root.glob(f"*/*/{exclusion_dir}/*_seed{seed}_ep*_batch*.log"):
         match = LOG_FILENAME.match(log_path.name)
         if match is None or match.group("seed") != str(seed):
             continue
@@ -578,15 +580,17 @@ def _safe_path_part(value: str) -> str:
 
 def _resolve_run_dir(
     run_root: Path,
+    family: str,
     label: str,
     architecture: str,
     exclusion_set: str,
     run_id: str,
 ) -> Path:
-    new_dir = run_root.resolve() / _safe_path_part(label) / exclusion_set / f"train{run_id}"
+    """run/<family>/<label>/<set>/train<run_id>, the TensorBoard twin of a test report."""
+    new_dir = run_root.resolve() / family / _safe_path_part(label) / exclusion_set / f"train{run_id}"
     if new_dir.is_dir():
         return new_dir
-    return run_root.resolve() / architecture / exclusion_set / f"train{run_id}"
+    return run_root.resolve() / family / architecture / exclusion_set / f"train{run_id}"
 
 
 def metric_row(
@@ -603,18 +607,22 @@ def metric_row(
     metric_path = metric_path.resolve()
     metrics_root = metrics_root.resolve()
     relative_path = metric_path.relative_to(metrics_root)
-    if len(relative_path.parts) < 3:
-        raise ValueError(f"Metric path lacks label/exclusion directories: {relative_path}")
+    # test_metrics/<family>/<label>/<exclusion set...>/<report>
+    if len(relative_path.parts) < 4:
+        raise ValueError(
+            f"Metric path lacks family/label/exclusion directories: {relative_path}"
+        )
 
     filename_values = parse_metric_filename(metric_path)
     report_values, undefined = parse_report(metric_path)
-    architecture = relative_path.parts[0]
-    exclusion_set = "/".join(relative_path.parts[1:-1])
+    family, architecture, rest = split_result_path(relative_path.parts)
+    exclusion_set = "/".join(rest[:-1])
     label = report_values.get("label", "")
     if config is not None:
         label = str(getattr(config, "label", "") or label)
     run_dir = _resolve_run_dir(
         run_root,
+        family,
         label,
         architecture,
         exclusion_set,
@@ -819,6 +827,7 @@ def build_table(
             script_logs_root=script_logs_root,
         )
         for path in sorted(metrics_root.rglob("test_metrics_*.txt"))
+        if in_family_layout(path.resolve().relative_to(metrics_root.resolve()).parts)
     ]
     write_table(output, rows)
     return rows
@@ -829,7 +838,7 @@ def main() -> None:
     parser.add_argument("--metrics-root", type=Path, default=PROJECT_ROOT / "test_metrics")
     parser.add_argument("--run-root", type=Path, default=PROJECT_ROOT / "run")
     parser.add_argument("--script-logs-root", type=Path, default=PROJECT_ROOT / "script_logs")
-    parser.add_argument("--output", type=Path, default=PROJECT_ROOT / "metrics_summary.csv")
+    parser.add_argument("--output", type=Path, default=PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv")
     parser.add_argument("--no-tensorboard", action="store_true")
     args = parser.parse_args()
 
@@ -839,15 +848,6 @@ def main() -> None:
         args.output,
         include_tensorboard=not args.no_tensorboard,
         script_logs_root=args.script_logs_root,
-    )
-    from analyze_metrics_table import update_analysis
-    from analyze_feature_contributions import write_feature_contributions
-
-    update_analysis(args.output, args.output.with_name("metrics_analysis.txt"))
-    write_feature_contributions(
-        args.output,
-        args.output.with_name("feature_contributions.csv"),
-        "checkpoint_valid_balanced_accuracy",
     )
     print(f"Wrote {len(rows)} rows to {args.output}")
 

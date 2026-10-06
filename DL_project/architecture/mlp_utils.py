@@ -339,7 +339,7 @@ def lipid_edge_mlp_lambda(config):
     The constant divides the SUM of a node's incoming messages, so the value that makes
     the layer behave as its authors intended is the graph's mean degree. 30 is that for
     a protein contact graph and roughly ten times too large for a molecular one -- see
-    ModelConfig.lipid_edge_attention, and analysis/lipid_graph_degree.py for the
+    ModelConfig.lipid_edge_attention, and analysis/probes/lipid_graph_degree.py for the
     measured degree of this project's own lipid graphs.
     """
     own = getattr(config, "lipid_edge_mlp_lambda", None)

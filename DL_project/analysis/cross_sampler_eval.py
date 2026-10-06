@@ -31,7 +31,7 @@ built from the rows label's config, so a shape mismatch raises rather than silen
 loading part of the state.
 
 On which epoch. The weights a run actually tested (`best_model_state`, selected by pooled
-validation balanced accuracy, training/new_train.py:2219,2281) are saved only under
+validation balanced accuracy, training/new_train.py, main) are saved only under
 --save_checkpoint, which no lipid-cold-split label sets; --save_model_in_dynamics keeps
 DYNAMICS_CHECKPOINT_EPOCHS (1, 10, 49, 51, 120) instead. That does not damage this
 comparison: every contrast here holds the weights constant across row sets (or the rows
@@ -57,6 +57,7 @@ import torch
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "training"))
 sys.path.insert(0, PROJECT_ROOT)
+from training.results_layout import label_family  # noqa: E402
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "analysis"))
 
 # Same reason as new_train.py/checkpoint_scores.py: set before any thread exists.
@@ -87,7 +88,7 @@ def binary_auc(labels, scores):
 
 
 def within_protein_pair_auc(proteins, labels, scores):
-    """training/new_train.py::within_protein_pair_auc, over the columns available here.
+    """training/eval_metrics.py::within_protein_pair_auc, over the columns available here.
 
     Every (positive, negative) pair of rows SHARING a protein, concordant over total,
     ties half. Comparisons never cross a protein boundary, which is the whole reason the
@@ -199,7 +200,7 @@ def main():
                             print("WARNING leakage: " + message, flush=True)
                     for epoch in epochs:
                         checkpoint = os.path.join(
-                            PROJECT_ROOT, "models", weights_label, f"groups_{group}",
+                            PROJECT_ROOT, "models", label_family(weights_label), weights_label, f"groups_{group}",
                             "dynamics", f"seed{seed}_epoch{epoch}.pt",
                         )
                         if not os.path.exists(checkpoint):

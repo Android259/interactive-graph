@@ -4,7 +4,7 @@
 # training/new_train.py), without loading data or training.
 #
 # Usage: bash scripts/parameters.sh [ARGS_FILE]
-#   ARGS_FILE   name or path of a file under scripts/arg_files (default: test)
+#   ARGS_FILE   name or path of a file under arg_files (default: test)
 
 set -euo pipefail
 

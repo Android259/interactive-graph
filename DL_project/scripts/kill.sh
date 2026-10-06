@@ -24,9 +24,9 @@
 #
 # The label is the config's name, which is also the run's --label and the stem of
 # its arg_files/*.md. Which label a job belongs to is read off the directory it
-# writes into (script_logs/<label>_seeds01234/...), not off the job name: a name
+# writes into (script_logs/<family>/<label>_seeds01234/...), not off the job name: a name
 # reads "<label>_<group>_s<seed>" and both halves contain underscores, so by name
-# alone `dropout01` cannot be told apart from `dropout01_extra`.
+# alone `dpt01` cannot be told apart from `dropout01_extra`.
 #
 # On a cluster: cancel through OAR, wait for the jobs to actually stop, then pull
 # script_logs/ back, so the logs of what was killed are here to read. Also clears
@@ -93,8 +93,8 @@ matches_label() {
 }
 
 # The label a cluster job belongs to, from the directory it writes into:
-#   script_logs/<label>_seeds01234/<group>/<label>_seed<N>_<tag><id>.out
-#   script_logs/<label>_coldval_seeds01234/<group>/...
+#   script_logs/<family>/<label>_seeds01234/<group>/<label>_seed<N>_<tag><id>.out
+#   script_logs/<family>/<label>_coldval_seeds01234/<group>/...
 # Falls back to the job name when OAR reports no output path -- there the label
 # cannot be separated from the group, so such a job is matched loosely and said
 # to be matched loosely.
@@ -102,6 +102,8 @@ job_variant() {
     local name="$1" stdout_file="$2" top
     if [[ -n "${stdout_file}" ]]; then
         top="${stdout_file#*script_logs/}"
+        # <family>/ comes first (arg_files/<family>/, training/results_layout.py).
+        top="${top#*/}"
         top="${top%%/*}"
         top="${top%_seeds[0-9]*}"
         top="${top%_coldval}"

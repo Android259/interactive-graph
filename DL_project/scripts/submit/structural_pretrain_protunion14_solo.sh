@@ -41,8 +41,8 @@ NUM_WORKERS="${NUM_WORKERS:-4}"
 SEED="${SEED:-0}"
 MIN_FREE_GPU_MIB="${MIN_FREE_GPU_MIB:-16384}"
 GPU_WAIT_SECONDS="${GPU_WAIT_SECONDS:-60}"
-LOG_ROOT="${LOG_ROOT:-${PROJECT_DIR}/script_logs/structural_pretrain_protunion14}"
-STAGE1_ARGS_FILE="${STAGE1_ARGS_FILE:-${PROJECT_DIR}/scripts/arg_files/structural_pretrain_protunion14.md}"
+LOG_ROOT="${LOG_ROOT:-${PROJECT_DIR}/script_logs/structural_pretrain/structural_pretrain_protunion14}"
+STAGE1_ARGS_FILE="${STAGE1_ARGS_FILE:-${PROJECT_DIR}/arg_files/structural_pretrain/structural_pretrain_protunion14.md}"
 
 # shellcheck source=scripts/lib/args_file_lib.sh
 source "${PROJECT_DIR}/scripts/lib/args_file_lib.sh"

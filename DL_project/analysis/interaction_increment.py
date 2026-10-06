@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Does the network add anything the chemistry null model does not already say?
 
-files/interaction_signal_plan.md 3 establishes that neither AUC answers this on its own.
+files/history/geometric_edge.md establishes that neither AUC answers this on its own.
 The pooled AUC is dominated by the chemical marginal -- "does this lipid bind anything" --
 which a protein-blind predictor answers well. Ranking inside one protein removes the
 protein marginal but not the lipid one: the null model ignores the protein entirely and
@@ -195,7 +195,7 @@ def print_increment_report(table, split, neighbours, entity_column="FullIdentity
     """The printout main()/full_label_report.py use, given a table from increment_table --
     same reporting shape as null_model.py's print_null_model_report (mean over seeds
     per family, then mean/median/std over all seven at once, no WORKING-three/
-    other-four split -- see files/signal_state.md 6.4 and null_model.py's own
+    other-four split -- see files/results/signal_state.md 6.4 and null_model.py's own
     _group_stats), plus the within-entity rankings (per_protein_auc/per_lipid_auc)
     and per_pair_auc, gated by `entity_column` exactly the way null_model.py's report
     would gate them for the SAME similarity/index/entity_column increment_table was
@@ -248,7 +248,7 @@ def print_increment_report(table, split, neighbours, entity_column="FullIdentity
     print(last.groupby("fam")[alone_cols + grown_cols].mean().round(3).to_string())
 
     print(
-        f"\n=== mean AUC + increment, epoch {last_epoch} (files/signal_state.md 6.4: "
+        f"\n=== mean AUC + increment, epoch {last_epoch} (files/results/signal_state.md 6.4: "
         "fam column in the raw table carries the WORKING-three/other-four split) ==="
     )
     pooled_cols = ["chem", "net", "fit_chem", "fit_chem_net", "increment"]

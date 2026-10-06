@@ -35,6 +35,7 @@ import torch
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, PROJECT_ROOT)
+from training.results_layout import label_family  # noqa: E402
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "analysis"))
 
 from checkpoint_scores import (  # noqa: E402
@@ -120,7 +121,7 @@ class ColumnOverride:
 
 def run_group(label, group, seed, args, rng):
     modes = args.modes.split(",")
-    models_dir = os.path.join(PROJECT_ROOT, "models", label, f"groups_{group}")
+    models_dir = os.path.join(PROJECT_ROOT, "models", label_family(label), label, f"groups_{group}")
     argv = json.load(open(os.path.join(models_dir, f"seed{seed}.args.json")))
     conf = read_configuration(["mlp_feature_ablation"] + argv)
     if not conf.descriptor_mlp:
@@ -195,7 +196,7 @@ def run_group(label, group, seed, args, rng):
 
 
 def check_against_table(frame, label):
-    table = pd.read_csv(os.path.join(PROJECT_ROOT, "metrics_summary.csv"), low_memory=False)
+    table = pd.read_csv(os.path.join(PROJECT_ROOT, "results", "tables", "metrics_summary.csv"), low_memory=False)
     table = table[table["label"] == label].sort_values("datetime")
     latest = table.groupby(["exclusion_set", "seed"]).tail(1)
     base = frame[frame["feature"] == "baseline"].copy()
@@ -219,7 +220,7 @@ def main():
     parser.add_argument("--only_pairs", action="store_true", help="pairs only; skip the single features and groups")
     args = parser.parse_args()
 
-    root = os.path.join(PROJECT_ROOT, "models", args.label)
+    root = os.path.join(PROJECT_ROOT, "models", label_family(args.label), args.label)
     groups = (
         args.groups.split(",") if args.groups
         else sorted(os.path.basename(p)[len("groups_"):] for p in glob.glob(os.path.join(root, "groups_*")))

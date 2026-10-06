@@ -13,9 +13,9 @@ spread per label, per held-out set and pooled, out of one CSV per label.
 The number this produces is NOT interchangeable with a reported one. The dynamics
 milestones are fixed epochs (1, 10, 49, 51, 120); the reported number is measured on the
 checkpoint selected by pooled validation balanced accuracy. On the four configs that
-have both, the two rules differ by 0.00-0.10 where the SEM is 0.02-0.07
-(files/lcs_marginal_removal_and_solo_on_one_metric.md section 2). So recomputed values
-compare to each other, and to a reported value only with that caveat stated.
+have both, the two rules differ by 0.00-0.10 where the SEM is 0.02-0.07 (measured
+2026-09-08, before every config saved its selected weights by default). So recomputed
+values compare to each other, and to a reported value only with that caveat stated.
 
 Reads only: reads the CSVs cross_sampler_eval wrote, writes nothing.
 

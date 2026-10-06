@@ -11,7 +11,7 @@ from four scattered measurements into a curve with points where they are needed.
                 any structure that stays in training
 
 exactly as `analysis/coldsplit_geometry.isolation` defines it and as every x value in
-files/split_similarity_vs_metric.md is measured.
+files/results/split_similarity_vs_metric.md is measured.
 
 What it does, and why that is not a search over subsets. Start from one species. Sort
 every other species by how similar it is to that one, and move them into the block one
@@ -592,7 +592,7 @@ def emit_module(path, chosen, arguments, csv):
         "The key is the REQUESTED isolation and the value --lipid_isolation takes;",
         "BLOCK_GEOMETRY below records what each block actually measures, which is what",
         "belongs on a plot -- and a run measures it again for itself anyway",
-        "(analysis/split_similarity_vs_metric.py rebuilds every run's own split).",
+        "(analysis/probes/split_similarity_vs_metric.py rebuilds every run's own split).",
         "",
         "This file accumulates across separate `--emit_module` calls (see",
         "load_existing_module): each call below regenerated or added the keys it names,",

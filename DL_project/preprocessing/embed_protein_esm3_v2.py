@@ -9,7 +9,7 @@ sequence string read from an independently-generated FASTA file. ESM3 is a multi
 model (sequence, structure/coordinates, SASA, secondary structure, function); with
 only the sequence track populated, it runs in exactly the information regime of a
 plain sequence-only model (no better than ESM2 for this input) despite the extra
-architecture. See proposals_plm.md for the full analysis.
+architecture. See files/history/geometric_edge.md for the full analysis.
 
 This script instead builds the ESMProtein from data/esm3_input/<stem>.pdb, the
 consistent PDB produced by preprocessing/build_consistent_esm3_pdb.py, which carries:
@@ -25,14 +25,14 @@ SASA track: uses Voronota's `residue_sas_area` from coarse_graph_nodes.csv (alre
 feeding the GNN branch) rather than recomputing it independently, so the PLM and GNN
 branches see the same solvent-accessibility signal. This is a deliberate choice, not
 the only valid one: Voronota's tangent-sphere SASA and freesasa's Shrake-Rupley SASA
-were checked (analysis/check_sasa_correspondence.py) and agree almost perfectly
+were checked (analysis/probes/check_sasa_correspondence.py) and agree almost perfectly
 (Pearson r=0.9997 across 7794 residues from 35 proteins, linear fit
 voronota=1.006*freesasa-0.73), so recomputing via freesasa/ProteinChain.sasa() instead
 would give essentially the same values after that rescaling -- prefer Voronota's here
 for GNN-branch consistency; switch to freesasa if matching ESM3's own SASA-tokenizer
 calibration turns out to matter more in practice.
 
-NOT ADDED (see proposals_plm.md for why): secondary_structure (would need an mkdssp
+NOT ADDED (see files/history/geometric_edge.md for why): secondary_structure (would need an mkdssp
 run, not present in this repo's data) and function_annotations (would need real
 InterPro/GO annotations; the family label used elsewhere in this project, e.g.
 CRAL-TRIO, is not that vocabulary and would misuse the track).

@@ -3,7 +3,7 @@
 # wait/sync loop. Cluster-generic: entered through scripts/run_bigfoot.sh or
 # scripts/run_kraken.sh, which set CLUSTER_NAME.
 #
-# Takes an scripts/arg_files/*.md config (handed to launch/submit_grid.sh, which
+# Takes an arg_files/*.md config (handed to launch/submit_grid.sh, which
 # reads the series off the config) or, for the archived one-off runs, a submitter
 # under scripts/submit/.
 #
@@ -39,10 +39,10 @@ DO_SUMMARIZE="${DO_SUMMARIZE:-0}"
 usage() {
     printf 'Usage: bash %s [--complete] [--graphics] [--summarize] [--seeds=LIST] [--groups=LIST] [--no_groups=LIST] SUBMIT_SCRIPT_OR_ARGS_FILE [SUBMIT_SCRIPT_OR_ARGS_FILE ...]\n' "${0##*/}" >&2
     printf 'Example: bash %s common_attention_all_groups\n' "${0##*/}" >&2
-    printf 'Example: bash %s scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
-    printf 'Example: bash %s --seeds=0,1,2 scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
-    printf 'Example: bash %s --no_groups=GLTP scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
-    printf 'Example: bash %s --graphics --summarize scripts/arg_files/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
+    printf 'Example: bash %s arg_files/archive/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
+    printf 'Example: bash %s --seeds=0,1,2 arg_files/archive/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
+    printf 'Example: bash %s --no_groups=GLTP arg_files/archive/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
+    printf 'Example: bash %s --graphics --summarize arg_files/archive/nps3mlp_gat_residual.md\n' "${0##*/}" >&2
     printf 'Example: bash %s --graphics --summarize labelA labelB labelC\n' "${0##*/}" >&2
     printf '                 Queues every label'"'"'s whole grid together (one shared OAR\n' >&2
     printf '                 queue/drain), so they run concurrently across whatever this\n' >&2

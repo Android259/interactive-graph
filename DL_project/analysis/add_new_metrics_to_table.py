@@ -14,6 +14,7 @@ from build_metrics_table import (
     read_table,
     write_table,
 )
+from training.results_layout import in_family_layout
 
 
 SOURCE_KEY_FIELDS = (
@@ -26,15 +27,16 @@ SOURCE_KEY_FIELDS = (
 
 def metric_source_key(metric_path: Path, metrics_root: Path) -> tuple[str, ...]:
     relative_path = metric_path.resolve().relative_to(metrics_root.resolve())
-    if len(relative_path.parts) < 3:
+    # test_metrics/<family>/<label>/<exclusion set...>/<report>
+    if len(relative_path.parts) < 4:
         raise ValueError(
-            f"Metric path lacks label/exclusion directories: {relative_path}"
+            f"Metric path lacks family/label/exclusion directories: {relative_path}"
         )
 
     filename_values = parse_metric_filename(metric_path)
     values = {
         "datetime": format_datetime(filename_values["timestamp"]),
-        "exclusion_set": "/".join(relative_path.parts[1:-1]),
+        "exclusion_set": "/".join(relative_path.parts[2:-1]),
         "number_of_parameters": filename_values["number_of_parameters"],
         "seed": filename_values["seed"],
     }
@@ -58,8 +60,15 @@ def add_new_metrics(
     if metric_paths is None:
         metric_paths = sorted(metrics_root.rglob("test_metrics_*.txt"))
 
+    skipped_layout = 0
     for metric_path in metric_paths:
         metric_path = Path(metric_path)
+        relative_parts = metric_path.resolve().relative_to(metrics_root.resolve()).parts
+        if not in_family_layout(relative_parts):
+            # Old <root>/<label>/... layout (e.g. synced from a cluster not migrated
+            # yet): reading it would take the label for a family. Skipped, counted.
+            skipped_layout += 1
+            continue
         source_key = metric_source_key(metric_path, metrics_root)
         if source_key in existing_keys:
             continue
@@ -75,17 +84,13 @@ def add_new_metrics(
         existing_keys.add(source_key)
         added_paths.append(metric_path)
 
+    if skipped_layout:
+        print(
+            f"Skipped {skipped_layout} reports outside the <family>/<label>/ layout; "
+            "move them with scripts/tools/migrate_results_to_families.py"
+        )
     if added_paths:
         write_table(table, rows)
-        from analyze_metrics_table import update_analysis
-        from analyze_feature_contributions import write_feature_contributions
-
-        update_analysis(table, Path(table).with_name("metrics_analysis.txt"))
-        write_feature_contributions(
-            table,
-            Path(table).with_name("feature_contributions.csv"),
-            "checkpoint_valid_balanced_accuracy",
-        )
     return added_paths
 
 
@@ -100,7 +105,7 @@ def main() -> None:
     parser.add_argument(
         "--table",
         type=Path,
-        default=PROJECT_ROOT / "metrics_summary.csv",
+        default=PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv",
     )
     parser.add_argument("--no-tensorboard", action="store_true")
     parser.add_argument("metric_files", nargs="*", type=Path)

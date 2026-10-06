@@ -102,3 +102,27 @@ other 33 proteins keep their original tensors untouched.
 CPU inference is deterministic here: re-running an untouched protein (ATCAY) reproduced
 the committed tensor exactly (`torch.equal` true), which is the check to repeat before
 overwriting any stored embedding.
+
+## Foldseek (3Di structure tokens for `--deepclip_protein_tokens`)
+
+A standalone C++ binary, installed outside the repository.
+
+| | |
+|---|---|
+| source | authors' static build: `https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz` (no AVX2: `foldseek-linux-sse2.tar.gz`) |
+| archive sha256 | `f886374e29ebbf03849cd9c4c8929be00904856dd271627d8c3043607e2af95a` |
+| `foldseek version` | `463739e0014a1549a527de589102cde98f802f37` |
+| installed at | `~/tools/foldseek/bin/foldseek` |
+
+```bash
+mkdir -p ~/tools && cd ~/tools
+curl -sSL -o foldseek-linux-avx2.tar.gz https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz
+sha256sum foldseek-linux-avx2.tar.gz      # compare with the table
+tar xzf foldseek-linux-avx2.tar.gz
+python3 preprocessing/build_foldseek_3di.py --foldseek ~/tools/foldseek/bin/foldseek
+```
+
+The URL always serves the latest build; a different hash means a different version
+whose 3Di letters may differ -- rebuild `data/protein_3di.csv` and compare with the
+committed one. The script runs `createdb --chain-name-mode 0 --threads 1` -> `lndb` ->
+`convert2fasta` and checks each protein's sequence against its graph.

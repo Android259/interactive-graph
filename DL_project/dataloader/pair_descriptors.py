@@ -30,7 +30,7 @@ shares instead of a specific residue-double-bond contact. Dataloader.py separate
 builds the occupancy term (heavy_atom_count vs the SAME coarsened pocket_extent
 --compatibility_split_input's "clash" term uses) with pocket_lipid_compatibility's own
 coarsen_to_levels, so a held-out protein's raw cavity size still cannot leak through it
-(files/compat_input_audit.md).
+(files/results/compat_input_audit.md).
 """
 import functools
 import os
@@ -54,7 +54,7 @@ LIPID_DESCRIPTOR_NAMES = (
     "logp", "tpsa", "molar_refractivity", "rotatable_bond_count",
     "aromatic_ring_count", "ring_count",
     # Tail-only quantities, promoted from CANDIDATE_LIPID_DESCRIPTOR_NAMES once their
-    # eta^2 against head-group class had actually been read (files/lipid_coldsplit_
+    # eta^2 against head-group class had actually been read (files/results/lipid_coldsplit_
     # architecture_direction.md sections 7f-7h): they are the least class-specific of
     # everything measured -- tail_double_bonds 0.31 and tail_length_mean 0.34 against
     # tpsa 0.98 and hbond 0.99 -- and they are the chain half of the two-branch split
@@ -118,7 +118,7 @@ MIN_PAIR_DESCRIPTOR_NAMES = ("aromatic_contact_min", "hbond_match_min")
 # pocket residues of coarse_graph_nodes.csv plus the pocket atom coordinates of
 # pocketness.pdb, by dataloader/protein_graph_builder.py's pocket_descriptor() --
 # ModelConfig.pocket_descriptor_count must equal len(PROTEIN_DESCRIPTOR_NAMES).
-# Documented in files/pocket_shape_descriptors.md, which is to be updated in the same
+# Documented in files/reference/pocket_shape_descriptors.md, which is to be updated in the same
 # commit as any change here. Defined here (not in protein_graph_builder.py, which
 # imports it back as POCKET_DESCRIPTOR_NAMES) so the whole descriptor catalog --
 # lipid, protein, pair -- names in one file; the VALUES are still computed in
@@ -175,7 +175,7 @@ PROTEIN_DESCRIPTOR_NAMES = (
     # NOT part of POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES and is not a safe default
     # under --double_coldsplit/--protein_edge_*'s cross-family generalisation test.
     # Kept anyway: under --lipid_coldsplit the protein axis is not the held-out one
-    # (files/lipid_coldsplit_architecture_direction.md section 4), so family eta^2 is
+    # (files/results/lipid_coldsplit_architecture_direction.md section 4), so family eta^2 is
     # not a leak risk there, and section 7's partial-correlation ranking against
     # head-group-class diversity placed it ahead of the already-promoted ev28_q10.
     "hydropathy_mean",
@@ -191,13 +191,13 @@ PROTEIN_DESCRIPTOR_NAMES = (
     # MinCovDet robust covariance, instead of the percentile-span ratios pocket_extent/
     # pocket_elongation/pocket_flatness above use. Not replacements -- both formulas are
     # nameable, and an arg file picks one by name. Measured in
-    # files/pocket_shape_metric_comparison.md over seven variants: against the
+    # files/results/pocket_shape_metric_comparison.md over seven variants: against the
     # head-group-class target (the one family does not determine, eta^2 0.22),
     # pocket_elongation_lambda_sqrt is the only variant of the seven whose sign holds in
     # all three slices -- CRAL-TRIO +0.115, lipocalin +0.312, pooled +0.401
     # [0.061, 0.658] -- while the span-based pocket_elongation reverses inside both
     # families (-0.071/-0.156 against pooled +0.288), the between-family artifact pattern
-    # section 4a of files/pocket_shape_descriptors.md used to reject
+    # section 4a of files/reference/pocket_shape_descriptors.md used to reject
     # pocket_volume_per_sasa. eta^2 against family: extent 0.737, elongation 0.479,
     # flatness 0.256 -- all above the 0.235 floor, so none of the three is in
     # POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES (dataloader/protein_graph_builder.py); under
@@ -243,7 +243,7 @@ PROTEIN_DERIVED_DESCRIPTOR_NAMES = ("polar_share", "aromatic_share_coarse", "pol
 # Same twelve names, same formulas and same residue-class membership as
 # training/pair_baseline_common.py's POCKET_CHEMISTRY_NAMES + POCKET_CAVITY_NAMES --
 # that equality is the point. The Kron-RLS side saw these first and searched 16369
-# subsets over them (cron_test_metrics/exhaustive_protein_side_search.csv); four --
+# subsets over them (results/tables/cron_test_metrics/exhaustive_protein_side_search.csv); four --
 # basic_share_core, pocket_free_volume, basic_share_rim, hbond_donor_share_core --
 # appear in nearly every leading combination there, and the winning set beats the
 # seven-descriptor incumbent it was asked to defend (AUC_within_protein 0.6888 vs
@@ -355,7 +355,7 @@ _COARSE_SUFFIX = "_coarse="
 #   N=2 : 35            (degenerate before the coarsen_to_levels fix, still trivial)
 #   N=3 : 12, 11, 12     <- picked: matches this project's own established "~12 per
 #                            band is far enough from a protein id" reasoning
-#                            (files/compat_input_audit.md's eta^2 argument for
+#                            (files/results/compat_input_audit.md's eta^2 argument for
 #                            coarse_extent, which this mirrors) without being any
 #                            finer than that already-vetted precedent.
 #   N=4 : 9, 8, 9, 9
@@ -796,7 +796,7 @@ def tail_length_asymmetry(smiles):
     Class-neutral BY CONSTRUCTION, which is the point: PC 16:0/18:1 and PE 16:0/18:1
     carry the same asymmetry under different head groups, so this cannot act as the
     head-group label the whole-molecule descriptors turned out to be
-    (files/lipid_coldsplit_architecture_direction.md section 7f). Not a nuisance
+    (files/results/lipid_coldsplit_architecture_direction.md section 7f). Not a nuisance
     quantity either -- acyl chain asymmetry, with polyunsaturation, is what lets brain
     phospholipid membranes vesiculate without leaking (Manni et al., eLife 2018).
     """
@@ -1289,7 +1289,7 @@ _MEASURES = {
     "rotatable_bond_count": rotatable_bond_count,
     "aromatic_ring_count": aromatic_ring_count,
     "ring_count": ring_count,
-    # Candidate head-group-neutral set (files/lipid_coldsplit_architecture_direction.md
+    # Candidate head-group-neutral set (files/results/lipid_coldsplit_architecture_direction.md
     # section 7g). Cached and measurable, deliberately NOT added to
     # LIPID_DESCRIPTOR_NAMES: nothing model-facing changes until their eta^2 by
     # head-group class has actually been read.
@@ -1307,7 +1307,7 @@ _MEASURES = {
 }
 
 # Measured in section 7f/7g, not yet an input to any network. Kept next to _MEASURES so
-# analysis/lipid_descriptor_class_identity.py can name them without either duplicating
+# analysis/probes/lipid_descriptor_class_identity.py can name them without either duplicating
 # the list or widening LIPID_DESCRIPTOR_NAMES, which would change what the model sees.
 CANDIDATE_LIPID_DESCRIPTOR_NAMES = (
     "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
@@ -1550,7 +1550,7 @@ def pair_descriptor_value(name, lipid_values, protein_values):
                               only, distinct from hydropathy_core/hydropathy_chain_
                               match above, which read the DEEP half) against the
                               headgroup's own H-bond donor/acceptor count. Motivated
-                              by files/protein_lipid_binding_family_literature.md:
+                              by files/literature/protein_lipid_binding_family_literature.md:
                               IP_trans/START/OSBP's documented specificity mechanism
                               is recognising a polar/charged headgroup AT THE POCKET
                               ENTRANCE (phosphoinositide, choline, PI(4)P respectively)
@@ -1563,7 +1563,7 @@ def pair_descriptor_value(name, lipid_values, protein_values):
                               pair_descriptors.npr1) -- both are the SAME physical
                               axis (elongated vs compact 3D shape), one for the
                               cavity, one for the ligand. Motivated by the OSBP/ORP
-                              literature (files/protein_lipid_binding_family_
+                              literature (files/literature/protein_lipid_binding_family_
                               literature.md): that family's documented specificity
                               mechanism is a hydrophobic TUNNEL whose usable diameter/
                               length, not chemistry, decides whether a given ligand's

@@ -7,7 +7,7 @@ Reuses preprocessing/lipid_embedding_identity_check.py's own embedding-loading a
 per-species mean-pooling (`species_embeddings`: mean over MolFormer's token dimension,
 then over a species' candidate isomer structures) so this is the SAME 768-dim
 per-species vector that session already measured to be ~75% lipid-class variance
-(files/descriptors_baseline_leak_confirmed.md) -- this script only turns that vector
+(files/results/descriptors_baseline_leak_confirmed.md) -- this script only turns that vector
 into a pairwise similarity matrix, it does not recompute or re-derive the embedding.
 
 Similarity transform: dataloader.chemistry_prior._standardised_similarity (standardise

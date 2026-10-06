@@ -5,7 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from training.results_layout import label_family  # noqa: E402
 
 
 def read_fields(path: Path) -> dict[str, str]:
@@ -24,7 +28,8 @@ def main() -> int:
     parser.add_argument("--cold-split", action="store_true")
     args = parser.parse_args()
 
-    label_root = Path(args.reports_root) / args.label
+    # test_metrics/<family>/<label>/ -- training/results_layout.py
+    label_root = Path(args.reports_root) / label_family(args.label) / args.label
     completed: set[tuple[str, int]] = set()
     # "random" alongside "groups_*": a --random_split label holds nothing out, so
     # new_train.py files it under that name instead of a "groups_" directory, and a

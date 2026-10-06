@@ -71,9 +71,9 @@ done
 printf 'Queue drained.\n'
 
 checkpoint_check="$(ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
-    "test -f '${REMOTE_PROJECT}/models/structural_pretrain_protunion14/random/seed0.pt' && echo yes || echo no")"
+    "test -f '${REMOTE_PROJECT}/models/structural_pretrain/structural_pretrain_protunion14/random/seed0.pt' && echo yes || echo no")"
 if [[ "${checkpoint_check}" != "yes" ]]; then
-    printf 'Stage 1 finished but models/structural_pretrain_protunion14/random/seed0.pt does not exist on %s -- it likely failed. Check script_logs/structural_pretrain_protunion14/ there before running stage 2 by hand. Not launching stage 2.\n' \
+    printf 'Stage 1 finished but models/structural_pretrain/structural_pretrain_protunion14/random/seed0.pt does not exist on %s -- it likely failed. Check script_logs/structural_pretrain_protunion14/ there before running stage 2 by hand. Not launching stage 2.\n' \
         "${CLUSTER_NAME}" >&2
     exit 1
 fi

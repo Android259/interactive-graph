@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Download run metrics -- run/, script_logs/, metrics_summary.csv and
-# metrics_analysis.txt -- from the git remote branch onto this machine. The
+# Download run metrics -- run/, script_logs/ and results/tables/metrics_summary.csv
+# -- from the git remote branch onto this machine. The
 # mirror of scripts/push_metrics_to_git.sh.
 #
 #   bash scripts/pull_metrics_from_git.sh
@@ -23,7 +23,7 @@ REMOTE="${REMOTE:-origin}"
 PULL_BRANCH="${PULL_BRANCH:-kalinina-main-patch-61030}"
 DRY_RUN="${DRY_RUN:-0}"
 
-METRICS_PATHS=(run script_logs metrics_summary.csv metrics_analysis.txt)
+METRICS_PATHS=(run script_logs results/tables/metrics_summary.csv)
 
 # Explicit destination refspec: a plain `git fetch origin branch` only
 # guarantees FETCH_HEAD is updated, not refs/remotes/origin/branch. Naming the
@@ -39,7 +39,7 @@ git fetch "${REMOTE}" "+${PULL_BRANCH}:refs/remotes/${remote_ref}"
 existing_paths=()
 for p in "${METRICS_PATHS[@]}"; do
     # `cmd && arr+=(...)` would exit the whole script under set -e the moment
-    # cmd fails once (e.g. metrics_analysis.txt not yet on the remote) -- an
+    # cmd fails once (e.g. results/tables/metrics_summary.csv not yet on the remote) -- an
     # if with no else always exits 0, so it can't trip that.
     if git cat-file -e "${remote_ref}:${p}" 2>/dev/null; then
         existing_paths+=("${p}")

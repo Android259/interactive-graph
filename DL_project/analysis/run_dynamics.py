@@ -12,7 +12,7 @@ TensorBoard event files and surfaces the trajectory instead of a summary number:
   * optional paired comparison of two run families matched on (group, seed).
 
 Layout assumed (leave-one-group-out sweeps):
-    <run_root>/<label>/groups_<GROUP>/train<...>parameters_<m>_<HEADS>_<seed>_..._<hiddim>/
+    <run_root>/<family>/<label>/groups_<GROUP>/train<...>parameters_<m>_<HEADS>_<seed>_..._<hiddim>/
         events.out.tfevents.*
 Runs without the groups_ level (group="") and a label pointing straight at a
 single run directory are both handled.
@@ -30,6 +30,10 @@ import glob
 import os
 import statistics
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from training.results_layout import label_dir  # noqa: E402
 
 # Short key -> TensorBoard scalar tag. Extend freely; unknown tags are skipped.
 EPOCH_SERIES = {
@@ -69,7 +73,7 @@ def parse_group(run_dir: str) -> str:
 
 def discover_runs(root: str, label: str) -> list[str]:
     """Return every run directory (holding tfevents) under a run family label."""
-    base = os.path.join(root, label)
+    base = str(label_dir(root, label))  # run/<family>/<label> (training/results_layout.py)
     dirs = sorted(glob.glob(os.path.join(base, "groups_*", "train*")))
     if not dirs:
         dirs = sorted(glob.glob(os.path.join(base, "train*")))

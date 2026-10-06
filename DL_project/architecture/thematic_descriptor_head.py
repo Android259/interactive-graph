@@ -77,7 +77,7 @@ class ForcedInteraction(torch.nn.Module):
     reconstruct one side's identity directly and ignore the product term.
 
     This alone does not prove the output cannot reconstruct one side's identity --
-    see files/thematic_interaction_architecture.md's "known limitation": a fingerprint
+    see files/results/thematical_paths_summary.md's "known limitation": a fingerprint
     jointly correlated across both sides at once (present in v_a AND v_b together,
     absent from either alone) survives this structural constraint and the
     orthogonality penalty below unchanged, because it satisfies the exact same "not
@@ -117,7 +117,7 @@ class ForcedInteraction(torch.nn.Module):
         # signed-sqrt+L2-norm fix was designed to protect -- chaining that fix a
         # second time on top of already-normalised inputs is untested by either paper
         # and empirically correlates with the longer/more frequent flat-0.5-BA startup
-        # (files/thematical_paths_dynamics_and_pair_auc.md section 7).
+        # (files/results/thematical_paths_summary.md).
         self.normalize = normalize
 
     def forward(self, a, b):
@@ -138,7 +138,7 @@ class ThematicDescriptorHead(torch.nn.Module):
     only express what needs BOTH groups, and each group vector only what needs BOTH
     sides of it.
 
-    See files/thematic_interaction_architecture.md for the design discussion, the
+    See files/results/thematical_paths_summary.md for the design discussion, the
     known limitation (a fingerprint jointly correlated across both sides of an
     interaction survives it unchanged), and the risk/benefit writeup this class
     implements.
@@ -312,7 +312,7 @@ def thematical_orthogonality_loss(head, labels):
     dann_family's class-conditional mean (architecture/final_layer.py's own
     docstrings).
 
-    Known blind spot (files/thematic_interaction_architecture.md): a fingerprint
+    Known blind spot (files/results/thematical_paths_summary.md): a fingerprint
     jointly correlated across a and b at once is invisible to probe_a/probe_b (neither
     side alone predicts it) and therefore untouched by `penalty` -- HSIC closes the
     linear-vs-nonlinear gap a covariance penalty had, but not this one: no single-side

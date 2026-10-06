@@ -59,7 +59,10 @@ SYNC_EXCLUDES=(
     # Logs.
     --exclude='/script_logs/'
 
-    # Aggregated tables, including the timestamped .bak_*/.backup copies -- a
+    # Aggregated tables, now under results/tables/. The root-level patterns below
+    # are their old location, kept so stale copies on a cluster stay protected.
+    --exclude='/results/'
+    # Old root location, including the timestamped .bak_*/.backup copies -- a
     # metrics_summary*.csv pattern would miss those, they do not end in .csv.
     --exclude='/metrics_summary*'
     --exclude='/metrics_analysis*'
@@ -101,7 +104,7 @@ SYNC_EXCLUDES=(
     #     so every run silently fell back to the slow uncached per-protein CSV read
     #     instead of raising, the only visible symptom being --protein_edge_attention/
     #     --protein_edge_mlp jobs failing with "require protein residue frames";
-    #   data/protein_graph_tensors* -- the cache itself (plus its --no_protein_geometry
+    #   data/cache/protein_graph_tensors* -- the cache itself (plus its --no_protein_geometry
     #     variant and both .manifest.json files), for the same reason as data/lipid_
     #     graphs/ above: rebuilt locally, it has to reach every cluster, not sit excluded
     #     next to the source files whose mtimes it is keyed on.
@@ -109,7 +112,8 @@ SYNC_EXCLUDES=(
     # before the exclusion they carve out of.
     --include='/data/'
     --include='/data/Processed_*.csv'
-    --include='/data/Tanimoto_compact*'
+    --include='/data/cache/'
+    --include='/data/cache/Tanimoto_compact*'
     --include='/data/*.py'
     # Small, external-source lookup tables the running model reads directly rather
     # than deriving on the fly -- neither is reproducible from something else already
@@ -135,14 +139,14 @@ SYNC_EXCLUDES=(
     # pocket-parse pass (minutes on the full interaction table -- GRICAD kills anything
     # over 600s of CPU on a login node, which is what motivated this) that a from-
     # scratch remote build otherwise costs on every table change.
-    --include='/data/pair_descriptor_cache_*.json'
+    --include='/data/cache/pair_descriptor_cache_*.json'
     --include='/data/lipid_graphs/'
     --include='/data/lipid_graphs/**'
     --include='/data/graphs/'
     --include='/data/graphs/**'
-    --include='/data/protein_graph_tensors*'
+    --include='/data/cache/protein_graph_tensors*'
     # Per-protein ESM3 embeddings -- the actual reason PITPNA's graph<->embedding
-    # mismatch surfaced on Bigfoot at all (files/split_similarity_four_baselines_and_
+    # mismatch surfaced on Bigfoot at all (files/results/split_similarity_four_baselines_and_
     # deepclip.md): unlike data/graphs/ just above, this directory used to sit fully
     # excluded, on the same reasoning as the Pretrained MoLFormer/ESM3 CHECKPOINT
     # weights below -- "the copy already on the cluster is authoritative, do not mirror
@@ -203,6 +207,7 @@ SYNC_PROTECT=(
     --filter='P /testmode_outputs/'
     --filter='P /graphics/'
     --filter='P /script_logs/'
+    --filter='P /results/'
     --filter='P /metrics_summary*'
     --filter='P /metrics_analysis*'
     --filter='P /feature_contributions*'

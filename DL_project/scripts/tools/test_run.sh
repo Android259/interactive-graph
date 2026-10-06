@@ -2,7 +2,7 @@
 # Run training/new_train.py locally with the flags from one arg_files/*.md file.
 #
 # Usage: bash scripts/test_run.sh [ARGS_FILE] [GROUP] [SEED]
-#   ARGS_FILE   name or path of a file under scripts/arg_files (default: test)
+#   ARGS_FILE   name or path of a file under arg_files (default: test)
 #   GROUP       defaults to START
 #   SEED        defaults to 0
 
@@ -27,7 +27,7 @@ fi
 label="$(basename "${ARGS_FILE}" .md)"
 args_template="$(args_file_flags "${ARGS_FILE}")"
 
-log_dir="script_logs/${label}"
+log_dir="script_logs/$(label_family "${label}")/${label}"
 mkdir -p "${log_dir}"
 log_file="${log_dir}/${label}_seed${SEED}_${GROUP}.log"
 

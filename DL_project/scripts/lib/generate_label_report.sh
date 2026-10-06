@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Writes graphics/<label>/ (plots via generate_config_graphics.sh) and/or
-# graphics/<label>/<label>.md (analysis/summarize_label.py +
+# Writes graphics/<family>/<label>/ (plots via generate_config_graphics.sh) and/or
+# graphics/<family>/<label>/<label>.md (analysis/summarize_label.py +
 # analysis/full_label_report.py) for one label.
 #
 # The single implementation of "what --graphics/--summarize actually does",
@@ -13,6 +13,8 @@
 # Usage: generate_label_report.sh <label> <seeds_csv> <do_graphics 0|1> <do_summarize 0|1>
 set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=scripts/lib/args_file_lib.sh
+source "${PROJECT_ROOT}/scripts/lib/args_file_lib.sh"
 
 label="$1"
 seeds_csv="$2"
@@ -25,7 +27,9 @@ SKIP_AUC="${SKIP_AUC:-0}"
 
 (( do_graphics || do_summarize )) || exit 0
 
-mkdir -p "${PROJECT_ROOT}/graphics/${label}"
+# graphics/<family>/<label>/ -- the label's arg_files family (training/results_layout.py).
+label_graphics_dir="graphics/$(label_family "${label}")/${label}"
+mkdir -p "${PROJECT_ROOT}/${label_graphics_dir}"
 
 # Every caller (run_cluster.sh, wait_and_sync.sh's pending_reports handoff)
 # already branches on this script's exit status to decide whether to leave a
@@ -45,7 +49,7 @@ if (( do_graphics )); then
     # failure is still visible from the exit code below.
     if bash "${PROJECT_ROOT}/scripts/generate_config_graphics.sh" "${label}" \
             > /dev/null 2>&1; then
-        printf 'Graphics written under graphics/%s/.\n' "${label}"
+        printf 'Graphics written under %s/.\n' "${label_graphics_dir}"
     else
         printf 'generate_config_graphics.sh failed for %s (rerun it directly to see why).\n' \
             "${label}" >&2
@@ -54,7 +58,7 @@ if (( do_graphics )); then
 fi
 
 if (( do_summarize )); then
-    summary_path="${PROJECT_ROOT}/graphics/${label}/${label}.md"
+    summary_path="${PROJECT_ROOT}/${label_graphics_dir}/${label}.md"
     summarize_failed=0
     full_report_failed=0
     {

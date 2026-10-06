@@ -155,7 +155,7 @@ class PLIDataset(
         # lipid class) Reuter et al.'s Figure 3a documents as a real interaction to
         # Interaction=1, keyed by pair_id = ORIGINAL row position in this table
         # (data/fig3a_disputed_negative_pair_ids.csv, built and explained in
-        # files/reuter_fig3a_dataset_consistency.md). Must run before --family_only/
+        # files/results/reuter_fig3a_dataset_consistency.md). Must run before --family_only/
         # --drop_proteins reset the index just below (pair_id only means "row position
         # in the fresh-read table" until then) and before _sample_interactions,
         # _derive_lipid_class_holdout and chemistry-prior
@@ -239,39 +239,13 @@ class PLIDataset(
         self.csvtrain, self.csvalidate, self.csvtest = self._split_interactions(seed)
         self.train_orig_indexes = torch.as_tensor(self.csvtrain["pair_id"].values, dtype=torch.long)
 
-        # Two files with very different costs and very different reach:
-        #
-        #   Total_multiple_lipid_batch.npy    (214 KB) -- the pair id of every row.
-        #       Needed by EVERY run: `id2pos` below is built from it, and that is what
-        #       `tanimoto_pos` indexes for any sample weighting at all (protein group,
-        #       protein class, ...), not just the Tanimoto one.
-        #   Total_tanimoto_matrix_uint8.npy   (2.8 GB) -- the pairwise similarities.
-        #       Read by `get_tanimoto_weights` and nothing else, so only --tanimoto_weight
-        #       actually needs it.
-        #
-        # Loading the 2.8 GB matrix unconditionally made every run depend on a file that
-        # is excluded from the cluster sync (scripts/cluster_sync_excludes.sh keeps
-        # /data/*.csv and the embedding dirs, not *.npy). When it went missing on
-        # Bigfoot, all 45 jobs of a batch died in `__init__` within seconds -- including
-        # the ones that never asked for Tanimoto weights.
-        # Only Tanimoto weighting needs this file. The protein-group and protein-class
-        # weights use id2pos purely as *cell addresses*: get_protein_weights writes
-        # weights[id2pos[pair_id]] and the loss reads that same cell back through
-        # tanimoto_pos, so any bijection row-id -> 0..N-1 yields the identical vector.
-        # get_tanimoto_weights is the one that cannot: it averages similarity over the
-        # matrix rows belonging to one interaction, and which rows those are is exactly
-        # what this file records and what no renumbering can reconstruct.
-        #
-        # Ranking the train row ids reproduces the file's own bijection rather than
-        # merely an equivalent one, because the file covers the interaction table
-        # completely -- 11018 rows, 11018 distinct ids, none missing, checked against
-        # Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed_CandidatesCompleted.csv.
-        # Both maps are then "rank among the sorted train ids", entry for entry. Should a
-        # future table stop covering every row, the two would diverge: the file's map
-        # omits the uncovered ids and id2pos.get(..., -1) hands those rows position -1,
-        # which indexes the LAST weight rather than raising, so they would silently carry
-        # another protein's weight. The ranked map has a position for every train row and
-        # cannot do that.
+        # Only --tanimoto_weight needs Tanimoto similarities, and it reads them from the
+        # compact artifacts (preprocessing/build_tanimoto_compact.py, a few MiB). Every
+        # other run builds id2pos by ranking the train row ids: the protein-group and
+        # protein-class weights use id2pos purely as *cell addresses*
+        # (weights[id2pos[pair_id]], read back through tanimoto_pos), so any bijection
+        # row-id -> 0..N-1 yields the identical vector, and the ranked map has a
+        # position for every train row.
         self._needs_tanimoto_rows = bool(self.config.tanimoto_weight)
 
         self.train_tanimoto_batch = None
@@ -294,27 +268,21 @@ class PLIDataset(
                 source_csv=interaction_csv_path(root_dir),
                 isomeric=bool(getattr(self.config, "lipid_isomers", False)),
             )
-            if compact is not None:
-                selected = np.flatnonzero(np.isin(compact.row_ids, train_idx))
-                self.train_tanimoto_batch = torch.from_numpy(
-                    np.array(compact.row_ids[selected], copy=True)
+            if compact is None:
+                raise FileNotFoundError(
+                    "--tanimoto_weight needs current compact Tanimoto artifacts "
+                    f"(Tanimoto_compact{'_isomeric' if getattr(self.config, 'lipid_isomers', False) else ''}_* "
+                    f"in {root_dir}/cache); they are missing or older than the interaction table. "
+                    "Rebuild: python3 preprocessing/build_tanimoto_compact.py"
+                    + (" --isomeric" if getattr(self.config, "lipid_isomers", False) else "")
                 )
-                self.train_tanimoto_matrix = torch.from_numpy(
-                    compact.submatrix(selected)
-                )
-            else:
-                tanimoto_batch_path = root_dir + "/Total_multiple_lipid_batch.npy"
-                tanimoto_batch = np.load(tanimoto_batch_path, mmap_mode="r")
-                selected = np.flatnonzero(np.isin(tanimoto_batch, train_idx))
-                self.train_tanimoto_batch = torch.from_numpy(
-                    np.array(tanimoto_batch[selected], copy=True)
-                )
-                tanimoto_matrix_path = root_dir + "/Total_tanimoto_matrix_uint8.npy"
-                tanimoto_matrix = np.load(tanimoto_matrix_path, mmap_mode="r")
-                self.train_tanimoto_matrix = torch.from_numpy(
-                    np.array(tanimoto_matrix[np.ix_(selected, selected)], copy=True)
-                )
-                del tanimoto_matrix, tanimoto_batch
+            selected = np.flatnonzero(np.isin(compact.row_ids, train_idx))
+            self.train_tanimoto_batch = torch.from_numpy(
+                np.array(compact.row_ids[selected], copy=True)
+            )
+            self.train_tanimoto_matrix = torch.from_numpy(
+                compact.submatrix(selected)
+            )
             gc.collect()
 
             unique_batch_ids = torch.unique(self.train_tanimoto_batch, sorted=True)
@@ -610,7 +578,7 @@ class PLIDataset(
     def _protein_subclass_key(frame):
         """(LTPProtein, article lipid subclass) of every row, as one string key.
 
-        The SAME key analysis/protein_subclass_label_baseline.py builds -- same article
+        The SAME key analysis/baselines/protein_subclass_label_baseline.py builds -- same article
         classification, same "?unclassified" fallback, same "|" join -- because the only
         reason this key exists here is to keep the rows the network is scored on
         identical to the rows that no-model planka is scored on. A different spelling of
@@ -640,7 +608,7 @@ class PLIDataset(
         Measured on --lipid_species_coldsplit=0.15 over the five standard seeds: 10.1% of
         test rows and 9.8% of valid rows, but only 2.9%/2.5% of the positives, so the
         filter costs little of what is actually being predicted
-        (files/species15_information_above_protein_subclass.md sections 1-2).
+        (files/proposals/species15_information_above_protein_subclass.md sections 1-2).
         """
         return self._protein_subclass_key(frame).isin(
             set(self._protein_subclass_key(csvtrain))
@@ -756,7 +724,7 @@ class PLIDataset(
             # The two halves unmixed, so _compute_compatibility_input can build a
             # NON-additive pair term out of them. raw_compatibility's difference cannot
             # carry one: its two-way interaction is identically zero
-            # (files/compat_input_audit.md 1). Reads Interaction nowhere, same as the
+            # (files/results/compat_input_audit.md 1). Reads Interaction nowhere, same as the
             # difference does not.
             chain, extent, missing = raw_compatibility_parts(
                 csv, self.ROOT_DIR, getattr(self.config, "lipid_isomers", False)
@@ -965,7 +933,7 @@ class PLIDataset(
     def _compute_compatibility_split_input(self, raw_columns):
         """Two inputs instead of one difference -- the marginal and the pair term apart.
 
-        What the single difference conflates, measured in files/compat_input_audit.md:
+        What the single difference conflates, measured in files/results/compat_input_audit.md:
 
           * its whole ranking value inside a protein IS the chain length -- `chain_only`
             and `difference` score 0.579 there, identically, in every family. That half
@@ -1059,6 +1027,100 @@ class PLIDataset(
             )
             setattr(self, name, frame.assign(**assigned))
 
+    def _pair_descriptor_features_cache_key(self):
+        """Fingerprint for the finished (standardised, per-row) --pair_descriptors/
+        --descriptor_names feature columns _compute_pair_descriptors writes onto
+        csvtrain/csvalidate/csvtest.
+
+        Keyed by the FULL config (every bool/int/float/str/None field, not a hand-
+        picked descriptor-only subset) plus the exact pair_id set of every split --
+        train-only statistics (fill_train_mean, the coarse_extent/named-catalog
+        _coarse=<spec> bucket edges, and the z-score mean/spread every output column
+        goes through) all read self.csvtrain, and ITS membership is what actually
+        changes with --excluded_groups/--test_group (directly) and --seed (indirectly,
+        through dataloader/sampler.py's negative sampling) -- hashing the resulting
+        pair_id sets covers both without this key having to separately name every
+        config field that can move them. The cost side of that choice: a config field
+        with no bearing on this computation (--hiddim, say) still changes the key and
+        misses a cache another run's otherwise-identical descriptors would have hit --
+        accepted, because the failure mode in the other direction (serving descriptor
+        values computed under a different train split as if they were this run's) is
+        a silent correctness bug, not a speed one.
+
+        Also covers: the on-disk source tables this computation reads (data/
+        lipid_descriptors.csv, data/protein_descriptors.csv, each via its own
+        manifest's size/mtime -- a rebuild of either invalidates every key that read
+        it) and a hash of this method's own source (a formula change here must not
+        serve a cache written under the old formula).
+        """
+        import hashlib
+        import inspect
+        import json
+        from pathlib import Path
+
+        config_dict = {
+            name: value for name, value in vars(self.config).items()
+            if isinstance(value, (bool, int, float, str, type(None)))
+        }
+
+        def table_state(path):
+            path = Path(path)
+            if not path.exists():
+                return None
+            stat = path.stat()
+            return [stat.st_size, stat.st_mtime_ns]
+
+        root_dir = Path(self.ROOT_DIR)
+        payload = {
+            "config": config_dict,
+            "train_pair_ids": sorted(int(x) for x in self.csvtrain["pair_id"]),
+            "valid_pair_ids": (
+                sorted(int(x) for x in self.csvalidate["pair_id"])
+                if not self.csvalidate.empty else []
+            ),
+            "test_pair_ids": (
+                sorted(int(x) for x in self.csvtest["pair_id"])
+                if not self.csvtest.empty else []
+            ),
+            "lipid_table": table_state(root_dir / "lipid_descriptors.manifest.json"),
+            "protein_table": table_state(root_dir / "protein_descriptors.manifest.json"),
+            "code": hashlib.sha256(
+                inspect.getsource(PLIDataset._compute_pair_descriptors).encode()
+            ).hexdigest()[:16],
+        }
+        blob = json.dumps(payload, sort_keys=True, default=str).encode()
+        return hashlib.sha256(blob).hexdigest()[:24]
+
+    def _pair_descriptor_features_cache_path(self, key):
+        from pathlib import Path
+
+        return Path(self.ROOT_DIR) / "cache" / f"pair_descriptor_features_{key}.pt"
+
+    @staticmethod
+    def _load_pair_descriptor_features_cache(path):
+        """{"csvtrain"/"csvalidate"/"csvtest": {column: array}} if a cache for this
+        exact fingerprint exists, else None. Existence under the fingerprinted name
+        IS validity here -- see _pair_descriptor_features_cache_key -- so there is no
+        separate staleness check to run on a hit.
+        """
+        if not path.exists():
+            return None
+        try:
+            return torch.load(path, weights_only=False)
+        except Exception:
+            # Never fatal -- a truncated/corrupt file (e.g. a crashed write) falls
+            # back to recomputing and overwriting it, same as any other cache miss.
+            return None
+
+    @staticmethod
+    def _save_pair_descriptor_features_cache(path, split_columns):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(split_columns, path)
+        except OSError:
+            pass  # never fatal -- a read-only data/ still returns correct values,
+                  # just unpersisted, same discipline as protein_descriptor_table
+
     def _compute_pair_descriptors(self, csv):
         """Attach --pair_descriptors' 6 standardised columns (5 under
         --no_pair_descriptor_extent, 8 under --pair_descriptor_pocket_shares_split).
@@ -1069,7 +1131,7 @@ class PLIDataset(
         --compatibility_split_input's "clash" coarsens it, on TRAIN-only quantile
         edges, so a held-out protein's raw cavity size cannot identify it the way full-
         resolution pocket_extent does, eta^2 0.78 against protein identity per
-        files/compat_input_audit.md), and occupancy = relu(cbrt(heavy_atom_count) -
+        files/results/compat_input_audit.md), and occupancy = relu(cbrt(heavy_atom_count) -
         coarse_extent), the one genuine pair term here -- a cheap, docking-free stand-in
         for the paper's bound-ligand/cavity volume ratio (see
         dataloader/pair_descriptors.py for why 3D volume itself is not attempted). Two
@@ -1134,6 +1196,25 @@ class PLIDataset(
         if not (pair_descriptors_on or two_paths_on or named_catalog_on):
             return
 
+        # Disk-shared cache for the FINISHED (standardised, per-row) feature columns
+        # this method writes -- see _pair_descriptor_features_cache_key for why the
+        # key covers the full config plus every split's exact pair_id set rather than
+        # a hand-picked subset: train-only statistics (fill_train_mean, the coarse_
+        # extent/named-catalog _coarse=<spec> bucket edges, and the z-score mean/
+        # spread every _pair_desc_*/_descpath_* column goes through) all read
+        # self.csvtrain, whose row membership depends on --excluded_groups/
+        # --test_group directly and on --seed indirectly through negative sampling
+        # (dataloader/sampler.py) -- so two runs differing in EITHER one do not share
+        # a cache entry, by construction, never by a flag this function has to name.
+        features_cache_key = self._pair_descriptor_features_cache_key()
+        features_cache_path = self._pair_descriptor_features_cache_path(features_cache_key)
+        cached_features = self._load_pair_descriptor_features_cache(features_cache_path)
+        if cached_features is not None:
+            self.csvtrain = self.csvtrain.assign(**cached_features["csvtrain"])
+            self.csvalidate = self.csvalidate.assign(**cached_features["csvalidate"])
+            self.csvtest = self.csvtest.assign(**cached_features["csvtest"])
+            return
+
         isomeric = getattr(self.config, "lipid_isomers", False)
         # None (no current cache -- never built, or the interaction table/data/graphs
         # changed since it was) falls every lookup below back to computing directly,
@@ -1145,7 +1226,22 @@ class PLIDataset(
         # --pair_descriptor_lipid_shape simply never reads the three conformer-based
         # keys the cache still has, same as it never reads any other unrequested key.
         pair_cache = load_pair_descriptor_cache(self.ROOT_DIR, isomeric)
-        protein_cache = pair_cache["proteins"] if pair_cache else None
+        # Protein-side values (extent, aromatic_share_core/rim) used to be a second,
+        # redundant copy inside the lipid-candidate cache above; they are the SAME
+        # pocket_extent/aromatic_share/aromatic_share_rim chemistry_prior.
+        # protein_descriptor_table already computes and persists to data/
+        # protein_descriptors.csv, so pocket_extent_by_protein/pocket_rim_core_
+        # aromatic_share_by_protein below read that table instead of a second one.
+        from dataloader.chemistry_prior import protein_descriptor_table as _protein_descriptor_table
+        _protein_table = _protein_descriptor_table(self.ROOT_DIR)
+        protein_cache = {
+            protein: {
+                "extent": values["pocket_extent"],
+                "aromatic_share_core": values["aromatic_share"],
+                "aromatic_share_rim": values["aromatic_share_rim"],
+            }
+            for protein, values in _protein_table.items()
+        }
         chain = as_arrays(chain_lengths_by_row(csv, isomeric, cache=pair_cache))
         unsaturation = as_arrays(
             descriptor_values_by_row(csv, "unsaturation", isomeric, cache=pair_cache)
@@ -1534,11 +1630,17 @@ class PLIDataset(
                         ])
             return out
 
-        self.csvtrain = self.csvtrain.assign(**columns(train_rows))
+        split_columns = {"csvtrain": columns(train_rows)}
         for name in ("csvalidate", "csvtest"):
             frame = getattr(self, name)
             rows = self._original_rows(frame) if not frame.empty else np.array([], dtype=int)
-            setattr(self, name, frame.assign(**columns(rows)))
+            split_columns[name] = columns(rows)
+
+        self._save_pair_descriptor_features_cache(features_cache_path, split_columns)
+
+        self.csvtrain = self.csvtrain.assign(**split_columns["csvtrain"])
+        self.csvalidate = self.csvalidate.assign(**split_columns["csvalidate"])
+        self.csvtest = self.csvtest.assign(**split_columns["csvtest"])
 
     def _derive_lipid_class_holdout(self, csv):
         """Work out which head-group classes leave training, from the held-out family.
@@ -1594,7 +1696,7 @@ class PLIDataset(
                     f"{tanimoto[1]:.3f} head group"
                     if tanimoto else
                     " (block Tanimoto not in BLOCK_TANIMOTO -- measure it with "
-                    "analysis/lipid_subclass_block_report.py)"
+                    "analysis/probes/lipid_subclass_block_report.py)"
                 )
             )
             return
@@ -1908,7 +2010,7 @@ class PLIDataset(
     def get_tanimoto_weights(self):
         if self.train_tanimoto_matrix is None:
             raise RuntimeError(
-                "Tanimoto weights need Total_tanimoto_matrix_uint8.npy, which is only "
+                "Tanimoto weights need the compact Tanimoto artifacts, which are only "
                 "loaded when tanimoto_weight is set. Pass --tanimoto_weight, or do not "
                 "call this."
             )
@@ -2312,7 +2414,7 @@ class PLIDataset(
         # The sample cache's key, per row of this split (see get()).
         self._pair_id_by_idx = orig_indexes
         # Read by --pu_rho_by_subclass (looks up each row's lipid subclass by it,
-        # pu_prior_and_groups in new_train.py). ProteinGraphData.__inc__ exempts it from
+        # TaskLosses.pu_prior_and_groups in training/task_losses.py). ProteinGraphData.__inc__ exempts it from
         # PyG's node-index shifting, which is handling of the field, not a second use of
         # it -- nothing else in the project touches it. Without that consumer it is
         # therefore built, sliced per sample and concatenated per batch for nobody.

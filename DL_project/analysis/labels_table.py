@@ -36,6 +36,10 @@ import csv
 import re
 import statistics
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from training.results_layout import label_dir  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 GRAPHICS_DIR = PROJECT_ROOT / "graphics"
@@ -89,7 +93,7 @@ def read_csv_metrics(table_path: Path, label: str) -> tuple[dict, dict]:
 
 
 def read_null_model_aucs(label: str) -> dict[str, float | None]:
-    report_path = GRAPHICS_DIR / label / f"{label}.md"
+    report_path = label_dir(GRAPHICS_DIR, label) / f"{label}.md"
     result = {"in_protein_AUC": None, "pair_AUC": None}
     if not report_path.exists():
         return result
@@ -120,7 +124,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("labels", nargs="+", help="label names, space separated")
     parser.add_argument(
-        "--table", type=Path, default=PROJECT_ROOT / "metrics_summary.csv"
+        "--table", type=Path, default=PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv"
     )
     args = parser.parse_args()
 

@@ -392,7 +392,7 @@ def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None, protein
 
     Cross-entropy asks each row on its own: "is this side of 0.5?" On this dataset that
     question has a wrong answer baked in before training starts -- the chemistry-only
-    null model in files/marginals_and_cold_split.md 8.1 scores balanced accuracy 0.512
+    null model in files/reference/marginals_and_cold_split.md 8.1 scores balanced accuracy 0.512
     with a threshold fit on train while it ranks the same rows at AUC 0.565, so most of
     what a fixed-threshold loss is graded on here is where the threshold sits, not what
     the model knows. This asks a different question that has no threshold in it: "does
@@ -413,7 +413,7 @@ def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None, protein
     With `protein_ids` (one id per row, `--rank_within_protein`), a pair is only formed
     between rows sharing a protein. Then the marginal cannot help: inside one protein
     every row has the same partner, so the only thing left to rank by is the pair. This
-    is the quantity files/interaction_signal_plan.md 3 argues the project should be
+    is the quantity files/history/geometric_edge.md argues the project should be
     optimising, and analysis/null_model.py reports it as `net_AUC_prot`.
 
     The cost is pair count. Batches are drawn across proteins, so most of the pair

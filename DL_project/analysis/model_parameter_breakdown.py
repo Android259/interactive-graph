@@ -2,11 +2,11 @@
 """Parameter count of a configured model, broken down by architectural part.
 
     python3 analysis/model_parameter_breakdown.py <label>
-    python3 analysis/model_parameter_breakdown.py scripts/arg_files/<label>.md
+    python3 analysis/model_parameter_breakdown.py arg_files/<label>.md
     python3 analysis/model_parameter_breakdown.py <label> --excluded_groups=start
 
 <label> is resolved the same three ways scripts/lib/args_file_lib.sh accepts: a
-path, a bare stem under scripts/arg_files/, or a filename there. Its "--" lines
+path, a bare stem under arg_files/, or a filename there. Its "--" lines
 become the model's configuration, exactly as scripts/lib/args_file_lib.sh turns
 them into a training command's argv -- this script does not shell out to that
 file so that it works without a cluster checkout, but the parsing rule (only
@@ -46,7 +46,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "training"))
 
-ARGS_FILE_DIR = PROJECT_ROOT / "scripts" / "arg_files"
+ARGS_FILE_DIR = PROJECT_ROOT / "arg_files"
 
 
 def resolve_args_file(name):
@@ -60,6 +60,11 @@ def resolve_args_file(name):
     candidate = ARGS_FILE_DIR / name
     if candidate.is_file():
         return candidate
+    # Per-family subdirectories: arg_files/<family>/<label>.md.
+    stem = name[:-3] if name.endswith(".md") else name
+    matches = sorted(ARGS_FILE_DIR.glob(f"*/{stem}.md"))
+    if len(matches) == 1:
+        return matches[0]
     raise SystemExit(
         f"No arg_file for {name!r}: tried it as a path, as "
         f"{ARGS_FILE_DIR}/{name}.md, and as {ARGS_FILE_DIR}/{name}"

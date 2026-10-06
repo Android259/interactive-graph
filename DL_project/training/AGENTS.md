@@ -36,7 +36,14 @@
   `seed_worker` gives each worker a reproducible derived Python/NumPy seed.
 - Seeds provide reproducible splitting and CPU-side randomness, but do not by
   themselves guarantee bitwise-identical CUDA execution.
-- Do not import `new_train.py` from tests. It executes setup at import time, writes artifacts, starts TensorBoard, and may open a browser.
+- `new_train.py` is split across several modules in this directory (see its own
+  module docstring for the full list and step order): `task_losses.py`,
+  `optimizer_setup.py`, `run_paths.py`, `results_layout.py`, `branch_dynamics.py`,
+  `epoch_loop.py`, `final_evaluation.py`, `run_context.py`. Importing
+  `new_train.py` itself is import-safe (only `torch.set_flush_denormal` and module
+  imports run at module scope); the whole run -- config, dataset, model, epochs,
+  artifacts, TensorBoard -- only happens inside `main()`, called from the
+  `if __name__ == "__main__":` guard. Do not call `main()` from tests.
 - Do not run full epochs, GPU training, TensorBoard, or save checkpoints/metrics unless explicitly requested.
 - Do not alter `non_blocking=True`, dtype policy, AMP, or GradScaler behavior without explicit instruction.
 - CPU smoke tests validate shapes, finite loss, backward, gradients, and optimizer step; they do not prove quality, CUDA speed, or CUDA memory safety.

@@ -25,7 +25,7 @@ unknown residue written as X -- stops the script with the protein named, instead
 producing letters shifted against the nodes (preprocessing/AGENTS.md).
 
 Needs the Foldseek binary (not a Python package); see
-files/protein_3di_tokens_deepclip.md for the exact download and version used.
+files/reference/deepclip_architecture.md for the exact download and version used.
 
     python3 preprocessing/build_foldseek_3di.py --foldseek ~/tools/foldseek/bin/foldseek
 """

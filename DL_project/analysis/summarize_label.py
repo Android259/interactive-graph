@@ -273,7 +273,7 @@ def format_by_group(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("label")
-    parser.add_argument("--table", type=Path, default=PROJECT_ROOT / "metrics_summary.csv")
+    parser.add_argument("--table", type=Path, default=PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv")
     parser.add_argument(
         "--by-groups",
         "--by_groups",

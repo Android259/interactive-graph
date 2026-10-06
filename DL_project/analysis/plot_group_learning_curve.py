@@ -13,6 +13,7 @@ from analyze_common_epoch import (
     canonical_value,
     value_matches,
 )
+from training.results_layout import label_dir, label_family
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
 
@@ -27,7 +28,7 @@ METRIC_SERIES = {
     "precision": ("epoch/train precision", "epoch/valid precision"),
     "loss": ("epoch/train loss", "epoch/valid loss"),
     # None train tag: AUC is only ever computed on the validation pass (train batches
-    # collect no scores -- training/new_train.py's aggregate_values docstring), so
+    # collect no scores -- training/eval_metrics.py's aggregate_values docstring), so
     # there is no "epoch/train AUC" scalar to pair it with, unlike every other metric
     # here. The read loop below treats a None train_tag as "skip the train series,
     # valid alone is enough" instead of requiring both the way it does for the rest.
@@ -94,11 +95,14 @@ def resolve_exact_run_dir(run_root, row):
     label = row.get("label", "").strip()
     if not label:
         raise ValueError(f"Missing label for run row: {row}")
+    # run/<family>/<label>/<set>/<name> (training/results_layout.py)
     candidates = [
-        run_root / label / row["exclusion_set"] / name,
+        label_dir(run_root, label) / row["exclusion_set"] / name,
     ]
     if row.get("architecture"):
-        candidates.append(run_root / row["architecture"] / row["exclusion_set"] / name)
+        candidates.append(
+            run_root / label_family(label) / row["architecture"] / row["exclusion_set"] / name
+        )
     for run_dir in candidates:
         if run_dir.is_dir():
             return run_dir
@@ -493,7 +497,7 @@ def plot_curve(
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--table", type=Path, default=Path("metrics_summary.csv"))
+    parser.add_argument("--table", type=Path, default=Path("results/tables/metrics_summary.csv"))
     parser.add_argument("--run-root", type=Path, default=Path("run"))
     parser.add_argument("--group")
     parser.add_argument("--all-groups", action="store_true")

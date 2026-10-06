@@ -16,7 +16,7 @@ set -euo pipefail
 # the `{ ...; }` group) but independent of each other after that (`;` between
 # families, so one family's failure doesn't skip the rest).
 #
-# Flags for both stages come from their own scripts/arg_files/*.md (via
+# Flags for both stages come from their own arg_files/*.md (via
 # args_file_flags) so there is one place to tune them, matching the comment in
 # structural_pretrain.md about encoder flags needing to match. --double_
 # coldsplit is stripped from bbp_dcs's flags below since it tests the opposite
@@ -82,9 +82,9 @@ SEED="${SEED:-0}"
 STAGE2_SEEDS="${STAGE2_SEEDS:-0 1 2 3 4}"
 MIN_FREE_GPU_MIB="${MIN_FREE_GPU_MIB:-16384}"
 GPU_WAIT_SECONDS="${GPU_WAIT_SECONDS:-60}"
-LOG_ROOT="${LOG_ROOT:-${PROJECT_DIR}/script_logs/structural_pretrain}"
-STAGE1_ARGS_FILE="${PROJECT_DIR}/scripts/arg_files/structural_pretrain.md"
-STAGE2_ARGS_FILE="${PROJECT_DIR}/scripts/arg_files/bbp_dcs_rand_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64.md"
+LOG_ROOT="${LOG_ROOT:-${PROJECT_DIR}/script_logs/structural_pretrain/structural_pretrain}"
+STAGE1_ARGS_FILE="${PROJECT_DIR}/arg_files/structural_pretrain/structural_pretrain.md"
+STAGE2_ARGS_FILE="${PROJECT_DIR}/arg_files/bbp/bbp_dcs_rand_fa_nps3mlp_dpt01_wd0001_gm_plm64_hid64.md"
 # The two stage-2 arms. Names are the --label each arm reports, and therefore the
 # metrics_summary.csv label, the models/ directory and the summarize_label target.
 STAGE2_PRETRAINED_LABEL="${STAGE2_PRETRAINED_LABEL:-structural_pretrain_family}"
@@ -93,8 +93,8 @@ STAGE2_SCRATCH_LABEL="${STAGE2_SCRATCH_LABEL:-structural_pretrain_family_scratch
 # arms differ in two things at once -- whether stage 1 contributed weights AND whether
 # the encoders train at all -- so between them they cannot say what pretraining is worth.
 # On a warm split of 100-400 rows, training everything beats training a head, which is
-# very likely all the 6-of-9 win for `scratch` measured (files/lcs_marginal_removal_and_
-# solo_on_one_metric.md 7, files/geometric_edge_and_solo_next_architecture.md 5.1). This
+# very likely all the 6-of-9 win for `scratch` measured (files/results/lcs_marginal_removal_and_
+# solo_on_one_metric.md 7, files/history/geometric_edge.md). This
 # arm differs from `scratch` in exactly one thing: where the encoder weights started.
 STAGE2_UNFROZEN_LABEL="${STAGE2_UNFROZEN_LABEL:-structural_pretrain_family_unfrozen}"
 # scripts/settings.sh's PROTEIN_GROUPS, all 9 families.

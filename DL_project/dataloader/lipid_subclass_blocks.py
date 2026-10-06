@@ -6,7 +6,7 @@ The third axis on the lipid side, alongside the two that already exist:
                       (dataloader/sampler.py's LIPID_COLDSPLIT_SETS)
   --lipid_isolation   blocks chosen by DISTANCE, so the held-out chemistry lands at a
                       requested Tanimoto isolation (dataloader/lipid_isolation_blocks.py)
-  --lipid_subclass    one subclass of Titeca et al. (files/Reuter.pdf, the y axis of
+  --lipid_subclass    one subclass of Titeca et al. (files/literature/Reuter.pdf, the y axis of
                       the LTP x lipid-subclass matrix -- Figure 3a of the bioRxiv
                       preprint), held out of training for every protein
 
@@ -36,10 +36,10 @@ import json
 import os
 
 # The nine blocks the Kron-RLS run of the same axis actually used
-# (cron_test_metrics/cron_fig3_lipidgroups.txt): the five subclasses big enough to be
+# (results/tables/cron_test_metrics/cron_fig3_lipidgroups.txt): the five subclasses big enough to be
 # their own held-out block, plus three merges of subclasses that are not.
 #
-# Why these merges and not others -- measured by analysis/lipid_subclass_block_report.py
+# Why these merges and not others -- measured by analysis/probes/lipid_subclass_block_report.py
 # over the whole table (positives / proteins holding at least one positive in the block):
 #   PC 218/16, PG 113/13, PE 80/11, FA 48/12, PA 26/4, PI 16/6      stand alone
 #   Cer 14/1, CerP 10/1, HexCer 20/1, Hex2Cer 2/1, SHexCer 2/1, SM 18/2
@@ -47,10 +47,10 @@ import os
 #          on its own, which cannot produce an AUC_within_protein at all.
 #   LPC 5/1, LPE 18/5, LPG 9/5 -> one lyso block, 32/6.
 #   PS 5/2, PGP 2/1, DAG 2/1, TAG 8/2 -> one block, 17/6. PS+PGP alone reached
-#       n_proteins=0 in the first Kron-RLS pass (files/fig3_lipid_subclass_coldsplit_
+#       n_proteins=0 in the first Kron-RLS pass (files/results/fig3_lipid_subclass_coldsplit_
 #       results.md) -- the four-way merge is what made it measurable.
 # CL (14/2), BMP (1/1), VA (2/2) and FAL (1/1) are in no block: each IS its own row on
-# the paper's own Figure-3a axis (page 22 of files/Reuter.pdf, verified directly against
+# the paper's own Figure-3a axis (page 22 of files/literature/Reuter.pdf, verified directly against
 # the rendered page), just too small -- fewer positives/proteins than even the
 # single-protein sphingolipid rows merged above -- for any split to read, and none of the
 # four shares enough chemistry with an existing merge to fold into it (CL and BMP are not
@@ -67,7 +67,7 @@ FIG3_SUBCLASS_BLOCKS = (
 )
 
 # How ISOLATED each block is from whatever stays in training, measured once by
-# analysis/lipid_subclass_block_report.py over the whole interaction table:
+# analysis/probes/lipid_subclass_block_report.py over the whole interaction table:
 # (whole-molecule Tanimoto, head-group-only Tanimoto). Mean best similarity of a
 # held-out species to the chemistry left behind -- LOW means genuinely novel, HIGH
 # means a close relative stayed in training. Stored rather than recomputed for the same

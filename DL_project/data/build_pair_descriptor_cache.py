@@ -46,10 +46,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataloader.pair_descriptor_cache import (  # noqa: E402
+from dataloader.cache_builders.pair_descriptor_cache import (  # noqa: E402
     build_pair_descriptor_cache,
-    store_is_current,
 )
+from dataloader.pair_descriptor_cache import store_is_current  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 
 

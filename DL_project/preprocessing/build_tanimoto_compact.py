@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 
-# Build the compact Tanimoto pair from the interaction table.
+# Build the compact Tanimoto artifacts from the interaction table.
 #
-# preprocessing/build_tanimoto_matrix.py writes one row per candidate structure
-# *instance*, so the square matrix repeats every distinct pair of structures as many
-# times as those structures recur across rows -- 2.89 GB for the current table, over
-# roughly twelve hundred distinct structures. This writes one row per distinct structure
-# instead, plus the index needed to expand it back, and the expansion is exact: see
-# dataloader/tanimoto_compact.py for why byte-identity holds by construction.
+# The only Tanimoto builder in the project. It stores one row per DISTINCT candidate
+# structure (roughly twelve hundred) plus the index that expands it back to one entry
+# per candidate instance, so the per-candidate similarity is
+# compact[structure_index[i], structure_index[j]] -- byte-identical to the old
+# per-candidate square matrix (2.89 GB, Total_tanimoto_matrix_uint8.npy), which is no
+# longer built or read. Why byte-identity holds: dataloader/tanimoto_compact.py.
 #
-# The candidate rule and the similarity arithmetic are IMPORTED from build_tanimoto_matrix
-# rather than copied, so the two cannot drift apart. That matters more than it looks:
-# these files are only meaningful when their candidate list matches the loader's, and a
-# second transcription of "split on ';', canonicalize non-isomeric, dedup within the row"
-# is exactly how they would stop matching.
+# The candidate rule here (row_candidates/collect) is the loader's: SmileGlobal unless it
+# is "0", candidates split on ";", canonicalized, deduplicated within the row.
+# preprocessing/build_tanimoto_headgroup.py and analysis/probes/split_similarity_vs_metric.py
+# import it from here, so there is one transcription of it.
 #
 # Output (dataloader/tanimoto_compact.py reads them):
 #   Tanimoto_compact_matrix_uint8.npy      structures x structures
@@ -36,15 +35,86 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from rdkit import RDLogger
+from rdkit import Chem, DataStructs, RDLogger
+from rdkit.Chem import AllChem
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dataloader.dataset_source import INTERACTION_CSV
-from dataloader.tanimoto_compact import write_compact
-from preprocessing.build_tanimoto_matrix import collect, tanimoto_matrix
+from dataloader.cache_builders.tanimoto_compact import write_compact
 
 
 DEFAULT_DATA_DIR = Path("data")
+
+
+def row_candidates(smile_global, smile_fragment, isomeric=False):
+    """The canonical candidates of one row, in field order.
+
+    ``isomeric`` mirrors the loader's ``lipid_isomers``: LipidGraphBuilder canonicalizes
+    with ``isomericSmiles=self.config.lipid_isomers``, so an isomeric run keeps
+    stereoisomers apart where a non-isomeric one collapses them into a single candidate.
+    That changes both which structures exist and how many candidates a row contributes,
+    which is why the two modes need their own artifacts rather than sharing one set.
+    Default False: this is what the function always did, and the non-isomeric artifacts
+    on disk were built by it.
+    """
+    # Exactly the loader's rule (LipidGraphBuilder._select_lipid_embedding_text): an
+    # untrimmed comparison, so a stray " 0" picks the same column in both places
+    # rather than silently indexing this matrix against a different candidate list.
+    text = str(smile_global)
+    if text == "0":
+        text = str(smile_fragment)
+
+    candidates = []
+    for part in text.split(";"):
+        part = part.strip()
+        if not part or part == "0":
+            continue
+        mol = Chem.MolFromSmiles(part)
+        if mol is None or mol.GetNumAtoms() == 0:
+            continue
+        canonical = Chem.MolToSmiles(mol, canonical=True, isomericSmiles=isomeric)
+        if canonical not in candidates:
+            candidates.append(canonical)
+    return candidates
+
+
+def collect(table, isomeric=False):
+    smiles, row_ids, empty_rows = [], [], []
+    for position, (smile_global, smile_fragment) in enumerate(
+        zip(table["SmileGlobal"], table["SmileFragment"])
+    ):
+        candidates = row_candidates(smile_global, smile_fragment, isomeric=isomeric)
+        if not candidates:
+            empty_rows.append(position)
+            continue
+        smiles.extend(candidates)
+        row_ids.extend([position] * len(candidates))
+    if empty_rows:
+        raise ValueError(
+            f"{len(empty_rows)} rows carry no parsable SMILES (first: {empty_rows[0]}); "
+            "they would silently drop out of every weighting"
+        )
+    return smiles, np.asarray(row_ids, dtype=np.int32)
+
+
+def tanimoto_matrix(smiles, radius=2, n_bits=1024, progress_every=5000):
+    fingerprints = [
+        AllChem.GetMorganFingerprintAsBitVect(Chem.MolFromSmiles(item), radius, n_bits)
+        for item in smiles
+    ]
+    size = len(fingerprints)
+    matrix = np.zeros((size, size), dtype=np.uint8)
+    for index in range(size):
+        similarities = DataStructs.BulkTanimotoSimilarity(
+            fingerprints[index], fingerprints[index:]
+        )
+        row = np.round(np.asarray(similarities, dtype=np.float32) * 255).astype(np.uint8)
+        matrix[index, index:] = row
+        matrix[index:, index] = row
+        matrix[index, index] = 255
+        if progress_every and index and index % progress_every == 0:
+            print(f"  {index}/{size}", flush=True)
+    return matrix
 
 
 def distinct_structures(smiles):

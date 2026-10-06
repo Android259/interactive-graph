@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 # then land on every consumer of ModelConfig, including analysis scripts that only
 # want to read a run's settings. Source of truth is dataloader/pair_descriptors.py's
 # PROTEIN_DESCRIPTOR_NAMES -- change the order or membership there and change this in
-# the same commit (files/pocket_shape_descriptors.md too); --pocket_descriptor_names
+# the same commit (files/reference/pocket_shape_descriptors.md too); --pocket_descriptor_names
 # below validates against this copy.
 POCKET_DESCRIPTOR_NAMES = (
     "pocket_residue_share", "pocket_sasa_share", "pocket_volume_per_sasa",
@@ -375,7 +375,7 @@ class ModelConfig:
     # thematic_descriptor_head.py) and sums the per-pair vectors into one vector per
     # graph pair, which Final_Layer concatenates into common_out alongside the existing
     # pooled representations -- additive, not a replacement for --bilinear_fusion or
-    # the attention update above (files/thematical_paths_dynamics_and_pair_auc.md
+    # the attention update above (files/results/thematical_paths_summary.md
     # section 9). Requires --cross_attention (validate()): there is no per-node lipid/
     # protein pairing to reuse without it.
     node_bilinear_fusion: bool = False
@@ -423,13 +423,13 @@ class ModelConfig:
     dann_class_conditional: bool = True
     dann_lambda_ramp: bool = False
     dann_lambda_ramp_by_fit: bool = False
-    # Chemistry prior (files/interaction_signal_plan.md 4.1, 4.3). score = learned
+    # Chemistry prior (files/history/geometric_edge.md). score = learned
     # scalar * s_chem(lipid) + the ordinary classifier logit, s_chem frozen and computed
     # once from train-split labels only (dataloader/chemistry_prior.py). Because s_chem
     # is added AFTER the classifier rather than fed into it, the task loss has no need
     # for the fused representation to carry a copy of it -- which is what makes
     # chem_adversary (below) safe to run without fighting the task loss over genuinely
-    # shared, label-relevant variance. See interaction_signal_plan.md 4.3 for why this
+    # shared, label-relevant variance. See files/history/geometric_edge.md for why this
     # ordering matters and chem_adversary must not be applied without it.
     chem_prior: bool = False
     chem_neighbours: int = 15
@@ -459,7 +459,7 @@ class ModelConfig:
     chem_lambda: float = 1.0
     chem_lambda_ramp: bool = False
     chem_lambda_ramp_by_fit: bool = False
-    # Pocket-vs-chain-length pair term (files/pocket_lipid_compatibility.md): unlike
+    # Pocket-vs-chain-length pair term (files/reference/pocket_lipid_compatibility.md): unlike
     # every entry in POCKET_DESCRIPTOR_NAMES, this depends on BOTH the protein and the
     # candidate lipid, so it cannot collapse to a pure family label the way a
     # protein-only summary can. Two independent consumers of the same raw value:
@@ -478,7 +478,7 @@ class ModelConfig:
     #     vectors.
     # --compatibility_split_input : the same two quantities, unmixed, as TWO inputs --
     #     -chain_length and relu(chain - extent) on a coarsened extent. Why the split
-    #     exists (files/compat_input_audit.md): the difference above is additive, so its
+    #     exists (files/results/compat_input_audit.md): the difference above is additive, so its
     #     own pair content is exactly 0.0000, and its whole ranking value inside a
     #     protein IS the chain length -- a lipid-only rule that the doubly-cold split
     #     leaves available, since it holds out head-group classes and chain length is
@@ -543,7 +543,7 @@ class ModelConfig:
     # [[descriptors-path-fingerprint-leak]]: on descriptors_path, aromatic_share/
     # polar_share are the suspected channel behind LBP_BPI_CETP's outlier test BA (0.796,
     # vs 0.44-0.60 on every other excluded family -- a profile a genuine cross-family
-    # lipid-chemistry signal should not produce). files/pocket_shape_descriptors.md
+    # lipid-chemistry signal should not produce). files/reference/pocket_shape_descriptors.md
     # section 4a flags hydropathy_core as the one entry whose sign survives both the
     # within-family and the all-protein check, i.e. the best available "site not fold"
     # candidate, and the rim/core split is physically closer to what these tokens are
@@ -575,7 +575,7 @@ class ModelConfig:
     # --no_pair_descriptor_extent : drops the coarsened pocket_extent token, the last of
     # DATALOADER_TOKENS' base 6 (architecture/pair_descriptor_head.py) still unexamined --
     # highest family-identity signal of the protein-only entries at full resolution
-    # (eta^2 0.78, files/compat_input_audit.md) even after the same coarsening
+    # (eta^2 0.78, files/results/compat_input_audit.md) even after the same coarsening
     # --compatibility_split_input's "clash" term uses. occupancy keeps computing from
     # extent internally (relu(cbrt(heavy_atom_count) - coarse_extent), dataloader/
     # Dataloader.py) regardless of this flag -- only the standalone extent token
@@ -586,7 +586,7 @@ class ModelConfig:
     # LBP_BPI_CETP gap (test BA 0.796 -> 0.812, if anything wider), so extent -- the
     # other protein-only channel among DATALOADER_TOKENS -- is next to isolate.
     #
-    # Cheap pre-check done (analysis/pocket_extent_lbp_lipocalin_check.py, files/
+    # Cheap pre-check done (analysis/probes/pocket_extent_lbp_lipocalin_check.py, files/
     # signal_state.md section 8): extent, in the coarse form occupancy actually reads,
     # does NOT separate LBP_BPI_CETP (outrank rate 0.48, no separation) but DOES
     # separate lipocalin (0.05, clean). LBP_BPI_CETP's outlier -- now +0.165 within-
@@ -716,7 +716,7 @@ class ModelConfig:
     # side, forced together (product-only, no skip -- ForcedInteraction) into one group
     # vector, then the two group vectors forced together the same way into one final
     # vector before Final_Layer's small classifier. See files/
-    # thematic_interaction_architecture.md for the design discussion this implements,
+    # files/results/thematical_paths_summary.md for the design discussion this implements,
     # including its known limitation.
     thematical_paths: bool = False
     geometric_descriptors: str = ""
@@ -726,7 +726,7 @@ class ModelConfig:
     # combining both sides already, same DESCRIPTOR_CATALOG syntax as good_descriptors/
     # bad_descriptors) concatenated onto BOTH the lipid-side and protein-side raw
     # inputs of the matching group's _ModalityMLP (architecture/thematic_descriptor_
-    # head.py), before ForcedInteraction. Motivation (files/protein_lipid_binding_
+    # head.py), before ForcedInteraction. Motivation (files/literature/protein_lipid_binding_
     # family_literature.md): geometric_descriptors/chemical_descriptors feed
     # ForcedInteraction raw SINGLE-SIDE scalars and leave it to learn their
     # combination itself (a low-rank bilinear MLP, hard to fit well from ~35
@@ -745,7 +745,7 @@ class ModelConfig:
     # (training/new_train.py) -- only takes effect under thematical_paths (validate()).
     thematical_orth_weight: float = 0.0
     # Four independent, off-by-default fixes for thematical_paths' training-dynamics
-    # problem (files/thematical_paths_dynamics_and_pair_auc.md section 7: valid
+    # problem (files/results/thematical_paths_summary.md: valid
     # balanced_accuracy pinned at exactly 0.5 for the first 10-17 epochs in ~20-26% of
     # family x seed runs). Each targets one specific step of ForcedInteraction's
     # forward pass, each can be turned on alone or combined with the others, all only
@@ -759,7 +759,7 @@ class ModelConfig:
     thematical_single_norm: bool = False
     # _ModalityMLP's centering BatchNorm1d is affine=False (no learned scale OR
     # shift after normalising) -- deliberately, so nothing can reintroduce a per-side
-    # offset (see thematic_interaction_architecture.md). This flag switches to
+    # offset (see files/results/thematical_paths_summary.md). This flag switches to
     # affine=True but immediately freezes the bias at its zero init
     # (architecture/thematic_descriptor_head.py's _ModalityMLP), so the network can
     # still learn a per-channel SCALE (fixing an under/over-scaled channel) without
@@ -772,7 +772,7 @@ class ModelConfig:
     # directions from step 0.
     thematical_orthogonal_init: bool = False
     # ForcedInteraction's parameters sit behind two chained hard-normalisation ops
-    # that MLB's own paper (cited in thematic_interaction_architecture.md) reports as
+    # that MLB's own paper (cited in files/results/thematical_paths_summary.md) reports as
     # slow/hyperparameter-sensitive to converge. When on, training/new_train.py gives
     # every ForcedInteraction's parameters (geom_interaction, chem_interaction,
     # group_interaction; all three, always -- not configurable per-site) their own
@@ -789,7 +789,7 @@ class ModelConfig:
     # the whole point is to read the identical named descriptors --descriptors_head
     # would, through a plain MLP instead.
     #
-    # files/descriptors_head_bottleneck.md: NamedDescriptorHead's token_embed is one
+    # files/results/descriptors_head_bottleneck.md: NamedDescriptorHead's token_embed is one
     # Linear(1, dim) shared by every token, so its reaction to a descriptor's value
     # cannot depend on which descriptor it is (only the additive token_identity
     # constant differs) -- measured there at test BA 0.535 on an 11-descriptor
@@ -896,7 +896,7 @@ class ModelConfig:
     # Stacked convolutions instead of DeepCLIP's single layer. Its receptive field
     # is one window wide, so the widest published filter sees 8 characters; two
     # layers of width W see 2W-1. Measured on this table's own species, a hexose
-    # ring closes across 32-38 SMILES characters (analysis/deepclip_headgroup_probe.py),
+    # ring closes across 32-38 SMILES characters (analysis/probes/deepclip_headgroup_probe.py),
     # which one layer cannot span at any published width -- so a glycosyl head
     # group is not visible AS a ring, only as more C and O. Layers after the first
     # read the concatenated filter channels, not the one-hot.
@@ -1074,12 +1074,12 @@ class ModelConfig:
     #   molecular graph the sum is over 2-4 messages, so dividing by 30 delivers a node
     #   update about an order of magnitude smaller than the layer was tuned for. The
     #   graph's real mean degree is what this should be set to -- measure it with
-    #   analysis/lipid_graph_degree.py rather than guessing.
+    #   analysis/probes/lipid_graph_degree.py rather than guessing.
     #
     #   width. conv_out_dim is `hiddim` under edge_mlp and `hiddim * HEADS` under
     #   attention/GATv2, so picking edge_mlp for the protein graph also made the LIPID
     #   graph 8x narrower, on the branch that is already the bottleneck under
-    #   --lipid_coldsplit (files/lipid_coldsplit_architecture_direction.md).
+    #   --lipid_coldsplit (files/results/lipid_coldsplit_architecture_direction.md).
     #
     # What the past runs therefore were, and why it is not obviously a bug: every
     # --lipid_graph_isomers run so far took the protein's conv AND lambda=30 on its
@@ -1157,14 +1157,14 @@ class ModelConfig:
     #
     # Why they exist. The two branches are not symmetric in what they have to carry.
     # The protein side is 35 objects whose identity fits in about one real dimension
-    # (files/signal_state.md section 4.5), and the lipid side is the whole of a
+    # (files/results/signal_state.md section 4.5), and the lipid side is the whole of a
     # molecule's chemistry squeezed through ONE torch.nn.Linear(768, hiddim) over a
     # MolFormer embedding (architecture/lipid_encoder.py). Under --lipid_coldsplit that
     # projection is the only route a never-seen head-group class has into the model,
     # while the protein side is fully in-distribution and free to memorise. Raising
     # --hiddim raises both at once, and measured on that split it bought only
     # memorisation: 8 -> 64 moved test BA 0.5530 -> 0.5511 (nothing) while train
-    # sensitivity went 0.837 -> 0.897 (files/lipid_coldsplit_architecture_direction.md
+    # sensitivity went 0.837 -> 0.897 (files/results/lipid_coldsplit_architecture_direction.md
     # section 3). These let the two move apart.
     #
     # What the width does and does not reach. It is the width of the branch's OWN
@@ -1258,13 +1258,13 @@ class ModelConfig:
     #
     # Such a row is not a hard case, it is an unanswerable one: the no-model planka this
     # project measures the network against -- the train positive rate of that cell,
-    # analysis/protein_subclass_label_baseline.py -- has nothing to estimate from and
+    # analysis/baselines/protein_subclass_label_baseline.py -- has nothing to estimate from and
     # falls back to "negative", so it scores balanced accuracy 0.500 there by
     # construction. Measured on --lipid_species_coldsplit=0.15 over the five standard
     # seeds, those rows are 10.1% of test and 9.8% of valid but carry only 2.9%/2.5% of
     # the positives, so dropping them moves the planka 0.871 -> 0.879 and the block's
     # positive rate 0.335 -> 0.362, keeping 90% of the rows and 97% of the positives
-    # (files/species15_information_above_protein_subclass.md sections 1-2).
+    # (files/proposals/species15_information_above_protein_subclass.md sections 1-2).
     #
     # The point is comparability, not a higher number: with these rows in, part of what
     # separates a model from the planka is which side of an uninformative fallback each
@@ -1298,7 +1298,7 @@ class ModelConfig:
     # carries 267 rows against its ESM3 embedding's 269 -- 4 C-terminal residues
     # missing from the graph plus 2 duplicated residue numbers elsewhere, a gap in the
     # graph-building pipeline for that one PDB entry -- see tests/test_esm3_alignment.py
-    # and files/split_similarity_four_baselines_and_deepclip.md for the full diagnosis),
+    # and files/results/split_similarity_four_baselines_and_deepclip.md for the full diagnosis),
     # which crashes dataset construction under every axis alike and has nothing to do
     # with which split is being run. Combines with any axis, including lipid_coldsplit/
     # lipid_subclass, for exactly that reason.
@@ -1376,7 +1376,7 @@ class ModelConfig:
     cold_split: bool = False
     # Relabels sampled negatives whose (protein, lipid class) cell Reuter et al.'s
     # Figure 3a documents as a known interaction (data/fig3a_disputed_negative_pair_ids
-    # .csv, 1159 pair_ids -- built and explained in files/reuter_fig3a_dataset_
+    # .csv, 1159 pair_ids -- built and explained in files/results/reuter_fig3a_dataset_
     # consistency.md). Applied in PLIDataset.__init__ to the raw table's Interaction
     # column BEFORE --family_only/--drop_proteins filtering, sampling,
     # chemistry-prior fitting, and lipid-class-holdout selection, so every
@@ -1554,7 +1554,7 @@ class ModelConfig:
     # expand_pocket_descriptor) to POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES (dataloader/
     # protein_graph_builder.py) -- the 7 of 13 entries whose eta^2 against the 9-family
     # split sits at or near the no-structure floor, dropping the 6 closest to a pure
-    # family label (files/pocket_shape_descriptors.md section 5). Only affects that one
+    # family label (files/reference/pocket_shape_descriptors.md section 5). Only affects that one
     # broadcast: PairDescriptorHead (--descriptors_head, --pair_descriptors) reads
     # aromatic_share/polar_share at their own fixed indices regardless of this flag, so
     # under plain --descriptors_head it changes nothing measurable.
@@ -1585,7 +1585,7 @@ class ModelConfig:
     # string via parse_descriptor_list, so there is nothing here that could drift from it.
     protein_descriptors: str = ""
     lipid_descriptors: str = ""
-    # The HEAD half of the two-branch lipid split (files/lipid_coldsplit_architecture_
+    # The HEAD half of the two-branch lipid split (files/results/lipid_coldsplit_architecture_
     # direction.md section 7q). Named DESCRIPTOR_CATALOG columns that reach the
     # classifier ONLY through a product with the pooled protein -- ForcedInteraction,
     # no skip path -- while --lipid_descriptors' own list keeps its ordinary broadcast
@@ -1627,7 +1627,7 @@ class ModelConfig:
     # binds", "this lipid binds") then carries no information, while the joint
     # (protein x class) is left intact -- measured on --lipid_species_coldsplit=0.15,
     # npp=5: marginal AUCs 0.634/0.615 -> 0.458/0.471, joint 0.930 -> 0.930
-    # (files/descriptors_head_species15_run_plan.md). A loss weight, so it works under
+    # (files/history/descriptor_models.md). A loss weight, so it works under
     # every architecture. See PLIDataset.get_marginal_balance_weights.
     marginal_balance_weight: bool = False
     pu_loss: bool = False
@@ -1663,7 +1663,7 @@ class ModelConfig:
     loss_type: str = "cross_entropy"
     # Pair rows only with rows of the SAME protein when ranking. Without it the ranking
     # loss optimises the pooled-block AUC, which on this dataset is mostly the chemical
-    # marginal a protein-blind null model already answers (files/interaction_signal_plan.md
+    # marginal a protein-blind null model already answers (files/history/geometric_edge.md
     # 3). With it the loss optimises what ranks a protein's own lipids against each
     # other, which is the interaction term. Costs pair count: batches are drawn across
     # proteins, so most of the pair matrix is discarded.
@@ -1693,7 +1693,7 @@ class ModelConfig:
     # Sliced-Wasserstein pooling (architecture/final_layer.py:SlicedWassersteinPool):
     # reads the SHAPE of a graph's node distribution instead of its average, by matching
     # its quantiles to swe_reference_points learned reference points along learned
-    # directions. Aimed at the measurement in files/signal_state.md 4.3 -- the 35
+    # directions. Aimed at the measurement in files/results/signal_state.md 4.3 -- the 35
     # proteins sit at ESM3 cosine 0.974 of each other under mean pooling while their
     # binding profiles are at 0.000, so the average is exactly the statistic that does
     # not separate them. swe_freeze_reference keeps the reference points at their random
@@ -1710,7 +1710,7 @@ class ModelConfig:
     # AttentionPool uses the real per-node pLDDT/B-factor-derived confidence in
     # data/esm3_input/<stem>_node_confidence.csv instead of the binary pocket flag
     # from pocketness.pdb (that flag is a Voronota pocket-membership marker, not a
-    # confidence value -- see proposals_plm.md).
+    # confidence value -- see files/history/geometric_edge.md).
     use_esm3_v2_embeddings: bool = False
     # RNA-BAnG protein representations are generated offline by
     # preprocessing/embed_protein_rnabang.py and have one 128-dimensional row per
@@ -1766,8 +1766,8 @@ class ModelConfig:
     # else on disk holds them -- save_model_in_dynamics writes only the five fixed
     # milestones, which the selected epoch misses about 80% of the time. Losing them
     # means any later question needing per-row predictions (a per-subclass breakdown, a
-    # metric added after the run, analysis/estimate_rho_elkan_noto.py) can only be
-    # answered by approximating with a neighbouring milestone. Defaulting it off has
+    # metric added after the run) can only be answered by approximating with a
+    # neighbouring milestone. Defaulting it off has
     # already cost this project finished sweeps that cannot be re-read; the weights are
     # a few hundred KB per run.
     save_model: bool = True
@@ -1778,7 +1778,7 @@ class ModelConfig:
     # between-protein spread of the pooled protein vector. Kilobytes over a whole run,
     # against the hundreds of megabytes that saving every epoch's weights would cost.
     # save_model_in_dynamics adds weights at a few milestone epochs
-    # (DYNAMICS_CHECKPOINT_EPOCHS, training/new_train.py) -- independent of
+    # (DYNAMICS_CHECKPOINT_EPOCHS, training/branch_dynamics.py) -- independent of
     # save_dynamics, not implied by it: a run that only wants the checkpoints (e.g. a
     # --descriptors_head probe, whose branch curves are two no-op passes -- Final_Layer
     # returns before the ablation code they read even runs, see [[descriptors-path-
@@ -1889,7 +1889,7 @@ class ModelConfig:
             raise ValueError(
                 "drop_uncovered_protein_subclass is a rule for the "
                 "lipid_species_coldsplit block (see "
-                "files/species15_information_above_protein_subclass.md) and needs "
+                "files/proposals/species15_information_above_protein_subclass.md) and needs "
                 "--lipid_species_coldsplit set"
             )
 
@@ -3413,323 +3413,173 @@ def set_config_flag(field, value=True):
     return lambda config: setattr(config, field, value)
 
 
-SIMPLE_BOOL_FLAGS = {
-    "third_layers_in_mlps": "third_layers_in_mlps",
-    "--third_layers_in_mlps": "third_layers_in_mlps",
-    "cross_attention": "cross_attention",
-    "--cross_attention": "cross_attention",
-    "bilinear_fusion": "bilinear_fusion",
-    "--bilinear_fusion": "bilinear_fusion",
-    "bilinear_pooled_norm": "bilinear_pooled_norm",
-    "--bilinear_pooled_norm": "bilinear_pooled_norm",
-    "node_bilinear_fusion": "node_bilinear_fusion",
-    "--node_bilinear_fusion": "node_bilinear_fusion",
-    "cross_attention_forced_interaction": "cross_attention_forced_interaction",
-    "--cross_attention_forced_interaction": "cross_attention_forced_interaction",
-    "hard_negative_mining": "hard_negative_mining",
-    "--hard_negative_mining": "hard_negative_mining",
-    "dissimilar_negative_mining": "dissimilar_negative_mining",
-    "--dissimilar_negative_mining": "dissimilar_negative_mining",
-    "adversarial_grl": "adversarial_grl",
-    "--adversarial_grl": "adversarial_grl",
-    "adv_deep": "adv_deep",
-    "--adv_deep": "adv_deep",
-    "adv_lambda_ramp": "adv_lambda_ramp",
-    "--adv_lambda_ramp": "adv_lambda_ramp",
-    "adv_lambda_ramp_by_fit": "adv_lambda_ramp_by_fit",
-    "--adv_lambda_ramp_by_fit": "adv_lambda_ramp_by_fit",
-    "lipid_path_handicap": "lipid_path_handicap",
-    "--lipid_path_handicap": "lipid_path_handicap",
-    "dann_family": "dann_family",
-    "--dann_family": "dann_family",
-    "chem_prior": "chem_prior",
-    "--chem_prior": "chem_prior",
-    "chem_adversary": "chem_adversary",
-    "--chem_adversary": "chem_adversary",
-    "lipid_propensity_weight": "lipid_propensity_weight",
-    "--lipid_propensity_weight": "lipid_propensity_weight",
-    "pocket_compat_prior": "pocket_compat_prior",
-    "--pocket_compat_prior": "pocket_compat_prior",
-    "compatibility_input": "compatibility_input",
-    "--compatibility_input": "compatibility_input",
-    "compatibility_split_input": "compatibility_split_input",
-    "--compatibility_split_input": "compatibility_split_input",
-    "compat_extent_bins": "compat_extent_bins",
-    "--compat_extent_bins": "compat_extent_bins",
-    "pair_descriptors": "pair_descriptors",
-    "--pair_descriptors": "pair_descriptors",
-    "pair_descriptors_only": "pair_descriptors_only",
-    "--pair_descriptors_only": "pair_descriptors_only",
-    "descriptors_head": "descriptors_head",
-    "--descriptors_head": "descriptors_head",
-    "descriptor_mlp": "descriptor_mlp",
-    "--descriptor_mlp": "descriptor_mlp",
-    "two_pair_descriptors_paths": "two_pair_descriptors_paths",
-    "--two_pair_descriptors_paths": "two_pair_descriptors_paths",
-    "thematical_paths": "thematical_paths",
-    "--thematical_paths": "thematical_paths",
-    "thematical_single_norm": "thematical_single_norm",
-    "--thematical_single_norm": "thematical_single_norm",
-    "thematical_bn_scale": "thematical_bn_scale",
-    "--thematical_bn_scale": "thematical_bn_scale",
-    "thematical_orthogonal_init": "thematical_orthogonal_init",
-    "--thematical_orthogonal_init": "thematical_orthogonal_init",
-    "thematical_interaction_lr": "thematical_interaction_lr",
-    "--thematical_interaction_lr": "thematical_interaction_lr",
-    "descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
-    "--descriptors_in_protein_lipid": "descriptors_in_protein_lipid",
-    "descriptors_in_protein": "descriptors_in_protein",
-    "--descriptors_in_protein": "descriptors_in_protein",
-    "descriptors_in_lipid": "descriptors_in_lipid",
-    "--descriptors_in_lipid": "descriptors_in_lipid",
-    "no_embeddings": "no_embeddings",
-    "--no_embeddings": "no_embeddings",
-    "lipid_smiles_tokens": "lipid_smiles_tokens",
-    "--lipid_smiles_tokens": "lipid_smiles_tokens",
-    "deepclip": "deepclip",
-    "--deepclip": "deepclip",
-    "deepclip_profile_weights": "deepclip_profile_weights",
-    "--deepclip_profile_weights": "deepclip_profile_weights",
-    "no_protein_embeddings": "no_protein_embeddings",
-    "--no_protein_embeddings": "no_protein_embeddings",
-    "no_protein_geometry": "no_protein_geometry",
-    "--no_protein_geometry": "no_protein_geometry",
-    "pair_descriptor_pocket_shares": "pair_descriptor_pocket_shares",
-    "--pair_descriptor_pocket_shares": "pair_descriptor_pocket_shares",
-    "pair_descriptor_pocket_shares_split": "pair_descriptor_pocket_shares_split",
-    "--pair_descriptor_pocket_shares_split": "pair_descriptor_pocket_shares_split",
-    "pair_descriptor_pocket_shares_coarse": "pair_descriptor_pocket_shares_coarse",
-    "--pair_descriptor_pocket_shares_coarse": "pair_descriptor_pocket_shares_coarse",
-    "pair_descriptor_extent": "pair_descriptor_extent",
-    "--pair_descriptor_extent": "pair_descriptor_extent",
-    "pair_descriptor_flatten": "pair_descriptor_flatten",
-    "--pair_descriptor_flatten": "pair_descriptor_flatten",
-    "dann_lambda_ramp": "dann_lambda_ramp",
-    "--dann_lambda_ramp": "dann_lambda_ramp",
-    "dann_lambda_ramp_by_fit": "dann_lambda_ramp_by_fit",
-    "--dann_lambda_ramp_by_fit": "dann_lambda_ramp_by_fit",
-    "chem_lambda_ramp_by_fit": "chem_lambda_ramp_by_fit",
-    "--chem_lambda_ramp_by_fit": "chem_lambda_ramp_by_fit",
-    "balanced_lipid_classes": "balanced_lipid_classes",
-    "--balanced_lipid_classes": "balanced_lipid_classes",
-    "lipid_class_targets": "lipid_class_targets",
-    "--lipid_class_targets": "lipid_class_targets",
-    "attention_pooling": "attention_pooling",
-    "--attention_pooling": "attention_pooling",
-    "attention_pooling_pocket_bias": "attention_pooling_pocket_bias",
-    "--attention_pooling_pocket_bias": "attention_pooling_pocket_bias",
-    "rank_within_protein": "rank_within_protein",
-    "--rank_within_protein": "rank_within_protein",
-    "group_dro": "group_dro",
-    "--group_dro": "group_dro",
-    "swe_pooling": "swe_pooling",
-    "--swe_pooling": "swe_pooling",
-    "swe_freeze_reference": "swe_freeze_reference",
-    "--swe_freeze_reference": "swe_freeze_reference",
-    "use_esm3_v2_embeddings": "use_esm3_v2_embeddings",
-    "--use_esm3_v2_embeddings": "use_esm3_v2_embeddings",
-    "rnabang_replace_esm3": "rnabang_replace_esm3",
-    "--rnabang_replace_esm3": "rnabang_replace_esm3",
-    "rnabang_full_protein_encoder": "rnabang_full_protein_encoder",
-    "--rnabang_full_protein_encoder": "rnabang_full_protein_encoder",
-    "rnabang_with_esm3": "rnabang_with_esm3",
-    "--rnabang_with_esm3": "rnabang_with_esm3",
-    "rnabang_residual_with_esm3": "rnabang_residual_with_esm3",
-    "--rnabang_residual_with_esm3": "rnabang_residual_with_esm3",
-    "rnabang_frozen_node_adapter": "rnabang_frozen_node_adapter",
-    "--rnabang_frozen_node_adapter": "rnabang_frozen_node_adapter",
-    "rnabang_residue_type_embedding": "rnabang_residue_type_embedding",
-    "--rnabang_residue_type_embedding": "rnabang_residue_type_embedding",
-    "rnabang_edge_current": "rnabang_edge_current",
-    "--rnabang_edge_current": "rnabang_edge_current",
-    "rnabang_edge_topk_by_area": "rnabang_edge_topk_by_area",
-    "--rnabang_edge_topk_by_area": "rnabang_edge_topk_by_area",
-    "rnabang_edge_deepsets": "rnabang_edge_deepsets",
-    "--rnabang_edge_deepsets": "rnabang_edge_deepsets",
-    "rnabang_edge_pna": "rnabang_edge_pna",
-    "--rnabang_edge_pna": "rnabang_edge_pna",
-    "rnabang_edge_quantiles": "rnabang_edge_quantiles",
-    "--rnabang_edge_quantiles": "rnabang_edge_quantiles",
-    "rnabang_edge_set_transformer": "rnabang_edge_set_transformer",
-    "--rnabang_edge_set_transformer": "rnabang_edge_set_transformer",
-    "fast_attention": "fast_attention",
-    "--fast_attention": "fast_attention",
-    "protein_self_attention": "protein_self_attention",
-    "--protein_self_attention": "protein_self_attention",
-    "lipid_self_attention": "lipid_self_attention",
-    "--lipid_self_attention": "lipid_self_attention",
-    "mlp_in_place_of_sa": "mlp_in_place_of_sa",
-    "--mlp_in_place_of_sa": "mlp_in_place_of_sa",
-    "double_attention": "double_attention",
-    "--double_attention": "double_attention",
-    "single_gat_layer": "single_gat_layer",
-    "--single_gat_layer": "single_gat_layer",
-    "geometric_transformer": "geometric_transformer",
-    "--geometric_transformer": "geometric_transformer",
-    "transformer_conv": "transformer_conv",
-    "--transformer_conv": "transformer_conv",
-    "gine_conv": "gine_conv",
-    "--gine_conv": "gine_conv",
-    "protein_edge_attention": "protein_edge_attention",
-    "--protein_edge_attention": "protein_edge_attention",
-    "protein_edge_mlp": "protein_edge_mlp",
-    "--protein_edge_mlp": "protein_edge_mlp",
+# Each name is both the CLI flag (--name) and the ModelConfig field it sets to
+# True. A flag's own comment, where one exists, explains a non-obvious consequence.
+BOOL_FLAG_NAMES = (
+    "third_layers_in_mlps",
+    "cross_attention",
+    "bilinear_fusion",
+    "bilinear_pooled_norm",
+    "node_bilinear_fusion",
+    "cross_attention_forced_interaction",
+    "hard_negative_mining",
+    "dissimilar_negative_mining",
+    "adversarial_grl",
+    "adv_deep",
+    "adv_lambda_ramp",
+    "adv_lambda_ramp_by_fit",
+    "lipid_path_handicap",
+    "dann_family",
+    "chem_prior",
+    "chem_adversary",
+    "lipid_propensity_weight",
+    "pocket_compat_prior",
+    "compatibility_input",
+    "compatibility_split_input",
+    "compat_extent_bins",
+    "pair_descriptors",
+    "pair_descriptors_only",
+    "descriptors_head",
+    "descriptor_mlp",
+    "two_pair_descriptors_paths",
+    "thematical_paths",
+    "thematical_single_norm",
+    "thematical_bn_scale",
+    "thematical_orthogonal_init",
+    "thematical_interaction_lr",
+    "descriptors_in_protein_lipid",
+    "descriptors_in_protein",
+    "descriptors_in_lipid",
+    "no_embeddings",
+    "lipid_smiles_tokens",
+    "deepclip",
+    "deepclip_profile_weights",
+    "no_protein_embeddings",
+    "no_protein_geometry",
+    "pair_descriptor_pocket_shares",
+    "pair_descriptor_pocket_shares_split",
+    "pair_descriptor_pocket_shares_coarse",
+    "pair_descriptor_extent",
+    "pair_descriptor_flatten",
+    "dann_lambda_ramp",
+    "dann_lambda_ramp_by_fit",
+    "chem_lambda_ramp_by_fit",
+    "balanced_lipid_classes",
+    "lipid_class_targets",
+    "attention_pooling",
+    "attention_pooling_pocket_bias",
+    "rank_within_protein",
+    "group_dro",
+    "swe_pooling",
+    "swe_freeze_reference",
+    "use_esm3_v2_embeddings",
+    "rnabang_replace_esm3",
+    "rnabang_full_protein_encoder",
+    "rnabang_with_esm3",
+    "rnabang_residual_with_esm3",
+    "rnabang_frozen_node_adapter",
+    "rnabang_residue_type_embedding",
+    "rnabang_edge_current",
+    "rnabang_edge_topk_by_area",
+    "rnabang_edge_deepsets",
+    "rnabang_edge_pna",
+    "rnabang_edge_quantiles",
+    "rnabang_edge_set_transformer",
+    "fast_attention",
+    "protein_self_attention",
+    "lipid_self_attention",
+    "mlp_in_place_of_sa",
+    "double_attention",
+    "single_gat_layer",
+    "geometric_transformer",
+    "transformer_conv",
+    "gine_conv",
+    "protein_edge_attention",
+    "protein_edge_mlp",
+
     # Bare flags, so they only ever turn a lipid conv ON. Leaving both unset keeps the
     # field None, which means "inherit the protein flag" -- the pre-existing behaviour.
     # There is deliberately no way to spell "lipid graph uses plain GATv2 while the
     # protein graph uses EdgeMLPConv": nothing has asked for it, and an extra negative
     # flag would be a third state to reason about in every arg file.
-    "lipid_edge_attention": "lipid_edge_attention",
-    "--lipid_edge_attention": "lipid_edge_attention",
-    "lipid_edge_mlp": "lipid_edge_mlp",
-    "--lipid_edge_mlp": "lipid_edge_mlp",
-    "protein_edge_orientation_scalar": "protein_edge_orientation_scalar",
-    "--protein_edge_orientation_scalar": "protein_edge_orientation_scalar",
-    "protein_edge_raw3": "protein_edge_raw3",
-    "--protein_edge_raw3": "protein_edge_raw3",
-    "protein_gine_residual": "protein_gine_residual",
-    "--protein_gine_residual": "protein_gine_residual",
-    "attention_residual_gates": "attention_residual_gates",
-    "--attention_residual_gates": "attention_residual_gates",
-    "protein_gat_residual": "protein_gat_residual",
-    "--protein_gat_residual": "protein_gat_residual",
-    "structured_sparsity": "structured_sparsity",
-    "--structured_sparsity": "structured_sparsity",
-    "sparsity_gate_ffn": "sparsity_gate_ffn",
-    "--sparsity_gate_ffn": "sparsity_gate_ffn",
-    "sparsity_gate_heads": "sparsity_gate_heads",
-    "--sparsity_gate_heads": "sparsity_gate_heads",
-    "sparsity_gate_blocks": "sparsity_gate_blocks",
-    "--sparsity_gate_blocks": "sparsity_gate_blocks",
-    "sparsity_gate_third_layer": "sparsity_gate_third_layer",
-    "--sparsity_gate_third_layer": "sparsity_gate_third_layer",
-    "sparsity_gate_cross_attention": "sparsity_gate_cross_attention",
-    "--sparsity_gate_cross_attention": "sparsity_gate_cross_attention",
-    "gate_all_mlp_hidden": "gate_all_mlp_hidden",
-    "--gate_all_mlp_hidden": "gate_all_mlp_hidden",
-    "gate_all_mlp_layers": "gate_all_mlp_layers",
-    "--gate_all_mlp_layers": "gate_all_mlp_layers",
-    "no_ffns": "no_ffns",
-    "--no_ffns": "no_ffns",
-    "bilevel": "bilevel",
-    "--bilevel": "bilevel",
-    "bilevel_dropout": "bilevel_dropout",
-    "--bilevel_dropout": "bilevel_dropout",
-    "protein_disable_pre_sa_mlp": "protein_disable_pre_sa_mlp",
-    "--protein_disable_pre_sa_mlp": "protein_disable_pre_sa_mlp",
-    "protein_disable_post_sa_mlp": "protein_disable_post_sa_mlp",
-    "--protein_disable_post_sa_mlp": "protein_disable_post_sa_mlp",
-    "lipid_disable_post_sa_mlp": "lipid_disable_post_sa_mlp",
-    "--lipid_disable_post_sa_mlp": "lipid_disable_post_sa_mlp",
-    "protein_gat_graph_norm": "protein_gat_graph_norm",
-    "--protein_gat_graph_norm": "protein_gat_graph_norm",
-    "protein_output_graph_norm": "protein_output_graph_norm",
-    "--protein_output_graph_norm": "protein_output_graph_norm",
-    "lipid_gat_graph_norm": "lipid_gat_graph_norm",
-    "--lipid_gat_graph_norm": "lipid_gat_graph_norm",
-    "lipid_output_graph_norm": "lipid_output_graph_norm",
-    "--lipid_output_graph_norm": "lipid_output_graph_norm",
-    "lipid_first_fragment_only": "lipid_first_fragment_only",
-    "--lipid_first_fragment_only": "lipid_first_fragment_only",
-    "eval_average_candidates": "eval_average_candidates",
-    "--eval_average_candidates": "eval_average_candidates",
-    "lipid_isomers": "lipid_isomers",
-    "--lipid_isomers": "lipid_isomers",
-    "lipid_graph_isomers": "lipid_graph_isomers",
-    "--lipid_graph_isomers": "lipid_graph_isomers",
-    "bidirectional_edges": "bidirectional_edges",
-    "--bidirectional_edges": "bidirectional_edges",
-    "prot_pos_bias_per_head": "prot_pos_bias_per_head",
-    "--prot_pos_bias_per_head": "prot_pos_bias_per_head",
-    "cross_attention_bury_bias": "cross_attention_bury_bias",
-    "--cross_attention_bury_bias": "cross_attention_bury_bias",
-    "cross_attention_chain_bias": "cross_attention_chain_bias",
-    "--cross_attention_chain_bias": "cross_attention_chain_bias",
-    "attention_by_pockets": "attention_by_pockets",
-    "--attention_by_pockets": "attention_by_pockets",
-    "protein_pockets_only": "protein_pockets_only",
-    "--protein_pockets_only": "protein_pockets_only",
-    "proteinmpnn_replace_esm3": "proteinmpnn_replace_esm3",
-    "--proteinmpnn_replace_esm3": "proteinmpnn_replace_esm3",
-    "esmif1_replace_esm3": "esmif1_replace_esm3",
-    "--esmif1_replace_esm3": "esmif1_replace_esm3",
-    "saprot_replace_esm3": "saprot_replace_esm3",
-    "--saprot_replace_esm3": "saprot_replace_esm3",
-    "protein_extra_node_features": "protein_extra_node_features",
-    "--protein_extra_node_features": "protein_extra_node_features",
-    "pocket_descriptors": "pocket_descriptors",
-    "--pocket_descriptors": "pocket_descriptors",
-    "pocket_descriptors_family_neutral": "pocket_descriptors_family_neutral",
-    "--pocket_descriptors_family_neutral": "pocket_descriptors_family_neutral",
-    "protein_group_weight": "protein_group_weight",
-    "--protein_group_weight": "protein_group_weight",
-    "double_coldsplit": "double_coldsplit",
-    "--double_coldsplit": "double_coldsplit",
-    "mixed_coldsplit": "mixed_coldsplit",
-    "--mixed_coldsplit": "mixed_coldsplit",
-    "protein_balance_weight": "protein_balance_weight",
-    "--protein_balance_weight": "protein_balance_weight",
-    "marginal_balance_weight": "marginal_balance_weight",
-    "--marginal_balance_weight": "marginal_balance_weight",
-    "protein_class_weight": "protein_class_weight",
-    "--protein_class_weight": "protein_class_weight",
-    "protein_class_sqrt_weight": "protein_class_sqrt_weight",
-    "--protein_class_sqrt_weight": "protein_class_sqrt_weight",
-    "pu_loss": "pu_loss",
-    "--pu_loss": "pu_loss",
-    "pu_rho_by_subclass": "pu_rho_by_subclass",
-    "--pu_rho_by_subclass": "pu_rho_by_subclass",
-    "focal_loss": "focal_loss",
-    "--focal_loss": "focal_loss",
-    "logit_adjustment": "logit_adjustment",
-    "--logit_adjustment": "logit_adjustment",
-    "disable_early_stopping": "disable_early_stopping",
-    "--disable_early_stopping": "disable_early_stopping",
-    "testmode": "testmode",
-    "--testmode": "testmode",
-    "type_opt": "type_opt",
-    "--type_opt": "type_opt",
-    "plmon": "plmon",
-    "--plmon": "plmon",
-    "plm_sequential_compression": "plm_sequential_compression",
-    "--plm_sequential_compression": "plm_sequential_compression",
-    "buryon": "buryon",
-    "--buryon": "buryon",
-    "lr_warmup_cosine": "lr_warmup_cosine",
-    "--lr_warmup_cosine": "lr_warmup_cosine",
-    "save_checkpoint": "save_checkpoint",
-    "--save_checkpoint": "save_checkpoint",
-    "save_model": "save_model",
-    "--save_model": "save_model",
-    "save_dynamics": "save_dynamics",
-    "--save_dynamics": "save_dynamics",
-    "save_model_in_dynamics": "save_model_in_dynamics",
-    "--save_model_in_dynamics": "save_model_in_dynamics",
-    "structural_pretrain": "structural_pretrain",
-    "--structural_pretrain": "structural_pretrain",
-    "freeze_pretrained_encoders": "freeze_pretrained_encoders",
-    "--freeze_pretrained_encoders": "freeze_pretrained_encoders",
-    "balance_excluded_group_negatives": "balance_excluded_group_negatives",
-    "--balance_excluded_group_negatives": "balance_excluded_group_negatives",
-    "balance_negatives_by_family": "balance_negatives_by_family",
-    "--balance_negatives_by_family": "balance_negatives_by_family",
-    "balanced_proteins": "balanced_proteins",
-    "--balanced_proteins": "balanced_proteins",
-    "balanced_batches": "balanced_batches",
-    "--balanced_batches": "balanced_batches",
-    "rotate_train_negatives": "rotate_train_negatives",
-    "--rotate_train_negatives": "rotate_train_negatives",
-    "drop_uncovered_protein_subclass": "drop_uncovered_protein_subclass",
-    "--drop_uncovered_protein_subclass": "drop_uncovered_protein_subclass",
-    "cold_split": "cold_split",
-    "--cold_split": "cold_split",
-    "relabel_fig3a_disputed_negatives": "relabel_fig3a_disputed_negatives",
-    "--relabel_fig3a_disputed_negatives": "relabel_fig3a_disputed_negatives",
-    "lipid_only": "lipid_only",
-    "--lipid_only": "lipid_only",
-    "protein_only": "protein_only",
-    "--protein_only": "protein_only",
-}
+    "lipid_edge_attention",
+    "lipid_edge_mlp",
+    "protein_edge_orientation_scalar",
+    "protein_edge_raw3",
+    "protein_gine_residual",
+    "attention_residual_gates",
+    "protein_gat_residual",
+    "structured_sparsity",
+    "sparsity_gate_ffn",
+    "sparsity_gate_heads",
+    "sparsity_gate_blocks",
+    "sparsity_gate_third_layer",
+    "sparsity_gate_cross_attention",
+    "gate_all_mlp_hidden",
+    "gate_all_mlp_layers",
+    "no_ffns",
+    "bilevel",
+    "bilevel_dropout",
+    "protein_disable_pre_sa_mlp",
+    "protein_disable_post_sa_mlp",
+    "lipid_disable_post_sa_mlp",
+    "protein_gat_graph_norm",
+    "protein_output_graph_norm",
+    "lipid_gat_graph_norm",
+    "lipid_output_graph_norm",
+    "lipid_first_fragment_only",
+    "eval_average_candidates",
+    "lipid_isomers",
+    "lipid_graph_isomers",
+    "bidirectional_edges",
+    "prot_pos_bias_per_head",
+    "cross_attention_bury_bias",
+    "cross_attention_chain_bias",
+    "attention_by_pockets",
+    "protein_pockets_only",
+    "proteinmpnn_replace_esm3",
+    "esmif1_replace_esm3",
+    "saprot_replace_esm3",
+    "protein_extra_node_features",
+    "pocket_descriptors",
+    "pocket_descriptors_family_neutral",
+    "protein_group_weight",
+    "double_coldsplit",
+    "mixed_coldsplit",
+    "protein_balance_weight",
+    "marginal_balance_weight",
+    "protein_class_weight",
+    "protein_class_sqrt_weight",
+    "pu_loss",
+    "pu_rho_by_subclass",
+    "focal_loss",
+    "logit_adjustment",
+    "disable_early_stopping",
+    "testmode",
+    "type_opt",
+    "plmon",
+    "plm_sequential_compression",
+    "buryon",
+    "lr_warmup_cosine",
+    "save_checkpoint",
+    "save_model",
+    "save_dynamics",
+    "save_model_in_dynamics",
+    "structural_pretrain",
+    "freeze_pretrained_encoders",
+    "balance_excluded_group_negatives",
+    "balance_negatives_by_family",
+    "balanced_proteins",
+    "balanced_batches",
+    "rotate_train_negatives",
+    "drop_uncovered_protein_subclass",
+    "cold_split",
+    "relabel_fig3a_disputed_negatives",
+    "lipid_only",
+    "protein_only",
+)
+
+SIMPLE_BOOL_FLAGS = {f"--{name}": name for name in BOOL_FLAG_NAMES}
 
 
 FLAG_HANDLERS = {
@@ -3746,7 +3596,7 @@ FLAG_HANDLERS = {
     # Both default True and had only the affirmative flag (SIMPLE_BOOL_FLAGS above),
     # so there was no way to turn either off from the command line -- needed to test
     # whether self-attention earns its capacity on --double_coldsplit, which no run
-    # ever has (138/138 double_coldsplit runs have both on; files/interaction_signal_plan.md).
+    # ever has (138/138 double_coldsplit runs have both on; files/history/geometric_edge.md).
     "no_protein_self_attention": set_config_flag("protein_self_attention", False),
     "--no_protein_self_attention": set_config_flag("protein_self_attention", False),
     "no_lipid_self_attention": set_config_flag("lipid_self_attention", False),

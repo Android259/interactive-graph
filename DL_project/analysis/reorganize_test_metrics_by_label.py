@@ -7,10 +7,13 @@ import argparse
 import csv
 import re
 import shutil
+import sys
 from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+from training.results_layout import in_family_layout, split_result_path  # noqa: E402
 METRIC_FILENAME = re.compile(r"^test_metrics_(?P<timestamp>\d{8}_\d{6})_.*\.txt$")
 SAFE_PART = re.compile(r"[^A-Za-z0-9._=-]+")
 
@@ -58,11 +61,20 @@ def metric_timestamp(path: Path) -> str:
 
 
 def metric_context(path: Path, metrics_root: Path) -> tuple[str, str]:
+    """(architecture-or-label directory name, exclusion_set) of one report path.
+
+    test_metrics/<family>/<architecture>/<exclusion set...>/<report> --
+    training/results_layout.py's family level, one directory above what this
+    function used to treat as its first component.
+    """
     relative = path.resolve().relative_to(metrics_root.resolve())
-    if len(relative.parts) < 3:
-        raise ValueError(f"Metric path lacks label/exclusion directories: {relative}")
-    exclusion_set = "/".join(relative.parts[1:-1])
-    return relative.parts[0], exclusion_set
+    if not in_family_layout(relative.parts):
+        raise ValueError(
+            f"Metric path lacks family/label/exclusion directories: {relative}"
+        )
+    _family, architecture, rest = split_result_path(relative.parts)
+    exclusion_set = "/".join(rest[:-1])
+    return architecture, exclusion_set
 
 
 def destination_for(path: Path, metrics_root: Path, output_root: Path) -> Path:

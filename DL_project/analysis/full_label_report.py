@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""One sweep label, every number files/marginals_and_cold_split.md section 8 and
-files/interaction_signal_plan.md section 3 report about it -- in one run instead of the
+"""One sweep label, every number files/reference/marginals_and_cold_split.md section 8 and
+files/history/geometric_edge.md report about it -- in one run instead of the
 three separate commands (checkpoint_scores.py, then null_model.py, then
 interaction_increment.py, hand-copying the CSV path between them) that produced them.
 

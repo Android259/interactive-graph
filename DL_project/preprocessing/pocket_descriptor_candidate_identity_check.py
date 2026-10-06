@@ -42,7 +42,7 @@ from pocket_descriptor_identity_check import (  # noqa: E402
 )
 
 # Every research-catalog column NOT already in POCKET_DESCRIPTOR_NAMES. Order matches
-# files/pocket_shape_descriptors.md's own COLUMN_BLOCKS grouping.
+# files/reference/pocket_shape_descriptors.md's own COLUMN_BLOCKS grouping.
 CANDIDATE_NAMES = tuple(
     name for name in (
         "pocket_width", "pocket_thickness", "pocket_gyration",

@@ -207,8 +207,8 @@ class DeepCLIP(torch.nn.Module):
             # every lipid that protein sees, regardless of sequence (measured: several
             # seeds of deepclip_gltp_protein_gate_subclass_sugar_phospho_ep120 land at
             # specificity exactly 0.0 or 1.0 while AUC stays informative -- an ordering
-            # signal the fixed threshold cannot express, files/deepclip_gate_and_
-            # subclass_plan.md's running log). A per-protein bias gives the gate a
+            # signal the fixed threshold cannot express, files/reference/
+            # files/reference/deepclip_architecture.md). A per-protein bias gives the gate a
             # degree of freedom to correct that shift independently of the profile's
             # own scale, instead of every departure from 0 having to run through the
             # same channels that also carry the sequence signal.
@@ -360,8 +360,8 @@ class DeepCLIP(torch.nn.Module):
             # tanh bounds every gate output to (-1, 1) before it touches the profile or
             # the score, so neither the per-channel weights nor the bias can run away to
             # an extreme the way the raw linear output could -- measured on
-            # deepclip_cral_trio_protein_gate_subclass_pa_ep120 (files/deepclip_gate_
-            # and_subclass_plan.md's running log): adding an unbounded additive bias
+            # deepclip_cral_trio_protein_gate_subclass_pa_ep120 (files/reference/
+            # files/reference/deepclip_architecture.md): adding an unbounded additive bias
             # alone barely moved specificity-collapse rate (7/10 seeds at
             # specificity 0 or 1 -> 6/10), consistent with the bias learning its own
             # runaway constant on the same data-starved family instead of a useful
@@ -380,8 +380,8 @@ class DeepCLIP(torch.nn.Module):
             # once, which is the actual collapse mechanism (a protein whose gate
             # departs uniformly scales the whole profile toward one sign, regardless
             # of sequence -- measured: bias alone and bias+tanh gave statistically
-            # identical specificity-collapse rates, files/deepclip_gate_and_subclass_
-            # plan.md's running log). Subtracting the channel mean before the +1.0
+            # identical specificity-collapse rates, files/reference/
+            # files/reference/deepclip_architecture.md). Subtracting the channel mean before the +1.0
             # forces weights.mean(channel) == 1.0 exactly, so this pathway can only
             # REDISTRIBUTE emphasis across profile channels, never scale all of them
             # up or down together -- any genuine protein-level shift has to go

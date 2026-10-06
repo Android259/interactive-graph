@@ -118,7 +118,7 @@ def print_csv(title: str, frame: pd.DataFrame) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--table", type=Path, default=Path("metrics_summary.csv"))
+    parser.add_argument("--table", type=Path, default=Path("results/tables/metrics_summary.csv"))
     parser.add_argument("--format", choices=("markdown", "csv"), default="markdown")
     parser.add_argument("--metrics", nargs="+", default=list(DEFAULT_METRICS))
     args = parser.parse_args()

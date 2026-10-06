@@ -38,7 +38,7 @@ METRICS = (
     # Read this one FIRST on a --lipid_coldsplit label. Pooled AUC there is largely the
     # protein marginal (measured: pooled 0.568 against 0.480 within protein), which this
     # cannot express -- comparisons never cross a protein boundary. See
-    # files/lipid_coldsplit_architecture_direction.md section 7j.
+    # files/results/lipid_coldsplit_architecture_direction.md section 7j.
     ("AUC_within_protein", "test AUC in-protein", True),
     ("AUC_within_protein_proteins", "  (proteins averaged)", True),
     # Pair-pooled version of the same question -- read THIS one: the
@@ -309,7 +309,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("candidate_label")
     parser.add_argument("baseline_label")
-    parser.add_argument("--table", type=Path, default=PROJECT_ROOT / "metrics_summary.csv")
+    parser.add_argument("--table", type=Path, default=PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv")
     parser.add_argument(
         "--by-groups",
         "--by_groups",

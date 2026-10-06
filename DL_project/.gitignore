@@ -44,14 +44,13 @@ data/esm3_checkpoint/
 analysis/.null_model_cache.json
 
 # Generated stores above GitHub's 100 MB per-file limit: pushing them is rejected
-# outright, so they stay local. All are rebuildable from source -- the Tanimoto
-# matrix from preprocessing/build_tanimoto_matrix.py (a compact form is tracked as
-# data/Tanimoto_compact_*, built by preprocessing/build_tanimoto_compact.py), the
-# embedding stores from
-# data/build_lipid_embedding_store.py.
+# outright, so they stay local. All are rebuildable from source -- the embedding
+# stores from data/build_lipid_embedding_store.py. The old full Tanimoto matrix is no
+# longer built; the compact form (data/Tanimoto_compact_*, preprocessing/
+# build_tanimoto_compact.py) is tracked.
 data/Total_tanimoto_matrix_uint8.npy
 data/lipid_SMILES_embedding_deterministic.pkl
-data/lipid_SMILES_embedding_deterministic.tensors.pt
+data/cache/lipid_SMILES_embedding_deterministic.tensors.pt
 data/isomeric_lipids/lipid_SMILES_isomeric_embedding.pkl
 
 # Pretrained MoLFormer checkpoint (1.6 GB unpacked): the source of the lipid

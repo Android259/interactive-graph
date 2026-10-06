@@ -1832,7 +1832,7 @@ def test_descriptor_mlp_rejects_the_full_architecture_options():
 
 def test_descriptor_mlp_does_not_build_named_descriptor_head():
     """The whole point: DescriptorMLPHead in place of NamedDescriptorHead's shared
-    per-token Linear(1, dim) embedding (files/descriptors_head_bottleneck.md)."""
+    per-token Linear(1, dim) embedding (files/results/descriptors_head_bottleneck.md)."""
     from architecture.named_descriptor_head import NamedDescriptorHead
 
     config = make_config()

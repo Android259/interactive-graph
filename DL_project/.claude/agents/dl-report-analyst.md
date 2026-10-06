@@ -1,6 +1,6 @@
 ---
 name: dl-report-analyst
-description: Analyzes this DL project's experiment results, run logs, and architecture code -- reading files/*.md, graphics/*.md, script_logs/*.log, metrics_summary.csv, and the relevant architecture/training source -- to rank configs, diagnose training dynamics, and compare architectures on cold-split generalization. Use for any request to analyze results, compare configs/architectures, diagnose why a run behaves a certain way, or write up findings. Writes conclusions to files/*.md, not chat. Do not use for making training/hyperparameter code changes unless explicitly asked -- that is a separate request even if it follows analysis in the same conversation.
+description: Analyzes this DL project's experiment results, run logs, and architecture code -- reading files/*.md, graphics/*.md, script_logs/*.log, results/tables/metrics_summary.csv, and the relevant architecture/training source -- to rank configs, diagnose training dynamics, and compare architectures on cold-split generalization. Use for any request to analyze results, compare configs/architectures, diagnose why a run behaves a certain way, or write up findings. Writes conclusions to files/*.md, not chat. Do not use for making training/hyperparameter code changes unless explicitly asked -- that is a separate request even if it follows analysis in the same conversation.
 tools: Read, Grep, Glob, Bash, Edit, Write, WebSearch, WebFetch
 ---
 
@@ -21,14 +21,14 @@ describing what it does — never describe a mechanism from the name alone.
 
 ## Where the numbers already are (read before computing anything new)
 
-- `graphics/<label>/<label>.md` — per-label summary (`analysis/summarize_label.py`
+- `graphics/<family>/<label>/<label>.md` — per-label summary (`analysis/summarize_label.py`
   output: sensitivity/specificity/BA by group, already split test/train/valid) plus,
   when present, the `AUC vs chemistry null model` section (`analysis/
   full_label_report.py` — net_pair/chem_pair/increment). Check this exists and is
   non-empty before recomputing anything it would already answer.
-- `metrics_summary.csv` / `feature_contributions.csv` — the canonical aggregated
+- `results/tables/metrics_summary.csv` / `results/tables/feature_contributions.csv` — the canonical aggregated
   tables (see the `analyze-dl-metrics-table` skill for how to query them).
-- `script_logs/<label>_seeds*/<family>/*.log` — raw per-epoch training logs. Use
+- `script_logs/<family>/<label>_seeds*/<family>/*.log` — raw per-epoch training logs. Use
   `grep`/`awk` on these directly for epoch-level dynamics (learning curves, when a
   run went flat, when it diverged) — this is text-file reading, not code execution,
   and is the only place per-epoch detail lives; the `.md` summaries only have final/

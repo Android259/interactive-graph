@@ -2,8 +2,8 @@
 # Submit one or several variants' whole group x seed grids to OAR, packed
 # together as densely as PACK_SIZE allows.
 #
-#   bash scripts/launch/submit_grid.sh scripts/arg_files/<config>.md
-#   bash scripts/launch/submit_grid.sh scripts/arg_files/a.md scripts/arg_files/b.md
+#   bash scripts/launch/submit_grid.sh arg_files/<config>.md
+#   bash scripts/launch/submit_grid.sh arg_files/a.md arg_files/b.md
 #
 # One file for both series. Which one runs is decided by each config itself: a
 # --cold_split flag in it selects separate held-out validation and test groups
@@ -208,8 +208,7 @@ LIPID_SUBCLASS_BLOCKS_LIST=(
 # --family_only, bare (no value), in the args file switches the grid to a third axis:
 # one model per family, trained AND validated on that family's own rows only (a warm,
 # row-level random split inside the family -- dataloader/Dataloader.py:147-150,1461 --
-# NOT a held-out-family cold split; see files/structural_pretrain_family_diagnosis.md's
-# "central correction" for why this is a different regime from --double_coldsplit/
+# NOT a held-out-family cold split: a different regime from --double_coldsplit/
 # --cold_split, not a variant of either). The grid still iterates PROTEIN_GROUPS (one
 # job per family x seed, --groups/--no_groups apply normally, same group spelling as
 # every other protein-side axis), but no protein is EXCLUDED from training -- the
@@ -232,7 +231,7 @@ LIPID_SUBCLASS_BLOCKS_LIST=(
 # rotate, so the grid runs one pseudo-group ("random") x the seeds, and --groups/
 # --no_groups are ignored for such a label exactly as they are for --lipid_coldsplit.
 # What the runs are FOR: the warm end of the similarity-to-train axis, the anchor the
-# cold-split numbers are read against (analysis/split_similarity_vs_metric.py). They are
+# cold-split numbers are read against (analysis/probes/split_similarity_vs_metric.py). They are
 # not a baseline to pick configurations on -- with every protein and every lipid in
 # training both label marginals are free.
 
@@ -444,20 +443,23 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
             | sed -E 's/(^|[[:space:]])--random_split([[:space:]]|$)/\1/g')"
     fi
 
+    # script_logs/<family>/..., the same family directory the run/ and test_metrics/
+    # trees use (arg_files/<family>/<label>.md -> training/results_layout.py).
+    this_family="$(label_family "${this_variant}")"
     if (( this_cold_split )); then
-        this_output_root="script_logs/${this_variant}_coldval_seeds01234"
+        this_output_root="script_logs/${this_family}/${this_variant}_coldval_seeds01234"
         this_groups=("${COLD_TEST_GROUPS[@]}")
     else
-        this_output_root="script_logs/${this_variant}_seeds01234"
+        this_output_root="script_logs/${this_family}/${this_variant}_seeds01234"
         this_groups=("${PROTEIN_GROUPS[@]}")
     fi
     this_seeds=("${DEFAULT_SEEDS[@]}")
     if (( this_lipid_coldsplit )); then
-        this_output_root="script_logs/${this_variant}_lipidsets"
+        this_output_root="script_logs/${this_family}/${this_variant}_lipidsets"
         this_groups=("${LIPID_COLDSPLIT_SETS_LIST[@]}")
     fi
     if (( this_family_only )); then
-        this_output_root="script_logs/${this_variant}_familyonly"
+        this_output_root="script_logs/${this_family}/${this_variant}_familyonly"
         if [[ -n "${this_family_only_fixed}" ]]; then
             # One job x seed, not nine: the family is already fixed in the template.
             this_groups=("${this_family_only_fixed}")
@@ -469,21 +471,21 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         # One pseudo-group, named for the directory new_train.py will file the run
         # under, so log path, run/ path and test_metrics/ path agree the way they do on
         # every other axis.
-        this_output_root="script_logs/${this_variant}_random"
+        this_output_root="script_logs/${this_family}/${this_variant}_random"
         this_groups=("random")
     fi
     if (( this_lipid_subclass )); then
         if [[ -n "${this_lipid_subclass_fixed}" ]]; then
             # One fixed block, already named in the template -- one job x seed.
-            this_output_root="script_logs/${this_variant}_subclass"
+            this_output_root="script_logs/${this_family}/${this_variant}_subclass"
             this_groups=("${this_lipid_subclass_fixed}")
         else
-            this_output_root="script_logs/${this_variant}_lipidsubclasses"
+            this_output_root="script_logs/${this_family}/${this_variant}_lipidsubclasses"
             this_groups=("${LIPID_SUBCLASS_BLOCKS_LIST[@]}")
         fi
     fi
     if [[ -n "${this_lipid_isolation}" ]]; then
-        this_output_root="script_logs/${this_variant}_iso${this_lipid_isolation}"
+        this_output_root="script_logs/${this_family}/${this_variant}_iso${this_lipid_isolation}"
         this_groups=("iso${this_lipid_isolation}")
     fi
     if [[ -n "${this_lipid_species}" ]]; then
@@ -492,7 +494,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         # other axis.
         this_species_tag="species$(printf '%02d' \
             "$(awk -v s="${this_lipid_species}" 'BEGIN{printf "%d", s*100 + 0.5}')")"
-        this_output_root="script_logs/${this_variant}_${this_species_tag}"
+        this_output_root="script_logs/${this_family}/${this_variant}_${this_species_tag}"
         this_groups=("${this_species_tag}")
     fi
     if (( this_random_split )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then

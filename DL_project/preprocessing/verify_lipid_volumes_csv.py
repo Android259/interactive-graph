@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cross-check data/Lipid_Volumes.csv (preprocessing/convert_lipid_volumes_xlsx.py's
 output) against the one independent source of the same numbers this machine has:
-data/pair_descriptor_cache_deterministic_v2.json's already-cached
+data/cache/pair_descriptor_cache_deterministic_v2.json's already-cached
 `experimental_lipid_volume` entries, computed earlier by whichever machine last had
 `openpyxl` and ran a cache build straight off the original .xlsx.
 
@@ -37,7 +37,7 @@ def main() -> int:
     parser.add_argument("--csv", type=Path, default=PROJECT_ROOT / "data" / "Lipid_Volumes.csv")
     parser.add_argument(
         "--cache", type=Path,
-        default=PROJECT_ROOT / "data" / "pair_descriptor_cache_deterministic_v2.json",
+        default=PROJECT_ROOT / "data" / "cache" / "pair_descriptor_cache_deterministic_v2.json",
     )
     parser.add_argument("--tolerance", type=float, default=1e-6)
     args = parser.parse_args()

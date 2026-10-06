@@ -46,7 +46,7 @@ def _normalize_group_name(name: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("labels", nargs="+")
-    parser.add_argument("--table", type=Path, default=PROJECT_ROOT / "metrics_summary.csv")
+    parser.add_argument("--table", type=Path, default=PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv")
     parser.add_argument(
         "--exclude-groups",
         "--exclude_groups",

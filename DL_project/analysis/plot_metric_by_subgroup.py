@@ -13,6 +13,7 @@ from pathlib import Path
 
 from build_metrics_table import CONFIG_FIELDS, PROJECT_ROOT, ModelConfig, serialize_config
 from dataloader.dataset_source import INTERACTION_CSV
+from training.results_layout import in_family_layout
 
 
 REPORT_TIMESTAMP = re.compile(r"test_metrics_(\d{8}_\d{6})_")
@@ -144,10 +145,11 @@ def parse_report(path: Path, reports_root: Path) -> dict[str, object]:
             config[field] = CONFIG_DEFAULTS.get(field, "")
 
     relative = path.relative_to(reports_root)
-    if len(relative.parts) < 3:
+    # test_metrics/<family>/<label>/<set...>/<report> (training/results_layout.py)
+    if not in_family_layout(relative.parts) or len(relative.parts) < 4:
         raise ValueError(f"Unexpected report path: {path}")
-    config.setdefault("label", relative.parts[0])
-    config["exclusion_set"] = "/".join(relative.parts[1:-1])
+    config.setdefault("label", relative.parts[1])
+    config["exclusion_set"] = "/".join(relative.parts[2:-1])
 
     timestamp_match = REPORT_TIMESTAMP.match(path.name)
     if timestamp_match is None:

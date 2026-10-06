@@ -19,7 +19,7 @@
 # AUC's learning curve is validation-only (no train line, see analysis/
 # plot_group_learning_curve.py's METRIC_SERIES) because aggregate_values() only ever
 # computes it on the validation pass. It also only exists in TensorBoard logs from
-# runs AFTER training/new_train.py's log_epoch_metrics started writing "epoch/valid
+# runs AFTER training/eval_metrics.py's log_epoch_metrics started writing "epoch/valid
 # AUC" -- a run completed before that change has no such scalar, and this script
 # prints "no runs with required TensorBoard tags" and skips it, same as any other
 # missing-tag case. The subgroup AUC bar chart has no such gap: it reads the final-
@@ -29,7 +29,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-TABLE="${TABLE:-${PROJECT_ROOT}/metrics_summary.csv}"
+TABLE="${TABLE:-${PROJECT_ROOT}/results/tables/metrics_summary.csv}"
 export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
 if (( $# != 1 )); then
@@ -38,7 +38,10 @@ if (( $# != 1 )); then
 fi
 
 LABEL="$1"
-OUTPUT_DIR="${PROJECT_ROOT}/graphics/${LABEL}"
+# shellcheck source=scripts/lib/args_file_lib.sh
+source "${SCRIPT_DIR}/lib/args_file_lib.sh"
+# graphics/<family>/<label>/ (training/results_layout.py).
+OUTPUT_DIR="${PROJECT_ROOT}/graphics/$(label_family "${LABEL}")/${LABEL}"
 CURVE_METRICS=(balanced_accuracy F1 sensitivity specificity precision AUC loss)
 SUBGROUP_METRICS=(balanced_accuracy F1 sensitivity specificity precision AUC)
 

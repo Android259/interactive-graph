@@ -6,20 +6,24 @@ import pytest
 
 import dataloader.pair_descriptor_cache as pair_descriptor_cache
 from dataloader.pair_descriptor_cache import (
+    lipid_descriptors_csv_path,
+    lipid_descriptors_manifest_path,
+    load_pair_descriptor_cache,
+    load_pair_value_cache,
+    pair_descriptors_csv_path,
+    pair_descriptors_manifest_path,
+    pair_value_cache_is_current,
+    store_is_current,
+)
+from dataloader.cache_builders.pair_descriptor_cache import (
     _compute_one,
     _previous_cache_values,
     build_pair_descriptor_cache,
-    cache_path,
-    load_pair_descriptor_cache,
-    store_is_current,
+    build_pair_value_cache,
 )
 import dataloader.pair_descriptors as pair_descriptors
 from dataloader.pair_descriptors import descriptor_values_by_row
-from dataloader.pocket_lipid_compatibility import (
-    chain_lengths_by_row,
-    pocket_extent_by_protein,
-    pocket_rim_core_aromatic_share_by_protein,
-)
+from dataloader.pocket_lipid_compatibility import chain_lengths_by_row
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -47,14 +51,28 @@ def fixture_csv():
 
 @pytest.fixture
 def clean_cache_files():
-    """Give the test an empty cache_path(DATA_DIR, ...), then put back whatever real
-    cache data/build_pair_descriptor_cache.py had already built there -- these paths
-    are the live, shared production cache (dataloader/pair_descriptor_cache.py), not a
-    fixture of this test file, so unlinking without restoring would force every grid
-    job launched after the test suite runs to pay the ~12s rebuild this cache exists to
-    avoid, for a file the test itself never touched the content of.
+    """Give the test an empty lipid_descriptors.csv/.manifest.json, then put back
+    whatever real table data/build_pair_descriptor_cache.py had already built there --
+    these paths are the live, shared production table (dataloader/pair_descriptor_
+    cache.py), not a fixture of this test file, so unlinking without restoring would
+    force every grid job launched after the test suite runs to pay the ~12s rebuild
+    this table exists to avoid, for files the test itself never touched the content of.
     """
-    paths = [cache_path(DATA_DIR, isomeric) for isomeric in (False, True)]
+    paths = [lipid_descriptors_csv_path(DATA_DIR), lipid_descriptors_manifest_path(DATA_DIR)]
+    saved = {path: path.read_bytes() if path.exists() else None for path in paths}
+    for path in paths:
+        path.unlink(missing_ok=True)
+    yield
+    for path in paths:
+        path.unlink(missing_ok=True)
+        if saved[path] is not None:
+            path.write_bytes(saved[path])
+
+
+@pytest.fixture
+def clean_pair_value_cache_files():
+    """Same discipline as clean_cache_files, for data/pair_descriptors.csv/.manifest.json."""
+    paths = [pair_descriptors_csv_path(DATA_DIR), pair_descriptors_manifest_path(DATA_DIR)]
     saved = {path: path.read_bytes() if path.exists() else None for path in paths}
     for path in paths:
         path.unlink(missing_ok=True)
@@ -87,18 +105,63 @@ def test_build_then_load_roundtrip(fixture_csv, csv_path, clean_cache_files):
         DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False
     )
     assert path.exists()
+    assert path == lipid_descriptors_csv_path(DATA_DIR)
     assert smiles_count == 2
     assert protein_count == len(PROTEINS)
 
     assert store_is_current(DATA_DIR, isomeric=False) is True
     cache = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
     assert cache is not None
-    assert set(cache) == {"raw_to_canonical", "values", "proteins"}
+    # No "proteins" sub-table any more -- that data lives only in
+    # data/protein_descriptors.csv (dataloader/chemistry_prior.py).
+    assert set(cache) == {"raw_to_canonical", "values"}
     assert len(cache["values"]) == 2
-    assert set(cache["proteins"]) == set(PROTEINS)
-    for protein in PROTEINS:
-        entry = cache["proteins"][protein]
-        assert set(entry) == {"extent", "aromatic_share_core", "aromatic_share_rim"}
+
+
+def test_build_pair_value_cache_roundtrip(
+    fixture_csv, csv_path, clean_cache_files, clean_pair_value_cache_files
+):
+    """data/pair_descriptors.csv -- the genuinely joint (lipid x protein) table --
+    reads lipid values from data/lipid_descriptors.csv and protein values from
+    data/protein_descriptors.csv (built independently by dataloader/chemistry_prior.py)
+    and must agree with dataloader.pair_descriptors.pair_descriptor_value computed
+    directly over the same inputs, for every (candidate, protein) pair the fixture
+    table actually contains.
+    """
+    from dataloader.chemistry_prior import protein_descriptor_table
+    from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES, pair_descriptor_value
+
+    build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
+    assert pair_value_cache_is_current(DATA_DIR, isomeric=False) is False  # not built yet
+
+    path, pair_count = build_pair_value_cache(DATA_DIR, fixture_csv, isomeric=False)
+    assert path.exists()
+    assert path == pair_descriptors_csv_path(DATA_DIR)
+    # One row per (candidate, protein): 2 fixture rows, each naming exactly one
+    # protein and one candidate SMILES, and both candidates resolve.
+    assert pair_count == 2
+
+    assert pair_value_cache_is_current(DATA_DIR, isomeric=False) is True
+    loaded = load_pair_value_cache(DATA_DIR, isomeric=False)
+    assert loaded is not None
+    assert len(loaded) == 2
+
+    lipid_cache = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
+    protein_table = protein_descriptor_table(str(DATA_DIR))
+    for (smiles, protein), values in loaded.items():
+        lv = lipid_cache["values"][smiles]
+        lipid_input = {
+            "chain": lv["chain"], "unsaturation": lv["unsaturation"],
+            "hbond": lv["hbond"], "heavy": lv["heavy_atoms"],
+            "tail_count": lv["tail_count"],
+            "npr1": lv["npr1"], "npr2": lv["npr2"],
+        }
+        expected = {
+            name: pair_descriptor_value(name, lipid_input, protein_table[protein])
+            for name in PAIR_DESCRIPTOR_NAMES
+        }
+        for name in PAIR_DESCRIPTOR_NAMES:
+            assert values[name] == pytest.approx(expected[name]), (smiles, protein, name)
 
 
 def test_store_goes_stale_when_source_csv_changes(fixture_csv, csv_path, clean_cache_files):
@@ -127,7 +190,7 @@ def test_store_goes_stale_when_source_csv_changes(fixture_csv, csv_path, clean_c
 def test_rebuild_is_decided_per_value_not_by_a_whole_module_hash(
     fixture_csv, csv_path, clean_cache_files, monkeypatch
 ):
-    """Only a change that would move a cached VALUE may report the cache stale.
+    """Only a change that would move a cached VALUE may report the table stale.
 
     The check used to compare one hash over the whole of pair_descriptors.py +
     pocket_lipid_compatibility.py, so a renamed local or an edited docstring in code no
@@ -150,12 +213,6 @@ def test_rebuild_is_decided_per_value_not_by_a_whole_module_hash(
         pair_descriptor_cache, "_measure_fingerprints", lambda: moved_measures
     )
     assert store_is_current(DATA_DIR, isomeric=False) is False
-    monkeypatch.undo()
-
-    # The protein half's code moved (pocket parse, pocket_shape, the aromatic mask):
-    # its values are not covered by any per-measure fingerprint, so it needs its own.
-    monkeypatch.setattr(pair_descriptor_cache, "_protein_fingerprint", lambda: "a" * 16)
-    assert store_is_current(DATA_DIR, isomeric=False) is False
 
 
 def test_cached_values_match_uncached_computation(fixture_csv, csv_path, clean_cache_files):
@@ -171,16 +228,6 @@ def test_cached_values_match_uncached_computation(fixture_csv, csv_path, clean_c
         cached = descriptor_values_by_row(fixture_csv, measure, isomeric=False, cache=cache)
         direct = descriptor_values_by_row(fixture_csv, measure, isomeric=False)
         assert cached == direct
-
-    extents_cached = pocket_extent_by_protein(DATA_DIR, PROTEINS, cache=cache["proteins"])
-    extents_direct = pocket_extent_by_protein(DATA_DIR, PROTEINS)
-    assert extents_cached == extents_direct
-
-    shares_cached = pocket_rim_core_aromatic_share_by_protein(
-        DATA_DIR, PROTEINS, cache=cache["proteins"]
-    )
-    shares_direct = pocket_rim_core_aromatic_share_by_protein(DATA_DIR, PROTEINS)
-    assert shares_cached == shares_direct
 
 
 def test_unseen_candidate_falls_back_to_direct_computation(fixture_csv, csv_path, clean_cache_files):
@@ -224,7 +271,7 @@ def test_compute_one_computes_everything_fresh_without_a_seed():
     # a KEY -- that is the invariant the cache rests on, since a reader tests
     # `measure in entry` and a silently absent one would read as "not cached" forever.
     _, entry = _compute_one("CCO", seed_entry=None)
-    assert set(entry) == {"chain", *pair_descriptor_cache._MEASURES}
+    assert set(entry) == {"chain", *pair_descriptors._MEASURES}
     tail_only = set(pair_descriptors.CANDIDATE_LIPID_DESCRIPTOR_NAMES)
     # experimental_lipid_volume is a data/Lipid_Volumes.xlsx lookup, not an RDKit
     # formula -- unlike every other name here, it is legitimately None for anything
@@ -244,7 +291,7 @@ def test_compute_one_computes_everything_fresh_without_a_seed():
     _, lipid = _compute_one(
         "CCCCCCCCCCCCCCCC(=O)OCC(O)COP(=O)(O)OCC[N+](C)(C)C", seed_entry=None
     )
-    assert set(lipid) == {"chain", *pair_descriptor_cache._MEASURES}
+    assert set(lipid) == {"chain", *pair_descriptors._MEASURES}
     assert lipid["tail_double_bond_position"] is None
     assert all(
         lipid[name] is not None
@@ -253,22 +300,24 @@ def test_compute_one_computes_everything_fresh_without_a_seed():
     )
 
 
-def test_previous_cache_values_reads_most_recent_file_regardless_of_fingerprint(tmp_path):
-    # Simulates a code change: the OLD file's fingerprint suffix differs from
-    # whatever the CURRENT code would compute, which is exactly the case this
-    # function must still find a seed for (a fingerprint MATCH would mean there is
-    # nothing stale to seed from in the first place).
-    old_path = tmp_path / "pair_descriptor_cache_deterministic_oldfingerprint.json"
-    old_path.write_text(json.dumps({"values": {"CCO": {"unsaturation": 0.0}}}))
-    assert _previous_cache_values(tmp_path, isomeric=False) == {"CCO": {"unsaturation": 0.0}}
+def test_previous_cache_values_reads_the_existing_table(tmp_path):
+    # Simulates a table already built by an earlier run -- seeding must read it back
+    # regardless of whether its measures still validate against the current code (a
+    # fingerprint match would mean there is nothing stale to seed from in the first
+    # place).
+    table = pd.DataFrame([
+        {"smiles": "CCO", "isomeric": False, "chain": 2.0, "unsaturation": 0.0},
+        {"smiles": "CCCCCCCC", "isomeric": True, "chain": 8.0, "unsaturation": 0.0},
+    ])
+    table.to_csv(tmp_path / "lipid_descriptors.csv", index=False)
 
-    import time
+    seed = _previous_cache_values(tmp_path, isomeric=False)
+    assert seed == {"CCO": {"chain": 2.0, "unsaturation": 0.0}}
+    # The isomeric variant's row is excluded from a deterministic-variant seed.
+    assert "CCCCCCCC" not in seed
 
-    time.sleep(0.01)
-    new_path = tmp_path / "pair_descriptor_cache_deterministic_newerfingerprint.json"
-    new_path.write_text(json.dumps({"values": {"CCO": {"unsaturation": 1.0}}}))
-    # The most recently modified file wins, not filename order.
-    assert _previous_cache_values(tmp_path, isomeric=False) == {"CCO": {"unsaturation": 1.0}}
+    seed_isomeric = _previous_cache_values(tmp_path, isomeric=True)
+    assert seed_isomeric == {"CCCCCCCC": {"chain": 8.0, "unsaturation": 0.0}}
 
 
 def test_previous_cache_values_empty_with_no_existing_file(tmp_path):
@@ -279,12 +328,14 @@ def test_build_pair_descriptor_cache_seeds_expensive_measures_across_a_code_chan
     fixture_csv, csv_path, clean_cache_files, monkeypatch
 ):
     # First build under "old" code: pretend npr1/npr2 do not exist yet. Patched on
-    # dataloader.pair_descriptor_cache itself (the name _compute_one actually reads,
-    # bound at import time from dataloader.pair_descriptors) -- patching the
-    # pair_descriptors module's own attribute would not be seen here.
-    original_measures = dict(pair_descriptor_cache._MEASURES)
+    # dataloader.pair_descriptors itself, the module _compute_one's own _MEASURES
+    # name is bound from at import time in dataloader/cache_builders/pair_descriptor_
+    # cache.py -- patching there is what that module actually reads.
+    import dataloader.cache_builders.pair_descriptor_cache as cache_builder
+
+    original_measures = dict(cache_builder._MEASURES)
     monkeypatch.setattr(
-        pair_descriptor_cache, "_MEASURES",
+        cache_builder, "_MEASURES",
         {k: v for k, v in original_measures.items() if k not in ("npr1", "npr2")},
     )
     build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
@@ -294,7 +345,7 @@ def test_build_pair_descriptor_cache_seeds_expensive_measures_across_a_code_chan
     # Now "add" npr1/npr2 back (a code change) and rebuild -- every OTHER measure's
     # value must survive unchanged (reused, not re-embedded), and npr1/npr2 must be
     # freshly present.
-    monkeypatch.setattr(pair_descriptor_cache, "_MEASURES", original_measures)
+    monkeypatch.setattr(cache_builder, "_MEASURES", original_measures)
     build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
     new_cache = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
     new_values = new_cache["values"]
@@ -310,14 +361,18 @@ def test_build_pair_descriptor_cache_seeds_expensive_measures_across_a_code_chan
         assert new_entry["npr2"] is not None
 
 
-def test_json_payload_has_no_non_serialisable_values(fixture_csv, csv_path, clean_cache_files):
+def test_manifest_has_no_non_serialisable_values(fixture_csv, csv_path, clean_cache_files):
     path, _, _ = build_pair_descriptor_cache(
         DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False
     )
+    assert path.exists()
     # Round-trips through json.loads without error -- a numpy scalar (e.g. int64/
-    # float64, as opposed to plain int/float) would have made json.dumps raise inside
-    # build_pair_descriptor_cache itself, before this point.
-    json.loads(path.read_text())
+    # float64, as opposed to plain int/float) in raw_to_canonical would have made
+    # json.dumps raise inside build_pair_descriptor_cache itself, before this point.
+    manifest_path = lipid_descriptors_manifest_path(DATA_DIR)
+    json.loads(manifest_path.read_text())
+    # And the CSV itself must be a valid, readable table.
+    pd.read_csv(path)
 
 
 # --- per-measure validity ----------------------------------------------------------
@@ -331,8 +386,6 @@ def test_unrelated_module_change_invalidates_nothing(
     fixture_csv, csv_path, clean_cache_files, monkeypatch
 ):
     """A changed module fingerprint must not cost the reader a single value."""
-    from dataloader import pair_descriptor_cache
-
     build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
     before = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
     assert before is not None
@@ -343,14 +396,11 @@ def test_unrelated_module_change_invalidates_nothing(
     after = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
     assert after is not None
     assert after["values"] == before["values"]
-    assert after["proteins"] == before["proteins"]
 
 
 def test_changing_one_measure_invalidates_only_that_measure(
     fixture_csv, csv_path, clean_cache_files, monkeypatch
 ):
-    from dataloader import pair_descriptor_cache
-
     build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
     before = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
     assert any("npr1" in entry for entry in before["values"].values())
@@ -374,8 +424,6 @@ def test_conformer_measures_depend_on_the_shared_ensemble_code(monkeypatch):
     """npr1 does not compute its own conformers -- a change in the shared ensemble
     routine changes its value without touching npr1's own source, so the fingerprint
     has to cover it."""
-    from dataloader import pair_descriptor_cache
-
     before = pair_descriptor_cache._measure_fingerprints()
     monkeypatch.setattr(pair_descriptor_cache.pair_descriptors, "CONFORMER_SEED", 12345)
     after = pair_descriptor_cache._measure_fingerprints()

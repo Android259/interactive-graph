@@ -41,10 +41,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataloader.lipid_embedding_store import (  # noqa: E402
+from dataloader.cache_builders.lipid_embedding_store import (  # noqa: E402
     build_lipid_embedding_store,
-    store_is_current,
 )
+from dataloader.lipid_embedding_store import store_is_current  # noqa: E402
 
 
 DETERMINISTIC_TABLE = "lipid_SMILES_embedding_deterministic.pkl"

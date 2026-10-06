@@ -4,9 +4,7 @@ from types import SimpleNamespace
 
 from add_new_metrics_to_table import add_new_metrics
 from append_metric_to_table import append_metric
-from analyze_metrics_table import build_analysis
 from build_metrics_table import (
-    CONFIG_FIELDS,
     metric_row,
     parse_metric_filename,
     read_tensorboard_summary,
@@ -103,6 +101,7 @@ subgroup total
 def make_metric_file(root: Path) -> Path:
     path = (
         root
+        / "unsorted"
         / "base___"
         / "subgroups_RLBP1-GLTPD1"
         / "test_metrics_20260526_110112_3251086parameters_4_8_0_0.001_32_128.txt"
@@ -297,8 +296,6 @@ def test_append_metric_writes_shared_table(tmp_path):
         rows = list(csv.DictReader(handle))
     assert len(rows) == 1
     assert rows[0]["datetime"] == "2026-05-26 11:01:12"
-    assert (tmp_path / "metrics_analysis.txt").exists()
-    assert (tmp_path / "feature_contributions.csv").exists()
 
 
 def test_append_metric_writes_values_from_config_object(tmp_path):
@@ -357,8 +354,6 @@ def test_add_new_metrics_only_processes_reports_absent_from_table(tmp_path):
     with table.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     assert len(rows) == 1
-    assert (tmp_path / "metrics_analysis.txt").exists()
-    assert (tmp_path / "feature_contributions.csv").exists()
 
 
 def test_add_new_metrics_accepts_explicit_session_files(tmp_path):
@@ -366,6 +361,7 @@ def test_add_new_metrics_accepts_explicit_session_files(tmp_path):
     first_metric = make_metric_file(metrics_root)
     second_metric = (
         metrics_root
+        / "unsorted"
         / "base___"
         / "groups_START"
         / "test_metrics_20260527_120000_3251086parameters_4_8_1_0.001_32_128.txt"
@@ -388,146 +384,3 @@ def test_add_new_metrics_accepts_explicit_session_files(tmp_path):
     assert len(rows) == 1
     assert rows[0]["exclusion_set"] == "groups_START"
     assert first_metric.exists()
-
-
-def test_analysis_uses_validation_and_compares_exact_repeated_runs():
-    base = {field: "0" for field in CONFIG_FIELDS}
-    base.update({
-        "architecture": "base___",
-        "exclusion_set": "random",
-        "seed": "0",
-        "m": "4",
-        "heads": "8",
-        "lr": "0.001",
-        "batch": "16",
-        "hiddim": "128",
-        "F1": "0.60",
-        "loss": "0.70",
-        "checkpoint_valid_balanced_accuracy": "0.55",
-        "auc_valid_balanced_accuracy": "0.54",
-        "checkpoint_to_final_drop": "0.02",
-        "valid_balanced_accuracy_std": "0.03",
-        "training_duration_sec": "10",
-        "warnings": "",
-        "epochs_completed": "3",
-        "run_status": "complete",
-    })
-    previous = {
-        **base,
-        "datetime": "2026-01-01 10:00:00",
-        "balanced_accuracy": "0.90",
-        "checkpoint_valid_balanced_accuracy": "0.55",
-    }
-    current = {
-        **base,
-        "datetime": "2026-01-02 10:00:00",
-        "balanced_accuracy": "0.60",
-        "checkpoint_valid_balanced_accuracy": "0.65",
-    }
-
-    analysis = build_analysis([previous, current])
-
-    assert "delta +0.100000, улучшение" in analysis
-    assert "2026-01-01 10:00:00 -> 2026-01-02 10:00:00" in analysis
-    assert "Модели ранжируются по validation-метрикам" in analysis
-
-
-def test_analysis_reports_single_parameter_effect_per_dataset():
-    base = {field: "0" for field in CONFIG_FIELDS}
-    base.update({
-        "exclusion_set": "dataset_A",
-        "seed": "3",
-        "grab_loss": "0",
-        "checkpoint_valid_balanced_accuracy": "0.60",
-        "balanced_accuracy": "0.95",
-        "warnings": "",
-        "run_status": "complete",
-    })
-    grab = {
-        **base,
-        "grab_loss": "1",
-        "checkpoint_valid_balanced_accuracy": "0.70",
-        "balanced_accuracy": "0.50",
-    }
-
-    analysis = build_analysis([base, grab])
-
-    assert "dataset_A: grab_loss 0 -> 1: mean delta valid BA +0.100000" in analysis
-
-
-def test_analysis_treats_linked_mode_flags_as_one_characteristic():
-    base = {field: "0" for field in CONFIG_FIELDS}
-    base.update({
-        "exclusion_set": "dataset_A",
-        "seed": "3",
-        "lipid_fragments_treatment": "0",
-        "lipid_concat": "1",
-        "lipid_random_choice": "0",
-        "checkpoint_valid_balanced_accuracy": "0.60",
-        "run_status": "complete",
-        "warnings": "",
-    })
-    random_fragment = {
-        **base,
-        "lipid_fragments_treatment": "1",
-        "lipid_concat": "0",
-        "lipid_random_choice": "1",
-        "checkpoint_valid_balanced_accuracy": "0.70",
-    }
-
-    analysis = build_analysis([base, random_fragment])
-
-    assert (
-        "lipid_fragments_treatment 0 -> 1: mean delta valid BA +0.100000"
-        in analysis
-    )
-
-
-def test_analysis_aggregates_latest_completed_run_per_seed():
-    base = {field: "0" for field in CONFIG_FIELDS}
-    base.update({
-        "exclusion_set": "dataset_A",
-        "run_status": "complete",
-        "balanced_accuracy": "0.50",
-        "warnings": "",
-    })
-    rows = [
-        {**base, "seed": "1", "datetime": "2026-01-01", "checkpoint_valid_balanced_accuracy": "0.40"},
-        {**base, "seed": "1", "datetime": "2026-01-02", "checkpoint_valid_balanced_accuracy": "0.60"},
-        {**base, "seed": "2", "datetime": "2026-01-01", "checkpoint_valid_balanced_accuracy": "0.80"},
-        {
-            **base,
-            "seed": "3",
-            "datetime": "2026-01-03",
-            "checkpoint_valid_balanced_accuracy": "0.99",
-            "run_status": "interrupted",
-        },
-    ]
-
-    analysis = build_analysis(rows)
-
-    assert "valid BA=0.700000" in analysis
-    assert "std=0.141421" in analysis
-    assert "seeds=2 (1=0.600000, 2=0.800000)" in analysis
-    assert "исключённые из рейтинга: 1" in analysis
-
-
-def test_analysis_does_not_compare_incomplete_historical_configs():
-    base = {
-        "exclusion_set": "dataset_A",
-        "seed": "0",
-        "batch": "16",
-        "checkpoint_valid_balanced_accuracy": "0.60",
-        "warnings": "",
-        "run_status": "complete",
-    }
-    changed = {
-        **base,
-        "batch": "32",
-        "checkpoint_valid_balanced_accuracy": "0.70",
-    }
-
-    analysis = build_analysis([base, changed])
-
-    assert "Нет matched-пар" in analysis
-    assert "Повторных запусков с полностью совпадающими флагами" in analysis

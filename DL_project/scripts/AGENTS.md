@@ -18,8 +18,8 @@ scripts/
   kill.sh                                       cancel jobs, pull their logs back
   env.sh                                        the project's python, anywhere
   settings.sh                                   everything you might want to change
-  arg_files/    the configs (one .md per experiment)
-  submit/       one-off submitters from past experiments; history, not API
+  submit/       the few still-live, non-grid submitters (structural_pretrain's two-stage
+                launch); see arg_files/README.md (project root) for the configs themselves
   lib/          sourced, never executed: cluster_common.sh, args_file_lib.sh,
                 grid_lib.sh, ssh_master_lib.sh, pack_lib.sh, progress_table.sh
   launch/       run_cluster.sh, submit_grid.sh (BOTH series -- the config's
@@ -86,7 +86,7 @@ ones are listed.
 submitters build, and `TRAIN BA` comes from TensorBoard — `new_train.py` never
 prints train balanced accuracy to the log.
 
-Remaining caveat: the tee'd `script_logs/<label>/…` paths are identical on both
+Remaining caveat: the tee'd `script_logs/<family>/<label>/…` paths are identical on both
 clusters, so do not run the same arg file on both at the same time.
 
 ### Third source: local jobs (`run_local.sh`)
@@ -133,7 +133,7 @@ grids actually launched through `run_local.sh` do.
   passed verbatim to `training/new_train.py`. Non-`--` lines are ignored
   (e.g. `standard.md` = "(none; standard configuration)" → defaults only).
 - The filename stem is the run `--label` and names the output tree
-  (`run/<label>/`, `test_metrics/`, `graphics/<label>/`).
+  (`run/<family>/<label>/`, `test_metrics/`, `graphics/<family>/<label>/`).
 - Add a new experiment by adding an `arg_files/*.md`, not by editing submitters.
 - Because non-`--` lines are ignored, an arg file can carry its own rationale above the
   flags — what the run tests, what to read afterwards, what it should be compared
@@ -317,7 +317,7 @@ good CUDA build, so gating on it would reject every environment.
   `run_local.sh` and `tools/parameters.sh`; the one place the interpreter is found.
 - `tools/enter_project_env.sh` — `source` for a FIRST-TIME setup: creates the env when it
   is missing, then activates and `cd`s to the project root. `env.sh` assumes it exists.
-- `generate_config_graphics.sh LABEL` — builds `graphics/<label>/…` by calling the
+- `generate_config_graphics.sh LABEL` — builds `graphics/<family>/<label>/…` by calling the
   `analysis/` plot scripts.
 - `kill.sh JOB_ID | --name PREFIX… | --all` — cancel jobs and pull their logs back.
 - `tools/wait_and_sync_bigfoot.sh`, `tools/wait_and_sync_kraken.sh` — block until jobs

@@ -11,8 +11,8 @@ The one built here: pocket_extent(p) - chain_length(l), where pocket_extent is t
 PCA-axis span POCKET_DESCRIPTOR_NAMES already computes (dataloader/protein_graph_builder)
 and chain_length is the longest unbranched aliphatic run of the candidate lipid --
 literally "does the cavity reach as far as the tail is long". Documented in
-files/pocket_lipid_compatibility.md, which also carries the measurement of whether it
-adds anything over files/interaction_signal_plan.md's chemistry prior.
+files/reference/pocket_lipid_compatibility.md, which also carries the measurement of whether it
+adds anything over files/history/geometric_edge.md chemistry prior.
 
 Two independent consumers of the raw value, wired in Dataloader:
   --pocket_compat_prior : frozen, calibrated, added to the logit outside the network
@@ -292,7 +292,7 @@ def pocket_rim_core_aromatic_share_by_protein(root_dir, protein_names, cache=Non
     one flag. project memory [[descriptors-path-fingerprint-leak]]: on the descriptors_path
     label, aromatic_share/polar_share are the suspected channel behind an excluded-family
     outlier (LBP_BPI_CETP test BA 0.796 vs 0.44-0.60 everywhere else); this pair is the
-    untested alternative, motivated by files/pocket_shape_descriptors.md section 4a, where
+    untested alternative, motivated by files/reference/pocket_shape_descriptors.md section 4a, where
     hydropathy_core is the one entry whose sign survives both the within-family and the
     all-protein check.
 
@@ -366,10 +366,10 @@ def raw_compatibility_parts(csv, root_dir, isomeric=False):
     and `extent` is one value per row, for the reason spelled out in raw_compatibility:
     the lipid half is a property of the candidate structure, the protein half is not.
 
-    Why the halves are worth having separately (files/compat_input_audit.md 1 and 7):
+    Why the halves are worth having separately (files/results/compat_input_audit.md 1 and 7):
     `raw_compatibility` returns their DIFFERENCE, and a difference of a protein-only
     number and a lipid-only number is additive -- its two-way interaction term is
-    identically zero, measured at 0.0000 by analysis/compat_feature_forms.py. Every
+    identically zero, measured at 0.0000 by analysis/probes/compat_feature_forms.py. Every
     quantity with real pair content in it (a clash term, a fit score) is a NON-additive
     combination, and building one needs the halves rather than the difference.
 

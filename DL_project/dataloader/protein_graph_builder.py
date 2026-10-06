@@ -50,7 +50,7 @@ KYTE_DOOLITTLE = (
 
 # --pocket_descriptors_family_neutral (training/read_configuration.py): the seven
 # POCKET_DESCRIPTOR_NAMES entries whose eta^2 against the 9-family split sits at or
-# near the no-structure floor of 0.24 (files/pocket_shape_descriptors.md section 5,
+# near the no-structure floor of 0.24 (files/reference/pocket_shape_descriptors.md section 5,
 # preprocessing/pocket_descriptor_identity_check.py). Excludes the six entries closest
 # to a pure family label: pocket_sasa_share (0.85), hydropathy_core (0.77),
 # pocket_residue_share (0.71), pocket_extent (0.62), ev14_q50 (0.59), depth_q10 (0.55).
@@ -176,12 +176,12 @@ def pocket_shape_lambda_sqrt(coordinates, min_robust_points=10):
     (analysis/pocket_shape_descriptors.py) has always used for the ratios -- sqrt(lambda),
     i.e. the axis' standard deviation -- computed here on a MinCovDet robust covariance
     rather than the ordinary one. That combination is the one of seven measured in
-    files/pocket_shape_metric_comparison.md that keeps its sign inside BOTH large families
+    files/results/pocket_shape_metric_comparison.md that keeps its sign inside BOTH large families
     as well as pooled, against the head-group-class target family does not determine
     (+0.115 CRAL-TRIO / +0.312 lipocalin / +0.401 pooled, CI [0.061, 0.658]). The
     production span formula reverses sign inside both families on that same target
     (-0.071 / -0.156 against pooled +0.288) -- the between-family artifact pattern
-    files/pocket_shape_descriptors.md section 4a used to disqualify pocket_volume_per_sasa.
+    files/reference/pocket_shape_descriptors.md section 4a used to disqualify pocket_volume_per_sasa.
 
     Robust for the DIRECTIONS too, not only the eigenvalues: pocket_shape()'s own docstring
     notes covariance is not robust, but percentile-trims only the LENGTH, leaving the axes
@@ -281,7 +281,7 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
         # bare integer literals into this tuple, not name lookups, so every existing
         # position must stay put -- new entries only ever go at the end. The two
         # promoted from analysis/pocket_shape_descriptors.py's research catalog after
-        # files/pocket_shape_descriptors.md section 7's eta^2 check (both at/near the
+        # files/reference/pocket_shape_descriptors.md section 7's eta^2 check (both at/near the
         # no-structure floor, unlike the 13 above's own six excluded entries) and
         # section 7's addendum (aromatic_share_rim's sign agrees across both large
         # families AND pooled against head-group-class count; ev28_q10 does not
@@ -307,7 +307,7 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
         # the comment on the first appended block), and these three are separate names an
         # arg file opts into by swapping them in. Full comparison of the two formulas over
         # seven variants, two lipid targets and the within-family sign check:
-        # files/pocket_shape_metric_comparison.md; the values come from
+        # files/results/pocket_shape_metric_comparison.md; the values come from
         # pocket_shape_lambda_sqrt() above, which carries the measured numbers.
         extent_lambda_sqrt,
         elongation_lambda_sqrt,
@@ -341,7 +341,7 @@ def pocket_cavity_volume(pocketness_path):
     The absolute volume matters for a second reason: it is the only protein-side
     quantity on the same physical scale as the lipid side's experimental_lipid_volume
     (mean 632 A^3), so the cavity-volume-against-lipid-volume relation the source paper
-    (Titeca et al., files/Reuter.pdf) actually measures becomes expressible as a pair
+    (Titeca et al., files/literature/Reuter.pdf) actually measures becomes expressible as a pair
     quantity rather than as two incomparable numbers.
 
     Identical formula to training/pair_baseline_common.py::_cavity_values -- see that
@@ -393,7 +393,7 @@ def pocket_chemistry_descriptor(vertices, pocket, pocketness_path=None):
     names first (anionic head groups read by Lys/Arg), and the core/rim split is the
     source paper's own two-channel specificity (mouth reads the head group, depth packs
     the chain). They were added on the Kron-RLS side first and a 16369-subset search
-    there (cron_test_metrics/exhaustive_protein_side_search.csv) put four of them --
+    there (results/tables/cron_test_metrics/exhaustive_protein_side_search.csv) put four of them --
     basic_share_core, pocket_free_volume, basic_share_rim, hbond_donor_share_core -- in
     almost every leading combination, ahead of two of the incumbent seven. All twelve
     are computed here rather than only those four: they come out of one pass over the
@@ -635,7 +635,7 @@ class ProteinGraphBuilder:
         """Cavity descriptor for one protein, read from its residue table once.
 
         The on-disk tensor cache predates this flag and does not carry the descriptor.
-        Rather than force a rebuild of data/protein_graph_tensors.pt, recompute it here
+        Rather than force a rebuild of data/cache/protein_graph_tensors.pt, recompute it here
         and keep it: the descriptor depends on the protein alone, so one CSV read per
         protein covers every interaction row that mentions it -- the same reasoning the
         surrounding per-protein cache is built on.

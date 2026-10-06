@@ -24,7 +24,7 @@ seen by the same protein, which is the question the product actually asks. The
 pairs variant is the default rather than AUC_within_protein because the
 per-protein average is blank whenever no protein block clears
 WITHIN_PROTEIN_MINIMUM_ROWS with both classes present, which on the smaller
-held-out sets is most seeds. See files/lipid_coldsplit_architecture_direction.md,
+held-out sets is most seeds. See files/results/lipid_coldsplit_architecture_direction.md,
 the RULE box at the top and section 7j.
 
 0.5 is the no-signal line for every AUC column here, so the printed value is
@@ -89,7 +89,7 @@ def cell(rows: list[dict], metric: str) -> tuple[float | None, float | None, int
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--table", type=Path, default=PROJECT_ROOT / "metrics_summary.csv")
+    parser.add_argument("--table", type=Path, default=PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv")
     parser.add_argument("--match", default="lcs", help="substring a label must contain (default: lcs)")
     parser.add_argument("--metric", default=DEFAULT_METRIC, help=f"column to rank on (default: {DEFAULT_METRIC})")
     parser.add_argument("--baseline", default=None, help="label to subtract, per group, for a delta column")

@@ -20,7 +20,7 @@ QUEUE_HELPER = REPO / "scripts" / "cluster" / "cluster_queue_remote.sh"
 SUBMITTER = "scripts/launch/submit_grid.sh"
 # standard.md holds no `--` lines, which trips `grep`+`pipefail` in the
 # submitters; use a config that actually carries flags.
-ARGS_FILE = "scripts/arg_files/dropout01.md"
+ARGS_FILE = "arg_files/archive/dpt01.md"
 
 BIGFOOT = {"GPU_MODEL_GLOB": "*A100*|*V100*"}
 KRAKEN = {"GPU_MODEL_GLOB": "*H100*|*H200*"}
@@ -45,7 +45,10 @@ def capture(tmp_path, env_overrides):
         "lib/grid_lib.sh",
     ):
         shutil.copy(REPO / "scripts" / relative, work / "scripts" / relative)
-    shutil.copytree(REPO / "scripts" / "arg_files", work / "scripts" / "arg_files")
+    shutil.copytree(REPO / "arg_files", work / "arg_files")
+    # lib/list_completed_experiments.py files a label under its arg_files family.
+    (work / "training").mkdir()
+    shutil.copy(REPO / "training" / "results_layout.py", work / "training" / "results_layout.py")
 
     queue = tmp_path / "queue"
     env = dict(os.environ)

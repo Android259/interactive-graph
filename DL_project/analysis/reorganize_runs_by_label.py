@@ -15,6 +15,7 @@ from reorganize_test_metrics_by_label import (
     read_label,
     safe_path_part,
 )
+from training.results_layout import label_family  # noqa: E402
 
 
 RUN_MANIFEST_FIELDS = (
@@ -40,9 +41,12 @@ def find_run_dir(
     architecture, exclusion_set = metric_context(metric_path, metrics_root)
     label = safe_path_part(read_label(metric_path))
     run_id = run_id_from_metric(metric_path)
+    # run/<family>/<label-or-architecture>/<exclusion_set>/train<id>
+    # (training/results_layout.py's family level, same as metric_context's).
+    family = label_family(label)
     candidates = (
-        run_root / label / exclusion_set / f"train{run_id}",
-        run_root / architecture / exclusion_set / f"train{run_id}",
+        run_root / family / label / exclusion_set / f"train{run_id}",
+        run_root / family / architecture / exclusion_set / f"train{run_id}",
     )
     for candidate in candidates:
         if candidate.is_dir():

@@ -2,9 +2,19 @@
 
 ## Active vs Legacy
 
-- `Dataloader.py` — **active** loader used by `training/new_train.py`.
-- `Dataloader.py`, `tanimoto_Dataloader.py` — **legacy** `PLIDataset` variants, not
-  used by the active pipeline. Do not mirror active changes into them.
+- `Dataloader.py` — the loader used by `training/new_train.py`.
+
+## Cache Builders
+
+- `cache_builders/` holds the build-side (`build_*`/`write_*`) half of every disk cache
+  in this directory. The matching top-level module (`tanimoto_compact.py`,
+  `lipid_embedding_store.py`, `lipid_graph_tensor_cache.py`,
+  `protein_graph_tensor_cache.py`, `pair_descriptor_cache.py`) keeps the reader
+  (`load_*`), the shared path/format logic, and any staleness-validation code the hot
+  training path or a builder both need — `Dataloader.py` only ever imports `load_*`
+  names, never from `cache_builders/`.
+- The cache files themselves live under `data/cache/`, not `data/` directly — see
+  `data/AGENTS.md`.
 
 ## PLIDataset (`Dataloader.py`)
 
@@ -69,49 +79,32 @@ is decided in `PLIDataset.__init__`, most specific first:
 
 ## Tanimoto Files
 
-Only `--tanimoto_weight` reads any of these. Everything else builds `id2pos` by ranking
-the train row ids, which reproduces the file's own mapping rather than an equivalent one
-(the row-id vector covers the interaction table completely: 11018 rows, 11018 distinct
-ids, none missing), so nothing is opened:
+Only `--tanimoto_weight` reads Tanimoto similarities. Everything else builds `id2pos` by
+ranking the train row ids, so nothing is opened.
 
 | file | size | needed by |
 |---|---|---|
-| `Tanimoto_compact_*` (matrix, structure index, row ids, manifest) | 1.4 MiB | `--tanimoto_weight`, **preferred** — one row per distinct structure |
-| `Tanimoto_compact_isomeric_*` | 1.7 MiB | `--tanimoto_weight --lipid_isomers` |
-| `Total_multiple_lipid_batch.npy` | 214 KB | fallback only, when no compact set is current |
-| `Total_tanimoto_matrix_uint8.npy` | 2.8 GB | fallback only |
+| `cache/Tanimoto_compact_*` (matrix, structure index, row ids, manifest) | 1.4 MiB | `--tanimoto_weight` |
+| `cache/Tanimoto_compact_isomeric_*` | 1.7 MiB | `--tanimoto_weight --lipid_isomers` |
 
+- Built by `preprocessing/build_tanimoto_compact.py` (`--isomeric` for the second set),
+  directly from the interaction table's SMILES. It is the only Tanimoto builder: the old
+  per-candidate square matrix (`Total_tanimoto_matrix_uint8.npy`, 2.8 GB) and its row-id
+  vector (`Total_multiple_lipid_batch.npy`) are no longer built or read.
 - The compact form is indexed per *distinct structure* (1226 non-isomeric, 1319
-  isomeric) rather than per candidate instance (53762 / 58968). Since every byte is
-  `round(BulkTanimotoSimilarity(fp_a, fp_b) * 255)` over Morgan fingerprints, and a
-  fingerprint is a pure function of the canonical SMILES, two instances of one structure
-  have byte-identical rows — so `full[i,j] == compact[idx[i], idx[j]]` exactly.
-  `CompactTanimoto.submatrix` materializes the same `K x K` block the full matrix was
-  sliced for, and the weight arithmetic is untouched. Verified against the full matrix
-  and against a densely rebuilt block; `preprocessing/build_tanimoto_compact.py
-  --verify-candidates N` re-checks it.
+  isomeric); `structure_index` maps each candidate instance to its structure row, so
+  `full[i,j] == compact[idx[i], idx[j]]` exactly. `CompactTanimoto.submatrix` gives the
+  `K x K` block of the train candidates; `candidate_view()` gives the same per-candidate
+  indexing for analysis scripts.
+- Missing or stale (older than the interaction table) compact artifacts make a
+  `--tanimoto_weight` run fail at `__init__` with a `FileNotFoundError` naming the
+  rebuild command. A run without `--tanimoto_weight` never looks for them.
 - Weights computed *directly* from the compact form would sum the same numbers in a
   different order and shift the last digits. Do not "simplify" it that way.
 - The two modes are **not** interchangeable: `lipid_isomers` changes how many candidates
-  a row contributes, so the row-id vectors have different lengths. An isomeric run now
-  gets the isomeric artifacts; before they existed it silently got the non-isomeric
-  similarities, so `--lipid_isomers --tanimoto_weight` results are not comparable across
-  that change.
-
-- `train_tanimoto_matrix` is `None` unless `config.tanimoto_weight` is set;
-  `get_tanimoto_weights()` raises a named `RuntimeError` rather than an `AttributeError`
-  if called anyway. Do not restore the unconditional load. Making a 2.8 GB file a
-  dependency of `__init__` means every run dies wherever it is absent: a 45-job Bigfoot
-  batch did exactly that, in seconds, with `FileNotFoundError`, jobs that never asked
-  for Tanimoto weights included. `scripts/cluster_sync_excludes.sh` now mirrors `data/`
-  in full (only the 9.2 GB `lipid_SMILES_isomeric_embedding.pkl` and the 11 GB
-  `esm3_checkpoint/` are held back), so the file usually is present — the point is that
-  a run which does not need it must not care either way.
+  a row contributes.
 - `get_tanimoto_weights()` and `get_protein_weights()` both return one entry per
-  `id2pos` position, so the no-weighting fallback can size itself from `len(id2pos)`
-  instead of building Tanimoto weights just to copy their shape.
-- `dataloader/Dataloader.py` and `dataloader/tanimoto_Dataloader.py` keep their own
-  unconditional copies of this logic; they are legacy and out of the active path.
+  `id2pos` position.
 
 ## Split Logic (cold split)
 
@@ -162,7 +155,7 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
 - `warm_caches()` fills them before the DataLoader forks its workers, so the workers
   inherit one warm copy instead of each filling its own. 131 MiB, 0.4 s, reported in the
   run log as `cache warmed : ...`.
-- `protein_graph_tensors.pt` is used only while its manifest matches every source
+- `cache/protein_graph_tensors.pt` is used only while its manifest matches every source
   graph CSV/PDB by size and nanosecond mtime. Rebuild it with
   `data/build_protein_graph_tensor_cache.py`.
 - Lipid graph CSV DataFrames are released immediately after tensor construction.
@@ -195,7 +188,7 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
   its DataLoader), so
   batches, order and drawn candidates are those of the DataLoader.
   `get()` = draw + `sample_for_candidate(idx, candidate)`; keep that split if either
-  changes. Verified bit-identical end to end with `analysis/compare_run_outputs.py`.
+  changes. Verified bit-identical end to end with `analysis/probes/compare_run_outputs.py`.
 - `--descriptors_head --descriptor_names` (`pair_descriptors.descriptor_catalog_only`)
   takes the same path with less still: no protein graph, no lipid encoding (empty lipid
   `Data`, no MoLFormer table or protein tensor cache loaded) -- the model reads only

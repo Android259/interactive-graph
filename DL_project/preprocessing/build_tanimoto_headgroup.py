@@ -2,7 +2,7 @@
 
 # Build a head-group-only Tanimoto artifact from the interaction table.
 #
-# Each candidate SMILES (same rule as build_tanimoto_matrix.collect: SmileGlobal
+# Each candidate SMILES (same rule as build_tanimoto_compact.collect: SmileGlobal
 # unless it is "0", candidates split on ";", canonicalized, deduplicated per row)
 # has its acyl chains cut off, keeping only the head group. A "tail" is exactly
 # what pair_descriptors._qualifying_tails already calls one: a connected run of
@@ -43,7 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dataloader.dataset_source import INTERACTION_CSV
 from dataloader.pair_descriptors import _qualifying_tails
 from preprocessing.build_tanimoto_compact import distinct_structures
-from preprocessing.build_tanimoto_matrix import collect, tanimoto_matrix
+from preprocessing.build_tanimoto_compact import collect, tanimoto_matrix
 
 
 DEFAULT_DATA_DIR = Path("data")
@@ -115,7 +115,7 @@ def head_groups_for(smiles_list):
 
 
 def compact_paths(root_dir, isomeric=False):
-    root_dir = Path(root_dir).resolve()
+    root_dir = Path(root_dir).resolve() / "cache"
     prefix = ISOMERIC_PREFIX if isomeric else PREFIX
     return (
         root_dir / f"{prefix}_matrix_uint8.npy",
@@ -127,6 +127,7 @@ def compact_paths(root_dir, isomeric=False):
 
 def write_compact(root_dir, matrix, structure_index, row_ids, source_csv, head_groups, isomeric=False):
     matrix_path, index_path, row_path, manifest_path = compact_paths(root_dir, isomeric=isomeric)
+    matrix_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(matrix_path, matrix)
     np.save(index_path, structure_index)
     np.save(row_path, row_ids)

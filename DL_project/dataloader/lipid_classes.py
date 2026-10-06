@@ -109,7 +109,7 @@ def ether_split_head_group_class(name):
     """head_group_class(name), except PC/PE/LPE keep the ether ("(O-...)") linkage as
     its own class ("Phosphatidylcholine-O", ...) instead of folding it into the diacyl
     one -- the variant lipid_class_series()/csv_classes() do NOT use by default (see
-    files/data_source.md's own note on why PC-O/PE-O are folded into PC/PE there: the
+    files/reference/data_source.md's own note on why PC-O/PE-O are folded into PC/PE there: the
     sn-1 linkage is not exposed to headgroup readout, and it is tracked separately as
     the continuous `ether_tail_count` descriptor, training.pair_baseline_common's
     lipid_chemistry_descriptors).

@@ -149,7 +149,7 @@ def _article_subclass_lookup() -> dict[str, set[str]]:
     """{article subclass (lowercase, e.g. "pc") -> species set}, from
     data/lipid_article_classification.json (preprocessing/classify_lipids_by_
     article.py's own output: Titeca et al. 2023 Figure 3a's LTP-lipid subclass
-    scheme -- see files/data_source.md). Empty (not an error) when that file has
+    scheme -- see files/reference/data_source.md). Empty (not an error) when that file has
     never been generated -- resolve_excluded_lipids then simply finds no match for
     an article-subclass name, same as any other genuinely unknown one.
     """
@@ -174,7 +174,7 @@ def resolve_excluded_lipids(table: pd.DataFrame, names: list[str]) -> tuple[str,
        "Phosphatidylcholine", case-insensitive) -- expands to every species
        csv_classes assigns to it
     3. an article LTP-lipid subclass abbreviation (Titeca et al. 2023 Figure 3a,
-       e.g. "PC", "Cer", "HexCer" -- files/data_source.md's own table, resolved via
+       e.g. "PC", "Cer", "HexCer" -- files/reference/data_source.md's own table, resolved via
        data/lipid_article_classification.json) -- expands to every species that
        classification assigns to it, coarser than (2) for classes the article
        lumps together (PC and PC-O, for instance, both become PC's "Phosphatidyl-
@@ -215,7 +215,7 @@ def resolve_excluded_lipids(table: pd.DataFrame, names: list[str]) -> tuple[str,
             "species (e.g. \"Phosphatidylcholine (34:1)\"), a head-group class "
             f"(e.g. \"Phosphatidylcholine\" -- known: {sorted(class_lookup.values())}), "
             "nor an article LTP-lipid subclass (e.g. \"PC\", \"Cer\" -- see "
-            "files/data_source.md; run preprocessing/classify_lipids_by_article.py "
+            "files/reference/data_source.md; run preprocessing/classify_lipids_by_article.py "
             "first if data/lipid_article_classification.json does not exist yet)"
         )
     return tuple(sorted(species))
@@ -251,10 +251,10 @@ def _headgroup_isolation_units(table: pd.DataFrame, context: str):
     from analysis.lipid_block_search import Units
     from dataloader.tanimoto_compact import CompactTanimoto
 
-    data_dir = PROJECT_ROOT / "data"
-    matrix_path = data_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy"
-    index_path = data_dir / "Tanimoto_headgroup_compact_structure_index.npy"
-    row_path = data_dir / "Tanimoto_headgroup_compact_row_ids.npy"
+    cache_dir = PROJECT_ROOT / "data" / "cache"
+    matrix_path = cache_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy"
+    index_path = cache_dir / "Tanimoto_headgroup_compact_structure_index.npy"
+    row_path = cache_dir / "Tanimoto_headgroup_compact_row_ids.npy"
     if not (matrix_path.exists() and index_path.exists() and row_path.exists()):
         raise ValueError(
             f"{context}: the headgroup-restricted Tanimoto artifacts are missing -- "
@@ -729,7 +729,7 @@ def aggregate_pair_labels(
     positive whenever its protein has ANY positive elsewhere in `table` sharing its
     lipid's head-group class (dataloader.lipid_classes.class_level_positive_labels),
     not only when its own species was screened positive. `table` here is always the
-    caller's train pool alone (see evaluate_block in analysis/kronrls_baseline.py), so
+    caller's train pool alone (see evaluate_block in analysis/baselines/kronrls_baseline.py), so
     a held-out block's positives never leak into a training cell's label through this
     widening; the held-out pool is still scored against its own exact Interaction
     values, unchanged.
@@ -842,7 +842,7 @@ def binary_confusion_metrics(
 ) -> dict:
     """Confusion-matrix metrics at a fixed threshold, training/new_train.py-compatible.
 
-    Same formulas and key names as training/new_train.py's metric_values (F1 =
+    Same formulas and key names as training/eval_metrics.py's metric_values (F1 =
     2TP/(2TP+FP+FN), balanced_accuracy = (sensitivity+specificity)/2, IoU =
     TP/(TP+FP+FN), FAR = FP/(FP+TN)) -- so a Kron-RLS row's dict is a drop-in match
     for a network test_metrics_*.txt report's own bare metric keys (see analysis/
@@ -947,7 +947,7 @@ def _cavity_values(pocket_path: Path) -> tuple[float, float]:
     The absolute free volume matters for a second reason: it lands on the same physical
     scale as the lipid side's `experimental_lipid_volume` (283 species, mean 632 A^3,
     range 22-1248), so the lipid-volume-against-pocket-volume relationship the source
-    paper (Titeca et al., files/Reuter.pdf) actually measures becomes expressible.
+    paper (Titeca et al., files/literature/Reuter.pdf) actually measures becomes expressible.
     """
     from scipy.spatial import ConvexHull, Delaunay
 
@@ -1590,7 +1590,7 @@ def build_lipid_kernel(
       new logp/tpsa/molar_refractivity/rotatable_bond_count/aromatic_ring_count/
       ring_count whole-molecule set) instead of every explicit column at once, the
       same way mixing all 17 explicit+family_neutral columns into one RBF kernel
-      diluted the signal (files/cron.md) rather than helping it. Names are checked
+      diluted the signal (files/results/cron.md) rather than helping it. Names are checked
       against the columns explicit_lipid_features(table) actually produced for THIS
       table (not a fixed list) since headgroup::<class> one-hot columns depend on
       the lipid classes present.
@@ -1656,10 +1656,10 @@ def build_lipid_kernel(
 
 def species_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarray, dict[str, int]]:
     """Species Tanimoto, max-reduced over the same candidate structures as the loader."""
-    data_dir = PROJECT_ROOT / "data"
-    matrix = np.load(data_dir / "Tanimoto_compact_isomeric_matrix_uint8.npy").astype(np.float32) / 255.0
-    structure_index = np.load(data_dir / "Tanimoto_compact_isomeric_structure_index.npy")
-    row_ids = np.load(data_dir / "Tanimoto_compact_isomeric_row_ids.npy")
+    cache_dir = PROJECT_ROOT / "data" / "cache"
+    matrix = np.load(cache_dir / "Tanimoto_compact_isomeric_matrix_uint8.npy").astype(np.float32) / 255.0
+    structure_index = np.load(cache_dir / "Tanimoto_compact_isomeric_structure_index.npy")
+    row_ids = np.load(cache_dir / "Tanimoto_compact_isomeric_row_ids.npy")
     structures_of_row: dict[int, set[int]] = {}
     for row_id, structure in zip(row_ids, structure_index):
         structures_of_row.setdefault(int(row_id), set()).add(int(structure))
@@ -1801,7 +1801,7 @@ def _lipid_catalog_features(table: pd.DataFrame, names: list[str]) -> pd.DataFra
 
 def resolve_lipid_feature_subset(table: pd.DataFrame, names: list[str]) -> pd.DataFrame:
     """Per-species feature columns for `names` -- shared by build_lipid_kernel's
-    explicit_subset branch and analysis/gbm_baseline.py's row-feature builder, so
+    explicit_subset branch and analysis/baselines/gbm_baseline.py's row-feature builder, so
     the two baselines' --lipid_features shorthand can never silently drift on what a
     name resolves to.
 
@@ -1864,13 +1864,13 @@ def species_headgroup_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarr
     parity, since head-group fingerprints normally do not depend on tail
     stereochemistry.
     """
-    data_dir = PROJECT_ROOT / "data"
+    cache_dir = PROJECT_ROOT / "data" / "cache"
     matrix = (
-        np.load(data_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy").astype(np.float32)
+        np.load(cache_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy").astype(np.float32)
         / 255.0
     )
-    structure_index = np.load(data_dir / "Tanimoto_headgroup_compact_structure_index.npy")
-    row_ids = np.load(data_dir / "Tanimoto_headgroup_compact_row_ids.npy")
+    structure_index = np.load(cache_dir / "Tanimoto_headgroup_compact_structure_index.npy")
+    row_ids = np.load(cache_dir / "Tanimoto_headgroup_compact_row_ids.npy")
     structures_of_row: dict[int, set[int]] = {}
     for row_id, structure in zip(row_ids, structure_index):
         structures_of_row.setdefault(int(row_id), set()).add(int(structure))
