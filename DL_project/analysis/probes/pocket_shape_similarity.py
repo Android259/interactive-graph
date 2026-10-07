@@ -50,7 +50,7 @@ sys.path.insert(0, os.path.join(PROJECT_ROOT, "training"))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "analysis"))
 
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.protein_graph_builder import pocket_atom_coordinates  # noqa: E402
+from preprocessing.compute_descriptors import pocket_atom_coordinates  # noqa: E402
 from read_configuration import EXCLUDED_SUBGROUPS_BY_NAME  # noqa: E402
 from protein_profile_probe import class_profiles, cosine, esm3_neighbour_reference  # noqa: E402
 

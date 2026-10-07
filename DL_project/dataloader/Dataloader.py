@@ -28,12 +28,11 @@ from dataloader.pocket_lipid_compatibility import (
     raw_compatibility,
     raw_compatibility_parts,
 )
-from dataloader.pair_descriptors import (
+from dataloader.pair_descriptors import descriptor_catalog_only, full_catalog_order
+from preprocessing.compute_descriptors import (
     as_arrays,
     chain_length_angstrom,
-    descriptor_catalog_only,
     descriptor_values_by_row,
-    full_catalog_order,
 )
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.lipid_embedding_store import load_lipid_embedding_store
@@ -1232,7 +1231,7 @@ class PLIDataset(
         # protein_descriptor_table already computes and persists to data/
         # protein_descriptors.csv, so pocket_extent_by_protein/pocket_rim_core_
         # aromatic_share_by_protein below read that table instead of a second one.
-        from dataloader.chemistry_prior import protein_descriptor_table as _protein_descriptor_table
+        from preprocessing.compute_descriptors import protein_descriptor_table as _protein_descriptor_table
         _protein_table = _protein_descriptor_table(self.ROOT_DIR)
         protein_cache = {
             protein: {
@@ -1253,7 +1252,7 @@ class PLIDataset(
         lipid_shape_on = getattr(self.config, "pair_descriptor_lipid_shape", False)
         lipid_shape = {}
         if lipid_shape_on:
-            from dataloader.pair_descriptors import LIPID_SHAPE_DESCRIPTOR_NAMES
+            from preprocessing.compute_descriptors import LIPID_SHAPE_DESCRIPTOR_NAMES
             for name in LIPID_SHAPE_DESCRIPTOR_NAMES:
                 lipid_shape[name] = as_arrays(
                     descriptor_values_by_row(csv, name, isomeric, cache=pair_cache)
@@ -1383,16 +1382,9 @@ class PLIDataset(
         raw_values = {}  # base_name -> (values, is_ragged)
         materialised = {}  # canonical token -> (values, is_ragged, mean, spread)
         if named_catalog_on:
-            from dataloader.chemistry_prior import protein_descriptor_table
-            from dataloader.pair_descriptors import (
-                BOUNDED_SHARE_DESCRIPTOR_NAMES,
-                LIPID_DESCRIPTOR_NAMES as _CATALOG_LIPID_NAMES,
-                PAIR_DESCRIPTOR_NAMES as _CATALOG_PAIR_NAMES,
-                POCKET_CHEMISTRY_DESCRIPTOR_NAMES as _CATALOG_POCKET_CHEMISTRY_NAMES,
-                PROTEIN_DESCRIPTOR_NAMES as _CATALOG_PROTEIN_NAMES,
-                pair_descriptor_value,
-                parse_descriptor_token,
-            )
+            from preprocessing.compute_descriptors import protein_descriptor_table
+            from dataloader.pair_descriptors import BOUNDED_SHARE_DESCRIPTOR_NAMES, LIPID_DESCRIPTOR_NAMES as _CATALOG_LIPID_NAMES, PAIR_DESCRIPTOR_NAMES as _CATALOG_PAIR_NAMES, POCKET_CHEMISTRY_DESCRIPTOR_NAMES as _CATALOG_POCKET_CHEMISTRY_NAMES, PROTEIN_DESCRIPTOR_NAMES as _CATALOG_PROTEIN_NAMES, parse_descriptor_token
+            from preprocessing.compute_descriptors import pair_descriptor_value
 
             requested_tokens = full_catalog_order(self.config)
             base_names_needed = {
@@ -1785,9 +1777,10 @@ class PLIDataset(
 
         # --hard_negative_mining / --dissimilar_negative_mining: one pool, built once
         # per dataset (not per group) since it is the same Tanimoto matrix every group's
-        # weighting reads, in either direction. Only the samplers
-        # that go through _sample_group_balanced_negatives accept it; validate()
-        # already requires one of them to be active whenever the flag is set.
+        # weighting reads, in either direction. All three balanced samplers accept it --
+        # the per-protein and per-family ones through _sample_group_balanced_negatives,
+        # the per-(group, class) one in its own loop over cells; validate() already
+        # requires one of them to be active whenever the flag is set.
         hard_negative_pool = None
         negative_mode = "hard"
         negative_share = self.hard_negative_share
@@ -1799,7 +1792,11 @@ class PLIDataset(
 
         if self.balanced_lipid_classes:
             csvtrue, csvfalse = split_and_sample_lipid_class_balanced_interactions(
-                csv, seed, ratio=self.negatives_per_positive
+                csv, seed, ratio=self.negatives_per_positive,
+                hard_negative_pool=hard_negative_pool,
+                excluded_groups=self.excluded_groups,
+                hard_negative_share=negative_share,
+                negative_mode=negative_mode,
             )
         elif self.balanced_proteins:
             csvtrue, csvfalse = split_and_sample_protein_balanced_interactions(
@@ -2483,7 +2480,7 @@ class PLIDataset(
         # PairDescriptorHead.DATALOADER_TOKENS + SPLIT_DATALOADER_TOKENS relies on.
         pair_descriptor_names = ["chain", "unsaturation", "hbond", "heavy", "occupancy"]
         if getattr(self.config, "pair_descriptor_lipid_shape", False):
-            from dataloader.pair_descriptors import LIPID_SHAPE_DESCRIPTOR_NAMES
+            from preprocessing.compute_descriptors import LIPID_SHAPE_DESCRIPTOR_NAMES
             pair_descriptor_names += list(LIPID_SHAPE_DESCRIPTOR_NAMES)
         if getattr(self.config, "pair_descriptor_extent", True):
             pair_descriptor_names.append("extent")

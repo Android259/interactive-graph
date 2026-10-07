@@ -11,8 +11,10 @@ from rdkit.Chem import AllChem
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dataloader.dataset_source import INTERACTION_CSV
-from dataloader.pair_descriptors import (
-    CONFORMER_COUNT, CONFORMER_SEED, generate_conformer_ensemble,
+from preprocessing.compute_descriptors import (
+    CONFORMER_COUNT,
+    CONFORMER_SEED,
+    generate_conformer_ensemble,
 )
 
 

@@ -30,7 +30,7 @@ import os
 import pandas
 import torch
 
-from dataloader.protein_graph_builder import POCKET_BACKBONE_ATOMS, RESIDUE_LETTERS
+from preprocessing.compute_descriptors import POCKET_BACKBONE_ATOMS, RESIDUE_LETTERS
 
 
 PROTEIN_TOKEN_ALPHABETS = ("aa", "3di")

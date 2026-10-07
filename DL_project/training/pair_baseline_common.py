@@ -17,12 +17,12 @@ import numpy as np
 import pandas as pd
 
 from dataloader.dataset_source import interaction_csv_path
-from dataloader.pair_descriptors import npr1 as _compute_npr1
-from dataloader.pair_descriptors import npr2 as _compute_npr2
-from dataloader.pair_descriptors import hbond_capacity as _hbond_capacity
-from dataloader.pair_descriptors import heavy_atom_count as _heavy_atom_count
-from dataloader.pair_descriptors import longest_acyl_chain as _longest_acyl_chain
-from dataloader.pair_descriptors import unsaturation_count as _unsaturation_count
+from preprocessing.compute_descriptors import npr1 as _compute_npr1
+from preprocessing.compute_descriptors import npr2 as _compute_npr2
+from preprocessing.compute_descriptors import hbond_capacity as _hbond_capacity
+from preprocessing.compute_descriptors import heavy_atom_count as _heavy_atom_count
+from preprocessing.compute_descriptors import longest_acyl_chain as _longest_acyl_chain
+from preprocessing.compute_descriptors import unsaturation_count as _unsaturation_count
 from dataloader.pair_descriptors import LIPID_DESCRIPTOR_NAMES
 from dataloader.pair_descriptors import PROTEIN_DERIVED_DESCRIPTOR_NAMES
 from dataloader.pair_descriptors import PROTEIN_DESCRIPTOR_NAMES
@@ -1735,7 +1735,7 @@ def _protein_catalog_features(proteins: list[str], names: list[str]) -> pd.DataF
     """
     global _PROTEIN_DESCRIPTOR_TABLE_CACHE
     if _PROTEIN_DESCRIPTOR_TABLE_CACHE is None:
-        from dataloader.chemistry_prior import protein_descriptor_table
+        from preprocessing.compute_descriptors import protein_descriptor_table
 
         _PROTEIN_DESCRIPTOR_TABLE_CACHE = protein_descriptor_table(str(PROJECT_ROOT / "data"))
     return pd.DataFrame.from_dict(_PROTEIN_DESCRIPTOR_TABLE_CACHE, orient="index").loc[

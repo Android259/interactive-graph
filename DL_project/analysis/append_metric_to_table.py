@@ -11,10 +11,10 @@ from training.read_configuration import ModelConfig
 
 
 def append_metric(
-    metric_file: Path,
+    metric_file: str | Path,
     metrics_root: Path = PROJECT_ROOT / "test_metrics",
     run_root: Path = PROJECT_ROOT / "run",
-    table: Path = PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv",
+    table: str | Path = PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv",
     include_tensorboard: bool = True,
     config: ModelConfig | None = None,
     script_logs_root: Path = PROJECT_ROOT / "script_logs",
@@ -27,7 +27,10 @@ def append_metric(
         config=config,
         script_logs_root=script_logs_root,
     )
-    upsert_row(table, row)
+    # Path(), like metric_row's above: training/run_paths.py's RunPaths is all-str
+    # (every field an os.path.join), so the run that finishes hands `table` over as
+    # text while upsert_row works on it as a path.
+    upsert_row(Path(table), row)
     return row
 
 

@@ -903,6 +903,11 @@ def test_dissimilar_negative_mining_requires_a_per_group_sampler():
         ModelConfig(dissimilar_negative_mining=True).validate()
 
 
+@pytest.mark.parametrize("mining", ["hard_negative_mining", "dissimilar_negative_mining"])
+def test_negative_mining_accepts_balanced_lipid_classes(mining):
+    ModelConfig(balanced_lipid_classes=True, **{mining: True}).validate()
+
+
 def test_dissimilar_negative_mining_excludes_hard_negative_mining():
     with pytest.raises(ValueError, match="opposite directions"):
         ModelConfig(

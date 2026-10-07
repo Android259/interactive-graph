@@ -88,6 +88,42 @@ def _dissimilar_negative_weights(
     return share * distance_mass + (1 - share) * uniform_mass
 
 
+def _weighted_negative_draw(candidates, draw_n, weights, seed):
+    """Draw `draw_n` of `candidates` without replacement, weighted by `weights`.
+
+    pandas' own weighted `.sample(replace=False)` refuses whenever one candidate's
+    normalized weight alone exceeds `1 / draw_n` (pandas/core/sample.py's
+    `size * weights.max() > 1` guard), which a concentrated pool (one very close
+    candidate, the rest at similarity 0) hits routinely. numpy's sequential
+    without-replacement draw has no such restriction, so it takes over for this path.
+
+    numpy does refuse one thing: a without-replacement draw asking for more items than
+    there are NON-ZERO weights. At `share=1.0` nothing is left uniform, so a candidate
+    whose own Tanimoto reduction is exactly 0 gets weight exactly 0 -- a negative
+    identical to one of the group's positives under "dissimilar", one with no similarity
+    at all to any of them under "hard". Where the quota exceeds the number of candidates
+    that survive that, the steered ones are taken first and the rest of the quota is
+    filled uniformly from the zero-weight remainder. The quota is what every sampler in
+    this module promises to draw in full -- steering is a preference over which
+    candidates fill it, never a filter that shrinks it -- which is the same reason
+    `_hard_negative_weights` keeps `1 - share` uniform at every share below 1.
+    """
+    rng = np.random.default_rng(seed)
+    probabilities = weights / weights.sum()
+    steerable = int((probabilities > 0).sum())
+    if steerable >= draw_n:
+        chosen = rng.choice(
+            len(candidates), size=draw_n, replace=False, p=probabilities
+        )
+        return candidates.iloc[chosen]
+    steered = rng.choice(
+        len(candidates), size=steerable, replace=False, p=probabilities
+    )
+    remainder = np.setdiff1d(np.arange(len(candidates)), steered)
+    filler = rng.choice(remainder, size=draw_n - steerable, replace=False)
+    return candidates.iloc[np.concatenate([steered, filler])]
+
+
 def _sample_group_balanced_negatives(
     csv,
     seed,
@@ -173,18 +209,9 @@ def _sample_group_balanced_negatives(
         if weights is None:
             parts.append(candidates.sample(n=draw_n, random_state=seed))
         else:
-            # pandas' own weighted .sample(replace=False) refuses whenever one
-            # candidate's normalized weight alone exceeds 1/draw_n
-            # (pandas/core/sample.py's `size * weights.max() > 1` guard), which a
-            # concentrated hard-negative pool (one very close candidate, the rest at
-            # similarity 0) hits routinely. numpy's sequential without-replacement
-            # draw has no such restriction and is well-defined for any nonnegative
-            # weights, so it takes over for exactly this path.
-            rng = np.random.default_rng(seed)
-            chosen = rng.choice(
-                len(candidates), size=draw_n, replace=False, p=weights / weights.sum()
+            parts.append(
+                _weighted_negative_draw(candidates, draw_n, weights, seed)
             )
-            parts.append(candidates.iloc[chosen])
     if parts:
         return pandas.concat(parts)
     return csv[is_negative].iloc[0:0]
@@ -402,7 +429,8 @@ def lipid_classes_for_holdout(csv, family, share):
 
 
 def sample_lipid_class_balanced_negatives(
-    csv, seed, group_column="ProteinDomain", ratio=1
+    csv, seed, group_column="ProteinDomain", ratio=1, hard_negative_pool=None,
+    excluded_groups=None, hard_negative_share=0.5, negative_mode="hard",
 ):
     """Sample negatives per (group, lipid class) cell to match its positive count (1:1).
 
@@ -427,14 +455,35 @@ def sample_lipid_class_balanced_negatives(
     makes the cells too small to fill: only 376 negatives are available, and the
     surviving classes come out *more* skewed (0.50-1.00, std 0.178) than before. The
     family is the finest grouping this dataset can actually balance.
+
+    `hard_negative_pool`/`excluded_groups`/`hard_negative_share`/`negative_mode`: see
+    `_sample_group_balanced_negatives`, whose weighting this reuses verbatim, scoped to
+    each (group, class) CELL rather than to the whole group. The cell's own positives
+    are the chemistry reference, and `draw_n` is untouched, so steering changes which
+    congener inside a class fills that cell's quota and nothing about the per-class
+    matching this sampler exists for -- the two are orthogonal, not a trade. Within a
+    cell every candidate already shares the head group, so what the Tanimoto reduction
+    still separates there is acyl composition, a narrower span than the same flag gets
+    under `balanced_proteins`.
     """
+    if negative_mode not in ("hard", "dissimilar"):
+        raise ValueError(
+            f"negative_mode must be 'hard' or 'dissimilar', got {negative_mode!r}"
+        )
     groups = csv[group_column].astype(str).str.lower()
     lipid_classes = lipid_class_series(csv)
     is_positive = csv["Interaction"] == 1
     is_negative = csv["Interaction"] == 0
+    excluded = (
+        {str(group).lower() for group in excluded_groups} if excluded_groups else set()
+    )
     parts = []
     for group in sorted(groups.dropna().unique()):
         group_mask = groups == group
+        # `group` IS the ProteinDomain here (that is this sampler's grouping), so the
+        # exemption reads it directly instead of the family lookup
+        # `_sample_group_balanced_negatives` needs for its per-protein grouping.
+        group_excluded = group in excluded
         for lipid_class in sorted(lipid_classes[group_mask].dropna().unique()):
             cell_mask = group_mask & (lipid_classes == lipid_class)
             positive_count = int((is_positive & cell_mask).sum())
@@ -442,20 +491,43 @@ def sample_lipid_class_balanced_negatives(
                 continue
             candidates = csv[is_negative & cell_mask]
             draw_n = min(positive_count * ratio, len(candidates))
-            if draw_n > 0:
+            if draw_n == 0:
+                continue
+            weights = None
+            if hard_negative_pool is not None and not group_excluded:
+                similarity, species_index = hard_negative_pool
+                positive_lipids = csv.loc[
+                    is_positive & cell_mask, "FullIdentityOfLipid"
+                ]
+                weigh = (
+                    _dissimilar_negative_weights
+                    if negative_mode == "dissimilar"
+                    else _hard_negative_weights
+                )
+                weights = weigh(
+                    candidates, positive_lipids, similarity, species_index,
+                    hard_negative_share,
+                )
+            if weights is None:
                 parts.append(candidates.sample(n=draw_n, random_state=seed))
+            else:
+                parts.append(
+                    _weighted_negative_draw(candidates, draw_n, weights, seed)
+                )
     if parts:
         return pandas.concat(parts)
     return csv[is_negative].iloc[0:0]
 
 
 def split_and_sample_lipid_class_balanced_interactions(
-    csv, seed, group_column="ProteinDomain", ratio=1
+    csv, seed, group_column="ProteinDomain", ratio=1, hard_negative_pool=None,
+    excluded_groups=None, hard_negative_share=0.5, negative_mode="hard",
 ):
     """Keep every positive and sample per-(group, lipid class)-matched negatives (1:1)."""
     csvtrue = csv[csv["Interaction"] == 1].copy()
     csvfalse = sample_lipid_class_balanced_negatives(
-        csv, seed, group_column, ratio
+        csv, seed, group_column, ratio, hard_negative_pool, excluded_groups,
+        hard_negative_share, negative_mode,
     ).copy()
     return csvtrue, csvfalse
 

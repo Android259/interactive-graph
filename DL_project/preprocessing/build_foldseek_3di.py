@@ -41,7 +41,7 @@ import pandas
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dataloader.protein_graph_builder import RESIDUE_LETTERS  # noqa: E402
+from preprocessing.compute_descriptors import RESIDUE_LETTERS  # noqa: E402
 
 
 def read_fasta(path):

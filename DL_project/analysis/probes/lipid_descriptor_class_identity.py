@@ -72,9 +72,8 @@ from dataloader.chemistry_prior import raw_feature_matrix  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.lipid_classes import lipid_class_series  # noqa: E402
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache  # noqa: E402
-from dataloader.pair_descriptors import (  # noqa: E402
-    CANDIDATE_LIPID_DESCRIPTOR_NAMES, LIPID_DESCRIPTOR_NAMES, _MEASURES,
-)
+from dataloader.pair_descriptors import LIPID_DESCRIPTOR_NAMES
+from preprocessing.compute_descriptors import CANDIDATE_LIPID_DESCRIPTOR_NAMES, _MEASURES
 from dataloader.pocket_lipid_compatibility import candidates_for_row  # noqa: E402
 from dataloader.sampler import LIPID_COLDSPLIT_SETS  # noqa: E402
 

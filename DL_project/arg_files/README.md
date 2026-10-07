@@ -21,7 +21,7 @@
 |---|---|---|
 | `geometric_edge/` | `geometric_edge_*`, `ge_*`: белковый граф с геометрией рёбер + bilinear fusion | `--protein_edge_mlp` / `--protein_edge_attention`, `--bilinear_fusion` |
 | `mlp/` | `mlp_*`: MLP по каталогу дескрипторов, без графов и эмбеддингов | `--pair_descriptors --descriptor_mlp --descriptor_names=...` |
-| `descriptors/` | `descriptors_*`, `dh_*`, `GBdescriptors_*`: дескрипторные головы | `--descriptors_head`, `--pair_descriptors` |
+| `descriptors/` | `descriptors_*`, `dh_*`: дескрипторные головы | `--descriptors_head`, `--pair_descriptors` |
 | `deepclip/` | `deepclip_*`: CNN+LSTM по токенам SMILES липида | `--deepclip --lipid_smiles_tokens` |
 | `thematical/` | `thematical_*`: раздельные геометрический/химический пути | `--thematical_paths` |
 | `structural_pretrain/` | предобучение белкового энкодера | `--structural_pretrain` |

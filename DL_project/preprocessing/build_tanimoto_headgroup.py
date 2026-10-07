@@ -41,7 +41,7 @@ from rdkit import Chem, RDLogger
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dataloader.dataset_source import INTERACTION_CSV
-from dataloader.pair_descriptors import _qualifying_tails
+from preprocessing.compute_descriptors import _qualifying_tails
 from preprocessing.build_tanimoto_compact import distinct_structures
 from preprocessing.build_tanimoto_compact import collect, tanimoto_matrix
 

@@ -30,7 +30,7 @@ import numpy
 import pandas
 from rdkit import Chem
 
-from dataloader.protein_graph_builder import (
+from preprocessing.compute_descriptors import (
     AROMATIC_RESIDUE_TYPES,
     pocket_atom_coordinates,
     pocket_shape,
@@ -135,7 +135,7 @@ def chain_lengths_by_species(csv):
     # module at its own top level, so importing pair_descriptors here at module load
     # time would cycle -- deferred to call time, by when both modules are already
     # fully loaded either way round.
-    from dataloader.pair_descriptors import longest_acyl_chain
+    from preprocessing.compute_descriptors import longest_acyl_chain
 
     lengths = {}
     for species, rows in csv.groupby("FullIdentityOfLipid"):
@@ -196,7 +196,7 @@ def chain_lengths_by_row(csv, isomeric=False, cache=None):
     candidate or it has no qualifying carbon, and a row with no usable candidate gets
     [None].
     """
-    from dataloader.pair_descriptors import longest_acyl_chain  # see chain_lengths_by_species
+    from preprocessing.compute_descriptors import longest_acyl_chain
 
     raw_to_canonical = cache["raw_to_canonical"] if cache else {}
     cached_values = cache["values"] if cache else {}

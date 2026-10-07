@@ -60,7 +60,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dataloader.chemistry_prior import null_scores, null_scores_leave_one_row_out  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES, pair_descriptor_value  # noqa: E402
+from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES  # noqa: E402
+from preprocessing.compute_descriptors import pair_descriptor_value  # noqa: E402
 from dataloader.sampler import LIPID_COLDSPLIT_SETS, lipid_class_series  # noqa: E402
 from null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
 from training.pair_baseline_common import (  # noqa: E402

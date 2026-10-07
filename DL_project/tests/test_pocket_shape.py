@@ -1,6 +1,6 @@
 import numpy as np
 
-from dataloader.protein_graph_builder import pocket_shape
+from preprocessing.compute_descriptors import pocket_shape
 
 
 def _elongated_cloud(rng):

@@ -51,7 +51,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataloader.chemistry_prior import protein_descriptor_table  # noqa: E402
+from preprocessing.compute_descriptors import protein_descriptor_table  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 
 # The protein-side half of dh_family_neutral_lipprop's --descriptor_names

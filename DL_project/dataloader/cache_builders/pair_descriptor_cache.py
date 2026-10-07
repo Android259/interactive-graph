@@ -16,15 +16,13 @@ from rdkit import Chem
 from dataloader.cache_builders.protein_graph_tensor_cache import _source_record
 from dataloader.pair_descriptor_cache import (
     CACHE_FORMAT_VERSION,
-    _code_fingerprint,
-    _measure_fingerprints,
     lipid_descriptors_csv_path,
     lipid_descriptors_manifest_path,
     load_pair_descriptor_cache,
     pair_descriptors_csv_path,
     pair_descriptors_manifest_path,
 )
-from dataloader.pair_descriptors import _MEASURES, longest_acyl_chain
+from preprocessing.compute_descriptors import _MEASURES, longest_acyl_chain
 from dataloader.pocket_lipid_compatibility import candidates_for_row
 
 
@@ -87,7 +85,7 @@ def _compute_one_star(args):
     return _compute_one(*args)
 
 
-def _parallel_measures(keys, seed_values=None, skip_measures=()):
+def _parallel_measures(keys, seed_values=None, skip_measures=(), progress=False):
     """{key: {"chain": ..., **_MEASURES}} for every key in `keys`, via a process pool.
 
     `seed_values`: {key: previous-build entry}, see _compute_one -- keys absent from
@@ -95,6 +93,11 @@ def _parallel_measures(keys, seed_values=None, skip_measures=()):
     fresh, exactly as before this parameter existed.
 
     `skip_measures`: see _compute_one -- forwarded as-is to every task.
+
+    `progress`: opt-in, default off (preserves the exact original pool.map behaviour
+    for every existing caller) -- prints "done N/total" to stdout every 25 completions
+    plus the final one. Uses imap_unordered instead of map so a result is available
+    to print as soon as ANY worker finishes it, not only once the whole batch returns.
 
     Serial below a small pool would not be worth starting (fork overhead exceeds the
     saving), but there is no such thing as "too few" here in practice -- a build is a
@@ -109,7 +112,17 @@ def _parallel_measures(keys, seed_values=None, skip_measures=()):
     tasks = [(key, seed_values.get(key), skip_measures) for key in keys]
     workers = min(len(keys), max(1, multiprocessing.cpu_count() - 1))
     with multiprocessing.Pool(workers, initializer=_init_worker) as pool:
-        return dict(pool.map(_compute_one_star, tasks))
+        if not progress:
+            return dict(pool.map(_compute_one_star, tasks))
+        results = {}
+        total = len(tasks)
+        for position, (key, entry) in enumerate(
+            pool.imap_unordered(_compute_one_star, tasks), start=1
+        ):
+            results[key] = entry
+            if position % 25 == 0 or position == total:
+                print(f"pair descriptor cache: done {position}/{total}", flush=True)
+        return results
 
 
 def _previous_cache_values(root_dir, isomeric):
@@ -146,7 +159,8 @@ def _previous_cache_values(root_dir, isomeric):
 
 
 def build_pair_descriptor_cache(
-    root_dir, csv, protein_names, csv_path, isomeric=False, skip_measures=()
+    root_dir, csv, protein_names, csv_path, isomeric=False, skip_measures=(),
+    progress=False,
 ):
     """Compute this isomeric variant's rows and merge them into data/
     lipid_descriptors.csv (the other variant's rows, if any, are left untouched).
@@ -195,7 +209,10 @@ def build_pair_descriptor_cache(
             if key not in pending_keys:
                 pending_keys.append(key)
 
-    values = _parallel_measures(pending_keys, seed_values=seed_values, skip_measures=skip_measures)
+    values = _parallel_measures(
+        pending_keys, seed_values=seed_values, skip_measures=skip_measures,
+        progress=progress,
+    )
 
     rows = [
         {"smiles": key, "isomeric": bool(isomeric), **entry}
@@ -226,18 +243,6 @@ def build_pair_descriptor_cache(
     manifest_raw_to_canonical["isomeric" if isomeric else "deterministic"] = raw_to_canonical
     manifest = {
         "format_version": CACHE_FORMAT_VERSION,
-        # Provenance: which whole-module state this table happened to be built under.
-        # Nothing reads it back for a decision -- see `_code_fingerprint`.
-        "code_fingerprint": _code_fingerprint(),
-        # What decides validity, at the granularity each value is actually produced
-        # and invalidated at: one entry per lipid measure. The READ path filters on
-        # these, and so does store_is_current. A name in `skip_measures` gets no
-        # fingerprint here -- this build never actually computed it, so it must read
-        # back as missing, not as validated.
-        "measure_fingerprints": {
-            name: fp for name, fp in _measure_fingerprints().items()
-            if name not in skip_measures
-        },
         "sources": [_source_record(Path(csv_path), root_dir)],
         "raw_to_canonical": manifest_raw_to_canonical,
     }
@@ -257,8 +262,9 @@ def build_pair_value_cache(root_dir, csv, isomeric=False):
     this reads lipid values from it rather than recomputing them, so building this
     table is only ever the cheap arithmetic step, never RDKit.
     """
-    from dataloader.chemistry_prior import protein_descriptor_table
-    from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES, pair_descriptor_value
+    from preprocessing.compute_descriptors import protein_descriptor_table
+    from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES
+    from preprocessing.compute_descriptors import pair_descriptor_value
 
     root_dir = Path(root_dir).resolve()
     lipid_cache = load_pair_descriptor_cache(root_dir, isomeric)
@@ -329,7 +335,6 @@ def build_pair_value_cache(root_dir, csv, isomeric=False):
         except (OSError, ValueError, json.JSONDecodeError):
             manifest = {}
     manifest["format_version"] = CACHE_FORMAT_VERSION
-    manifest["code_fingerprint"] = _code_fingerprint()
     manifest[f"built_{'isomeric' if isomeric else 'deterministic'}"] = True
     manifest_path.write_text(json.dumps(manifest))
 

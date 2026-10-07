@@ -10,6 +10,7 @@ from dataloader.Dataloader import (
     PLIDataset,
     ProteinGraphData,
     sample_family_balanced_negatives,
+    sample_lipid_class_balanced_negatives,
     sample_protein_balanced_negatives,
     split_and_sample_family_balanced_interactions,
     split_and_sample_protein_balanced_interactions,
@@ -433,4 +434,181 @@ def test_unknown_negative_mode_is_refused():
     with pytest.raises(ValueError, match="negative_mode"):
         sample_protein_balanced_negatives(
             _chemistry_table(), seed=3, negative_mode="sideways"
+        )
+
+
+def _lipid_class_chemistry_table():
+    # One family, one head group, so every row sits in the SAME (group, class) cell:
+    # one positive and four negative congeners at known Tanimoto distances from it.
+    return pd.DataFrame(
+        {
+            "Interaction": [1, 0, 0, 0, 0],
+            "LTPProtein": ["P1", "P1", "P1", "P2", "P2"],
+            "ProteinDomain": ["A"] * 5,
+            "FullIdentityOfLipid": [
+                "Phosphatidylcholine (30:0)",
+                "Phosphatidylcholine (32:1)",
+                "Phosphatidylcholine (34:2)",
+                "Phosphatidylcholine (36:3)",
+                "Phosphatidylcholine (38:4)",
+            ],
+        },
+        index=[300, 301, 302, 303, 304],
+    )
+
+
+def _lipid_class_chemistry_pool():
+    table = _lipid_class_chemistry_table()
+    names = list(table["FullIdentityOfLipid"])
+    # Same shape as _chemistry_pool: the first two negatives close to the positive,
+    # the last two far from it.
+    similarity = np.array(
+        [
+            [1.00, 0.95, 0.90, 0.00, 0.05],
+            [0.95, 1.00, 0.92, 0.02, 0.03],
+            [0.90, 0.92, 1.00, 0.01, 0.04],
+            [0.00, 0.02, 0.01, 1.00, 0.10],
+            [0.05, 0.03, 0.04, 0.10, 1.00],
+        ],
+        dtype=np.float32,
+    )
+    return similarity, {name: position for position, name in enumerate(names)}
+
+
+@pytest.mark.parametrize(
+    "negative_mode, expected",
+    [
+        ("dissimilar", ["Phosphatidylcholine (36:3)", "Phosphatidylcholine (38:4)"]),
+        ("hard", ["Phosphatidylcholine (32:1)", "Phosphatidylcholine (34:2)"]),
+    ],
+)
+def test_lipid_class_balanced_negatives_steer_within_the_cell(negative_mode, expected):
+    negatives = sample_lipid_class_balanced_negatives(
+        _lipid_class_chemistry_table(),
+        seed=3,
+        ratio=2,
+        hard_negative_pool=_lipid_class_chemistry_pool(),
+        hard_negative_share=1.0,
+        negative_mode=negative_mode,
+    )
+
+    assert sorted(negatives["FullIdentityOfLipid"]) == expected
+
+
+def test_lipid_class_balanced_negatives_keep_the_quota_when_steered():
+    table = _lipid_class_chemistry_table()
+    uniform = sample_lipid_class_balanced_negatives(table, seed=3, ratio=2)
+    steered = sample_lipid_class_balanced_negatives(
+        table,
+        seed=3,
+        ratio=2,
+        hard_negative_pool=_lipid_class_chemistry_pool(),
+        hard_negative_share=1.0,
+        negative_mode="dissimilar",
+    )
+
+    assert len(steered) == len(uniform)
+
+
+def test_lipid_class_balanced_negatives_exempt_the_excluded_group():
+    table = _lipid_class_chemistry_table()
+    uniform = sample_lipid_class_balanced_negatives(table, seed=3, ratio=2)
+    exempt = sample_lipid_class_balanced_negatives(
+        table,
+        seed=3,
+        ratio=2,
+        hard_negative_pool=_lipid_class_chemistry_pool(),
+        excluded_groups=["A"],
+        hard_negative_share=1.0,
+        negative_mode="dissimilar",
+    )
+
+    assert list(exempt["FullIdentityOfLipid"]) == list(uniform["FullIdentityOfLipid"])
+
+
+def _identical_chemistry_pool():
+    # Every lipid identical to every other: at share=1.0 "dissimilar" weighs each
+    # candidate 1 - 1.0 = 0, which is what numpy's without-replacement draw refuses.
+    table = _lipid_class_chemistry_table()
+    names = list(table["FullIdentityOfLipid"])
+    return (
+        np.ones((len(names), len(names)), dtype=np.float32),
+        {name: position for position, name in enumerate(names)},
+    )
+
+
+def _one_distant_candidate_pool():
+    # Only L3 carries any distance from the positive, so one candidate survives a
+    # share=1.0 draw while the quota below asks for two.
+    table = _lipid_class_chemistry_table()
+    names = list(table["FullIdentityOfLipid"])
+    similarity = np.ones((len(names), len(names)), dtype=np.float32)
+    similarity[0, 3] = similarity[3, 0] = 0.1
+    return similarity, {name: position for position, name in enumerate(names)}
+
+
+@pytest.mark.parametrize("negative_mode", ["dissimilar", "hard"])
+@pytest.mark.parametrize(
+    "pool", [_identical_chemistry_pool, _one_distant_candidate_pool]
+)
+def test_a_full_quota_is_drawn_even_when_the_steering_zeroes_candidates(
+    pool, negative_mode
+):
+    table = _lipid_class_chemistry_table()
+    quota = len(
+        sample_lipid_class_balanced_negatives(table, seed=3, ratio=2)
+    )
+
+    negatives = sample_lipid_class_balanced_negatives(
+        table,
+        seed=3,
+        ratio=2,
+        hard_negative_pool=pool(),
+        hard_negative_share=1.0,
+        negative_mode=negative_mode,
+    )
+
+    assert len(negatives) == quota
+    assert negatives.index.is_unique
+
+
+def test_the_surviving_candidate_is_still_preferred_when_the_quota_overflows():
+    negatives = sample_lipid_class_balanced_negatives(
+        _lipid_class_chemistry_table(),
+        seed=3,
+        ratio=2,
+        hard_negative_pool=_one_distant_candidate_pool(),
+        hard_negative_share=1.0,
+        negative_mode="dissimilar",
+    )
+
+    # The one candidate with any distance from the positive is in; the second slot is
+    # filled uniformly from the zero-weight rest rather than dropped.
+    assert "Phosphatidylcholine (36:3)" in set(negatives["FullIdentityOfLipid"])
+    assert len(negatives) == 2
+
+
+def test_the_protein_sampler_also_fills_a_quota_the_steering_zeroes():
+    table = _chemistry_table()
+    similarity, index = _chemistry_pool()
+    # Every candidate identical to the positive: all distances 0 under "dissimilar".
+    similarity = np.ones_like(similarity)
+
+    negatives = sample_protein_balanced_negatives(
+        table,
+        seed=3,
+        ratio=2,
+        hard_negative_pool=(similarity, index),
+        hard_negative_share=1.0,
+        negative_mode="dissimilar",
+    )
+
+    assert len(negatives) == 2
+    assert negatives.index.is_unique
+
+
+def test_lipid_class_balanced_negatives_refuse_an_unknown_mode():
+    with pytest.raises(ValueError, match="negative_mode"):
+        sample_lipid_class_balanced_negatives(
+            _lipid_class_chemistry_table(), seed=3, negative_mode="sideways"
         )

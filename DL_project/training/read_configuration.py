@@ -1344,7 +1344,10 @@ class ModelConfig:
     # to groups whose family is not in --excluded_groups: a held-out family's rows
     # become validation/test after the split, and this flag must not change what those
     # measure, only what training sees. See dataloader/sampler.py's
-    # _sample_group_balanced_negatives and _hard_negative_weights.
+    # _sample_group_balanced_negatives and _hard_negative_weights. Which balanced
+    # sampler it steers follows the balancing flag in force: the per-protein and
+    # per-family ones draw per group, --balanced_lipid_classes per (family, class) cell,
+    # where the steering is therefore between congeners of one head group.
     hard_negative_mining: bool = False
     # Sampling-weight mass steered toward the hardest candidates; the rest (1 - share)
     # stays uniform, so a protein whose positives have no chemically close negatives in
@@ -1952,12 +1955,15 @@ class ModelConfig:
             )
 
         if self.hard_negative_mining and not (
-            self.balanced_proteins or self.balance_negatives_by_family
+            self.balanced_proteins
+            or self.balance_negatives_by_family
+            or self.balanced_lipid_classes
         ):
             raise ValueError(
-                "hard_negative_mining reweights the per-group negative draw in "
-                "_sample_group_balanced_negatives and needs one of "
-                "balanced_proteins/balance_negatives_by_family to select that draw"
+                "hard_negative_mining reweights the balanced negative draw in "
+                "_sample_group_balanced_negatives/sample_lipid_class_balanced_negatives "
+                "and needs one of balanced_proteins/balance_negatives_by_family/"
+                "balanced_lipid_classes to select that draw"
             )
 
         if not 0.0 <= self.hard_negative_share <= 1.0:
@@ -1968,12 +1974,15 @@ class ModelConfig:
             )
 
         if self.dissimilar_negative_mining and not (
-            self.balanced_proteins or self.balance_negatives_by_family
+            self.balanced_proteins
+            or self.balance_negatives_by_family
+            or self.balanced_lipid_classes
         ):
             raise ValueError(
-                "dissimilar_negative_mining reweights the per-group negative draw in "
-                "_sample_group_balanced_negatives and needs one of "
-                "balanced_proteins/balance_negatives_by_family to select that draw"
+                "dissimilar_negative_mining reweights the balanced negative draw in "
+                "_sample_group_balanced_negatives/sample_lipid_class_balanced_negatives "
+                "and needs one of balanced_proteins/balance_negatives_by_family/"
+                "balanced_lipid_classes to select that draw"
             )
 
         if self.dissimilar_negative_mining and self.hard_negative_mining:

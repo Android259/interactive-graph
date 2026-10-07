@@ -66,16 +66,25 @@ is decided in `PLIDataset.__init__`, most specific first:
   excluded groups (validation/test); train rows pass through untouched.
 - `balanced_batches` (`dataloader/sampler.py`) is a separate
   layer: these flags balance the pool, that one balances each batch drawn from it.
-- `hard_negative_mining` / `dissimilar_negative_mining` only reweight the draw inside
-  `_sample_group_balanced_negatives` (so they require `balanced_proteins` or
-  `balance_negatives_by_family`, and are mutually exclusive with each other). Both read
-  one `species_similarity` pool and steer `*_negative_share` of the mass by a group's
-  own positives: toward chemically close candidates, or away from them. The quota per
-  group is untouched, so the pool stays balanced exactly as it was -- only which
-  negatives fill it changes. Measured on the table, seed 42, ratio 2, share 1.0: the
-  mean best Tanimoto from a drawn negative to its protein's own positives moves 0.657
-  (uniform) -> 0.714 (hard) / 0.534 (dissimilar). Groups whose family is in
-  `excluded_groups` are exempt from either direction.
+- `hard_negative_mining` / `dissimilar_negative_mining` only reweight the draw inside a
+  **balanced** sampler (so they require one of `balanced_proteins`,
+  `balance_negatives_by_family` or `balanced_lipid_classes`, and are mutually exclusive
+  with each other). Both read one `species_similarity` pool and steer
+  `*_negative_share` of the mass by a group's own positives: toward chemically close
+  candidates, or away from them. The quota per group is untouched, so the pool stays
+  balanced exactly as it was -- only which negatives fill it changes. Measured on the
+  table, seed 42, ratio 2, share 1.0: the mean best Tanimoto from a drawn negative to
+  its protein's own positives moves 0.657 (uniform) -> 0.714 (hard) / 0.534
+  (dissimilar). Groups whose `ProteinDomain` is in `excluded_groups` are exempt from
+  either direction.
+- The two steering directions are orthogonal to **which** marginal a sampler flattens,
+  not an alternative to it. The per-protein and per-family samplers steer per group
+  (`_sample_group_balanced_negatives`); `balanced_lipid_classes` steers per
+  (`ProteinDomain`, lipid class) **cell**, in `sample_lipid_class_balanced_negatives`'s
+  own loop. Inside a cell every candidate already shares the head group, so what the
+  Tanimoto reduction separates there is acyl composition -- a narrower span of chemistry
+  than the same flag reaches under `balanced_proteins`, and the per-class matching the
+  cell exists for is untouched.
 
 ## Tanimoto Files
 

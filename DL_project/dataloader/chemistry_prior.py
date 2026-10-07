@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas
 
-import dataloader.pair_descriptors as pair_descriptors
+import preprocessing.compute_descriptors as compute_descriptors
 from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
 from dataloader.pair_descriptors import (
     LIPID_DESCRIPTOR_NAMES,
@@ -25,22 +25,24 @@ from dataloader.pair_descriptors import (
     POCKET_CHEMISTRY_DESCRIPTOR_NAMES,
     PROTEIN_DERIVED_DESCRIPTOR_NAMES,
     PROTEIN_DESCRIPTOR_NAMES,
+)
+from preprocessing.compute_descriptors import (
     acyl_chain_count,
     aromatic_ring_count,
-    coarse_share,
     heavy_atom_count,
     hbond_capacity,
     logp,
     longest_acyl_chain,
     molar_refractivity,
     pair_descriptor_value,
+    protein_descriptor_table,
     ring_count,
     rotatable_bond_count,
     tpsa,
     unsaturation_count,
 )
-from dataloader.pair_descriptors import npr1 as _compute_npr1
-from dataloader.pair_descriptors import npr2 as _compute_npr2
+from preprocessing.compute_descriptors import npr1 as _compute_npr1
+from preprocessing.compute_descriptors import npr2 as _compute_npr2
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -164,19 +166,19 @@ def _lipid_descriptor_table(csv, data_dir=None):
         "npr1": _compute_npr1,
         "npr2": _compute_npr2,
         # Tail-only, see LIPID_DESCRIPTOR_NAMES.
-        "tail_length_asymmetry": pair_descriptors.tail_length_asymmetry,
-        "tail_length_mean": pair_descriptors.tail_length_mean,
-        "tail_double_bonds": pair_descriptors.tail_double_bonds,
-        "tail_unsaturation_density": pair_descriptors.tail_unsaturation_density,
-        "tail_double_bond_position": pair_descriptors.tail_double_bond_position,
-        "tail_logp": pair_descriptors.tail_logp,
-        "tail_molar_refractivity": pair_descriptors.tail_molar_refractivity,
-        "tail_heavy_atoms": pair_descriptors.tail_heavy_atoms,
+        "tail_length_asymmetry": compute_descriptors.tail_length_asymmetry,
+        "tail_length_mean": compute_descriptors.tail_length_mean,
+        "tail_double_bonds": compute_descriptors.tail_double_bonds,
+        "tail_unsaturation_density": compute_descriptors.tail_unsaturation_density,
+        "tail_double_bond_position": compute_descriptors.tail_double_bond_position,
+        "tail_logp": compute_descriptors.tail_logp,
+        "tail_molar_refractivity": compute_descriptors.tail_molar_refractivity,
+        "tail_heavy_atoms": compute_descriptors.tail_heavy_atoms,
         # data/Lipid_Volumes.csv lookup, not an RDKit formula -- see its own comment
         # in dataloader/pair_descriptors.py. A per-candidate miss is common (~70%);
         # per-species below, every one of the 283 distinct FullIdentityOfLipid
         # species resolves from at least one candidate.
-        "experimental_lipid_volume": pair_descriptors.experimental_lipid_volume,
+        "experimental_lipid_volume": compute_descriptors.experimental_lipid_volume,
     }
     per_species_values = {}
     smiles_cache = {}
@@ -201,146 +203,6 @@ def _lipid_descriptor_table(csv, data_dir=None):
     return per_species_values
 
 
-# Bumped to 4 when pocket_extent/elongation/flatness_lambda_sqrt were appended to
-# PROTEIN_DESCRIPTOR_NAMES: the cache keys on source-file mtime/size, not on this code,
-# so a table written before those three existed would still validate and be served back
-# three columns short. Bumped to 5 for POCKET_CHEMISTRY_DESCRIPTOR_NAMES (the ten
-# residue-class shares and the two cavity-volume measures), for exactly the same
-# reason -- an existing data/protein_descriptor_table.json is twelve columns short of
-# what this code now writes, and only the version number says so.
-_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 5
-
-
-def _protein_descriptors_csv_path(data_dir):
-    return Path(data_dir) / "protein_descriptors.csv"
-
-
-def _protein_descriptor_table_manifest_path(data_dir):
-    return Path(data_dir) / "protein_descriptors.manifest.json"
-
-
-def _protein_descriptor_table_sources(data_dir, protein_names):
-    from dataloader.cache_builders.protein_graph_tensor_cache import _source_record
-
-    root_dir = Path(data_dir).resolve()
-    paths = []
-    for protein in protein_names:
-        protein_dir = root_dir / "graphs" / protein
-        paths.append(protein_dir / "pocketness.pdb")
-        paths.append(protein_dir / "coarse_graph_nodes.csv")
-    return [_source_record(path, root_dir) for path in paths if path.exists()]
-
-
-def protein_descriptor_table(data_dir):
-    """{protein: {PROTEIN_DESCRIPTOR_NAMES + PROTEIN_DERIVED_DESCRIPTOR_NAMES +
-    POCKET_CHEMISTRY_DESCRIPTOR_NAMES: value}},
-    read straight off data/graphs/<protein>/{coarse_graph_nodes.csv,pocketness.pdb} --
-    the same recipe preprocessing/pocket_descriptor_identity_check.py uses, standalone
-    (no ProteinGraphBuilder/ModelConfig instance needed: pocket_descriptor's own
-    `config` argument is only used to cross-check pocket_descriptor_count, which is
-    skipped when config is None).
-
-    These 35 proteins' worth of values do not depend on --seed/--excluded_groups/the
-    interaction table at all -- only on data/graphs/*/{pocketness.pdb,
-    coarse_graph_nodes.csv}, which almost never change once built -- yet every
-    Dataloader instance (one per (group, seed) job) used to recompute the whole table
-    from scratch: ~10ms/protein once imports are warm, ~4s cold on the very first call
-    in a process, paid independently by every one of a grid's N processes with nothing
-    shared between them (measured; unlike dataloader/pair_descriptor_cache.py, which at
-    least amortises the lipid side, this had no persistence at all).
-
-    Self-persisting rather than a build-it-first-or-fall-back-slow cache: the first
-    call anywhere (any process, any machine sharing this data/ dir) computes the table
-    and writes data/protein_descriptors.csv (plus a small sidecar manifest,
-    data/protein_descriptors.manifest.json, carrying only the format version and the
-    source files' size/mtime -- never a descriptor value itself); every call after
-    that, in any process, reads the CSV back in milliseconds -- no separate prep
-    script, no args-file flag to detect, nothing to remember to run before a grid
-    launches. Still keyed on each source file's size/mtime (same discipline as
-    protein_graph_tensor_cache.py) so a rebuilt data/graphs/<protein>/ is picked up
-    rather than served stale.
-
-    The two derived names (aromatic_share_coarse/polar_share_coarse) are computed
-    here too, from the raw aromatic_share/apolar_sasa_share this function already
-    reads, so a caller can look either kind up by name the same way -- see
-    coarse_share/PROTEIN_DERIVED_DESCRIPTOR_NAMES in dataloader/pair_descriptors.py.
-    """
-    import pandas as pd
-
-    from dataloader.protein_graph_builder import (
-        pocket_chemistry_descriptor,
-        pocket_descriptor,
-    )
-    from dataloader.protein_graph_tensor_cache import _pocket_tensor
-
-    graphs_dir = os.path.join(data_dir, "graphs")
-    protein_names = sorted(
-        protein for protein in os.listdir(graphs_dir)
-        if os.path.isfile(os.path.join(graphs_dir, protein, "pocketness.pdb"))
-        and os.path.isfile(os.path.join(graphs_dir, protein, "coarse_graph_nodes.csv"))
-    )
-
-    csv_path = _protein_descriptors_csv_path(data_dir)
-    manifest_path = _protein_descriptor_table_manifest_path(data_dir)
-    if csv_path.exists() and manifest_path.exists():
-        try:
-            manifest = json.loads(manifest_path.read_text())
-            current_sources = _protein_descriptor_table_sources(data_dir, protein_names)
-            if (
-                manifest.get("format_version") == _PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION
-                and manifest.get("sources") == current_sources
-            ):
-                # float_precision="round_trip": pandas' default C float parser is
-                # fast but not always exact (it can read back "0.2356687933206558"
-                # for a written "0.23566879332065582", a one-ULP drift on write/read
-                # that `to_csv` itself does not introduce) -- round_trip trades a
-                # slower parse for serving back exactly the value computed below.
-                table = pandas.read_csv(
-                    csv_path, index_col="protein", float_precision="round_trip"
-                )
-                if sorted(table.index) == protein_names:
-                    return {
-                        protein: table.loc[protein].to_dict() for protein in table.index
-                    }
-        except (OSError, ValueError, pandas.errors.ParserError, KeyError):
-            pass  # fall through and recompute, same as any other stale/corrupt cache
-
-    values = {}
-    for protein in protein_names:
-        protein_dir = os.path.join(graphs_dir, protein)
-        pocketness_path = os.path.join(protein_dir, "pocketness.pdb")
-        nodes_path = os.path.join(protein_dir, "coarse_graph_nodes.csv")
-        vertices = pd.read_csv(nodes_path)
-        pocket = _pocket_tensor(Path(pocketness_path))
-        descriptor = pocket_descriptor(
-            vertices, pocket, None, pocketness_path=pocketness_path
-        )[0]
-        raw = {
-            name: float(descriptor[position])
-            for position, name in enumerate(PROTEIN_DESCRIPTOR_NAMES)
-        }
-        # Reached by NAME only, never through the positional descriptor tensor above
-        # -- see POCKET_CHEMISTRY_DESCRIPTOR_NAMES' own comment for why they are not
-        # part of PROTEIN_DESCRIPTOR_NAMES.
-        raw.update(pocket_chemistry_descriptor(vertices, pocket, pocketness_path))
-        raw["polar_share"] = 1.0 - raw["apolar_sasa_share"]
-        raw["aromatic_share_coarse"] = coarse_share(raw["aromatic_share"])
-        raw["polar_share_coarse"] = coarse_share(raw["polar_share"])
-        values[protein] = raw
-
-    try:
-        table = pd.DataFrame.from_dict(values, orient="index")
-        table.index.name = "protein"
-        table.to_csv(csv_path)
-        manifest_path.write_text(json.dumps({
-            "format_version": _PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION,
-            "sources": _protein_descriptor_table_sources(data_dir, protein_names),
-        }))
-    except OSError:
-        pass  # never fatal -- a read-only data/ (or a race with another process
-              # writing the same file) still returns correct values, just unpersisted
-
-    return values
 
 
 def _standardise_descriptor_table(table):

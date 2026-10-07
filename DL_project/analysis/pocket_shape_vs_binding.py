@@ -46,7 +46,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from analysis.pocket_shape_descriptors import descriptors_for  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.pair_descriptors import longest_acyl_chain  # noqa: E402
+from preprocessing.compute_descriptors import longest_acyl_chain  # noqa: E402
 from dataloader.pocket_lipid_compatibility import EMPTY  # noqa: E402
 
 

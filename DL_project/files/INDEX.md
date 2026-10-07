@@ -53,7 +53,7 @@
 | [descriptors_head_bottleneck.md](results/descriptors_head_bottleneck.md) | 2026-09-29 | Голова `NamedDescriptorHead` — узкое место, а не дескрипторы и не сплит |
 | [edge_geometry_pruning_rbf6_orient_raw3.md](results/edge_geometry_pruning_rbf6_orient_raw3.md) | 2026-09-06 | Обрезка геометрии рёбер (`edge_rbf6` / `edge_orientation_scalar` / `edge_raw3`) против бейзлайна |
 | [fig3_lipid_subclass_coldsplit_results.md](results/fig3_lipid_subclass_coldsplit_results.md) | 2026-09-19 | Figure-3 lipid-subclass cold split (Kron-RLS, `--excluded_lipid_groups`) — первый прогон |
-| [four_families_audit.md](results/four_families_audit.md) | 2026-08-31 | Аудит четырёх активных семейств архитектур: descriptors_*, geometric_edge_*, GBdescriptors_*, bbp_dcs_rand_smd_fa_nps_* |
+| [four_families_audit.md](results/four_families_audit.md) | 2026-08-31 | Аудит активных семейств архитектур: descriptors_*, geometric_edge_*, bbp_dcs_rand_smd_fa_nps_* |
 | [ge_s15_ablation.md](results/ge_s15_ablation.md) | 2026-10-06 | Абляция входов `ge_s15_prothid32_hid64_noreg` (geometric_edge, species15) |
 | [ge_s15_architecture_sweep_results.md](results/ge_s15_architecture_sweep_results.md) | 2026-10-06 | `ge_*` на `groups_species15`: 29 вариантов против базы `ge_s15_prothid32_hid64_noreg` |
 | [geometric_edge_descriptors_baseline_selection_results.md](results/geometric_edge_descriptors_baseline_selection_results.md) | 2026-09-12 | Разбор 33 прогонов (2026-09-11): что из предложений подтвердилось для geometric_edge и descriptors |

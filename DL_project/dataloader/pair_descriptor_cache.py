@@ -62,10 +62,14 @@ data from.
 The manifest guards staleness the same way protein_graph_tensor_cache.py does: the source
 interaction table's size and nanosecond mtime must still match what the table was built
 from, checked freshly on every load (cheap -- a couple of stat() calls, not a hash of file
-contents). The CODE side of staleness is checked at the granularity a value is actually
-produced at -- per lipid measure -- so an edit to pair_descriptors.py invalidates what it
-changed and nothing else. Neither question is answered by a hash over the module as a
-whole any more; `_code_fingerprint` says why.
+contents).
+
+The code that produced a value is NOT part of that question. These tables hold descriptor
+numbers, and a column holding a number is a column this module serves: validity is the
+data's, never the formula's. Editing a formula in preprocessing/compute_descriptors.py
+therefore does not invalidate anything here -- recompute the affected column deliberately
+(`python3 preprocessing/compute_descriptors.py NAME`) when a formula changes
+and the stored numbers should follow it.
 """
 
 import json
@@ -73,9 +77,6 @@ from pathlib import Path
 
 import pandas as pd
 
-import dataloader.pair_descriptors as pair_descriptors
-import dataloader.pocket_lipid_compatibility as pocket_lipid_compatibility
-from dataloader.pair_descriptors import _MEASURES, longest_acyl_chain
 
 # Bumped from the old per-(isomeric) JSON blob's version 2: the storage itself changed
 # (one shared CSV table + a small sidecar manifest, no "proteins" sub-table any more --
@@ -84,126 +85,6 @@ from dataloader.pair_descriptors import _MEASURES, longest_acyl_chain
 # must read as stale rather than be misinterpreted.
 CACHE_FORMAT_VERSION = 3
 
-# Modules whose source defines what a cache entry MEANS: longest_acyl_chain,
-# _MEASURES' formulas (unsaturation/hbond/heavy_atoms/tail_count/the three
-# conformer-based ones), and everything pocket_lipid_compatibility.candidates_for_row
-# itself depends on. None of these are files store_is_current()'s size/mtime check
-# watches -- that check guards the DATA a table was built from (the interaction table),
-# not the CODE that turns it into cached numbers, so a formula change here would
-# otherwise leave a still-"current" table silently serving values computed under the
-# old formula. Folded into `_measure_fingerprints` instead: a code change there is then a
-# per-measure invalidation, never a stale hit.
-_CODE_MODULES = (pair_descriptors, pocket_lipid_compatibility)
-
-
-def _code_fingerprint():
-    """Short hash of every module in _CODE_MODULES' source, in a fixed order.
-
-    Provenance only -- recorded in the manifest, but nothing reads it back for a
-    decision (see the module docstring: validity is per-measure, via
-    `_measure_fingerprints`, not a whole-module hash).
-    """
-    import hashlib
-
-    hasher = hashlib.sha256()
-    for module in _CODE_MODULES:
-        hasher.update(Path(module.__file__).read_bytes())
-    return hasher.hexdigest()[:16]
-
-
-# Functions the conformer-based measures all route through: a change in any of them
-# changes those measures' values without touching the measures' own source.
-# CONFORMER_COUNT/CONFORMER_SEED are folded in for the same reason -- the ensemble is a
-# pure function of (smiles, count, seed), so moving either moves every value built on it.
-_SHARED_CONFORMER_FUNCTIONS = (
-    "generate_conformer_ensemble",
-    "_cached_conformer_ensemble",
-    "_mean_over_conformers",
-)
-
-# Helpers a measure's value depends on without naming them in its own body's hash: a
-# measure that delegates its real work is only as fixed as what it delegates to. Keyed
-# by the helper, valued by the measures that route through it, because that is the way
-# round which stays readable as measures are added.
-#
-# Missing one of these is a silent staleness bug of exactly the kind per-measure
-# fingerprints exist to prevent -- the measure's own source would be unchanged, its
-# fingerprint would match, and the table would keep serving values the current code no
-# longer produces. `_acyl_chain_component_lengths`/`_acyl_chain_components` are the
-# case that made this concrete: `chain`, `tail_count` and every tail_* descriptor do
-# nothing but read them.
-_SHARED_HELPERS = {
-    "_acyl_chain_component_lengths": ("chain", "tail_count"),
-    "_acyl_chain_components": (
-        "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
-        "tail_unsaturation_density", "tail_double_bond_position",
-        "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
-    ),
-    "_qualifying_tails": (
-        "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
-        "tail_unsaturation_density", "tail_double_bond_position",
-        "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
-    ),
-    "_tail_fragment": ("tail_logp", "tail_molar_refractivity", "tail_heavy_atoms"),
-}
-
-
-def _measure_functions():
-    """{measure name: the function that computes it}, chain included.
-
-    `chain` comes from longest_acyl_chain rather than _MEASURES (which does not carry
-    it), and the builder writes it into every entry, so it needs a fingerprint like
-    the rest or it would be the one measure nothing could invalidate.
-    """
-    return {"chain": longest_acyl_chain, **_MEASURES}
-
-
-def _measure_fingerprints():
-    """{measure name: short hash of the code that produces THAT measure}.
-
-    Validity was once one hash over the whole of pair_descriptors.py +
-    pocket_lipid_compatibility.py, embedded in the cache FILENAME, so any edit anywhere
-    in either file -- a new descriptor, a docstring, a renamed local -- made every
-    previously cached value unreachable at once. Nothing was wrong with the values; the
-    reader simply could not find a file under the new name, and every consumer silently
-    recomputed from scratch until somebody happened to rerun the builder. Measured
-    consequence: an edit to pair_descriptors.py on 2026-09-06 orphaned five cache files
-    holding 1226 lipids' conformer measures, and every reader after it paid a fresh
-    10-conformer ETKDG+MMFF embed per lipid.
-
-    Per measure, the question is answerable honestly: `npr1`'s cached value is valid
-    exactly while the code computing `npr1` is unchanged, whatever else moved in the
-    module. So an unrelated edit now invalidates nothing, and a real change to one
-    formula invalidates that formula only.
-
-    inspect.getsource, not the whole module: that IS the granularity being bought.
-    """
-    import hashlib
-    import inspect
-
-    conformer_shared = b""
-    for name in _SHARED_CONFORMER_FUNCTIONS:
-        conformer_shared += inspect.getsource(getattr(pair_descriptors, name)).encode()
-    conformer_shared += (
-        f"{pair_descriptors.CONFORMER_COUNT}:{pair_descriptors.CONFORMER_SEED}".encode()
-    )
-
-    # Inverted once, so the per-measure loop below stays a lookup: measure -> the
-    # helpers whose source its value also depends on.
-    helpers_by_measure = {}
-    for helper, measures in _SHARED_HELPERS.items():
-        for measure in measures:
-            helpers_by_measure.setdefault(measure, []).append(helper)
-
-    fingerprints = {}
-    for name, function in _measure_functions().items():
-        blob = inspect.getsource(function).encode()
-        if name in pair_descriptors.CONFORMER_MEASURE_NAMES:
-            blob += conformer_shared
-        for helper in sorted(helpers_by_measure.get(name, ())):
-            blob += inspect.getsource(getattr(pair_descriptors, helper)).encode()
-        fingerprints[name] = hashlib.sha256(blob).hexdigest()[:16]
-    return fingerprints
 
 
 def lipid_descriptors_csv_path(root_dir):
@@ -283,19 +164,17 @@ def load_pair_descriptor_cache(root_dir, isomeric):
         return None
     table = table[table["isomeric"] == bool(isomeric)]
 
-    current = _measure_fingerprints()
-    recorded = manifest.get("measure_fingerprints") or {}
-    # A measure the manifest has no fingerprint for cannot be shown to be current, so it
-    # is dropped rather than trusted -- the conservative direction, and only reachable
-    # for a hand-edited manifest since every build writes all of them.
-    valid = {name for name, fp in current.items() if recorded.get(name) == fp}
+    # A column holding a number is a value this table may serve. Nothing here asks
+    # whether the formula that produced it still has the same source text: the table
+    # stores descriptor NUMBERS, and a number is either present or it is not.
+    value_columns = [
+        name for name in table.columns if name not in ("smiles", "isomeric")
+    ]
 
     values = {}
     for _, row in table.iterrows():
         values[row["smiles"]] = {
-            name: row[name]
-            for name in valid
-            if name in table.columns and pd.notna(row[name])
+            name: row[name] for name in value_columns if pd.notna(row[name])
         }
 
     return {"raw_to_canonical": raw_to_canonical, "values": values}
@@ -320,8 +199,6 @@ def store_is_current(root_dir, isomeric):
     try:
         manifest = json.loads(manifest_path.read_text())
         if manifest.get("format_version") != CACHE_FORMAT_VERSION:
-            return False
-        if manifest.get("measure_fingerprints") != _measure_fingerprints():
             return False
         variant = "isomeric" if isomeric else "deterministic"
         if variant not in (manifest.get("raw_to_canonical") or {}):
@@ -386,7 +263,6 @@ def pair_value_cache_is_current(root_dir, isomeric):
         variant = "isomeric" if isomeric else "deterministic"
         return (
             manifest.get("format_version") == CACHE_FORMAT_VERSION
-            and manifest.get("code_fingerprint") == _code_fingerprint()
             and bool(manifest.get(f"built_{variant}"))
         )
     except (OSError, ValueError, json.JSONDecodeError):

@@ -21,8 +21,8 @@ from dataloader.cache_builders.pair_descriptor_cache import (
     build_pair_descriptor_cache,
     build_pair_value_cache,
 )
-import dataloader.pair_descriptors as pair_descriptors
-from dataloader.pair_descriptors import descriptor_values_by_row
+import preprocessing.compute_descriptors as compute_descriptors
+from preprocessing.compute_descriptors import descriptor_values_by_row
 from dataloader.pocket_lipid_compatibility import chain_lengths_by_row
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -124,12 +124,13 @@ def test_build_pair_value_cache_roundtrip(
     """data/pair_descriptors.csv -- the genuinely joint (lipid x protein) table --
     reads lipid values from data/lipid_descriptors.csv and protein values from
     data/protein_descriptors.csv (built independently by dataloader/chemistry_prior.py)
-    and must agree with dataloader.pair_descriptors.pair_descriptor_value computed
+    and must agree with preprocessing.compute_descriptors.pair_descriptor_value computed
     directly over the same inputs, for every (candidate, protein) pair the fixture
     table actually contains.
     """
-    from dataloader.chemistry_prior import protein_descriptor_table
-    from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES, pair_descriptor_value
+    from preprocessing.compute_descriptors import protein_descriptor_table
+    from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES
+    from preprocessing.compute_descriptors import pair_descriptor_value
 
     build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
     assert pair_value_cache_is_current(DATA_DIR, isomeric=False) is False  # not built yet
@@ -186,33 +187,6 @@ def test_store_goes_stale_when_source_csv_changes(fixture_csv, csv_path, clean_c
     # makes serving the old values safe rather than merely cheap.
     assert "totally-new-smiles" not in cache["raw_to_canonical"]
 
-
-def test_rebuild_is_decided_per_value_not_by_a_whole_module_hash(
-    fixture_csv, csv_path, clean_cache_files, monkeypatch
-):
-    """Only a change that would move a cached VALUE may report the table stale.
-
-    The check used to compare one hash over the whole of pair_descriptors.py +
-    pocket_lipid_compatibility.py, so a renamed local or an edited docstring in code no
-    cached value depends on reported "needs a rebuild". A cluster launch acts on that
-    report by queueing an OAR prep job that asks for a GPU and blocks the grid until it
-    drains, once per label -- so a false alarm here costs a launch, not a recompute.
-    """
-    build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
-    assert store_is_current(DATA_DIR, isomeric=False) is True
-
-    # An edit that moves the whole-module hash and no formula: still current.
-    monkeypatch.setattr(pair_descriptor_cache, "_code_fingerprint", lambda: "0" * 16)
-    assert store_is_current(DATA_DIR, isomeric=False) is True
-    monkeypatch.undo()
-
-    # One lipid measure's own code moved: a rebuild is due.
-    moved_measures = dict(pair_descriptor_cache._measure_fingerprints())
-    moved_measures["chain"] = "f" * 16
-    monkeypatch.setattr(
-        pair_descriptor_cache, "_measure_fingerprints", lambda: moved_measures
-    )
-    assert store_is_current(DATA_DIR, isomeric=False) is False
 
 
 def test_cached_values_match_uncached_computation(fixture_csv, csv_path, clean_cache_files):
@@ -271,8 +245,8 @@ def test_compute_one_computes_everything_fresh_without_a_seed():
     # a KEY -- that is the invariant the cache rests on, since a reader tests
     # `measure in entry` and a silently absent one would read as "not cached" forever.
     _, entry = _compute_one("CCO", seed_entry=None)
-    assert set(entry) == {"chain", *pair_descriptors._MEASURES}
-    tail_only = set(pair_descriptors.CANDIDATE_LIPID_DESCRIPTOR_NAMES)
+    assert set(entry) == {"chain", *compute_descriptors._MEASURES}
+    tail_only = set(compute_descriptors.CANDIDATE_LIPID_DESCRIPTOR_NAMES)
     # experimental_lipid_volume is a data/Lipid_Volumes.xlsx lookup, not an RDKit
     # formula -- unlike every other name here, it is legitimately None for anything
     # RDKit parses fine but the sheet never measured (ethanol included), so it does
@@ -291,7 +265,7 @@ def test_compute_one_computes_everything_fresh_without_a_seed():
     _, lipid = _compute_one(
         "CCCCCCCCCCCCCCCC(=O)OCC(O)COP(=O)(O)OCC[N+](C)(C)C", seed_entry=None
     )
-    assert set(lipid) == {"chain", *pair_descriptors._MEASURES}
+    assert set(lipid) == {"chain", *compute_descriptors._MEASURES}
     assert lipid["tail_double_bond_position"] is None
     assert all(
         lipid[name] is not None
@@ -302,9 +276,7 @@ def test_compute_one_computes_everything_fresh_without_a_seed():
 
 def test_previous_cache_values_reads_the_existing_table(tmp_path):
     # Simulates a table already built by an earlier run -- seeding must read it back
-    # regardless of whether its measures still validate against the current code (a
-    # fingerprint match would mean there is nothing stale to seed from in the first
-    # place).
+    # whatever is in it, since that is the only thing there is to seed from.
     table = pd.DataFrame([
         {"smiles": "CCO", "isomeric": False, "chain": 2.0, "unsaturation": 0.0},
         {"smiles": "CCCCCCCC", "isomeric": True, "chain": 8.0, "unsaturation": 0.0},
@@ -355,7 +327,7 @@ def test_build_pair_descriptor_cache_seeds_expensive_measures_across_a_code_chan
         new_entry = new_values[key]
         for measure in old_entry:
             assert new_entry[measure] == old_entry[measure], (
-                f"{measure} for {key} changed across a mere code-fingerprint bump"
+                f"{measure} for {key} changed across a rebuild that only ADDED measures"
             )
         assert new_entry["npr1"] is not None
         assert new_entry["npr2"] is not None
@@ -373,61 +345,3 @@ def test_manifest_has_no_non_serialisable_values(fixture_csv, csv_path, clean_ca
     json.loads(manifest_path.read_text())
     # And the CSV itself must be a valid, readable table.
     pd.read_csv(path)
-
-
-# --- per-measure validity ----------------------------------------------------------
-# The regression these guard: validity used to be ONE hash over the whole of
-# pair_descriptors.py, embedded in the cache filename, so any edit anywhere in that
-# module orphaned every cached value at once and every reader silently went back to
-# RDKit. Measured on 2026-09-06: five cache files holding 1226 lipids' 10-conformer
-# measures became unreachable because of one unrelated edit.
-
-def test_unrelated_module_change_invalidates_nothing(
-    fixture_csv, csv_path, clean_cache_files, monkeypatch
-):
-    """A changed module fingerprint must not cost the reader a single value."""
-    build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
-    before = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
-    assert before is not None
-
-    monkeypatch.setattr(
-        pair_descriptor_cache, "_code_fingerprint", lambda: "0" * 16
-    )
-    after = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
-    assert after is not None
-    assert after["values"] == before["values"]
-
-
-def test_changing_one_measure_invalidates_only_that_measure(
-    fixture_csv, csv_path, clean_cache_files, monkeypatch
-):
-    build_pair_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
-    before = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
-    assert any("npr1" in entry for entry in before["values"].values())
-
-    real = pair_descriptor_cache._measure_fingerprints()
-    monkeypatch.setattr(
-        pair_descriptor_cache,
-        "_measure_fingerprints",
-        lambda: {**real, "npr1": "changed"},
-    )
-    after = load_pair_descriptor_cache(DATA_DIR, isomeric=False)
-    for key, entry in after["values"].items():
-        assert "npr1" not in entry
-        # Everything else, including npr2 off the SAME conformer ensemble, is untouched.
-        assert entry == {
-            name: value for name, value in before["values"][key].items() if name != "npr1"
-        }
-
-
-def test_conformer_measures_depend_on_the_shared_ensemble_code(monkeypatch):
-    """npr1 does not compute its own conformers -- a change in the shared ensemble
-    routine changes its value without touching npr1's own source, so the fingerprint
-    has to cover it."""
-    before = pair_descriptor_cache._measure_fingerprints()
-    monkeypatch.setattr(pair_descriptor_cache.pair_descriptors, "CONFORMER_SEED", 12345)
-    after = pair_descriptor_cache._measure_fingerprints()
-    for name in pair_descriptor_cache.pair_descriptors.CONFORMER_MEASURE_NAMES:
-        assert after[name] != before[name], name
-    assert after["chain"] == before["chain"]
-    assert after["hbond"] == before["hbond"]

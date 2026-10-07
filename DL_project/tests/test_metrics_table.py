@@ -298,6 +298,28 @@ def test_append_metric_writes_shared_table(tmp_path):
     assert rows[0]["datetime"] == "2026-05-26 11:01:12"
 
 
+def test_append_metric_accepts_the_string_paths_a_run_hands_it(tmp_path):
+    # training/run_paths.py builds every path with os.path.join, so a finishing run
+    # calls this with str, not Path -- the one caller that matters most, and the one
+    # the Path-typed tests above never exercised.
+    metrics_root = tmp_path / "test_metrics"
+    metric_file = make_metric_file(metrics_root)
+    table = tmp_path / "tables" / "metrics_summary.csv"
+
+    append_metric(
+        str(metric_file),
+        metrics_root=metrics_root,
+        run_root=tmp_path / "run",
+        table=str(table),
+        include_tensorboard=False,
+    )
+
+    with table.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+    assert rows[0]["datetime"] == "2026-05-26 11:01:12"
+
+
 def test_append_metric_writes_values_from_config_object(tmp_path):
     metrics_root = tmp_path / "test_metrics"
     metric_file = make_metric_file(metrics_root)
