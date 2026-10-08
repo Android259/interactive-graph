@@ -18,8 +18,8 @@ scripts/
   kill.sh                                       cancel jobs, pull their logs back
   env.sh                                        the project's python, anywhere
   settings.sh                                   everything you might want to change
-  submit/       the few still-live, non-grid submitters (structural_pretrain's two-stage
-                launch); see arg_files/README.md (project root) for the configs themselves
+  submit/       empty -- its last submitters (structural_pretrain's two-stage launch)
+                were deleted with structural_pretrain itself
   lib/          sourced, never executed: cluster_common.sh, args_file_lib.sh,
                 grid_lib.sh, ssh_master_lib.sh, pack_lib.sh, progress_table.sh
   launch/       run_cluster.sh, submit_grid.sh (BOTH series -- the config's
@@ -28,6 +28,9 @@ scripts/
   cluster/      runs ON a frontend or compute node: queue helper, drain cron,
                 preflight, env install
   tools/        one-off commands: sync_project, test_run, parameters, ...
+  graphics_generation/  the plot_*.py / split_similarity_vs_metric.py scripts that
+                draw figures from metrics_summary.csv, test reports, or TensorBoard
+                runs; the rest of analysis/ stays plot-free (analysis/AGENTS.md)
 ```
 
 `scripts/settings.sh` is the one file to edit for the group list, the
@@ -271,8 +274,8 @@ Two things that look like details and are not:
   kept only for wait daemons started before the port.
 - `run_excluded_group_tests.sh` / `run_excluded_subgroup_tests.sh` — per-group /
   per-subgroup runs; tunable via `EP`, `BATCH`, `NUM_WORKERS` env vars.
-- `submit/` — one-off historical experiment submitters; treat as archive, not a
-  reusable API.
+- `submit/` — empty. Held one-off historical experiment submitters; the last two
+  (structural_pretrain's two-stage launch) were deleted with structural_pretrain itself.
 
 ## Cluster Environment
 
@@ -318,7 +321,7 @@ good CUDA build, so gating on it would reject every environment.
 - `tools/enter_project_env.sh` — `source` for a FIRST-TIME setup: creates the env when it
   is missing, then activates and `cd`s to the project root. `env.sh` assumes it exists.
 - `generate_config_graphics.sh LABEL` — builds `graphics/<family>/<label>/…` by calling the
-  `analysis/` plot scripts.
+  `graphics_generation/` plot scripts.
 - `kill.sh JOB_ID | --name PREFIX… | --all` — cancel jobs and pull their logs back.
 - `tools/wait_and_sync_bigfoot.sh`, `tools/wait_and_sync_kraken.sh` — block until jobs
   finish and pull results back (a foreground viewer, live per-epoch progress).

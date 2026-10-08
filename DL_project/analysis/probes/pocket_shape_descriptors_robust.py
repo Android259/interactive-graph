@@ -25,7 +25,7 @@ crossed with the three point-cloud/covariance fixes:
 
   length_metric="span" (dataloader/protein_graph_builder.py's own choice): elongation
   and flatness are ratios of the 5th-95th percentile span of the projections.
-  length_metric="sqrt_eigenvalue" (analysis/pocket_shape_descriptors.py's choice, the
+  length_metric="sqrt_eigenvalue" (preprocessing/pocket_shape_descriptors.py's choice, the
   wider research set, never covered by an eta^2 check before now): elongation and
   flatness are ratios of sqrt(eigenvalue) -- the axis standard deviation. extent itself
   is the percentile span of PC1 in both cases; neither script ever computes extent from
@@ -65,7 +65,7 @@ from preprocessing.compute_descriptors import (
     pocket_atom_coordinates,
     pocket_shape,
 )
-from analysis.pocket_shape_vs_binding import (  # noqa: E402
+from analysis.protein_profile_probe import (  # noqa: E402
     chain_length_per_protein,
     head_classes_per_protein,
     interval,
@@ -150,7 +150,7 @@ def pocket_shape_variant(
     length_metric="span": elongation/flatness are span[0]/span[1], span[1]/span[2] --
     dataloader/protein_graph_builder.py's own formula. span_sort applies here.
     length_metric="sqrt_eigenvalue": elongation/flatness are sqrt(eigenvalue) ratios --
-    analysis/pocket_shape_descriptors.py's formula. span_sort has no counterpart here:
+    preprocessing/pocket_shape_descriptors.py's formula. span_sort has no counterpart here:
     the eigenvalue order already IS the length order by construction, there is nothing
     to re-rank. extent is the percentile span of PC1 either way -- neither source
     formula ever derives extent from an eigenvalue.
@@ -225,7 +225,7 @@ def report_binding(rows, families_by_protein, protein_residues, targets):
     whether the number describes the SITE in a way that has anything to do with what
     binds there -- a descriptor can be family-neutral and still be noise. That is what
     this second measurement is for, and it is the same one
-    analysis/pocket_shape_vs_binding.py already applies to the production set: partial
+    analysis/protein_profile_probe.py (mode `correlate`) already applies to the production set: partial
     Spearman against the lipid target with protein size regressed out, with the
     confidence interval, because at n = 35 the interval is the finding.
 

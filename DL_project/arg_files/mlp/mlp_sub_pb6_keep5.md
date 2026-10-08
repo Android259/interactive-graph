@@ -1,5 +1,5 @@
 # = mlp_sub_pb6 с 5 из 17 дескрипторов: набор, оставшийся после обнуления 12 по checkpoint-абляции
-# (analysis/probes/mlp_feature_subsets.py, отбор по valid: test dBA -0.004). Все 4 липидных убраны.
+# (analysis/input_ablation.py subsets, отбор по valid: test dBA -0.004). Все 4 липидных убраны.
 
 --ep=120
 --fast_attention

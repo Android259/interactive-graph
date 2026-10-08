@@ -16,9 +16,10 @@
 # Learning-curve metrics: balanced_accuracy, F1, sensitivity, specificity, precision, AUC, loss
 # Subgroup metrics:       balanced_accuracy, F1, sensitivity, specificity, precision, AUC
 #
-# AUC's learning curve is validation-only (no train line, see analysis/
-# plot_group_learning_curve.py's METRIC_SERIES) because aggregate_values() only ever
-# computes it on the validation pass. It also only exists in TensorBoard logs from
+# AUC's learning curve is validation-only (no train line, see
+# scripts/graphics_generation/plot_group_learning_curve.py's METRIC_SERIES) because
+# aggregate_values() only ever computes it on the validation pass. It also only
+# exists in TensorBoard logs from
 # runs AFTER training/eval_metrics.py's log_epoch_metrics started writing "epoch/valid
 # AUC" -- a run completed before that change has no such scalar, and this script
 # prints "no runs with required TensorBoard tags" and skips it, same as any other
@@ -94,7 +95,7 @@ for group in "${COMPLETE_GROUPS[@]}"; do
         continue
     fi
     printf '\n== learning curves: %s ==\n' "${group}"
-    python3 "${PROJECT_ROOT}/analysis/plot_group_learning_curve.py" \
+    python3 "${PROJECT_ROOT}/scripts/graphics_generation/plot_group_learning_curve.py" \
         --table "${TABLE}" \
         --group "${group}" \
         "${metric_args[@]}" \
@@ -117,7 +118,7 @@ done
 SUBGROUP_FAILED_METRICS=()
 for metric in "${SUBGROUP_METRICS[@]}"; do
     printf '\n== subgroup metric: %s ==\n' "${metric}"
-    if ! python3 "${PROJECT_ROOT}/analysis/plot_metric_by_subgroup.py" \
+    if ! python3 "${PROJECT_ROOT}/scripts/graphics_generation/plot_metric_by_subgroup.py" \
         --reports-root test_metrics \
         --metric "${metric}" \
         --filter "label=${LABEL}" \

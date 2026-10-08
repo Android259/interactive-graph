@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Compare two `label` configurations via matched (exclusion_set, seed) pairs.
+"""Compare `label` configurations via matched (exclusion_set, seed) pairs.
 
 Usage: python3 compare_labels.py CANDIDATE_LABEL BASELINE_LABEL [--table PATH]
+       python3 compare_labels.py LABEL LABEL LABEL... [--by-group] [--sort test_BA]
 
-For every metric in METRICS, computes candidate - baseline over matched
-(exclusion_set, seed) pairs (latest row per pair, per label) and reports:
+TWO labels: the original pairwise diff. For every metric in METRICS, computes
+candidate - baseline over matched (exclusion_set, seed) pairs (latest row per pair,
+per label) and reports:
   - overall: mean diff, median diff, std delta, improved/worsened counts, n
   - by group: mean diff, median diff, std delta, improved/worsened counts, n
     when --by-groups is passed
@@ -12,18 +14,49 @@ For every metric in METRICS, computes candidate - baseline over matched
 Higher-is-better metrics count diff > 0 as improved; for `loss`
 (lower is better) diff < 0 counts as improved.
 
-Prints to stdout; does not write any file.
+Flags and output match analysis/summarize_label.py's own single-label report
+(the sibling script this one's METRICS/RATE_METRICS/read_table_rows/column_index/
+latest_rows_for_label/numeric are shared with): --table, --by-groups, and --output to
+append the report to a file instead of printing it.
+
+MORE THAN TWO labels (folded in from the former analysis/label_summary_table.py, since
+that script answered "one row per label, several labels side by side" -- a different
+shape from the pairwise diff above, triggered here by how many labels are given rather
+than by a separate script): one row per label instead of a diff, each with mean/SEM/std/n
+over that label's own matched runs. Three spreads are printed because they answer
+different questions and are routinely confused: std is how much the runs of this label
+differ from each other (on a label whose runs are (excluded group x seed), this is
+dominated by which group was held out, not by seed noise -- use --by-group to separate
+the two); SEM = std/sqrt(n) is how well the MEAN is pinned down, the number to compare
+labels with; n is how many runs are behind both -- a label with 20 rows and one with 35
+are not comparable spreads. Columns are BA, test F1, sensitivity, specificity (the
+former script's AUC/AUC_within_protein_pairs columns are dropped here in favour of
+these three, which exist for every run regardless of --lipid_coldsplit/
+--double_coldsplit, where AUC columns are often blank).
+
+Prints to stdout by default; --output appends instead (two-label mode only).
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import math
 import statistics
 from collections import defaultdict
 from pathlib import Path
 
 from build_metrics_table import PROJECT_ROOT
+
+# Columns for the N>2-label ranked table (was label_summary_table.py's own METRICS,
+# which printed BA/AUC/AUC_within_protein_pairs -- AUC is blank for a lot of runs
+# outside --lipid_coldsplit, so the replacement set is metrics every run has).
+RANKED_METRICS = (
+    ("balanced_accuracy", "BA"),
+    ("F1", "test F1"),
+    ("sensitivity", "sensitivity"),
+    ("specificity", "specificity"),
+)
 
 METRICS = (
     ("checkpoint_valid_balanced_accuracy", "checkpoint valid BA", True),
@@ -305,53 +338,186 @@ def format_class_recall_gap(
     )
 
 
+# ------------------------------------------------- N>2-label mode (was label_summary_table.py)
+
+
+def spread(values: list[float | None]) -> tuple[float | None, float | None, float | None, int]:
+    """(mean, sem, std, n) over the finite values, or (None, ...) when there are none."""
+    values = [value for value in values if value is not None]
+    if not values:
+        return None, None, None, 0
+    if len(values) == 1:
+        return values[0], None, 0.0, 1
+    std = statistics.stdev(values)
+    return statistics.fmean(values), std / math.sqrt(len(values)), std, len(values)
+
+
+def ranked_cell(mean, sem, std, n, width=26) -> str:
+    if mean is None:
+        return f"{'--':>{width}}"
+    sem_text = "  --  " if sem is None else f"{sem:.3f}"
+    return f"{f'{mean:.3f} +/-{sem_text} sd{std:.3f} n{n}':>{width}}"
+
+
+def print_ranked_table(
+    labels: list[str], table_path: Path, by_group: bool, drop_groups: set[str], sort: str,
+) -> None:
+    rows: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    groups: dict[tuple[str, str], set[str]] = defaultdict(set)
+    with table_path.open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            if row["label"] not in labels:
+                continue
+            if row["exclusion_set"].replace("groups_", "") in drop_groups:
+                continue
+            key = (row["label"], row["exclusion_set"]) if by_group else (row["label"], "")
+            rows[key].append(row)
+            groups[key].add(row["exclusion_set"])
+
+    if not rows:
+        raise SystemExit(f"no rows matched any of {labels!r} in {table_path}")
+    missing = [label for label in labels if label not in {key[0] for key in rows}]
+    if missing:
+        print(f"# WARNING: no rows for label(s) {missing!r} in {table_path}")
+
+    summaries = {
+        key: {column: spread([numeric(row[column]) for row in group_rows]) for column, _ in RANKED_METRICS}
+        for key, group_rows in rows.items()
+    }
+
+    order = sorted(rows)
+    if sort != "label":
+        column = next((c for c, name in RANKED_METRICS if sort in (c, name)), sort)
+        order = sorted(rows, key=lambda key: (summaries[key][column][0] is None, -(summaries[key][column][0] or 0)))
+
+    # Labels on one line share a long prefix (the architecture they are all variants
+    # of); printing it repeatedly pushes the distinguishing suffix off the right edge,
+    # which is the only part anyone reads. Printed once, above the table.
+    common = ""
+    names = sorted({key[0] for key in rows})
+    if len(names) > 1:
+        for index, character in enumerate(names[0]):
+            if all(len(name) > index and name[index] == character for name in names):
+                common += character
+            else:
+                break
+        common = common.rsplit("_", 1)[0] + "_" if "_" in common else ""
+    if common:
+        print(f"common prefix: {common}\n")
+    display = {key: (key[0][len(common):] if key[0].startswith(common) else key[0]) for key in rows}
+    name_width = min(max(len(text) for text in display.values()), 64)
+    header = f"{'label':{name_width}}"
+    if by_group:
+        header += f"{'group':18}"
+    header += f"{'runs':>6}{'grps':>6}" + "".join(f"{name:>26}" for _, name in RANKED_METRICS)
+    print(header)
+    print("-" * len(header))
+    for key in order:
+        text = display[key]
+        # Truncated head, not tail: what distinguishes one variant of a line from
+        # another is always the suffix (the flag that was changed), never the shared stem.
+        if len(text) > name_width:
+            text = "…" + text[-(name_width - 1):]
+        line = f"{text:{name_width}}"
+        if by_group:
+            line += f"{key[1].replace('groups_', ''):18}"
+        line += f"{len(rows[key]):>6}{len(groups[key]):>6}"
+        for column, _ in RANKED_METRICS:
+            line += ranked_cell(*summaries[key][column])
+        print(line)
+    print("\n+/-SEM = std/sqrt(n) -- how well the mean is pinned down; sd = spread of the "
+          "runs themselves.\nWithout --by-group the spread mixes excluded groups with seeds.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("candidate_label")
-    parser.add_argument("baseline_label")
+    parser.add_argument(
+        "labels", nargs="+",
+        help="two labels for the pairwise diff (candidate then baseline), or more than "
+             "two for a ranked side-by-side table",
+    )
     parser.add_argument("--table", type=Path, default=PROJECT_ROOT / "results" / "tables" / "metrics_summary.csv")
     parser.add_argument(
         "--by-groups",
         "--by_groups",
         action="store_true",
-        help="Print per-exclusion-group comparison sections.",
+        help="Two-label mode: print per-exclusion-group comparison sections.",
+    )
+    parser.add_argument(
+        "--output", type=Path, default=None,
+        help="Two-label mode: append the comparison to this file instead of printing "
+             "it (accumulates across repeated invocations, same convention as "
+             "summarize_label.py).",
+    )
+    parser.add_argument(
+        "--by-group", action="store_true",
+        help="N>2-label mode: one row per (label, excluded group) instead of one per "
+             "label, so group spread and seed spread stop being the same number.",
+    )
+    parser.add_argument(
+        "--drop-groups", default="",
+        help="N>2-label mode: comma-separated excluded groups to leave out.",
+    )
+    parser.add_argument(
+        "--sort", default="label",
+        help="N>2-label mode: label (default), or a metric column name to sort by, descending.",
     )
     args = parser.parse_args()
 
+    if len(args.labels) == 1:
+        raise SystemExit(
+            "one label given -- use analysis/summarize_label.py for a single-label "
+            "report, or pass two (pairwise diff) or more (ranked table) labels here"
+        )
+
+    if len(args.labels) > 2:
+        print_ranked_table(
+            args.labels, args.table, args.by_group,
+            {name for name in args.drop_groups.split(",") if name}, args.sort,
+        )
+        return
+
+    candidate_label, baseline_label = args.labels
     header, rows = read_table_rows(args.table)
-    baseline = latest_rows_for_label(header, rows, args.baseline_label)
-    candidate = latest_rows_for_label(header, rows, args.candidate_label)
+    baseline = latest_rows_for_label(header, rows, baseline_label)
+    candidate = latest_rows_for_label(header, rows, candidate_label)
 
     if not baseline:
-        raise SystemExit(f"No rows found with label={args.baseline_label!r} in {args.table}")
+        raise SystemExit(f"No rows found with label={baseline_label!r} in {args.table}")
     if not candidate:
-        raise SystemExit(f"No rows found with label={args.candidate_label!r} in {args.table}")
+        raise SystemExit(f"No rows found with label={candidate_label!r} in {args.table}")
 
     common = sorted(set(baseline) & set(candidate))
     if not common:
         raise SystemExit(
             f"No matched (exclusion_set, seed) pairs between "
-            f"{args.candidate_label!r} ({len(candidate)} rows) and "
-            f"{args.baseline_label!r} ({len(baseline)} rows)"
+            f"{candidate_label!r} ({len(candidate)} rows) and "
+            f"{baseline_label!r} ({len(baseline)} rows)"
         )
 
-    print(f"Comparison: {args.candidate_label!r} vs {args.baseline_label!r} (baseline)")
-    print(
+    parts = [
+        f"Comparison: {candidate_label!r} vs {baseline_label!r} (baseline)",
         f"baseline rows: {len(baseline)} | candidate rows: {len(candidate)} | "
-        f"matched pairs: {len(common)}"
-    )
-    print()
-    print("=== Overall ===")
-    print(format_overall(header, baseline, candidate, common))
-    print()
-    print("=== Confusion rates ===")
-    print(format_rate_metrics(header, baseline, candidate, common))
-    print()
-    print("===", format_class_recall_gap(header, baseline, candidate, common), "===")
+        f"matched pairs: {len(common)}",
+        "",
+        "=== Overall ===",
+        format_overall(header, baseline, candidate, common),
+        "",
+        "=== Confusion rates ===",
+        format_rate_metrics(header, baseline, candidate, common),
+        "",
+        "=== " + format_class_recall_gap(header, baseline, candidate, common) + " ===",
+    ]
     if args.by_groups:
-        print()
-        print("=== By group ===")
-        print(format_by_group(header, baseline, candidate, common))
+        parts += ["", "=== By group ===", format_by_group(header, baseline, candidate, common)]
+    report = "\n".join(parts)
+
+    if args.output:
+        with args.output.open("a", encoding="utf-8") as handle:
+            handle.write(report + "\n")
+        print(f"Appended comparison to {args.output}")
+    else:
+        print(report)
 
 
 if __name__ == "__main__":

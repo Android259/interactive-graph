@@ -18,7 +18,7 @@
 #
 # WHY CRAL-TRIO x PG
 #
-# Counts from analysis/probes/lipid_subclass_block_report.py --blocks fig3 --by_family all.
+# Counts from analysis/probes/lipid_subclass_report.py blocks --blocks fig3 --by_family all.
 # A cell has to satisfy three things at once, and almost none do:
 #
 #   block held out        enough positives IN the block to measure on

@@ -32,7 +32,7 @@
 # training here, so "which protein is this" is free, and the pooled figure is largely
 # that marginal. Read AUC_within_protein_proteins beside it -- a mean over 2 proteins
 # and a mean over 16 are not the same kind of number. Sizes, per
-# analysis/probes/lipid_subclass_block_report.py --blocks fig3 (measured on the whole table,
+# analysis/probes/lipid_subclass_report.py blocks --blocks fig3 (measured on the whole table,
 # not restricted to any one family the way the DeepCLIP file's numbers are):
 #
 #   block                                positives  proteins-with-a-positive  headgroup-Tanimoto

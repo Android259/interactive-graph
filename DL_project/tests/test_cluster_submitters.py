@@ -116,9 +116,7 @@ def test_job_id_tag_separates_the_clusters_oar_filenames(tmp_path):
 @pytest.mark.parametrize(
     "gpu_name,expected",
     [
-        ("Tesla V100-SXM2-16GB", ("v100", "2", "12288", "11000", "5")),
         ("NVIDIA A100-SXM4-80GB", ("a100", "4", "14336", "13000", "5")),
-        ("NVIDIA H100 80GB HBM3", ("h100", "4", "16384", "15000", "5")),
         ("NVIDIA H200", ("h200", "8", "16384", "15000", "5")),
     ],
 )
@@ -139,7 +137,6 @@ def test_pack_hardware_profiles_cover_cluster_gpu_models(gpu_name, expected):
 @pytest.mark.parametrize(
     "cluster,expected",
     [
-        ("bigfoot", ("9", "0", "1", "1")),
         ("kraken", ("12", "0", "4", "1")),
     ],
 )

@@ -17,6 +17,4 @@
 
 --protein_edge_attention
 
---pretrained_checkpoint=models/structural_pretrain/structural_pretrain/random/seed0.pt
---freeze_pretrained_encoders
 --save_model

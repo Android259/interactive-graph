@@ -213,11 +213,12 @@ LIPID_SUBCLASS_BLOCKS_LIST=(
 # job per family x seed, --groups/--no_groups apply normally, same group spelling as
 # every other protein-side axis), but no protein is EXCLUDED from training -- the
 # family named by the group IS the entire training pool -- so --excluded_groups is
-# never appended; --family_only=<group> is appended instead. Originally only reachable
-# through scripts/submit/structural_pretrain_solo.sh's bespoke per-family bash loop
-# (needed there to chain a fresh stage-1 pretrain run before stage 2); once stage 1's
-# checkpoint already exists on disk, each stage-2 (family, seed) job is an ordinary
-# independent run and needs no chaining, which is what this grid path assumes.
+# never appended; --family_only=<group> is appended instead. This grid path is now the
+# only way in: it was originally reachable only through a bespoke per-family bash loop
+# in a submitter that chained a fresh structural-pretrain run before each family's job
+# (deleted with that line). Nothing needs the chaining here -- each (family, seed) job
+# is an ordinary independent run, which is what this path assumes. Every
+# arg_files/deepclip/*.md config trains on this axis.
 #
 # --random_split, bare (no value), in the args file switches the grid to a fourth axis:
 # nothing is held out at all. Every other axis above answers its question by APPENDING a

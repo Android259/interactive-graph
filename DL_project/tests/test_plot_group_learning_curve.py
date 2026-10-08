@@ -1,12 +1,13 @@
 import pytest
 
-from plot_group_learning_curve import aggregate_histories, best_validation_window
-from plot_group_learning_curve import window_mean_at_epoch
-from analysis.plot_group_learning_curve import (
+from scripts.graphics_generation.plot_group_learning_curve import (
+    aggregate_histories,
     baseline_lines,
+    best_validation_window,
     epoch_prevalence,
     estimate_prevalence,
     random_baseline,
+    window_mean_at_epoch,
 )
 
 

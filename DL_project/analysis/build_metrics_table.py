@@ -41,7 +41,7 @@ LOG_FILENAME = re.compile(r"^(?P<variant>.+)_seed(?P<seed>-?\d+)_ep\d+_batch\d+\
 # Discovered hyperparameters written by a bilevel/gate discovery run, each a compact JSON
 # keyed by module path ({module_name: value}) so it is clear which layer each value belongs
 # to: surviving gate widths and per-layer Concrete Dropout rates. Aggregatable across
-# seeds/excluded groups by analysis/aggregate_discovered_hparams.py.
+# seeds/excluded groups by analysis/summarize_gate_and_dropout_discovery.py.
 DISCOVERED_FIELDS = (
     "discovered_widths",
     "discovered_dropout",

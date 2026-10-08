@@ -47,7 +47,7 @@ import torch
 _NODE_LEVEL_KEYS = frozenset({
     "x", "edge_index", "edge_attr", "bury", "plm", "pocket", "geometric_node_attr",
     "edge_node_pairs", "edge_node_degree", "frame_rotation", "frame_translation",
-    "node_confidence", "recon_target", "recon_index",
+    "node_confidence",
 })
 
 
@@ -76,8 +76,8 @@ def preassembly_mode(dataset, num_workers=0):
     Dataloader.__iter__ turns the sample cache off exactly when a sample changes from
     one access to the next. "fixed": it never does. "drawn": the only thing that
     changes is the lipid candidate (lipid_random_choice), which is replayed per access.
-    Residue subsampling or structural_pretrain masking also switch the cache off; those
-    draw inside the protein graph and are not replayed, so such a split stays None.
+    Residue subsampling also switches the cache off; it draws inside the protein graph
+    and is not replayed, so such a split stays None.
     "drawn" needs num_workers=0: with workers the draws happen in the worker processes.
     """
     if getattr(dataset, "_sample_cache_enabled", False):
@@ -85,7 +85,6 @@ def preassembly_mode(dataset, num_workers=0):
     if (
         getattr(dataset, "_draw_lipid_candidate", False)
         and not getattr(dataset, "_augment_residues", False)
-        and not getattr(dataset, "_structural_pretrain_mask", False)
         and getattr(dataset, "_candidate_index_by_idx", None) is None
         and num_workers == 0
     ):

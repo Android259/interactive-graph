@@ -66,7 +66,7 @@ Data sources, in order:
        balanced_accuracy: <f>
        loss: <f>
    There is NO gradient-norm logging in these files. If gradient evidence is
-   genuinely needed, `analysis/probes/geometric_edge_attention_diagnostics.py` can
+   genuinely needed, `analysis/probes/diagnose_stuck_label.py` can
    recompute real (not fabricated) gradient norms post-hoc from
    `--save_model_in_dynamics` checkpoints under
    `models/<family>/<label>/groups_<group>/dynamics/`; only report gradient claims

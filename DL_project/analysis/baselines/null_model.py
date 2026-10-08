@@ -532,7 +532,7 @@ def blocks_from_families(families):
     A name that is a LIPID_COLDSPLIT_SETS key is the lipid-class axis; anything else is
     a protein family. Kept as one list rather than two flags because `families` is the
     parameter every existing caller (analysis/full_label_report.py,
-    analysis/probes/select_descriptors.py) already passes both kinds of name through.
+    analysis/probes/greedy_pair_descriptor_search.py) already passes both kinds of name through.
     """
     return [
         lipid_set_block(name) if name in LIPID_COLDSPLIT_SETS else family_block(name)

@@ -12,7 +12,7 @@ import os
 import torch
 import torch.nn.functional as F
 
-from analysis.append_metric_to_table import append_metric
+from training.append_metric_to_table import append_metric
 from candidate_averaging import CandidateAccumulator
 from eval_metrics import (
     binary_auc,

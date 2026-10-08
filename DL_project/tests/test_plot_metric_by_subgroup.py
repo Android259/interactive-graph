@@ -1,4 +1,4 @@
-from plot_metric_by_subgroup import (
+from scripts.graphics_generation.plot_metric_by_subgroup import (
     aggregate_subgroups,
     parse_report,
     read_positive_counts,

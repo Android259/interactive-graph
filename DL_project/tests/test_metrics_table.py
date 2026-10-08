@@ -2,8 +2,8 @@ import csv
 from pathlib import Path
 from types import SimpleNamespace
 
-from add_new_metrics_to_table import add_new_metrics
-from append_metric_to_table import append_metric
+from training.add_new_metrics_to_table import add_new_metrics
+from training.append_metric_to_table import append_metric
 from build_metrics_table import (
     metric_row,
     parse_metric_filename,

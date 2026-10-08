@@ -83,47 +83,8 @@ TRAIN_ROWS_PER_EPOCH_CAP = 1740
 EARLY_STOPPING_PATIENCE = 60
 
 
-def load_pretrained_protein_encoder(conf, model, device):
-    """Load --pretrained_checkpoint into the model, refusing any partial protein1 load."""
-    # protein1's weights are only meaningful for the exact module structure they were
-    # saved with (backend, hiddim, HEADS, single_gat_layer, protein_extra_node_
-    # features, ...). Rather than re-deriving and comparing that flag list by hand
-    # (easy to leave one out), lean on load_state_dict's own checks: a same-named,
-    # differently-shaped parameter (e.g. a different hiddim) raises RuntimeError even
-    # under strict=False, and a structural change (e.g. --geometric_transformer on
-    # one side only) renames parameters, which shows up as protein1.* keys missing
-    # below -- between the two, no silent partial/corrupted load gets through.
-    pretrained_state = torch.load(conf.pretrained_checkpoint, map_location=device)
-    args_path = re.sub(r"\.pt$", ".args.json", conf.pretrained_checkpoint)
-    try:
-        load_result = model.load_state_dict(pretrained_state, strict=False)
-    except RuntimeError as shape_error:
-        raise RuntimeError(
-            f"pretrained_checkpoint={conf.pretrained_checkpoint} does not match "
-            f"this run's protein1 architecture. Compare encoder flags against "
-            f"{args_path} (written alongside the checkpoint by --save_model) if it "
-            f"exists.\n{shape_error}"
-        ) from shape_error
-    missing_protein1 = [
-        key for key in load_result.missing_keys if key.startswith("protein1.")
-    ]
-    if missing_protein1:
-        raise RuntimeError(
-            f"pretrained_checkpoint={conf.pretrained_checkpoint} is missing "
-            f"protein1 weights this run's architecture needs (e.g. "
-            f"{missing_protein1[0]}); the checkpoint likely used different "
-            f"protein-encoder flags. Compare against {args_path} if it exists."
-        )
-    print(
-        f"Loaded pretrained protein1 from {conf.pretrained_checkpoint} "
-        f"({len(load_result.missing_keys)} missing / "
-        f"{len(load_result.unexpected_keys)} unexpected keys overall, none of the "
-        f"missing ones under protein1.)"
-    )
-
-
 def build_model(conf, train_dataset, device):
-    """The classifier, normalised on train statistics, optionally with a pretrained protein1."""
+    """The classifier, normalised on train statistics."""
     # Model construction stays after the split so frozen normalization cannot see
     # validation/test proteins.
     model = InteractionClassification(conf)
@@ -139,11 +100,6 @@ def build_model(conf, train_dataset, device):
             train_dataset.pocket_descriptor_stats()
         )
     model = model.to(device)
-    if conf.pretrained_checkpoint:
-        load_pretrained_protein_encoder(conf, model, device)
-    if conf.freeze_pretrained_encoders:
-        for parameter in model.protein1.parameters():
-            parameter.requires_grad = False
     return model
 
 
@@ -280,18 +236,10 @@ def _return_freed_heap_to_kernel():
 
 def checkpoint_selection_metric(conf):
     """(validation metric that selects the checkpoint, whether lower is better)."""
-    # structural_pretrain has no Interaction label, so balanced_accuracy is undefined
-    # (whatever the untrained classifier head outputs) -- checkpoint selection tracks
-    # the lowest rolling reconstruction loss instead of the highest rolling BA.
-    # valid_metrics["loss"] already IS the mean reconstruction MSE in this mode (see
-    # TaskLosses.valid_loss), so this needs no new metric, only the opposite comparison
-    # direction. --checkpoint_selection_metric overrides the non-structural_pretrain
-    # default (validate() refuses it together with structural_pretrain, which always
-    # selects by loss); "auc" reads valid_metrics' "AUC" key instead of
-    # "balanced_accuracy" -- both are higher-is-better, only loss flips the comparison.
-    if conf.structural_pretrain:
-        selection_metric_name = "loss"
-    elif conf.checkpoint_selection_metric == "auc":
+    # --checkpoint_selection_metric overrides the default: "auc" reads valid_metrics'
+    # "AUC" key instead of "balanced_accuracy" -- both are higher-is-better, only loss
+    # flips the comparison.
+    if conf.checkpoint_selection_metric == "auc":
         selection_metric_name = "AUC"
     elif conf.checkpoint_selection_metric:
         selection_metric_name = conf.checkpoint_selection_metric
@@ -334,11 +282,6 @@ def set_epoch_schedules(run, epoch_number, epoch_progress, fit_progress, rotatin
     # numbered with.
     run.train_dataset.set_epoch(epoch_number)
     model.train(True)
-    if conf.freeze_pretrained_encoders:
-        # requires_grad=False stops protein1's weights from updating, but train(True)
-        # above still leaves its own dropout/batchnorm submodules stochastic -- eval()
-        # here keeps it acting exactly as it did when structural_pretrain saved it.
-        model.protein1.eval()
 
 
 def save_weights(conf, paths, model, final_model_state):

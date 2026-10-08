@@ -19,7 +19,7 @@ note() { printf '%s\n' "$*" >&2; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; failed=1; }
 
 # --- 1. project layout (catches a truncated rsync) ------------------------
-for required in training/new_train.py analysis/add_new_metrics_to_table.py data; do
+for required in training/new_train.py training/add_new_metrics_to_table.py data; do
     if [[ ! -e "${required}" ]]; then
         fail "missing from $(pwd): ${required}"
     fi

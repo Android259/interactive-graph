@@ -53,8 +53,10 @@ closest one before editing files in that tree.
 - `external/molformer/` — vendored MoLFormer submodule.
 - `new_train.py` (root) is only a `runpy` shim to `training/new_train.py`.
 - Root-level `append_metric_to_table.py` / `add_new_metrics_to_table.py` no longer
-  exist; use `analysis/append_metric_to_table.py` / `analysis/add_new_metrics_to_table.py`
-  (also what `scripts/wait_and_sync.sh` runs now).
+  exist; use `training/append_metric_to_table.py` / `training/add_new_metrics_to_table.py`
+  (also what `scripts/wait_and_sync.sh` runs now) -- they live in `training/`, not
+  `analysis/`, because they write into the live run pipeline (the first is called from
+  `training/final_evaluation.py` after every test run), not read-only reporting.
 - `preprocessing/build_tanimoto_matrix.py` no longer exists; the compact builder
   (`preprocessing/build_tanimoto_compact.py`) is the only Tanimoto build path.
 

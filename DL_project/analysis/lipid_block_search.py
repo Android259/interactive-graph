@@ -10,8 +10,11 @@ from four scattered measurements into a curve with points where they are needed.
     isolation = mean over the block's structures of the highest Tanimoto similarity to
                 any structure that stays in training
 
-exactly as `analysis/coldsplit_geometry.isolation` defines it and as every x value in
-files/results/split_similarity_vs_metric.md is measured.
+exactly as `analysis/coldsplit_geometry.isolation` defines it and as
+every x value in files/results/split_similarity_vs_metric.md is measured. `Units.
+isolation_from_masks` below calls that module's structure-indexed entry point
+(`isolation_from_structures`) rather than reimplementing the formula, because this
+search's masks are already expressed over the compact matrix's structure axis.
 
 What it does, and why that is not a search over subsets. Start from one species. Sort
 every other species by how similar it is to that one, and move them into the block one
@@ -80,6 +83,9 @@ import pandas  # noqa: E402
 
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.lipid_classes import lipid_class_series  # noqa: E402
+from analysis.coldsplit_geometry import (  # noqa: E402
+    isolation_from_structures,
+)
 from dataloader.tanimoto_compact import load_compact  # noqa: E402
 
 
@@ -190,12 +196,13 @@ class Units:
         return self.isolation_from_masks(held, self.owners - owned > 0)
 
     def isolation_from_masks(self, held, kept):
-        """The same number from masks a caller already maintains incrementally."""
-        if not held.any() or not kept.any():
-            return float("nan")
-        return float(
-            (self.matrix[np.ix_(held, kept)].max(axis=1).astype(np.float32) / 255.0).mean()
-        )
+        """The same number from masks a caller already maintains incrementally.
+
+        Delegates to analysis.coldsplit_geometry.isolation_from_structures
+        -- the formula itself lives there, this only supplies the matrix and masks this
+        search already has in hand.
+        """
+        return isolation_from_structures(self.matrix, held, kept)
 
 
 def search(units, target, minimum_positives, maximum_positives, seeds):

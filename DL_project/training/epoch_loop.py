@@ -330,9 +330,7 @@ def train_one_epoch(run, idx, counttrain, countval):
         "scores": [],
         "score_labels": [],
     }
-    # No Interaction label in this mode, so an AUC over the classifier head's output
-    # would be a number about nothing, the way balanced_accuracy already is here.
-    collect_valid_scores = not conf.structural_pretrain
+    collect_valid_scores = True
     valid_accumulator = (
         CandidateAccumulator() if conf.eval_average_candidates else None
     )
@@ -405,23 +403,10 @@ def train_one_epoch(run, idx, counttrain, countval):
     log_adversary_metrics(run, idx, adversary_stats)
     if (idx + 1) % TENSORBOARD_FLUSH_EVERY_EPOCHS == 0:
         run.writer.flush()
-    if conf.structural_pretrain:
-        # This run has no Interaction label, so the balanced_accuracy printed here was
-        # whatever the untrained classifier head happened to emit -- a constant 0.500
-        # for all 120 epochs, which reads in the log exactly like a collapsed run and
-        # says nothing about whether the pretraining objective made progress. The
-        # reconstruction MSE is what the run is actually minimising and what selects
-        # its checkpoint (`selection_metric_name` in new_train.main), and it was already
-        # computed into valid_metrics["loss"] -- it was simply never printed.
-        print(
-            f"valid epoch reconstruction_loss: {format_metric(valid_metrics['loss'])}"
-            f" | train {format_metric(train_metrics['loss'])}"
-        )
-    else:
-        print(f"valid epoch balanced_accuracy: {format_metric(valid_metrics['balanced_accuracy'])}")
-        # Its own line rather than appended to the one above: scripts/lib/progress_table.sh
-        # parses that line by field position, and the summarize/graphics path reads the
-        # epoch history, not this print.
-        print(f"valid epoch AUC: {format_metric(valid_metrics['AUC'])}")
+    print(f"valid epoch balanced_accuracy: {format_metric(valid_metrics['balanced_accuracy'])}")
+    # Its own line rather than appended to the one above: scripts/lib/progress_table.sh
+    # parses that line by field position, and the summarize/graphics path reads the
+    # epoch history, not this print.
+    print(f"valid epoch AUC: {format_metric(valid_metrics['AUC'])}")
 
     return counttrain, countval, train_metrics, valid_metrics

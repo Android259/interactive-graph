@@ -36,7 +36,7 @@ in the matching top-level `dataloader/*.py` module (see `dataloader/AGENTS.md`).
 | cache file(s) under `data/cache/` | built by | read by |
 |---|---|---|
 | `Tanimoto_compact_*`, `Tanimoto_compact_isomeric_*` | `preprocessing/build_tanimoto_compact.py` | `dataloader/tanimoto_compact.py` |
-| `Tanimoto_headgroup_compact_*` | `preprocessing/build_tanimoto_headgroup.py` | `training/pair_baseline_common.py`, `analysis/probes/lipid_coldsplit_isolation_headgroup.py` |
+| `Tanimoto_headgroup_compact_*` | `preprocessing/build_tanimoto_headgroup.py` | `training/pair_baseline_common.py`, `analysis/coldsplit_geometry.py --blocks --tanimoto headgroup` |
 | `lipid_SMILES_embedding_deterministic.tensors.pt` + manifest | `data/build_lipid_embedding_store.py` | `dataloader/lipid_embedding_store.py` |
 | `lipid_graph_tensors.pt` + manifest | `data/build_lipid_graph_tensor_cache.py` | `dataloader/lipid_graph_tensor_cache.py` |
 | `protein_graph_tensors.pt` (+ `.no_geometry.pt`) + manifests | `data/build_protein_graph_tensor_cache.py` | `dataloader/protein_graph_tensor_cache.py` |

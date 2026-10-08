@@ -4,7 +4,7 @@ Per-row sample weights (Tanimoto / protein / lipid / marginal weighting), the PU
 prior (train-wide or per lipid subclass), class weights, the logit-adjustment bias and
 the group-DRO state are all derived here from train rows only, and the three loss
 selections -- train batch, validation batch, test batch -- read them from one object.
-The selection order (structural_pretrain > pu_loss > loss_type) is the same in all three.
+The selection order (pu_loss > loss_type) is the same in all three.
 """
 
 import torch
@@ -275,16 +275,7 @@ class TaskLosses:
             else outl
         )
 
-        if conf.structural_pretrain:
-            # No Interaction label is read here -- outl/interaction_labels
-            # below are computed by the same forward pass but are not this
-            # run's objective; see model._recon_prediction (Interaction
-            # Classification.forward), stashed from protein1's pre-pool
-            # output at the residues _mask_residue_features zeroed.
-            los = conf.protein_recon_weight * F.mse_loss(
-                model._recon_prediction, prot.recon_target
-            )
-        elif conf.pu_loss:
+        if conf.pu_loss:
             sample_weights = self.batch_sample_weights(prot, sample_count)
             pu_prior, pu_groups = self.pu_prior_and_groups(prot, sample_count)
             los = Non_Negative_Positive_Unlabeled_loss(
@@ -344,11 +335,7 @@ class TaskLosses:
     def valid_loss(self, model, outl, prot, interaction_labels, sample_count):
         """Task loss of one validation batch: no sample weights, no logit adjustment."""
         conf = self.conf
-        if conf.structural_pretrain:
-            los = conf.protein_recon_weight * F.mse_loss(
-                model._recon_prediction, prot.recon_target
-            )
-        elif conf.pu_loss:
+        if conf.pu_loss:
             pu_prior, pu_groups = self.pu_prior_and_groups(prot, sample_count)
             los = Non_Negative_Positive_Unlabeled_loss(
                 outl,

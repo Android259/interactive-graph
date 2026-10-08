@@ -636,7 +636,7 @@ class ModelConfig:
     # classifier on its hiddim-wide output -- no pooling, bilinear, adversary, DANN or
     # chem-prior machinery. A genuinely separate, cheap model (GPU cost is the ~3% of
     # parameters architecture/pair_descriptor_head.py spends, not the ~93% the encoders
-    # and cross-attention spend, see analysis/model_parameter_breakdown.py), not an
+    # and cross-attention spend, see analysis/calculate_number_of_parameters_of_model_by_label.py), not an
     # ablation of the full one: a checkpoint trained under --descriptors_head has a
     # different state_dict than one trained without it and the two cannot load into
     # each other. Implies --pair_descriptors (validate() sets it, so there is no
@@ -1183,8 +1183,7 @@ class ModelConfig:
     ep: int = 150
     checkpoint_window: int = 5
     # Which rolling valid metric picks the checkpoint. "" (default) keeps the existing
-    # rule -- loss under --structural_pretrain (no Interaction label to score BA
-    # against), balanced_accuracy otherwise. balanced_accuracy is a FIXED-0.5-threshold,
+    # rule -- balanced_accuracy. That is a FIXED-0.5-threshold,
     # coarse metric on a small excluded block (--family_only/--lipid_subclass runs can
     # have valid splits of a dozen-odd rows, one row = ~0.06-0.1 BA), so checkpoint
     # selection by it can be noisy in exactly the same way the metric itself is (see
@@ -1790,24 +1789,6 @@ class ModelConfig:
     # for the original "checkpoints read alongside the curves that explain them" use.
     save_dynamics: bool = False
     save_model_in_dynamics: bool = False
-    # Stage-1 structural pretraining: mask protein_mask_share of a protein pocket's
-    # residues (zero their node features) and train protein1 to reconstruct them from
-    # the rest of the graph. No Interaction label is read, so every family and lipid
-    # is pooled -- incompatible with excluded_groups/double_coldsplit/mixed_coldsplit/
-    # lipid_coldsplit, which all assume a label to hold out. See files/ plan
-    # "Структурное предобучение перед per-family дообучением".
-    structural_pretrain: bool = False
-    protein_recon_weight: float = 1.0
-    protein_mask_share: float = 0.15
-    # Stage-2: load protein1's weights from a stage-1 structural_pretrain checkpoint
-    # instead of random init. freeze_pretrained_encoders stops protein1 from updating
-    # further (requires_grad=False) so only the family-specific fusion/classifier
-    # trains on the family's own few positives. check_encoder_flags_match (training/
-    # new_train.py) refuses to load a checkpoint whose protein1-affecting flags do not
-    # match this run's -- protein1's weights are only meaningful for the exact module
-    # structure they were saved with.
-    pretrained_checkpoint: str = ""
-    freeze_pretrained_encoders: bool = False
     # Per-article training (DeepCLIP/BERT-RBP: one model per protein, trained ONLY
     # on that protein's own data). --excluded_groups pulls named groups OUT of train
     # into eval, so excluding the other 8 families would leave THIS family with zero
@@ -2006,18 +1987,6 @@ class ModelConfig:
                 "the classes from. Pass --excluded_groups as well."
             )
 
-        if self.structural_pretrain and (
-            self.excluded_groups
-            or self.double_coldsplit
-            or self.mixed_coldsplit
-            or self.lipid_coldsplit
-        ):
-            raise ValueError(
-                "structural_pretrain never reads the Interaction label, so there is "
-                "nothing for a coldsplit axis to hold out -- pass none of "
-                "excluded_groups/double_coldsplit/mixed_coldsplit/lipid_coldsplit "
-                "alongside it"
-            )
         if self.family_only and (
             self.excluded_groups
             or self.double_coldsplit
@@ -2031,22 +2000,6 @@ class ModelConfig:
                 "excluded_groups/double_coldsplit/mixed_coldsplit/lipid_coldsplit/"
                 "cold_split, which all assume other families are present to hold "
                 "out from"
-            )
-        if self.structural_pretrain and self.no_protein_geometry:
-            raise ValueError(
-                "structural_pretrain masks and reconstructs the geometric residue "
-                "features no_protein_geometry removes -- there would be nothing left "
-                "to mask"
-            )
-        if not 0.0 < self.protein_mask_share < 1.0:
-            raise ValueError(
-                "protein_mask_share is the fraction of a pocket's residues masked "
-                f"per pass and belongs in (0, 1); got {self.protein_mask_share}"
-            )
-        if self.freeze_pretrained_encoders and not self.pretrained_checkpoint:
-            raise ValueError(
-                "freeze_pretrained_encoders has nothing to freeze without "
-                "pretrained_checkpoint"
             )
 
         if self.test_group:
@@ -2265,7 +2218,7 @@ class ModelConfig:
             # The list is not "every flag this architecture ignores" -- it is every
             # flag training/new_train.py acts on by reaching into a module --deepclip
             # does not build (model.final_layer, model.protein1, model.lipid_branch_
-            # parameters(), model._recon_prediction, the normalisation setters), plus
+            # parameters(), the normalisation setters), plus
             # the alternative-architecture switches. Those are the ones that would
             # otherwise fail at runtime rather than harmlessly do nothing; derived by
             # walking every `model.<attr>` access in new_train.py and taking the flag
@@ -2274,10 +2227,9 @@ class ModelConfig:
                 "lipid_only", "protein_only", "descriptors_head", "thematical_paths",
                 "two_pair_descriptors_paths", "descriptor_mlp", "lipid_graph_isomers",
                 "no_embeddings",
-                "structural_pretrain", "adversarial_grl", "bilinear_fusion",
+                "adversarial_grl", "bilinear_fusion",
                 "double_attention", "attention_pooling", "swe_pooling",
                 "dann_family", "chem_adversary", "lipid_path_handicap",
-                "pretrained_checkpoint", "freeze_pretrained_encoders",
                 "rnabang_frozen_node_adapter", "pair_descriptor_pocket_shares_split",
             ):
                 if getattr(self, name, False):
@@ -2361,12 +2313,6 @@ class ModelConfig:
             raise ValueError(
                 "checkpoint_selection_metric must be one of balanced_accuracy/auc/loss, "
                 f"got {self.checkpoint_selection_metric!r}"
-            )
-        if self.checkpoint_selection_metric and self.structural_pretrain:
-            raise ValueError(
-                "structural_pretrain has no Interaction label, so balanced_accuracy/auc "
-                "checkpoint selection has nothing to score against -- it always selects "
-                "by loss and checkpoint_selection_metric must be left unset"
             )
         if self.lr_warmup_epochs < 0:
             raise ValueError("lr_warmup_epochs must be non-negative")
@@ -3574,8 +3520,6 @@ BOOL_FLAG_NAMES = (
     "save_model",
     "save_dynamics",
     "save_model_in_dynamics",
-    "structural_pretrain",
-    "freeze_pretrained_encoders",
     "balance_excluded_group_negatives",
     "balance_negatives_by_family",
     "balanced_proteins",
@@ -3683,9 +3627,6 @@ VALUE_HANDLERS = {
     "--lipid_species_coldsplit=": set_config_field(
         "lipid_species_coldsplit", float
     ),
-    "--protein_recon_weight=": set_config_field("protein_recon_weight", float),
-    "--protein_mask_share=": set_config_field("protein_mask_share", float),
-    "--pretrained_checkpoint=": set_config_field("pretrained_checkpoint"),
     "--family_only=": set_config_field("family_only"),
     "--test_group=": set_config_field("test_group", read_test_group),
     "--batch=": set_config_field("batch", int),

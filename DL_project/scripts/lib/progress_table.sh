@@ -48,14 +48,6 @@ wait_progress_python() {
 # epoch -- the same number before smoothing, which is what shows whether the run
 # is still moving right now rather than how good its best checkpoint once was.
 #
-# Two per-epoch lines are recognised, because a --structural_pretrain run has no
-# Interaction label and so prints its reconstruction MSE instead of a balanced
-# accuracy (training/new_train.py's validation print). For that line "best" is the
-# LOWEST rolling value, matching the direction new_train.py itself selects the
-# checkpoint by (selection_metric_name = "loss" under structural_pretrain). Without
-# this the monitor saw no matching line at all for those runs and reported them as
-# 0 epochs completed, n/a score, for their whole duration.
-#
 # LC_ALL=C because the scores are parsed by the caller, not read by a person: under a
 # comma-decimal locale (fr_FR here) awk's %f writes "0,634567", which then matches no
 # number pattern downstream and every score column turns into a dash.
@@ -66,7 +58,6 @@ wait_progress_parse_log() {
             sub(/:$/, "", current)
         }
         /^valid epoch balanced_accuracy:/ { record($4 + 0, 1); next }
-        /^valid epoch reconstruction_loss:/ { record($4 + 0, 0); next }
         function record(value, higher_is_better,
                         rolling_index, rolling_sum, rolling_count, is_better) {
             completed = current

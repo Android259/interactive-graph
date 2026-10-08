@@ -38,7 +38,7 @@ from preprocessing.compute_descriptors import (
 from dataloader.protein_graph_tensor_cache import _pocket_tensor
 
 # Sentinels this project's SMILES columns use for "no structure recorded", matching
-# analysis/pocket_shape_vs_binding.py, which imports EMPTY from here rather than
+# analysis/protein_profile_probe.py (mode `correlate`), which imports EMPTY from here rather than
 # keeping its own copy.
 EMPTY = {"", "0", "Empty", "NonConclusive", "nan", "NaN", "None"}
 

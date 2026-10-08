@@ -404,13 +404,13 @@ update_metrics_table() {
     # right after activating an env that only supplies rsync, it need not have
     # pandas at all.
     local python_bin
-    if ! python_bin="$(python_for analysis.build_metrics_table)"; then
-        printf 'No local python can import analysis.build_metrics_table; metrics table not updated.\n' >&2
+    if ! python_bin="$(python_for training.add_new_metrics_to_table)"; then
+        printf 'No local python can import training.add_new_metrics_to_table; metrics table not updated.\n' >&2
         return 0
     fi
     # Roots are passed explicitly so it is visible here that testmode_outputs/ is
     # never scanned. "Added 0 ..." is the no-op case and would print every round.
-    ( cd "${LOCAL_PROJECT}" && "${python_bin}" analysis/add_new_metrics_to_table.py \
+    ( cd "${LOCAL_PROJECT}" && "${python_bin}" training/add_new_metrics_to_table.py \
         --metrics-root "${LOCAL_PROJECT}/test_metrics" \
         --run-root "${LOCAL_PROJECT}/run" \
         --table "${LOCAL_PROJECT}/results/tables/metrics_summary.csv" ) \

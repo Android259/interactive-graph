@@ -324,7 +324,6 @@ class _DrawnSamples(_FixedSamples):
     _sample_cache_enabled = False
     _draw_lipid_candidate = True
     _augment_residues = False
-    _structural_pretrain_mask = False
     _candidate_index_by_idx = None
 
     def __init__(self, count):

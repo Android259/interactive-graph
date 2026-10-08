@@ -1688,7 +1688,7 @@ class PLIDataset(
                     f"{tanimoto[1]:.3f} head group"
                     if tanimoto else
                     " (block Tanimoto not in BLOCK_TANIMOTO -- measure it with "
-                    "analysis/probes/lipid_subclass_block_report.py)"
+                    "analysis/probes/lipid_subclass_report.py blocks)"
                 )
             )
             return
@@ -2603,20 +2603,7 @@ class PLIDataset(
         train_dataset._augment_residues = bool(
             getattr(self.config, "protein_residue_subsample", 0)
         )
-        # structural_pretrain masking runs on every split (valid/test need it too, to
-        # report a reconstruction_loss for checkpoint selection -- see
-        # _mask_residue_features), but only the train split's mask is redrawn every
-        # epoch. Fixing valid/test's mask for the whole run is the same reason
-        # _draw_lipid_candidate above takes the first candidate on those splits: a
-        # metric used to pick/stop on has to mean the same thing epoch to epoch.
-        pretrain_mask = bool(getattr(self.config, "structural_pretrain", False))
-        train_dataset._structural_pretrain_mask = pretrain_mask
-        valid_dataset._structural_pretrain_mask = pretrain_mask
-        test_dataset._structural_pretrain_mask = pretrain_mask
-        train_dataset._mask_epoch_varies = True
-        valid_dataset._mask_epoch_varies = False
-        test_dataset._mask_epoch_varies = False
-        if train_dataset._augment_residues or train_dataset._draw_lipid_candidate or pretrain_mask:
+        if train_dataset._augment_residues or train_dataset._draw_lipid_candidate:
             train_dataset._sample_cache_enabled = False
         # --rank_within_protein is the one training-time consumer: the ranking loss can
         # only form same-protein pairs if it knows which rows share a protein. Everything
@@ -2669,38 +2656,6 @@ class PLIDataset(
         keep = torch.zeros(total, dtype=torch.bool)
         keep[torch.randperm(total, generator=generator)[:count]] = True
         return restrict_parts_to_mask(parts, keep)
-
-    def _mask_residue_features(self, parts, pair_id):
-        """Zero protein_mask_share of this pocket's residues, stashing the true (pre-
-        zero) values and their node indices for --structural_pretrain to reconstruct.
-
-        Deterministic per (seed, pair_id, epoch on train / fixed on valid+test), same
-        scheme as _subsample_residues above -- the "+ 1" on pair_id keeps the two
-        augmentations' draws independent if they were ever both on, rather than
-        replaying the same permutation. `parts` is the per-protein cache
-        (protein_graph_parts), so this must return a new dict with a cloned `x`,
-        never mutate the cached tensors in place.
-        """
-        if not getattr(self, "_structural_pretrain_mask", False):
-            return parts
-        total = int(parts["x"].shape[0])
-        share = float(getattr(self.config, "protein_mask_share", 0.15))
-        count = min(total, max(1, round(total * share)))
-        epoch_term = int(self._augmentation_epoch) if self._mask_epoch_varies else 0
-        seed = (
-            (int(self.config.seed) * 1_000_003 + int(pair_id) + 1) * 1_000_003
-            + epoch_term
-        ) % (2 ** 63 - 1)
-        generator = torch.Generator().manual_seed(seed)
-        indices = torch.randperm(total, generator=generator)[:count]
-        x = parts["x"].clone()
-        recon_target = x[indices].clone()
-        x[indices] = 0.0
-        masked = dict(parts)
-        masked["x"] = x
-        masked["recon_target"] = recon_target
-        masked["recon_index"] = indices
-        return masked
 
     def get(self, idx):
         # Assembling a sample is a pure function of its row: the same protein graph, the
@@ -2796,7 +2751,6 @@ class PLIDataset(
         else:
             parts, tenfam = self.protein_graph_parts(protein)
             parts = self._subsample_residues(parts, pair_id)
-            parts = self._mask_residue_features(parts, pair_id)
 
             protein_graph = self.assemble_protein_graph(
                 parts, self._interaction_tensor[idx], tenfam

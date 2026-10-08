@@ -147,39 +147,88 @@ def pocket_atom_coordinates(pocketness_path):
     return numpy.array(coordinates, dtype=float)
 
 
-def pocket_shape(coordinates):
-    """Extent, elongation and flatness of the cavity's atom cloud.
+def _pocket_axis_spans(coordinates):
+    """(spans, eigenvalues) along the pocket atom cloud's own principal axes, longest
+    first, or None below 4 atoms -- the one eigen-decomposition pocket_shape() and
+    pocket_shape_full() both build their public return values from, so there is a
+    single place this project computes cavity shape, not two drifting copies (this
+    absorbed preprocessing/pocket_shape_descriptors.py's own former shape_from_coordinates,
+    which duplicated it).
 
     The three axes are the principal components of the coordinates (PCA via the
-    covariance matrix's eigenvectors -- only the DIRECTIONS are taken from it).
-    Each axis' own LENGTH is the 5th-to-95th percentile span of the coordinates'
-    projection onto it, not the axis' eigenvalue (or its square root) -- covariance
-    is not robust, so a single stray atom at the cavity's rim can inflate the
-    variance along its own direction by an amount ordinary PCA has no defence
-    against. Percentile-trimming every axis this way, not just the first, closes
-    that: an earlier version measured extent (axis 0's own span) exactly this way
-    already, but took elongation/flatness straight from the eigenvalues, so the same
-    stray atom that could not move extent could still distort the two ratios --
-    verified: the ratio is between LENGTHS, not raw spread, so "twice as long" reads
-    as 2 rather than 4, matching the earlier eigenvalue-ratio's own intent.
+    covariance matrix's eigenvectors -- only the DIRECTIONS are taken from it). Each
+    axis' own LENGTH (`spans`) is the 5th-to-95th percentile span of the coordinates'
+    projection onto it, not the axis' eigenvalue (or its square root) -- covariance is
+    not robust, so a single stray atom at the cavity's rim can inflate the variance
+    along its own direction by an amount ordinary PCA has no defence against.
+    Percentile-trimming every axis this way, not just the first, closes that: an
+    earlier version measured extent (axis 0's own span) exactly this way already, but
+    took elongation/flatness straight from the eigenvalues, so the same stray atom that
+    could not move extent could still distort the two ratios -- verified: the ratio is
+    between LENGTHS, not raw spread, so "twice as long" reads as 2 rather than 4,
+    matching the earlier eigenvalue-ratio's own intent. `eigenvalues` (clipped, same
+    floor as spans) is kept alongside only for pocket_shape_full()'s gyration radius,
+    which needs the RAW variance along each axis rather than its robust-to-outliers
+    percentile span.
 
     Four atoms are the minimum for a covariance worth taking; below that the cavity is
     described by its residue-level entries alone and the shape entries are zeros, which
     the train-only standardisation then leaves at the mean.
     """
     if len(coordinates) < 4:
-        return 0.0, 0.0, 0.0
+        return None
     centered = coordinates - coordinates.mean(axis=0)
     eigenvalues, eigenvectors = numpy.linalg.eigh(numpy.cov(centered, rowvar=False))
     order = numpy.argsort(eigenvalues)[::-1]
+    eigenvalues = numpy.clip(eigenvalues[order], 1e-9, None)
     eigenvectors = eigenvectors[:, order]
     spans = numpy.array([
         numpy.percentile(projection, 95) - numpy.percentile(projection, 5)
         for projection in (centered @ eigenvectors).T
     ])
     spans = numpy.clip(spans, 1e-9, None)
-    extent = float(spans[0])
-    return extent, float(spans[0] / spans[1]), float(spans[1] / spans[2])
+    return spans, eigenvalues
+
+
+def pocket_shape(coordinates):
+    """Extent, elongation and flatness of the cavity's atom cloud -- see
+    _pocket_axis_spans for the eigen-decomposition this is built from.
+
+    Returns zeros below 4 atoms (_pocket_axis_spans' own floor), which the train-only
+    standardisation then leaves at the mean.
+    """
+    axes = _pocket_axis_spans(coordinates)
+    if axes is None:
+        return 0.0, 0.0, 0.0
+    spans, _ = axes
+    return float(spans[0]), float(spans[0] / spans[1]), float(spans[1] / spans[2])
+
+
+def pocket_shape_full(coordinates):
+    """Every span pocket_shape() computes but discards (width, thickness) plus the
+    scale-explicit gyration radius, from the SAME eigen-decomposition pocket_shape()
+    itself uses (_pocket_axis_spans) -- the research-catalog superset
+    preprocessing/pocket_shape_descriptors.py reports, not a second copy of the geometry.
+
+    pocket_gyration = sqrt(sum(eigenvalues)): total spread across all three axes at
+    once, for scale where scale is wanted explicitly rather than smuggled into a ratio.
+    Zeros below 4 atoms, same floor as pocket_shape().
+    """
+    axes = _pocket_axis_spans(coordinates)
+    if axes is None:
+        return {
+            "pocket_extent": 0.0, "pocket_width": 0.0, "pocket_thickness": 0.0,
+            "pocket_elongation": 0.0, "pocket_flatness": 0.0, "pocket_gyration": 0.0,
+        }
+    spans, eigenvalues = axes
+    return {
+        "pocket_extent": float(spans[0]),
+        "pocket_width": float(spans[1]),
+        "pocket_thickness": float(spans[2]),
+        "pocket_elongation": float(spans[0] / spans[1]),
+        "pocket_flatness": float(spans[1] / spans[2]),
+        "pocket_gyration": float(numpy.sqrt(eigenvalues.sum())),
+    }
 
 
 def pocket_shape_lambda_sqrt(coordinates, min_robust_points=10):
@@ -187,7 +236,7 @@ def pocket_shape_lambda_sqrt(coordinates, min_robust_points=10):
 
     pocket_shape() above measures each axis by the percentile span of the projections and
     takes the ratios between those spans. This is the alternative the research catalog
-    (analysis/pocket_shape_descriptors.py) has always used for the ratios -- sqrt(lambda),
+    (preprocessing/pocket_shape_descriptors.py) has always used for the ratios -- sqrt(lambda),
     i.e. the axis' standard deviation -- computed here on a MinCovDet robust covariance
     rather than the ordinary one. That combination is the one of seven measured in
     files/results/pocket_shape_metric_comparison.md that keeps its sign inside BOTH large families
@@ -294,7 +343,7 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
         # pair_descriptor_head.py's _AROMATIC_SHARE_INDEX/_APOLAR_SASA_SHARE_INDEX are
         # bare integer literals into this tuple, not name lookups, so every existing
         # position must stay put -- new entries only ever go at the end. The two
-        # promoted from analysis/pocket_shape_descriptors.py's research catalog after
+        # promoted from preprocessing/pocket_shape_descriptors.py's research catalog after
         # files/reference/pocket_shape_descriptors.md section 7's eta^2 check (both at/near the
         # no-structure floor, unlike the 13 above's own six excluded entries) and
         # section 7's addendum (aromatic_share_rim's sign agrees across both large
@@ -1278,7 +1327,7 @@ _MEASURES = {
 }
 
 # Measured in section 7f/7g, not yet an input to any network. Kept next to _MEASURES so
-# analysis/probes/lipid_descriptor_class_identity.py can name them without either duplicating
+# analysis/feature_identity_check.py --lipid_classes can name them without either duplicating
 # the list or widening LIPID_DESCRIPTOR_NAMES, which would change what the model sees.
 CANDIDATE_LIPID_DESCRIPTOR_NAMES = (
     "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",

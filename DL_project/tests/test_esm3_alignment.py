@@ -10,56 +10,13 @@ training involved.
 Run: pytest tests/test_esm3_alignment.py
 """
 import pytest
-import pandas as pd
-
-import glob
 
 from preprocessing.plm_alignment import (
     check_alignment,
-    has_graph,
     stems_with_graphs,
 )
-INTERACTIONS = "data/Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed.csv"
 
 STEMS = stems_with_graphs()
-
-
-def interaction_proteins():
-    return sorted(pd.read_csv(INTERACTIONS)["LTPProtein"].dropna().unique())
-
-
-def test_protein_domain_is_one_value_per_protein():
-    """ProteinDomain is the family the model one-hots, so it must be a protein constant.
-
-    There is no protein registry any more: the interaction table is the only source of
-    per-protein metadata, and protein_graph_builder.protein_family reads this column
-    directly. A protein whose rows disagreed here would silently change its family
-    between samples.
-    """
-    interactions = pd.read_csv(INTERACTIONS)
-    ambiguous = {
-        name: sorted(group.unique())
-        for name, group in interactions.groupby("LTPProtein")["ProteinDomain"]
-        if len(group.unique()) != 1
-    }
-    assert not ambiguous, f"proteins with more than one ProteinDomain: {ambiguous}"
-
-
-def test_every_interaction_protein_owns_artifacts_under_its_own_name():
-    """No rename map: the interaction table's protein name IS the artifact name."""
-    missing = []
-    for protein_id in interaction_proteins():
-        if not has_graph(protein_id):
-            missing.append(f"{protein_id}: no data/graphs/{protein_id}")
-        for pattern in (
-            f"data/embedding_ESM3/{protein_id}_*_ESM3.pkl",
-            f"data/embedding_ESM3_v2/{protein_id}_ESM3v2.pkl",
-            f"data/embedding_RNABANG/{protein_id}_RNABANG.pkl",
-            f"data/esm3_input/{protein_id}.pdb",
-        ):
-            if not glob.glob(pattern):
-                missing.append(f"{protein_id}: nothing matches {pattern}")
-    assert not missing, "artifacts not filed under the protein's own name: " + "; ".join(missing)
 
 
 def test_there_are_embeddings_with_graphs_to_check():

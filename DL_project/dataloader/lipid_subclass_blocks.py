@@ -39,7 +39,7 @@ import os
 # (results/tables/cron_test_metrics/cron_fig3_lipidgroups.txt): the five subclasses big enough to be
 # their own held-out block, plus three merges of subclasses that are not.
 #
-# Why these merges and not others -- measured by analysis/probes/lipid_subclass_block_report.py
+# Why these merges and not others -- measured by analysis/probes/lipid_subclass_report.py blocks
 # over the whole table (positives / proteins holding at least one positive in the block):
 #   PC 218/16, PG 113/13, PE 80/11, FA 48/12, PA 26/4, PI 16/6      stand alone
 #   Cer 14/1, CerP 10/1, HexCer 20/1, Hex2Cer 2/1, SHexCer 2/1, SM 18/2
@@ -67,7 +67,7 @@ FIG3_SUBCLASS_BLOCKS = (
 )
 
 # How ISOLATED each block is from whatever stays in training, measured once by
-# analysis/probes/lipid_subclass_block_report.py over the whole interaction table:
+# analysis/probes/lipid_subclass_report.py blocks over the whole interaction table:
 # (whole-molecule Tanimoto, head-group-only Tanimoto). Mean best similarity of a
 # held-out species to the chemistry left behind -- LOW means genuinely novel, HIGH
 # means a close relative stayed in training. Stored rather than recomputed for the same

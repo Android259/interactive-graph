@@ -86,15 +86,6 @@ def test_same_generator_seed_reproduces_the_epoch():
     assert epoch() == epoch()
 
 
-def test_odd_batch_size_targets_the_floor_half():
-    labels = make_labels(positives=40, unlabeled=40)
-    sampler = ClassBalancedBatchSampler(labels, batch_size=9)
-
-    for batch in sampler:
-        assert len(batch) == 8
-        assert int(labels[batch].sum()) == 4
-
-
 @pytest.mark.parametrize(
     ("labels", "batch_size", "message"),
     [

@@ -25,15 +25,31 @@ Reads only. Trains nothing, appends to no shared table.
     python3 analysis/checkpoint_scores.py --label bbp_dcs_smd_fa_nps_dpt01_gm_plm8_hid8_wd001_ep120 \
         --out /tmp/scores.csv
     python3 analysis/checkpoint_scores.py --label <label> --families=scp2 --seeds=0 --epochs=120 --out ...
+    python3 analysis/checkpoint_scores.py --label <label> --epochs=selected --seeds=0,1,2,3,4 --out ...
 
 `--epochs` must name epochs the run actually saved: `DYNAMICS_CHECKPOINT_EPOCHS` in
 training/new_train.py, currently 1, 10, 49, 51, 120. Missing files are reported and
 skipped rather than raising, so a partially finished sweep still yields what it has.
+
+`--epochs selected` is the one-epoch-per-run mode (score_selected_epoch below): for
+each (family, seed) only the milestone nearest that run's own selected checkpoint is
+scored, read from metrics_summary.csv's `checkpoint_epoch`. On a nine-block, five-seed
+sweep that is a fifth of the CPU of scoring every milestone everywhere, and the four
+unwanted epochs would have been discarded downstream anyway.
+
+recomputable_labels() / print_recomputable_labels() below answer the question that comes
+BEFORE a rescore -- for which labels is the column still missing, and did they keep the
+selected checkpoint or only dynamics milestones (not the same weight rule, see above).
+They read models/ and the table only -- no checkpoint is loaded to answer them.
 """
 import argparse
+import csv
 import glob
 import os
+import re
 import sys
+from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -42,7 +58,7 @@ import torch
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "training"))
 sys.path.insert(0, PROJECT_ROOT)
-from training.results_layout import label_family  # noqa: E402
+from training.results_layout import label_dirs, label_family  # noqa: E402
 
 # Same reason as new_train.py: set before any thread exists, so intra-op workers inherit
 # it. Without it a checkpoint whose dead blocks decayed into denormals evaluates orders
@@ -78,6 +94,9 @@ DEFAULT_FAMILIES = (
 DEFAULT_LIPID_SETS = tuple(LIPID_COLDSPLIT_SETS)
 # training/branch_dynamics.py:DYNAMICS_CHECKPOINT_EPOCHS
 DEFAULT_EPOCHS = "1,10,49,51,120"
+# --epochs value asking for one epoch per (family, seed) -- the milestone nearest
+# that run's own selected checkpoint -- instead of every milestone everywhere.
+SELECTED_EPOCHS = "selected"
 
 
 def arg_lines(label):
@@ -403,10 +422,242 @@ def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, ver
     return pd.concat(frames)
 
 
+# --- which labels can still be rescored -----------------------------------------
+# "What can still be recomputed" is a
+# question about THIS module's own inputs -- which (group, seed) cells kept weights, and
+# which rows of metrics_summary.csv lack the column -- so it belongs next to the
+# rescoring it feeds rather than in a separate script restating the same layout.
+#
+# Nothing below loads a checkpoint or builds a model: it lists models/ and reads the
+# table. score_checkpoints() above is what does the actual rescoring.
+#
+# The four --lipid_coldsplit held-out sets (dataloader/sampler.LIPID_COLDSPLIT_SETS),
+# spelled out rather than imported so this part stays a filesystem/CSV reader.
+LIPID_SETS = {"anionic", "choline", "phosphorus_free", "sphingolipids"}
+EPOCH_FILE = re.compile(r"^seed(\d+)_epoch(\d+)\.pt$")
+SELECTED_FILE = re.compile(r"^seed(\d+)\.pt$")
+
+RECOMPUTE_METRIC = "AUC_within_protein_pairs"
+
+
+def scan_saved_weights(models_root):
+    """label -> {"selected": {(group, seed)}, "milestones": {(group, seed, epoch)}}.
+
+    The two kinds are not interchangeable, and keeping them apart is the point of the
+    scan: ``seed<N>.pt`` is the checkpoint run_test actually measured, so a value
+    rescored from it follows the same weight rule as a reported one, while a dynamics
+    milestone is a fixed epoch and does not -- see this module's docstring.
+    """
+    found = defaultdict(lambda: {"selected": set(), "milestones": set()})
+    models_root = Path(models_root)
+    if not models_root.is_dir():
+        return found
+    # models/<family>/<label>/ (training/results_layout.py)
+    for _family, _label, label_dir in label_dirs(models_root):
+        for group_dir in label_dir.iterdir():
+            if not group_dir.is_dir() or not group_dir.name.startswith("groups_"):
+                continue
+            group = group_dir.name[len("groups_"):]
+            for path in group_dir.iterdir():
+                match = SELECTED_FILE.match(path.name)
+                if match:
+                    found[label_dir.name]["selected"].add((group, int(match.group(1))))
+            dynamics = group_dir / "dynamics"
+            if dynamics.is_dir():
+                for path in dynamics.iterdir():
+                    match = EPOCH_FILE.match(path.name)
+                    if match:
+                        found[label_dir.name]["milestones"].add(
+                            (group, int(match.group(1)), int(match.group(2)))
+                        )
+    return found
+
+
+def scan_metric_coverage(table_path, metric):
+    """label -> (rows, rows missing the metric, set of excluded groups seen)."""
+    rows = defaultdict(int)
+    missing = defaultdict(int)
+    groups = defaultdict(set)
+    with open(table_path, newline="") as handle:
+        for row in csv.DictReader(handle):
+            label = row["label"]
+            rows[label] += 1
+            groups[label].add(row["exclusion_set"].replace("groups_", ""))
+            if not row.get(metric):
+                missing[label] += 1
+    return rows, missing, groups
+
+
+def recomputable_labels(table_path=None, models_root=None, metric=RECOMPUTE_METRIC,
+                        contains=""):
+    """Which labels can still have `metric` recomputed, and from which kind of weights.
+
+    Returns ``(buckets, weights, rows, missing, groups)``. `buckets` maps
+    "recomputable" (column missing, weights on disk), "no_weights" (column missing,
+    nothing kept to rescore) and "complete" (every row already has it) to label lists.
+    The other four are the raw per-label scans, so a caller can report on them without
+    walking models/ twice.
+    """
+    table_path = Path(table_path) if table_path else (
+        Path(PROJECT_ROOT) / "results" / "tables" / "metrics_summary.csv"
+    )
+    models_root = Path(models_root) if models_root else Path(PROJECT_ROOT) / "models"
+
+    weights = scan_saved_weights(models_root)
+    rows, missing, groups = scan_metric_coverage(table_path, metric)
+
+    labels = sorted(set(rows) | set(weights))
+    if contains:
+        labels = [label for label in labels if contains in label]
+
+    buckets = {"recomputable": [], "no_weights": [], "complete": []}
+    for label in labels:
+        has_weights = bool(weights[label]["selected"] or weights[label]["milestones"])
+        if missing[label] == 0 and rows[label]:
+            buckets["complete"].append(label)
+        elif has_weights:
+            buckets["recomputable"].append(label)
+        else:
+            buckets["no_weights"].append(label)
+    return buckets, weights, rows, missing, groups
+
+
+def print_recomputable_labels(metric=RECOMPUTE_METRIC, table_path=None, models_root=None,
+                              contains="", show_all=False):
+    """The whole report as one call: the three buckets, with each label's weights."""
+    models_root = models_root or str(Path(PROJECT_ROOT) / "models")
+    buckets, weights, rows, missing, groups = recomputable_labels(
+        table_path=table_path, models_root=models_root, metric=metric, contains=contains
+    )
+    labels = [label for bucket in buckets.values() for label in bucket]
+
+    def axis(label):
+        """Which cold-split axis the label was run on, read off its exclusion sets."""
+        seen = groups[label]
+        if not seen:
+            return "?"
+        return "lipid" if seen <= LIPID_SETS else "protein"
+
+    def describe(label):
+        selected = weights[label]["selected"]
+        milestones = weights[label]["milestones"]
+        epochs = sorted({epoch for _, _, epoch in milestones})
+        cells = {(group, seed) for group, seed, _ in milestones}
+        parts = []
+        if selected:
+            parts.append(f"selected {len(selected)} cells")
+        if milestones:
+            parts.append(f"milestones {len(cells)} cells @ {','.join(map(str, epochs))}")
+        return "; ".join(parts) or "none"
+
+    def line(label, with_missing=True):
+        text = label if len(label) <= width else "\u2026" + label[-(width - 1):]
+        tail = f"{missing[label]:>9}" if with_missing else ""
+        return f"{text:{width}}{axis(label):>8}{rows[label]:>6}{tail}"
+
+    width = min(max((len(label) for label in labels), default=10), 62)
+    recomputable = buckets["recomputable"]
+    no_weights = buckets["no_weights"]
+    complete = buckets["complete"]
+
+    print(f"metric: {metric} | models: {models_root}\n")
+    print(f"RECOMPUTABLE -- column missing, weights on disk ({len(recomputable)} labels)")
+    header = f"{'label':{width}}{'axis':>8}{'rows':>6}{'missing':>9}  weights"
+    print(header)
+    print("-" * (len(header) + 20))
+    for label in sorted(recomputable, key=lambda name: (axis(name), -missing[name])):
+        print(f"{line(label)}  {describe(label)}")
+
+    if show_all:
+        print(f"\nNO WEIGHTS -- column missing, nothing kept to rescore ({len(no_weights)})")
+        for label in no_weights:
+            print(line(label))
+        print(f"\nALREADY COMPLETE -- every row has the metric ({len(complete)})")
+        for label in complete:
+            print(line(label, with_missing=False))
+    else:
+        print(f"\n{len(no_weights)} more labels miss the column with no weights kept, "
+              f"{len(complete)} already have it -- --all lists them.")
+
+
+def nearest_epoch_by_run(metrics_summary_path, label, milestones):
+    """{(family, seed): (nearest milestone, that run's own checkpoint_epoch)}.
+
+    `checkpoint_epoch` is the epoch new_train.py's best_model_state actually came from
+    (training/new_train.py, main); the milestones are what --save_model_in_dynamics
+    kept, so the two rarely coincide exactly and the nearest kept one stands in.
+    """
+    summary = pd.read_csv(metrics_summary_path)
+    summary = summary[summary["label"] == label]
+    picks = {}
+    for _, row in summary.iterrows():
+        family = str(row["exclusion_set"])
+        if family.startswith("groups_"):
+            family = family[len("groups_"):]
+        checkpoint_epoch = row.get("checkpoint_epoch")
+        if pd.isna(checkpoint_epoch):
+            continue
+        checkpoint_epoch = int(checkpoint_epoch)
+        nearest = min(milestones, key=lambda epoch: abs(epoch - checkpoint_epoch))
+        picks[(family, int(row["seed"]))] = (nearest, checkpoint_epoch)
+    return picks
+
+
+def score_selected_epoch(label, seeds, families, metrics_summary_path, milestones,
+                         batch=16, splits=("valid", "test")):
+    """score_checkpoints, but ONE epoch per (family, seed) -- whichever kept milestone
+    is nearest that run's own selected checkpoint -- instead of every milestone for
+    every combination.
+
+    Scoring all five milestones everywhere is 5x the CPU a --lipid_subclass sweep
+    (nine blocks, five seeds) needs for nothing: only the nearest milestone to each
+    run's own selected epoch is ever kept downstream (analysis/probes/lipid_subclass_
+    report.py's `within` mode's select_checkpoint_epochs does the same nearest-pick AFTER
+    scoring all five -- this does the pick BEFORE scoring, so the four unwanted epochs
+    are never scored at all).
+    """
+    picks = nearest_epoch_by_run(metrics_summary_path, label, milestones)
+    frames = []
+    exact, approximated, missing = 0, 0, 0
+    for family in families:
+        for seed in seeds:
+            pick = picks.get((family, seed))
+            if pick is None:
+                missing += 1
+                print(
+                    f"no metrics_summary.csv checkpoint_epoch for {family}/seed{seed}, skipping",
+                    file=sys.stderr,
+                )
+                continue
+            nearest, true_epoch = pick
+            if nearest == true_epoch:
+                exact += 1
+            else:
+                approximated += 1
+            frames.append(score_checkpoints(
+                label, epochs=[nearest], seeds=[seed], families=[family],
+                batch=batch, splits=splits, verbose=True,
+            ))
+    print(
+        f"checkpoint selection: {exact} exact, {approximated} approximated by nearest "
+        f"saved milestone, {missing} skipped (no metrics_summary.csv row)",
+        file=sys.stderr,
+    )
+    if not frames:
+        raise SystemExit("nothing scored")
+    return pd.concat(frames)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--label", required=True, help="sweep label, also the arg-file name")
-    parser.add_argument("--epochs", default=DEFAULT_EPOCHS)
+    parser.add_argument(
+        "--epochs", default=DEFAULT_EPOCHS,
+        help=f"milestones to score (default {DEFAULT_EPOCHS}), or the literal "
+             f"'{SELECTED_EPOCHS}' to score only ONE epoch per (family, seed): "
+             "whichever of those milestones is nearest that run's own selected "
+             "checkpoint, per metrics_summary.csv's checkpoint_epoch column.",
+    )
     parser.add_argument("--seeds", default="0,1")
     parser.add_argument(
         "--families",
@@ -420,6 +671,11 @@ def main():
         help="which splits to score; add 'train' to answer whether the run fits its "
              "own training set",
     )
+    parser.add_argument(
+        "--metrics_summary", type=Path,
+        default=Path(PROJECT_ROOT) / "results" / "tables" / "metrics_summary.csv",
+        help=f"only read by --epochs {SELECTED_EPOCHS}, for its checkpoint_epoch column.",
+    )
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
@@ -428,14 +684,24 @@ def main():
         if args.families is not None
         else default_groups_for_label(args.label)
     )
-    table = score_checkpoints(
-        args.label,
-        epochs=[int(e) for e in args.epochs.split(",")],
-        seeds=[int(s) for s in args.seeds.split(",")],
-        families=families,
-        batch=args.batch,
-        splits=tuple(s for s in args.splits.split(",") if s),
-    )
+    seeds = [int(s) for s in args.seeds.split(",")]
+    splits = tuple(s for s in args.splits.split(",") if s)
+    if args.epochs == SELECTED_EPOCHS:
+        table = score_selected_epoch(
+            args.label, seeds=seeds, families=families,
+            metrics_summary_path=args.metrics_summary,
+            milestones=[int(e) for e in DEFAULT_EPOCHS.split(",")],
+            batch=args.batch, splits=splits,
+        )
+    else:
+        table = score_checkpoints(
+            args.label,
+            epochs=[int(e) for e in args.epochs.split(",")],
+            seeds=seeds,
+            families=families,
+            batch=args.batch,
+            splits=splits,
+        )
     table.to_csv(args.out, index=False)
     print(f"wrote : {args.out}")
 

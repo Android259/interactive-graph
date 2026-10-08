@@ -6,7 +6,7 @@ pocket_descriptor_identity_check.py (same directory) measured how much of each o
 is what selected POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES (dataloader/protein_graph_
 builder.py) -- the 7 entries scoring at or near the no-structure floor.
 
-analysis/pocket_shape_descriptors.py's research catalog computes several more numbers
+preprocessing/pocket_shape_descriptors.py's research catalog computes several more numbers
 from the exact same on-disk files (pocketness.pdb, coarse_graph_nodes.csv) that never
 went into POCKET_DESCRIPTOR_NAMES at all: pocket_width, pocket_thickness, pocket_
 gyration, the full ev14/ev28/ev56 quantile triplets (production keeps only ev14_q50),
@@ -33,7 +33,7 @@ import numpy
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from analysis.pocket_shape_descriptors import descriptors_for  # noqa: E402
+from pocket_shape_descriptors import descriptors_for  # noqa: E402
 from dataloader.protein_graph_builder import POCKET_DESCRIPTOR_NAMES  # noqa: E402
 from pocket_descriptor_identity_check import (  # noqa: E402
     eta_squared,
