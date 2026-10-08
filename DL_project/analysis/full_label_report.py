@@ -48,7 +48,7 @@ from checkpoint_scores import (  # noqa: E402
     split_argv,
 )
 from read_configuration import read_configuration  # noqa: E402
-from null_model import (  # noqa: E402
+from analysis.baselines.null_model import (  # noqa: E402
     DEFAULT_FAMILIES,
     TANIMOTO,
     null_model_table,

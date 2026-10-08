@@ -50,7 +50,7 @@ from forward_args import build_forward_args  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 
 from checkpoint_scores import DEFAULT_FAMILIES, arg_lines  # noqa: E402
-from null_model import WORKING, auc, per_protein_auc  # noqa: E402
+from analysis.baselines.null_model import WORKING, auc, per_protein_auc  # noqa: E402
 
 
 def score_split(model, conf, dataset, device, zero_compat):

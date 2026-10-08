@@ -60,7 +60,7 @@ def binary_auc(scores, labels):
         positive_rank_sum - positives * (positives + 1) / 2.0
     ) / (positives * negatives)
 
-# per_protein_auc's own bar (analysis/null_model.py): a protein with fewer rows, or with
+# per_protein_auc's own bar (analysis/baselines/null_model.py): a protein with fewer rows, or with
 # only one class present, carries no ranking to read.
 WITHIN_PROTEIN_MINIMUM_ROWS = 6
 

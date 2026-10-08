@@ -39,7 +39,7 @@ from analysis.checkpoint_scores import (  # noqa: E402
     label_descriptor_features,
     score_checkpoints,
 )
-from analysis.null_model import DEFAULT_FAMILIES, TANIMOTO, resolve_similarity  # noqa: E402
+from analysis.baselines.null_model import DEFAULT_FAMILIES, TANIMOTO, resolve_similarity  # noqa: E402
 from analysis.interaction_increment import increment_table, print_increment_report  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 

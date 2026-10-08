@@ -58,7 +58,7 @@ class PairDescriptorHead(torch.nn.Module):
     representation.
 
     Token composition -- all three kinds, not lipid chemistry alone (a protein-blind
-    token set here would repeat the exact leak analysis/null_model.py
+    token set here would repeat the exact leak analysis/baselines/null_model.py
     measures on the main branch, see [[working-triple-explains-protein-wins]] in
     project memory):
 

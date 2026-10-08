@@ -39,19 +39,17 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
-from analysis.null_model import (  # noqa: E402
+from analysis.baselines.null_model import (  # noqa: E402
     DEFAULT_FAMILIES,
     TANIMOTO,
     _group_stats,
     auc,
-    held_classes_for,
     null_scores,
     per_lipid_auc,
     per_pair_auc,
     per_protein_auc,
     resolve_similarity,
     split_held_block,
-    working_set,
 )
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.sampler import lipid_class_series  # noqa: E402
@@ -95,7 +93,7 @@ def increment_table(csv, similarity, index, network, families, seeds, neighbours
 
     `network` is the RAW (unfiltered) scores DataFrame from
     analysis/checkpoint_scores.py; filtered here by `split`, matching
-    null_model_table's contract in analysis/null_model.py. `epochs=None`
+    null_model_table's contract in analysis/baselines/null_model.py. `epochs=None`
     means every epoch present in `network`. `entity_column` must match whatever
     `similarity`/`index` are keyed by -- see
     dataloader.chemistry_prior.feature_similarity/null_model.
@@ -108,13 +106,11 @@ def increment_table(csv, similarity, index, network, families, seeds, neighbours
 
     rows = []
     for family in families:
-        held_classes = held_classes_for(csv, family, share)
         for seed in seeds:
-            csvt = working_set(
-                csv, seed, ratio, held_classes,
+            train, valid, test = split_held_block(
+                csv, family, seed, share, ratio,
                 balanced_lipid_classes=balanced_lipid_classes,
             )
-            train, valid, test = split_held_block(csvt, family, seed, held_classes)
             block = valid if split == "valid" else test
             # per_lipid_auc's default grouping -- attached once here so every epoch's
             # merge (below) carries it, same as null_model_table does for `held`.

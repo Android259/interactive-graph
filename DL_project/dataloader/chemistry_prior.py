@@ -1,6 +1,6 @@
 """The chemistry-only lipid propensity score, shared by the dataloader and analysis.
 
-One function, two callers. `analysis/null_model.py` uses it as a standalone
+One function, two callers. `analysis/baselines/null_model.py` uses it as a standalone
 predictor to compare against the network. `Dataloader` (under `--chem_prior`)
 attaches it to every row as a frozen input, so the network is scored against it rather
 than having to re-derive it -- the point files/history/geometric_edge.md makes.
@@ -93,7 +93,7 @@ def molformer_species_similarity(data_dir):
     (the row/column order, one species name per row).
 
     Same (similarity, index) 2-tuple contract as species_similarity, so
-    analysis/null_model.py's --features=molformer branch is a drop-in third option
+    analysis/baselines/null_model.py's --features=molformer branch is a drop-in third option
     beside tanimoto (Morgan-fingerprint) and named hand-built descriptors -- this one
     is keyed per species like species_similarity, not per structure, because
     build_molformer_similarity_matrix.py already reduces each species' candidate
@@ -370,7 +370,7 @@ def raw_feature_matrix(csv, data_dir, names, zscore=False):
 def feature_similarity(csv, data_dir, names, zscore=False):
     """Generalised null-model similarity from an arbitrary named subset of
     protein-only, lipid-only and pair descriptors -- one flag's worth of comma-
-    separated names covers every combination analysis/null_model.py needs,
+    separated names covers every combination analysis/baselines/null_model.py needs,
     instead of one hardcoded function per combination.
 
     `zscore`: for MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES entries only (occupancy/
@@ -526,7 +526,7 @@ def null_scores_contrastive(train, held, similarity, index, neighbours,
 
     nan when the protein has no training rows on one of the two sides -- there is no
     comparison to make then, and callers already filter nan (see
-    lipid_coldsplit_null_model.auc_on_scored).
+    analysis/baselines/null_model.py's auc_on_scored).
     """
     positives, negatives = {}, {}
     for name, frame in train.groupby(protein_column):

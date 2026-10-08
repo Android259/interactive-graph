@@ -4,7 +4,7 @@
 Generalises preprocessing/pocket_descriptor_identity_check.py's method (eta^2 +
 leave-one-out nearest-neighbour identity rate, each read against its own chance floor,
 plus a permutation significance test) from "protein pocket descriptors vs protein
-family" to any --features set analysis/null_model.py accepts, against every identity
+family" to any --features set analysis/baselines/null_model.py accepts, against every identity
 axis that granularity can see: which lipid SPECIES, which lipid CLASS (head group),
 which PROTEIN, and which protein FAMILY (ProteinDomain).
 
@@ -46,7 +46,7 @@ GLOBAL -- whole dataset, every entity against every other entity of the same kin
      labels -- so each reshuffle costs one O(entities) pass, not a matrix rebuild).
 
 TRAIN vs VALID+TEST (--families/--seeds/--share/--ratio, exactly
-analysis/null_model.py's own --double_coldsplit machinery, VALID and TEST pooled
+analysis/baselines/null_model.py's own --double_coldsplit machinery, VALID and TEST pooled
 together) -- NOT an identity-match test. preprocessing/lipid_marginal_baseline.split
 removes a held-out family's protein rows, and that family's held-out classes' lipid
 rows, from TRAIN UNCONDITIONALLY (every protein, not just the held family's own) --
@@ -96,14 +96,14 @@ from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.pair_descriptors import MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES  # noqa: E402
 from dataloader.sampler import lipid_class_series  # noqa: E402
 
-# The same coldsplit machinery analysis/null_model.py itself uses for its (family,
+# The same coldsplit machinery analysis/baselines/null_model.py itself uses for its (family,
 # seed) held-out blocks, reused rather than reimplemented so a block reproduced here
 # is provably the same rows a null-model/network run would see -- working_set/
 # split_func/lipid_classes_for_holdout/DEFAULT_FAMILIES are plain re-exports on
 # null_model's own module namespace (see its own imports), not analysis specific to
 # the null model itself, so importing them here does not pull in anything about
 # scoring the network.
-from analysis.null_model import (  # noqa: E402
+from analysis.baselines.null_model import (  # noqa: E402
     DEFAULT_FAMILIES, lipid_classes_for_holdout, split_func, working_set,
 )
 # REPRESENTATIONS (directory/suffix/trim per learned protein representation) and
@@ -115,7 +115,7 @@ from protein_representation_identity_check import (  # noqa: E402
     REPRESENTATIONS, mean_pooled,
 )
 
-# Same reserved value as analysis/null_model.py's own TANIMOTO -- kept as a separate
+# Same reserved value as analysis/baselines/null_model.py's own TANIMOTO -- kept as a separate
 # literal rather than an import so the --features default here needs nothing beyond
 # dataloader.chemistry_prior itself.
 TANIMOTO = "tanimoto"
@@ -192,7 +192,7 @@ def group_floor(labels):
 
 def nearest_neighbour_identity_rate(similarity, labels, permutations=999, seed=0):
     """How often an entity's nearest OTHER entity (by `similarity`, already built the
-    same way analysis/null_model.py's null model ranks by) shares its `labels` value;
+    same way analysis/baselines/null_model.py's null model ranks by) shares its `labels` value;
     the rate a same-sized random draw would give by chance; and a label-permutation
     p-value.
 
@@ -250,7 +250,7 @@ def block_entities(entity_column, frame):
     """The distinct null-model entities a row-level `frame` (a train/held split) touches.
 
     entity_column == "pair_id": every row IS its own entity (`pair_id`, the original
-    csv index -- see analysis/null_model.py's working_set). Otherwise several rows
+    csv index -- see analysis/baselines/null_model.py's working_set). Otherwise several rows
     share one entity (a species or a protein), so only the distinct values matter.
     """
     if entity_column == "pair_id":
@@ -375,7 +375,7 @@ def rank_pair_descriptors(csv, data_dir, descriptor_names, zscore):
 def coldsplit_report(csv, entity_column, index, similarity, families, seeds,
                       share, ratio):
     """VALID and TEST pooled into one set before comparing against TRAIN --
-    analysis/null_model.py's own --split keeps them apart because it is scoring one
+    analysis/baselines/null_model.py's own --split keeps them apart because it is scoring one
     particular network's checkpoint against one particular half, but the two halves
     are the same random 50/50 draw from the same excluded rows (see
     preprocessing/lipid_marginal_baseline.split), not two different populations, and
@@ -568,7 +568,7 @@ def resolve_row_values(csv, data_dir, base, zscore):
 def neutralize_row_values(protein_col, lipid_class_col, values):
     """Two-way de-meaned residual: values - mean(values | protein) -
     mean(values | lipid_class) + mean(values | everything) -- the same formula
-    analysis/null_model.py's per_pair_auc uses on a SCORE, applied here to an input
+    analysis/baselines/null_model.py's per_pair_auc uses on a SCORE, applied here to an input
     FEATURE instead, so what a network is given no longer carries "this protein" or
     "this lipid class" alone, only what depends on both together.
     """
@@ -627,7 +627,7 @@ def main():
             f"descriptor names, any mix of lipid-only ({','.join(LIPID_DESCRIPTOR_NAMES)}), "
             "protein-only (dataloader.protein_graph_builder.POCKET_DESCRIPTOR_NAMES, "
             "e.g. pocket_extent,aromatic_share), and pair "
-            f"({','.join(PAIR_DESCRIPTOR_NAMES)}) -- exactly analysis/null_model.py's "
+            f"({','.join(PAIR_DESCRIPTOR_NAMES)}) -- exactly analysis/baselines/null_model.py's "
             "own --features. Any token may instead be '<name>_coarse=<K>' -- quantile-"
             "bin that descriptor's raw values into K groups (pandas.qcut, data-driven "
             "edges) instead of using it raw, for ANY name here regardless of whether "
@@ -635,7 +635,7 @@ def main():
             "polar_share_coarse). E.g. depth_bulk_match_coarse=3. Any token may "
             "instead (or also, on a different token) be '<name>_neutral' -- subtract "
             "that descriptor's own per-protein mean and per-lipid_class mean "
-            "(analysis/null_model.py's per_pair_auc residual, applied to an input "
+            "(analysis/baselines/null_model.py's per_pair_auc residual, applied to an input "
             "feature instead of a score) so what is left depends on neither the "
             "protein nor the lipid class alone, any --features name, forcing pair "
             "(row) granularity for the whole set. Or '<name>_zscore' -- standardise "
@@ -657,7 +657,7 @@ def main():
     )
     parser.add_argument(
         "--zscore", action="store_true",
-        help="See analysis/null_model.py --zscore; forwarded unchanged to feature_similarity.",
+        help="See analysis/baselines/null_model.py --zscore; forwarded unchanged to feature_similarity.",
     )
     parser.add_argument(
         "--top", type=int, default=20,

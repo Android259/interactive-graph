@@ -65,7 +65,7 @@ from dataloader.chemistry_prior import null_scores, null_scores_within_protein  
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 from checkpoint_scores import score_split  # noqa: E402
-from null_model import TANIMOTO, resolve_similarity  # noqa: E402
+from analysis.baselines.null_model import TANIMOTO, resolve_similarity  # noqa: E402
 # The three metric bodies live in cross_sampler_eval so the two scripts cannot drift;
 # within_protein_pair_auc there mirrors training/eval_metrics.py (within_protein_pair_auc) line for line.
 from cross_sampler_eval import (  # noqa: E402
@@ -323,7 +323,7 @@ def write_label_md(label, table, similarity, index, entity_column):
 
     Section 2 (## AUC vs chemistry null model) is where the standard tool
     (analysis/full_label_report.py) breaks for this label: it rebuilds the split via
-    analysis/null_model.py's working_set/null_model_table, which reconstructs an
+    analysis/baselines/null_model.py's working_set/null_model_table, which reconstructs an
     EXCLUDED-family split (--excluded_groups/--lipid_coldsplit) -- the opposite of
     --family_only, which RESTRICTS the table to one family and splits randomly inside
     it. Patching that split reconstruction into the shared tool would mean
@@ -446,7 +446,7 @@ def write_report(table, summary, path, figures, labels):
         "повторяет `training/eval_metrics.py (within_protein_pair_auc)`.",
         "- Соперники без обучения — `dataloader.chemistry_prior.null_scores` и "
         "`null_scores_within_protein` на train-кадре того же сплита, сходство — "
-        "`analysis/null_model.resolve_similarity` (Morgan-фингерпринты).",
+        "`analysis/baselines/null_model.resolve_similarity` (Morgan-фингерпринты).",
         "- SEM у `skill` — по ПАРНОЙ разности внутри (семья, сид): соперник и модель "
         "видят одни и те же строки, и общая дисперсия сплита в разности сокращается.",
         "- Ничего не обучалось, `metrics_summary.csv` не менялся.",

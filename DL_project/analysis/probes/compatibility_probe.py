@@ -13,7 +13,7 @@ The observation that makes this worth measuring separately: inside one protein
 `pocket_extent(p)` is a CONSTANT, so within-protein the compatibility feature is exactly
 `-chain_length(l)` -- a lipid-only quantity, with no pair term in it at all. Whatever a
 within-protein AUC gains from this feature is therefore a chain-length marginal, in the
-same sense that `analysis/null_model.py`'s null model is a chemistry marginal,
+same sense that `analysis/baselines/null_model.py`'s null model is a chemistry marginal,
 and files/history/geometric_edge.md already warns that within-protein AUC is not a
 clean pair measurement for exactly this reason.
 
@@ -53,7 +53,7 @@ sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
-from analysis.null_model import (  # noqa: E402
+from analysis.baselines.null_model import (  # noqa: E402
     DEFAULT_FAMILIES,
     WORKING,
     auc,

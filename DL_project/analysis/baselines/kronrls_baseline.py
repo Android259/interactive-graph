@@ -11,14 +11,14 @@ and scores any (protein, lipid) pair -- including pairs whose protein and/or lip
 never appeared in training -- as Kp_query,train @ A @ Kl_train,query (out-of-sample
 Kron-RLS extension). Reported as PU-AUC (Interaction=0 is "not assayed", not a
 confirmed negative -- see training.pair_baseline_common.auc_p_vs_u), matching this
-project's other non-neural baseline (analysis/null_model.py).
+project's other non-neural baseline (analysis/baselines/null_model.py).
 
 Three split modes -- --split_mode {single,double,lipid_coldsplit}. single/double hold
 out a protein family (`--excluded_groups`/`--double_coldsplit` parity); lipid_coldsplit
 holds out fixed lipid head-group classes with every protein still in training
 (`--lipid_coldsplit` parity, dataloader.sampler.LIPID_COLDSPLIT_SETS), reusing
 preprocessing.lipid_marginal_baseline.lipid_split -- the same train/valid/test
-reconstruction analysis/baselines/lipid_coldsplit_null_model.py's nearest-neighbour competitors
+reconstruction analysis/baselines/null_model.py's nearest-neighbour competitors
 are scored against, so a Kron-RLS fit is now comparable on that split, not just the
 family-axis ones. --families under lipid_coldsplit takes LIPID_COLDSPLIT_SETS keys
 (sphingolipids, phosphorus_free, ...) instead of protein family names.
@@ -95,7 +95,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.sampler import LIPID_COLDSPLIT_SETS, lipid_class_series  # noqa: E402
-from null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
+from analysis.baselines.null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
 from training.pair_baseline_common import (  # noqa: E402
     aggregate_pair_labels,
     auc_p_vs_u,
@@ -130,7 +130,7 @@ def _score_pool(
 
     Returns the pooled PU-AUC and the pool with a `_score` column attached, so a
     caller can also run the within-protein / within-lipid-class / pair diagnostics
-    (per_protein_auc, per_lipid_auc, per_pair_auc, all from analysis/null_model.py)
+    (per_protein_auc, per_lipid_auc, per_pair_auc, all from analysis/baselines/null_model.py)
     on the same scores without re-solving the out-of-sample extension.
     """
     query_proteins = sorted(pool["LTPProtein"].unique())
@@ -396,7 +396,7 @@ def evaluate_block(
     # Pooled test_auc mixes each row's own signal with whatever the protein's and
     # the lipid class' own marginals contribute -- the within-group and two-way-
     # residual diagnostics below (same functions already used for the network and
-    # the chemistry null model, see analysis/null_model.py) separate those out.
+    # the chemistry null model, see analysis/baselines/null_model.py) separate those out.
     test_scored = test_scored.assign(lipid_class=lipid_class_series(test_scored))
     protein_auc, n_proteins = per_protein_auc(test_scored, test_scored["_score"].to_numpy())
     lipid_auc, n_lipid_classes = per_lipid_auc(test_scored, test_scored["_score"].to_numpy())

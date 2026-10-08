@@ -46,7 +46,7 @@ from rdkit.Chem import AllChem, Descriptors, rdMolDescriptors
 # PROTEIN_DESCRIPTOR_NAMES from THIS module (see the bottom of protein_graph_builder.py)
 # -- an eager import here would complete the triangle into a circular import.
 
-# The full descriptor catalog analysis/null_model.py's --features and
+# The full descriptor catalog analysis/baselines/null_model.py's --features and
 # architecture/pair_descriptor_head.py's token set both draw on, named together in one
 # place.
 LIPID_DESCRIPTOR_NAMES = (
@@ -88,7 +88,7 @@ PAIR_DESCRIPTOR_NAMES = (
 # (both sides converted to angstrom, chain via chain_length_angstrom) -- standardising
 # their inputs would replace that physical "does the cavity reach as far as the
 # chain" comparison with an abstract standard-deviations-apart one, so --zscore
-# (analysis/null_model.py) never touches them. The other six multiply two
+# (analysis/baselines/null_model.py) never touches them. The other six multiply two
 # DIFFERENT-UNIT quantities together (a share/ratio/burial statistic against a lipid
 # count) -- their relative contribution to the product is whatever their raw scales
 # happen to be, not a principled 50/50 split, which --zscore fixes by standardising
@@ -270,7 +270,7 @@ POCKET_CHEMISTRY_DESCRIPTOR_NAMES = (
 # (inside PROTEIN_DESCRIPTOR_NAMES) is the SAME cavity size "extent" coarsens,
 # deliberately left nameable raw too -- see ModelConfig.two_pair_descriptors_paths
 # for why (an explicit, opt-in leak probe, not a vetted-safe default). Distinct from
-# PROTEIN_DERIVED_DESCRIPTOR_NAMES (still used by analysis/null_model.py's own,
+# PROTEIN_DERIVED_DESCRIPTOR_NAMES (still used by analysis/baselines/null_model.py's own,
 # unrelated --features catalog): "aromatic_share_coarse"/"polar_share_coarse" are
 # NOT in this catalog, only "polar_share" is -- the new <name>_coarse=<spec> syntax
 # replaces that fixed-3-band scheme for this system (see its own docstring for why:
@@ -449,7 +449,7 @@ def canonical_descriptor_token(name, spec):
 def parse_descriptor_list(value):
     """"--good_descriptors"/"--bad_descriptors" string -> tuple of CANONICAL
     descriptor tokens (see canonical_descriptor_token), comma-separated input, same
-    convention --features (analysis/null_model.py) and --excluded_groups use.
+    convention --features (analysis/baselines/null_model.py) and --excluded_groups use.
     """
     tokens = []
     for raw in value.split(","):

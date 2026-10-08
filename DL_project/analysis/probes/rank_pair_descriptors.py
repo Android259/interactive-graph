@@ -65,7 +65,7 @@ def main():
     )
     parser.add_argument(
         "--zscore", action="store_true",
-        help="See analysis/null_model.py --zscore; forwarded unchanged to each descriptor's own resolution.",
+        help="See analysis/baselines/null_model.py --zscore; forwarded unchanged to each descriptor's own resolution.",
     )
     args = parser.parse_args()
 

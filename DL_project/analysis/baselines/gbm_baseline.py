@@ -2,7 +2,7 @@
 """A row-based gradient-boosting baseline over protein x lipid descriptor pairs.
 
 The other two non-neural baselines are matrix-completion methods (analysis/
-kronrls_baseline.py's closed-form Kron-RLS) or pure lookups (analysis/null_model.py):
+kronrls_baseline.py's closed-form Kron-RLS) or pure lookups (analysis/baselines/null_model.py):
 both need the training rectangle complete or a class prior, and neither can weight
 positive cells against negative ones (kronrls_baseline.py's own docstring works
 through why Kron-RLS's closed form structurally cannot -- Y enters its objective only
@@ -63,7 +63,7 @@ from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES  # noqa: E402
 from preprocessing.compute_descriptors import pair_descriptor_value  # noqa: E402
 from dataloader.sampler import LIPID_COLDSPLIT_SETS, lipid_class_series  # noqa: E402
-from null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
+from analysis.baselines.null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
 from training.pair_baseline_common import (  # noqa: E402
     auc_p_vs_u,
     balance_pool_negatives,

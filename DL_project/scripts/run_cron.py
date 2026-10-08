@@ -108,7 +108,7 @@ from training.pair_baseline_common import (  # noqa: E402
 # take a max over; test loss has no loss concept here) rather than fabricated.
 # "(proteins contributing)" becomes "(lipid classes)" for AUC_within_protein_pairs'
 # own count, since per_pair_auc counts lipid-class groups, not proteins -- see
-# analysis/null_model.py's per_pair_auc docstring; relabeled rather than mislabeled.
+# analysis/baselines/null_model.py's per_pair_auc docstring; relabeled rather than mislabeled.
 # is_auc rows only print with --complete (AUC is left out of the default summary
 # for now -- see this file's own header for why, once it has one).
 SUMMARY_METRICS = (

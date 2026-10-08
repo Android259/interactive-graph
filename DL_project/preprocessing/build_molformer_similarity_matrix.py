@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build a species x species similarity matrix from the cached MolFormer lipid
-embedding, for use as a third `--features` option in analysis/null_model.py
+embedding, for use as a third `--features` option in analysis/baselines/null_model.py
 (alongside `tanimoto` and named hand-built descriptors).
 
 Reuses preprocessing/lipid_embedding_identity_check.py's own embedding-loading and
@@ -22,7 +22,7 @@ fingerprints computed per isomer candidate; MolFormer's embedding is already red
 one vector per species by species_embeddings(), so there is nothing to compact.
 
 Output (consumed by dataloader.chemistry_prior.molformer_species_similarity, which
-analysis/null_model.py's --features=molformer branch calls):
+analysis/baselines/null_model.py's --features=molformer branch calls):
     data/molformer_species_similarity_matrix.npy  -- float32 (n_species, n_species)
     data/molformer_species_index.json             -- [species name, ...] giving the
                                                        row/column order of the matrix

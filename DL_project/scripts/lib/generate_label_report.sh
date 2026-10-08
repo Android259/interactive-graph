@@ -86,7 +86,7 @@ if (( do_summarize )); then
         # against is the one built from the SAME descriptor set the network
         # itself was trained to see, not a fixed, label-independent guess -- see
         # analysis/full_label_report.py --features. The null model is cached
-        # across labels by --features-label (analysis/null_model.py CACHE_PATH):
+        # across labels by --features-label (analysis/baselines/null_model.py CACHE_PATH):
         # every label sharing a resolved --features set and coldsplit params
         # gets the SAME chemistry null model, so only the first label calling
         # full_label_report.py for a given (features-label, family, seed, share,

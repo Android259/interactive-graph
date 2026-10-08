@@ -1174,7 +1174,7 @@ class PLIDataset(
         per name which of raw or coarse (and how coarse) an experiment reads; see
         ModelConfig.two_pair_descriptors_paths for the leak-safety reasoning. Pair-
         formula names are computed with dataloader.pair_descriptors.
-        pair_descriptor_value, the identical function analysis/null_model.py's
+        pair_descriptor_value, the identical function analysis/baselines/null_model.py's
         chemistry null model uses, so a name means the same number in both places.
         Independent of --pair_descriptors (ModelConfig.validate rejects combining
         the two -- they build different Final_Layer branches), so this runs the

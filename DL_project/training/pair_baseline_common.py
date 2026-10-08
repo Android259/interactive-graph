@@ -776,7 +776,7 @@ def best_threshold_for_metric(
     on a lipid_coldsplit test pool they were observed at roughly -0.11..0.22, nowhere
     near a fixed 0.5. Thresholding at 0.5 (the network's convention, since its output
     IS a calibrated sigmoid) would call every row negative here, exactly the
-    "threshold placement" pitfall analysis/null_model.py's docstring warns about for
+    "threshold placement" pitfall analysis/baselines/null_model.py's docstring warns about for
     fixed-cut BA on an uncalibrated score. So the cut is fit like protein_lambda/
     lipid_lambda are: on the validation pool only, then applied unchanged to test --
     never fit on the pool it will be reported on.

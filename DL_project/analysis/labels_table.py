@@ -8,7 +8,7 @@ no forward pass): test BA, test sensitivity, test specificity, mean
 train-valid gap. Then, if a full_label_report.py report already exists at
 graphics/<label>/<label>.md, parses its "AUC vs chemistry null model" section
 for the network's own in-protein and pair-pooled AUC (net_AUC_prot,
-net_AUC_pair -- see analysis/null_model.py). Those two columns are blank for
+net_AUC_pair -- see analysis/baselines/null_model.py). Those two columns are blank for
 any label whose report hasn't been generated, or was generated with
 SKIP_AUC=1 -- this script never launches a forward pass to fill them in; run
 `scripts/env.sh python3 analysis/full_label_report.py --label LABEL` first.
