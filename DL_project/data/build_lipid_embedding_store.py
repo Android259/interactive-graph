@@ -25,7 +25,7 @@ Usage:
     --check_only      Report whether a rebuild is needed (exit 0: nothing to do: not
                        needed, table absent, or already current; exit 1: a rebuild would
                        run) without writing the 267 MiB archive. Same contract as
-                       data/build_pair_descriptor_cache.py's flag of the same name, and
+                       data/build_descriptor_cache.py's flag of the same name, and
                        for the same caller: a cluster launcher that wants to know
                        cheaply, on the login node, whether it must hand the real build
                        off to a job. store_is_current is a manifest read plus a handful
@@ -41,7 +41,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataloader.cache_builders.lipid_embedding_store_writer import (  # noqa: E402
+from dataloader.cache_builders.lipid_embedding_tensors_builder import (  # noqa: E402
     build_lipid_embedding_store,
 )
 from dataloader.tensors_reading.lipid_embedding_tensors_reader import store_is_current  # noqa: E402

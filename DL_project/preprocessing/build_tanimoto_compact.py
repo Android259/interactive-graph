@@ -7,17 +7,18 @@
 # per candidate instance, so the per-candidate similarity is
 # compact[structure_index[i], structure_index[j]] -- byte-identical to the old
 # per-candidate square matrix (2.89 GB, Total_tanimoto_matrix_uint8.npy), which is no
-# longer built or read. Why byte-identity holds: dataloader/tanimoto_compact_reader.py.
+# longer built or read. Why byte-identity holds: dataloader/tensors_reading/
+# tanimoto_compact_reader.py.
 #
 # The candidate rule here (row_candidates/collect) is the loader's: SmileGlobal unless it
 # is "0", candidates split on ";", canonicalized, deduplicated within the row.
 # preprocessing/build_tanimoto_headgroup.py and analysis/probes/split_similarity_vs_metric.py
 # import it from here, so there is one transcription of it.
 #
-# Output (dataloader/tanimoto_compact_reader.py reads them):
-#   Tanimoto_compact_matrix_uint8.npy      structures x structures
-#   Tanimoto_compact_structure_index.npy   candidate -> structure row
-#   Tanimoto_compact_row_ids.npy           candidate -> interaction table row
+# Output (dataloader/tensors_reading/tanimoto_compact_tensors_reader.py reads them):
+#   Tanimoto_compact_matrix_uint8.pt       structures x structures
+#   Tanimoto_compact_structure_index.pt    candidate -> structure row
+#   Tanimoto_compact_row_ids.pt            candidate -> interaction table row
 #   Tanimoto_compact.manifest.json         counts + the source table's size and mtime
 #
 # Usage:
@@ -35,7 +36,7 @@ from rdkit.Chem import AllChem
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dataloader.dataset_source import INTERACTION_CSV
-from dataloader.cache_builders.tanimoto_compact_writer import write_compact
+from dataloader.cache_builders.tanimoto_compact_tensors_builder import write_compact
 
 
 DEFAULT_DATA_DIR = Path("data")

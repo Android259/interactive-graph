@@ -3,7 +3,7 @@
 
 Every other data artifact in this project is CSV/JSON/npy/pkl -- this sheet was the
 lone .xlsx, which cost two things a plain CSV does not: a hard `openpyxl` dependency
-(dataloader/pair_descriptors.py's `_experimental_lipid_volume_table` calls
+(dataloader/descriptors.py's `_experimental_lipid_volume_table` calls
 `pandas.read_excel`, which raises ImportError without it -- this machine has neither
 `openpyxl` nor the sibling `.xls`'s `xlrd`), and a file that never reaches the cluster
 at all -- scripts/lib/cluster_sync_excludes.sh protects the whole data/ directory from
@@ -15,7 +15,7 @@ the first time an arg file's descriptor set actually needed it.
 Parses the .xlsx directly as what it is -- a zip of small XML files (the OOXML
 spreadsheet format) -- rather than importing a spreadsheet library: `zipfile` +
 `xml.etree.ElementTree`, both standard library, so this script (and, after this
-change, the reader in pair_descriptors.py) needs nothing beyond what every other
+change, the reader in descriptors.py) needs nothing beyond what every other
 script in this project already needs. Reads the workbook's one sheet, resolves
 shared-string cells against xl/sharedStrings.xml, and writes every column through
 unchanged -- no unit conversion, no filtering.

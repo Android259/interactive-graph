@@ -71,9 +71,9 @@ from read_configuration import read_configuration  # noqa: E402
 from architecture.interaction_classification import InteractionClassification  # noqa: E402
 from dataloader.Dataloader import PLIDataset  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.pair_descriptors import resolve_similarity_feature_names  # noqa: E402
-from dataloader.sampler import LIPID_COLDSPLIT_SETS  # noqa: E402
-from dataloader.lipid_subclass_blocks import FIG3_SUBCLASS_BLOCKS  # noqa: E402
+from dataloader.descriptors import resolve_similarity_feature_names  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_subclass_blocks import FIG3_SUBCLASS_BLOCKS  # noqa: E402
 from forward_args import build_forward_args  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 
@@ -199,7 +199,7 @@ def split_argv(lines, group):
     The two axes are mutually exclusive (read_configuration rejects them together), so
     --excluded_groups is not appended for a lipid label -- `group` is a lipid-class set
     name there, not a family. --lipid_subclass is the third axis (a Titeca-et-al.
-    subclass block, dataloader/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS) and
+    subclass block, dataloader/splitting_on_blocks/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS) and
     takes the same bare-marker treatment.
 
     An arg file may instead name its block OUTRIGHT (--lipid_subclass=<spec>,
@@ -247,7 +247,7 @@ def default_groups_for_label(label):
 def label_descriptor_features(label, families):
     """--good_descriptors/--bad_descriptors/--descriptor_names resolved off `label`'s
     own args file, as a sorted comma-separated base-name list for null_model.py's
-    --features (see dataloader.pair_descriptors.resolve_similarity_feature_names) --
+    --features (see dataloader.descriptors.resolve_similarity_feature_names) --
     the chemistry null model then runs on exactly the descriptor set the network
     itself was trained to see, instead of a fixed guess (analysis/full_label_report.py,
     analysis/probes/build_rand_results_tables.py). Empty string when the label's config sets
@@ -431,7 +431,7 @@ def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, ver
 # Nothing below loads a checkpoint or builds a model: it lists models/ and reads the
 # table. score_checkpoints() above is what does the actual rescoring.
 #
-# The four --lipid_coldsplit held-out sets (dataloader/sampler.LIPID_COLDSPLIT_SETS),
+# The four --lipid_coldsplit held-out sets (dataloader/splitting_on_blocks/lipid_coldsplit_blocks.LIPID_COLDSPLIT_SETS),
 # spelled out rather than imported so this part stays a filesystem/CSV reader.
 LIPID_SETS = {"anionic", "choline", "phosphorus_free", "sphingolipids"}
 EPOCH_FILE = re.compile(r"^seed(\d+)_epoch(\d+)\.pt$")

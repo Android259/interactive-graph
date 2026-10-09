@@ -14,6 +14,29 @@
 > [`training/read_configuration.py`](../../training/read_configuration.py) — она
 > сверяется на первом же образце, разойтись молча они не могут.
 
+> **Статус на 2026-10-09: флага `--pocket_descriptors` больше нет.** Он раздавал этот
+> вектор на каждый узел белка (`expand_pocket_descriptor`), и это был единственный
+> дескрипторный вход, который никто не нормировал: буферы `pocket_descriptor_mean/std`
+> заполнялись только под `--rnabang_frozen_node_adapter`, а ни один прогон с этим
+> broadcast его не ставил. То есть во всех 22 прогонах `pocket_extent` в ангстремах шёл
+> в GAT рядом с `pocket_residue_share` в [0, 1]. Удалены: сам флаг,
+> `--pocket_descriptors_family_neutral`, `--pocket_descriptor_names`,
+> `expand_pocket_descriptor` и буферы; вместе с ними — 39 аргфайлов (`ge_protgeom8*`,
+> `ge_protgeom_family_neutral*`, `geatt_protgeom8*`, `descriptors_2paths*`, 3 `bbp`).
+> Числа ниже и в разделах 4-5 относятся к ним — они остаются как измерение, но
+> воспроизвести конфиг по имени метки уже нельзя.
+>
+> Сам тензор считается и подаётся по-прежнему, через производное
+> `ModelConfig.needs_pocket_descriptor`, потому что из него читают два пути, которые
+> масштаб обрабатывают сами: `PairDescriptorHead` (`--pair_descriptors` без
+> `--descriptor_names`) — `aromatic_share`/`apolar_sasa_share` как доли в [0, 1] и
+> `hydropathy_core/rim` под `--pair_descriptor_pocket_shares_split` со своими
+> train-only буферами; и `expand_pair_descriptors` (`--descriptors_in_protein`) — те же
+> две доли. Нормированный путь к тем же именам — `--protein_descriptors`, он читает их
+> из `descriptor_catalog_input` (z-score по train, `Dataloader._compute_pair_descriptors`).
+> Набор из раздела 5 (`POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES`) оставлен как
+> справочный список имён — через `--protein_descriptors` их всё ещё можно запросить.
+
 ## 1. Зачем
 
 Дескриптор, который модель умеет использовать сейчас (`POCKET_DESCRIPTOR_NAMES` в

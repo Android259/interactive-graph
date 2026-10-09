@@ -227,7 +227,7 @@ Tversky с сильным смещением в сторону признако�
   §7f–7h, §7j, §7p; изолированности — `analysis/lipid_coldsplit_isolation.py` (прогон
   2026-09-15, таблица `..._Deduplicated.csv`, 9905 строк, 634 положительных).
 - §3 (что именно считается) — чтение `preprocessing/build_tanimoto_compact.py`,
-  `preprocessing/build_tanimoto_compact.py`, `dataloader/tanimoto_compact_reader.py`.
+  `preprocessing/build_tanimoto_compact.py`, `dataloader/tensors_reading/tanimoto_compact_tensors_reader.py`.
 - §2, §6 (точки входа) — чтение `analysis/coldsplit_geometry.py`,
   `analysis/baselines/lipid_coldsplit_null_model.py`, `dataloader/chemistry_prior.py`,
   `analysis/baselines/kronrls_baseline.py`, `dataloader/Dataloader.py`.

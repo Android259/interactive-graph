@@ -16,7 +16,7 @@ project's other non-neural baseline (analysis/baselines/null_model.py).
 Three split modes -- --split_mode {single,double,lipid_coldsplit}. single/double hold
 out a protein family (`--excluded_groups`/`--double_coldsplit` parity); lipid_coldsplit
 holds out fixed lipid head-group classes with every protein still in training
-(`--lipid_coldsplit` parity, dataloader.sampler.LIPID_COLDSPLIT_SETS), reusing
+(`--lipid_coldsplit` parity, dataloader.splitting_on_blocks.lipid_coldsplit_blocks.LIPID_COLDSPLIT_SETS), reusing
 preprocessing.lipid_marginal_baseline.lipid_split -- the same train/valid/test
 reconstruction analysis/baselines/null_model.py's nearest-neighbour competitors
 are scored against, so a Kron-RLS fit is now comparable on that split, not just the
@@ -94,7 +94,8 @@ sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.sampler import LIPID_COLDSPLIT_SETS, lipid_class_series  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS  # noqa: E402
+from dataloader.sampler import lipid_class_series  # noqa: E402
 from analysis.baselines.null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
 from training.pair_baseline_common import (  # noqa: E402
     aggregate_pair_labels,
@@ -680,8 +681,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "comma-separated pocket descriptor names, for --protein_kernel=pocket_subset "
-            "-- pass the exact list a network run's --pocket_descriptor_names used to "
-            "match its protein features, e.g. the project's protgeom8 set: "
+            "-- pass the exact list a network run's --protein_descriptors used, to match "
+            "its protein features, e.g. the project's protgeom8 set: "
             "pocket_extent,pocket_elongation,pocket_flatness,depth_q10,buriedness_q50,"
             "aromatic_share,hydropathy_core,hydropathy_rim"
         ),

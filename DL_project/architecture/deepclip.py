@@ -47,7 +47,7 @@ import torch
 import torch_geometric
 from torch_geometric.utils import to_dense_batch
 
-from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
+from dataloader.descriptors import full_catalog_order, parse_descriptor_list
 from dataloader.protein_tokens import (
     parse_protein_token_alphabets,
     protein_token_one_hot,

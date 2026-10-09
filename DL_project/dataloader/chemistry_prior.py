@@ -18,8 +18,8 @@ import numpy as np
 import pandas
 
 import preprocessing.compute_descriptors as compute_descriptors
-from dataloader.pair_descriptor_cache_reader import load_pair_descriptor_cache
-from dataloader.pair_descriptors import (
+from dataloader.descriptor_cache_reader import load_lipid_descriptor_cache
+from dataloader.descriptors import (
     LIPID_DESCRIPTOR_NAMES,
     MIN_PAIR_DESCRIPTOR_NAMES,
     MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES,
@@ -129,13 +129,13 @@ def _lipid_descriptor_table(csv, data_dir=None):
 
     # npr1/npr2 are conformer-based (a 10-conformer ETKDG+MMFF embed per candidate,
     # not microseconds like the other five) -- look them up in the project's on-disk
-    # per-candidate lipid table first (same table dataloader/pair_descriptors.py's
+    # per-candidate lipid table first (same table dataloader/descriptors.py's
     # network path and training/pair_baseline_common.py's explicit_lipid_features
     # read), and only fall back to a fresh embed on a miss, same fallback discipline as
     # descriptor_values_by_row's own `cache` parameter.
-    npr_cache = load_pair_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
+    npr_cache = load_lipid_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
 
-    # data/lipid_descriptors.csv (built by data/build_pair_descriptor_cache.py) already
+    # data/lipid_descriptors.csv (built by data/build_descriptor_cache.py) already
     # stores every one of these under the SAME name, except "heavy" (stored as
     # "heavy_atoms" -- see that module's own build_pair_value_cache comment on the
     # rename). A cache hit is a dict lookup instead of a live RDKit reparse (or, for
@@ -177,7 +177,7 @@ def _lipid_descriptor_table(csv, data_dir=None):
         "tail_molar_refractivity": compute_descriptors.tail_molar_refractivity,
         "tail_heavy_atoms": compute_descriptors.tail_heavy_atoms,
         # data/Lipid_Volumes.csv lookup, not an RDKit formula -- see its own comment
-        # in dataloader/pair_descriptors.py. A per-candidate miss is common (~70%);
+        # in dataloader/descriptors.py. A per-candidate miss is common (~70%);
         # per-species below, every one of the 283 distinct FullIdentityOfLipid
         # species resolves from at least one candidate.
         "experimental_lipid_volume": compute_descriptors.experimental_lipid_volume,
@@ -347,7 +347,7 @@ def raw_feature_matrix(csv, data_dir, names, zscore=False):
         for name in pair_names:
             # MIN_PAIR_DESCRIPTOR_NAMES always reads standardised values -- min() of
             # raw-scale quantities is a units artefact, not a bottleneck reading (see
-            # dataloader.pair_descriptors.MIN_PAIR_DESCRIPTOR_NAMES) -- independent of
+            # dataloader.descriptors.MIN_PAIR_DESCRIPTOR_NAMES) -- independent of
             # whether --zscore was passed.
             use_zscore = name in MIN_PAIR_DESCRIPTOR_NAMES or (
                 zscore and name in MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES
@@ -377,7 +377,7 @@ def feature_similarity(csv, data_dir, names, zscore=False):
 
     `zscore`: for MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES entries only (occupancy/
     chain_extent_gap are a physical angstrom-vs-angstrom comparison and never
-    standardised regardless of this flag -- see dataloader.pair_descriptors), feed
+    standardised regardless of this flag -- see dataloader.descriptors), feed
     pair_descriptor_value standardised protein/lipid values instead of raw ones, so
     the product's variance is not accidentally dominated by whichever raw input
     happens to have the larger native scale.
@@ -386,7 +386,7 @@ def feature_similarity(csv, data_dir, names, zscore=False):
       lipid-only   : LIPID_DESCRIPTOR_NAMES (chain, unsaturation, hbond, heavy,
                      tail_count, npr1, npr2, logp, tpsa, molar_refractivity,
                      rotatable_bond_count, aromatic_ring_count, ring_count).
-      protein-only : dataloader.protein_graph_builder.POCKET_DESCRIPTOR_NAMES
+      protein-only : dataloader.graphs_builders.protein_graph_builder.POCKET_DESCRIPTOR_NAMES
                      (pocket_residue_share, pocket_sasa_share, pocket_volume_per_sasa,
                      pocket_extent, pocket_elongation, pocket_flatness, ev14_q50,
                      buriedness_q50, depth_q10, apolar_sasa_share, aromatic_share,
@@ -399,7 +399,7 @@ def feature_similarity(csv, data_dir, names, zscore=False):
                      against a --descriptors_head label trained with either).
       pair         : PAIR_DESCRIPTOR_NAMES (occupancy, chain_extent_gap,
                      aromatic_contact, hbond_match, volume_fit -- see
-                     dataloader.pair_descriptors.pair_descriptor_value for what each
+                     dataloader.descriptors.pair_descriptor_value for what each
                      one computes; every one reads whichever raw lipid/protein
                      values it needs internally, even if those are not separately
                      requested).

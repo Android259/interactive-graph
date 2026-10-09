@@ -9,7 +9,7 @@ from .mlp_utils import make_self_attention
 # descriptors), plus 2 read directly off the pocket descriptor tensor.
 DATALOADER_TOKENS = ("chain", "unsaturation", "hbond", "heavy", "occupancy", "extent")
 # --pair_descriptor_lipid_shape's 4 extra dataloader-computed columns (Dataloader.py.
-# _compute_pair_descriptors, dataloader/pair_descriptors.py.LIPID_SHAPE_DESCRIPTOR_NAMES),
+# _compute_pair_descriptors, dataloader/descriptors.py.LIPID_SHAPE_DESCRIPTOR_NAMES),
 # inserted between "occupancy" and "extent" in pair_descriptor_input's column order --
 # Dataloader.py's pair_descriptor_names list builds the identical order.
 LIPID_SHAPE_TOKENS = (
@@ -21,7 +21,7 @@ LIPID_SHAPE_TOKENS = (
 # to read at forward time the way the plain pair (below) does, so this pair is computed
 # per protein in dataloader/pocket_lipid_compatibility.py instead.
 SPLIT_DATALOADER_TOKENS = ("aromatic_share_core", "aromatic_share_rim")
-# Indices into POCKET_DESCRIPTOR_NAMES (dataloader/protein_graph_builder.py): both are
+# Indices into POCKET_DESCRIPTOR_NAMES (dataloader/graphs_builders/protein_graph_builder.py): both are
 # already scale-free shares (bounded in [0, 1] by construction), unlike raw pocket_extent.
 _APOLAR_SASA_SHARE_INDEX = 9
 _AROMATIC_SHARE_INDEX = 10
@@ -63,7 +63,7 @@ class PairDescriptorHead(torch.nn.Module):
     project memory):
 
       lipid-only   : chain length, unsaturation count, H-bond capacity, heavy-atom
-                     count (dataloader/pair_descriptors.py).
+                     count (dataloader/descriptors.py).
       protein-only : coarsened pocket extent (dataloader/Dataloader.py --
                      coarsened the same way --compatibility_split_input's "clash"
                      term is, so raw cavity size cannot re-identify the held-out
@@ -207,7 +207,7 @@ class PairDescriptorHead(torch.nn.Module):
         """Install train-only mean/std for hydropathy_core/hydropathy_rim.
 
         Same stats dict ProteinEncoder.set_pocket_descriptor_normalization consumes
-        (dataloader/protein_graph_builder.py's pocket_descriptor_stats -- train
+        (dataloader/graphs_builders/protein_graph_builder.py's pocket_descriptor_stats -- train
         proteins only, one source of truth) via InteractionClassification.
         set_pair_descriptor_pocket_share_normalization; unlike ProteinEncoder's copy,
         which architecture/protein_encoder.py only fills under --rnabang_frozen_node_
@@ -240,8 +240,8 @@ class PairDescriptorHead(torch.nn.Module):
         docstring; hydropathy_core/hydropathy_rim are standardised here instead, see
         set_pocket_descriptor_normalization).
         Ignored entirely when --no_pair_descriptor_pocket_shares is set (still passed
-        in by Final_Layer.forward, since --pair_descriptors still requires
-        --pocket_descriptors either way).
+        in by Final_Layer.forward, since --pair_descriptors attaches the tensor
+        either way -- see ModelConfig.needs_pocket_descriptor).
         Returns [batch, self.output_dim] (hiddim, unless --pair_descriptor_flatten or
         pool_type=="add_max" widen it -- see __init__), one vector per sample.
         """

@@ -54,7 +54,7 @@ import training.pair_baseline_common as pbc  # noqa: E402
 # The hand-built lipid descriptors the comparison runs on: LIPID_DESCRIPTOR_NAMES minus
 # nothing -- the whole catalog, so the baseline is the best the project's own features
 # can do rather than a subset chosen to lose.
-from dataloader.pair_descriptors import LIPID_DESCRIPTOR_NAMES  # noqa: E402
+from dataloader.descriptors import LIPID_DESCRIPTOR_NAMES  # noqa: E402
 
 
 def species_targets(table: pd.DataFrame, target: str) -> pd.Series:

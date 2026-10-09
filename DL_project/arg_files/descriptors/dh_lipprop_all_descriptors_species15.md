@@ -2,7 +2,7 @@
 #
 # Two changes from dh_family_neutral_pb6_lipprop_rand.md:
 #   1. --descriptor_names goes from the 17 hand-picked names (the family-neutral 11 plus
-#      the six protein-binding ones) to all 70 entries of dataloader/pair_descriptors.py's
+#      the six protein-binding ones) to all 70 entries of dataloader/descriptors.py's
 #      DESCRIPTOR_CATALOG.
 #   2. the split goes from --random_split to --lipid_species_coldsplit=0.15, which brings
 #      the sampler set that split's own measurements call for (see below).

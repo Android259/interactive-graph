@@ -7,7 +7,6 @@
 --weight_decay=0.01
 --pool_type="add"
 
---pocket_descriptors
 --two_pair_descriptors_paths
 
 --good_descriptors=chain_extent_gap,volume_fit,

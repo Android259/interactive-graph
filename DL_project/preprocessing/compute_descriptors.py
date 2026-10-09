@@ -11,20 +11,20 @@ Three kinds of descriptor, three tables, one formula per name:
               arithmetically from the two tables above -- never RDKit
 
 The names themselves (which descriptors exist, how an arg file spells one, which are
-family-neutral) stay in dataloader/pair_descriptors.py, with the catalog parsing
+family-neutral) stay in dataloader/descriptors.py, with the catalog parsing
 training/read_configuration.py and architecture/ read to size layers. This module owns
 only the arithmetic: given a name, what number comes out. The split is why
-dataloader/pair_descriptors.py can import nothing from here -- the arrow runs one way,
+dataloader/descriptors.py can import nothing from here -- the arrow runs one way,
 this module reads the name lists, never the reverse.
 
 Two readers of this module beyond the CLI below, both already live before any table
 exists: dataloader/Dataloader.py._compute_pair_descriptors computes values directly when
 a cache is missing (the documented fallback -- a run never fails for want of a prebuilt
-table), and dataloader/cache_builders/pair_descriptor_cache_writer.py calls the same functions to
+table), and dataloader/cache_builders/descriptor_csv_builder.py calls the same functions to
 fill a whole table at once.
 
 Editing a formula here does NOT invalidate a stored column: the tables hold numbers, and
-dataloader/pair_descriptor_cache_reader.py serves any column that holds one. So a changed formula
+dataloader/descriptor_cache_reader.py serves any column that holds one. So a changed formula
 and the numbers already on disk will disagree until the column is recomputed on purpose --
 `compute_descriptors.py NAME` below is how, and doing it is the editor's job, not the cache's.
 
@@ -59,7 +59,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataloader.pair_descriptors import (  # noqa: E402
+from dataloader.descriptors import (  # noqa: E402
     PAIR_DESCRIPTOR_NAMES,
     POCKET_CHEMISTRY_DESCRIPTOR_NAMES,
     PROTEIN_DERIVED_DESCRIPTOR_NAMES,
@@ -67,7 +67,7 @@ from dataloader.pair_descriptors import (  # noqa: E402
 )
 
 # The pocket formulas below were written against this name and index their own output
-# tuple by its length; dataloader/protein_graph_builder.py imports PROTEIN_DESCRIPTOR_
+# tuple by its length; dataloader/graphs_builders/protein_graph_builder.py imports PROTEIN_DESCRIPTOR_
 # NAMES under the same alias for the same reason.
 POCKET_DESCRIPTOR_NAMES = PROTEIN_DESCRIPTOR_NAMES
 
@@ -302,7 +302,7 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
     mask = pocket.bool().numpy() if hasattr(pocket, "bool") else pocket
     site = vertices[mask]
     if len(site) == 0:
-        raise ValueError("pocket_descriptors requires at least one pocket residue")
+        raise ValueError("pocket_descriptor requires at least one pocket residue")
     residue_types = site["residue_type"].to_numpy(copy=True).astype(int)
     hydropathy = numpy.asarray(KYTE_DOOLITTLE)[residue_types]
     aromatic = numpy.isin(residue_types, AROMATIC_RESIDUE_TYPES)
@@ -358,7 +358,7 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
         # are. eta^2=0.611 against family -- above the neutral floor, unlike the two
         # entries just above -- so this one is deliberately excluded from
         # POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES; see PROTEIN_DESCRIPTOR_NAMES's own
-        # comment in dataloader/pair_descriptors.py for where it is safe to use.
+        # comment in dataloader/descriptors.py for where it is safe to use.
         float(hydropathy.mean()),
         # Fourth promotion (same batch): ev14's own shallow decile, the same recipe
         # ev28_q10 above already uses on the sibling column. eta^2=0.238, at the
@@ -444,8 +444,8 @@ def pocket_chemistry_descriptor(vertices, pocket, pocketness_path=None):
     A DICT and not a row of pocket_descriptor()'s tensor, deliberately. Positions in
     that tensor are load-bearing (architecture/pair_descriptor_head.py indexes it by
     bare integer literal) and its length is ModelConfig.pocket_descriptor_count, which
-    is part of every --pocket_descriptors run's parameter count and therefore of its
-    run-directory identity; appending to it would silently renumber past runs. These
+    is part of the parameter count -- and therefore the run-directory identity -- of
+    every run that reads the tensor; appending to it would silently renumber past runs. These
     names are reached by NAME instead -- through --descriptor_names/
     --protein_descriptors and dataloader/chemistry_prior.py's protein_descriptor_table
     -- exactly the way PROTEIN_DERIVED_DESCRIPTOR_NAMES already is, so nothing that
@@ -509,7 +509,7 @@ def _protein_descriptor_table_manifest_path(data_dir):
 
 
 def _protein_descriptor_table_sources(data_dir, protein_names):
-    from dataloader.cache_builders.protein_graph_tensor_cache_writer import _source_record
+    from dataloader.cache_builders.protein_graph_tensors_builder import _source_record
 
     root_dir = Path(data_dir).resolve()
     paths = []
@@ -535,7 +535,7 @@ def protein_descriptor_table(data_dir, force=False):
     Dataloader instance (one per (group, seed) job) used to recompute the whole table
     from scratch: ~10ms/protein once imports are warm, ~4s cold on the very first call
     in a process, paid independently by every one of a grid's N processes with nothing
-    shared between them (measured; unlike dataloader/pair_descriptor_cache_reader.py, which at
+    shared between them (measured; unlike dataloader/descriptor_cache_reader.py, which at
     least amortises the lipid side, this had no persistence at all).
 
     Self-persisting rather than a build-it-first-or-fall-back-slow cache: the first
@@ -552,7 +552,7 @@ def protein_descriptor_table(data_dir, force=False):
     The two derived names (aromatic_share_coarse/polar_share_coarse) are computed
     here too, from the raw aromatic_share/apolar_sasa_share this function already
     reads, so a caller can look either kind up by name the same way -- see
-    coarse_share/PROTEIN_DERIVED_DESCRIPTOR_NAMES in dataloader/pair_descriptors.py.
+    coarse_share/PROTEIN_DERIVED_DESCRIPTOR_NAMES in dataloader/descriptors.py.
     """
     import pandas as pd
 
@@ -947,7 +947,7 @@ def acyl_chain_count(smiles):
     each), not just the longest one -- longest_acyl_chain reports one number for a
     diacylglycerol/phospholipid's two esterified tails and a single-tailed lyso lipid
     alike (verified: both report chain=18 for a same-length-tailed pair, see
-    dataloader.pair_descriptors.DESCRIPTOR_CATALOG's "tail_count" entry). None for
+    dataloader.descriptors.DESCRIPTOR_CATALOG's "tail_count" entry). None for
     anything RDKit cannot parse OR with no qualifying carbon at all -- same convention
     longest_acyl_chain uses (see its own docstring).
     """
@@ -1093,7 +1093,7 @@ def _cached_conformer_ensemble(smiles):
     over the SAME 10-conformer ensemble (CONFORMER_SEED is fixed, so it is a pure
     function of `smiles`) -- calling generate_conformer_ensemble independently per
     measure paid the ETKDG embed + MMFF optimize three times over for identical
-    geometry. Measured as most of why data/build_pair_descriptor_cache.py's rebuild
+    geometry. Measured as most of why data/build_descriptor_cache.py's rebuild
     took ~20 minutes on this project's ~1300 unique candidates even after pinning
     OMP_NUM_THREADS=1 (which fixed a separate, smaller BLAS-thread-thrashing cost).
     None (not raised) for anything RDKit cannot parse, matching every other measure
@@ -1192,7 +1192,7 @@ LIPID_SHAPE_DESCRIPTOR_NAMES = (
 )
 
 # The five _MEASURES entries whose per-candidate cost is a real 10-conformer
-# ETKDG+MMFF embed, not microseconds -- dataloader/pair_descriptor_cache_reader.py's build
+# ETKDG+MMFF embed, not microseconds -- dataloader/descriptor_cache_reader.py's build
 # routes exactly these through its process pool (_parallel_measures) rather than
 # computing every measure serially; npr1/npr2 share the SAME cached ensemble
 # radius_of_gyration/asphericity/molecular_volume already pay for, so adding them
@@ -1347,7 +1347,7 @@ def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
     this function's per-row list a different length than chain's, and
     Dataloader._ragged_tensor stacks columns on the assumption they agree.
 
-    `cache`, when given, is a dataloader/pair_descriptor_cache_reader.py load result: a raw
+    `cache`, when given, is a dataloader/descriptor_cache_reader.py load result: a raw
     candidate present in its "raw_to_canonical" skips the canonicalising parse, and a
     canonical key present in its "values" skips `fn`. Same fallback discipline as
     chain_lengths_by_row -- an entry the cache has never seen is computed here exactly
@@ -1387,7 +1387,7 @@ def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
                     # latter's default is evaluated eagerly regardless of the lookup,
                     # which would call fn (an ETKDG embed, for the three lipid_shape
                     # measures) on every candidate even on a cache hit. A cache built
-                    # with lipid_shape=False (dataloader/pair_descriptor_cache_reader.py)
+                    # with lipid_shape=False (dataloader/descriptor_cache_reader.py)
                     # carries every OTHER measure for a SMILES it has seen, just not
                     # those three, so this still must fall back per-measure rather than
                     # KeyError.
@@ -1536,7 +1536,7 @@ def pair_descriptor_value(name, lipid_values, protein_values):
                               (same always-on standardisation as aromatic_contact_min)
                               -- the bottleneck reading of hbond_match.
         tail_elongation_fit : tail_count / max(pocket_elongation, 1.0) -- how many
-                              SEPARATE acyl tails (dataloader.pair_descriptors.
+                              SEPARATE acyl tails (dataloader.descriptors.
                               acyl_chain_count) a pocket's own SHAPE, not its size,
                               can plausibly hold side by side. pocket_elongation is
                               axis0/axis1 of the cavity's atom cloud (tube vs bowl,
@@ -1580,7 +1580,7 @@ def pair_descriptor_value(name, lipid_values, protein_values):
         elongation_shape_match : pocket_elongation * lipid npr1 -- cavity tube-vs-
                               bowl ratio (protein_graph_builder.pocket_shape) against
                               the ligand's own PMI1/PMI3 elongation (npr1, dataloader.
-                              pair_descriptors.npr1) -- both are the SAME physical
+                              descriptors.npr1) -- both are the SAME physical
                               axis (elongated vs compact 3D shape), one for the
                               cavity, one for the ligand. Motivated by the OSBP/ORP
                               literature (files/literature/protein_lipid_binding_family_
@@ -1646,7 +1646,7 @@ PROTEIN_SIDE_NAMES = tuple(
     + POCKET_CHEMISTRY_DESCRIPTOR_NAMES
 )
 # "chain" is longest_acyl_chain, which _MEASURES does not carry (the table writes it as
-# its own column) -- same exception dataloader/pair_descriptor_cache_reader.py's
+# its own column) -- same exception dataloader/descriptor_cache_reader.py's
 # _measure_functions makes, and for the same reason.
 LIPID_SIDE_NAMES = ("chain",) + tuple(_MEASURES)
 
@@ -1694,18 +1694,18 @@ def compute_lipid_descriptor(data_dir, name, isomeric=False):
 
     Reads the interaction table for the candidate set and the existing
     data/lipid_descriptors.csv for the rows to fill -- this writes a column, it does not
-    create the table. Build the table first (data/build_pair_descriptor_cache.py) if it
+    create the table. Build the table first (data/build_descriptor_cache.py) if it
     is missing: that path owns the parallel/incremental machinery a from-scratch build
     needs, and duplicating it here would be a second, divergent builder.
     """
     from dataloader.dataset_source import interaction_csv_path
-    from dataloader.pair_descriptor_cache_reader import lipid_descriptors_csv_path
+    from dataloader.descriptor_cache_reader import lipid_descriptors_csv_path
 
     table_path = lipid_descriptors_csv_path(data_dir)
     if not table_path.exists():
         raise SystemExit(
             f"{table_path} does not exist yet -- build it once with "
-            "`python3 data/build_pair_descriptor_cache.py` before writing one column"
+            "`python3 data/build_descriptor_cache.py` before writing one column"
         )
 
     csv = pandas.read_csv(interaction_csv_path(str(data_dir) + os.sep))
@@ -1751,8 +1751,8 @@ def compute_pair_descriptor(data_dir, name, isomeric=False):
     Cheap arithmetic, never RDKit: both inputs are read from data/lipid_descriptors.csv
     and data/protein_descriptors.csv, the same division build_pair_value_cache uses.
     """
-    from dataloader.pair_descriptor_cache_reader import (
-        load_pair_descriptor_cache,
+    from dataloader.descriptor_cache_reader import (
+        load_lipid_descriptor_cache,
         pair_descriptors_csv_path,
     )
 
@@ -1760,10 +1760,10 @@ def compute_pair_descriptor(data_dir, name, isomeric=False):
     if not table_path.exists():
         raise SystemExit(
             f"{table_path} does not exist yet -- build it once with "
-            "`dataloader.cache_builders.pair_descriptor_cache_writer.build_pair_value_cache` "
+            "`dataloader.cache_builders.descriptor_csv_builder.build_pair_value_cache` "
             "before writing one column"
         )
-    lipid_cache = load_pair_descriptor_cache(Path(data_dir).resolve(), isomeric)
+    lipid_cache = load_lipid_descriptor_cache(Path(data_dir).resolve(), isomeric)
     if lipid_cache is None:
         raise SystemExit(
             "data/lipid_descriptors.csv is missing or stale -- this reads lipid values "

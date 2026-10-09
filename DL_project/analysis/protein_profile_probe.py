@@ -120,7 +120,8 @@ from forward_args import build_forward_args
 
 # The seven families files/reference/marginals_and_cold_split.md reports throughout --
 # ML and OSBP are excluded from --double_coldsplit for having too few positives for a
-# test block (COLDSPLIT_MINIMUM_TEST_POSITIVES in dataloader/sampler.py), so no anchor
+# test block (COLDSPLIT_MINIMUM_TEST_POSITIVES in
+# dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py), so no anchor
 # number exists for them and adding them here would not be comparable to anything.
 FAMILIES = ("CRAL-TRIO", "GLTP", "IP_trans", "LBP_BPI_CETP", "START", "lipocalin", "scp2")
 

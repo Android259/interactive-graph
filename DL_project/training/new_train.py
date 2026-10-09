@@ -61,7 +61,7 @@ from dataloader.sampler import (
 )
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.Dataloader import PLIDataset
-from dataloader.pair_descriptors import descriptor_catalog_only
+from dataloader.descriptors import descriptor_catalog_only
 from dataloader.preassembled_loader import PreassembledLoader, preassembly_mode
 from branch_dynamics import BranchDynamics
 from epoch_loop import endless_batches, train_one_epoch
@@ -89,9 +89,6 @@ def build_model(conf, train_dataset, device):
     # validation/test proteins.
     model = InteractionClassification(conf)
     if conf.rnabang_frozen_node_adapter:
-        model.set_pocket_descriptor_normalization(
-            train_dataset.pocket_descriptor_stats()
-        )
         model.set_rnabang_normalization(
             train_dataset.rnabang_normalization_stats()
         )

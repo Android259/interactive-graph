@@ -47,8 +47,8 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from dataloader.chemistry_prior import species_similarity  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS  # noqa: E402
 from dataloader.sampler import (  # noqa: E402
-    LIPID_COLDSPLIT_SETS,
     split_and_sample_lipid_class_balanced_interactions,
     split_and_sample_protein_balanced_interactions,
 )

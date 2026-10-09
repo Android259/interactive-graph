@@ -11,7 +11,8 @@ how steep it is.
 
 Distance is measured exactly as the report already measures it for the existing blocks
 (`analysis/coldsplit_geometry.isolation`, the same number quoted in
-dataloader/sampler.py's LIPID_COLDSPLIT_SETS comment):
+dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py's LIPID_COLDSPLIT_SETS
+comment):
 
     isolation = mean over the block's distinct lipid structures of the highest
                 Tanimoto similarity to any structure that stayed in training
@@ -47,7 +48,8 @@ TWO axes can go on x, and they are the same statistic read on the two partners:
 
 The protein reading is built the way the Kron-RLS protein kernel is built (standardized
 pocket descriptors, RBF), over the descriptor set the RUN itself named in
---protein_descriptors/--pocket_descriptor_names where it named one. It is 1.0 by
+--protein_descriptors (or, for runs predating its removal, --pocket_descriptor_names)
+where it named one. It is 1.0 by
 construction on every lipid-side split -- no protein is held out there -- so it is the
 axis for --excluded_groups/--cold_split labels, where the LIPID axis in turn crushes six
 of the seven blocks into 0.78-0.86 and cannot separate them.
@@ -117,7 +119,7 @@ from analysis.coldsplit_geometry import (  # noqa: E402
 )
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.lipid_classes import lipid_class_series  # noqa: E402
-from dataloader.lipid_isolation_blocks import LIPID_ISOLATION_BLOCKS  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_isolation_blocks import LIPID_ISOLATION_BLOCKS  # noqa: E402
 from dataloader.sampler import (  # noqa: E402
     LIPID_COLDSPLIT_SETS,
     lipid_classes_for_holdout,
@@ -127,8 +129,8 @@ from dataloader.sampler import (  # noqa: E402
     split_and_sample_lipid_class_balanced_interactions,
     split_and_sample_protein_balanced_interactions,
 )
-from dataloader.lipid_subclass_blocks import subclass_block_species  # noqa: E402
-from dataloader.tanimoto_compact_reader import load_compact  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_subclass_blocks import subclass_block_species  # noqa: E402
+from dataloader.tensors_reading.tanimoto_compact_tensors_reader import load_compact  # noqa: E402
 
 # Pocket descriptors the protein-side similarity may be computed over. The Kron-RLS
 # protein kernel's own catalog (POCKET_ALL_NAMES) plus the three lambda_sqrt shape
@@ -141,7 +143,7 @@ try:  # pragma: no cover - a metrics-only machine may lack rdkit/scipy
         POCKET_ALL_NAMES,
         resolve_protein_feature_subset,
     )
-    from dataloader.pair_descriptors import PROTEIN_DESCRIPTOR_NAMES
+    from dataloader.descriptors import PROTEIN_DESCRIPTOR_NAMES
 
     PROTEIN_KERNEL_NAMES = frozenset(POCKET_ALL_NAMES) | frozenset(PROTEIN_DESCRIPTOR_NAMES)
 except Exception:  # pragma: no cover
@@ -302,12 +304,13 @@ def spec_from_row(row):
 def protein_descriptor_names(row):
     """The pocket descriptors the PROTEIN similarity reading is computed over.
 
-    The run's own set when it names one -- --protein_descriptors (the node broadcast) or
-    --pocket_descriptor_names (the fixed cavity vector's restriction) -- so the
-    similarity is computed in the same description of a pocket the model was given.
-    Runs that name neither (every --descriptors_head label, and every run older than
-    those flags) fall back to DEFAULT_PROTEIN_DESCRIPTORS, and the figure says which was
-    used.
+    The run's own set when it names one -- --protein_descriptors (the node broadcast),
+    or --pocket_descriptor_names for rows written before that flag and its raw
+    per-node broadcast were removed -- so the similarity is computed in the same
+    description of a pocket the model was given. The second column is read for
+    historical rows only; nothing writes it now. Runs that name neither (every
+    --descriptors_head label, and every run older than those flags) fall back to
+    DEFAULT_PROTEIN_DESCRIPTORS, and the figure says which was used.
 
     Only the PROTEIN-side names are kept: --protein_descriptors is validated against the
     whole DESCRIPTOR_CATALOG, so a label is free to broadcast lipid names through it too,
@@ -328,11 +331,11 @@ def held_lipid_species(spec):
 
     The other axis names chemistry by head-group class; this one names it by species,
     because a block chosen for its distance from training is not a class (see
-    dataloader/lipid_isolation_blocks.py). `cold_chemistry` is where the two meet, the
+    dataloader/splitting_on_blocks/lipid_isolation_blocks.py). `cold_chemistry` is where the two meet, the
     same way `Dataloader._cold_chemistry` joins them for the run itself.
     """
     if spec.lipid_subclass:
-        # The third naming of the same axis (dataloader/lipid_subclass_blocks.py): one
+        # The third naming of the same axis (dataloader/splitting_on_blocks/lipid_subclass_blocks.py): one
         # or more Titeca-et-al. subclasses, "+"-joined. Without this branch a
         # --lipid_subclass run reconstructs as a RANDOM split -- silently, with an x
         # value belonging to a split the run never used.

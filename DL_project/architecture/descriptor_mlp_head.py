@@ -4,7 +4,7 @@ from .mlp_utils import build_mlp
 
 
 class DescriptorMLPHead(torch.nn.Module):
-    """Plain MLP over an ARBITRARY, caller-named subset of dataloader.pair_descriptors.
+    """Plain MLP over an ARBITRARY, caller-named subset of dataloader.descriptors.
     DESCRIPTOR_CATALOG -- same token selection as NamedDescriptorHead (architecture/
     named_descriptor_head.py), but no per-token embedding or self-attention: every
     requested descriptor's own (already-standardized) scalar value is read directly as
@@ -25,10 +25,10 @@ class DescriptorMLPHead(torch.nn.Module):
 
     def __init__(self, config, token_names, catalog_order, act_fn=None):
         """`token_names`: this head's own tokens (already-canonical, e.g. from
-        dataloader.pair_descriptors.parse_descriptor_list(config.descriptor_names)).
+        dataloader.descriptors.parse_descriptor_list(config.descriptor_names)).
         `catalog_order`: the full, shared column order dataloader/Dataloader.py's
         descriptor_catalog_input tensor is stacked in for this config
-        (dataloader.pair_descriptors.full_catalog_order).
+        (dataloader.descriptors.full_catalog_order).
         """
         super().__init__()
         if not token_names:

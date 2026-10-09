@@ -5,7 +5,7 @@
 # Each candidate SMILES (same rule as build_tanimoto_compact.collect: SmileGlobal
 # unless it is "0", candidates split on ";", canonicalized, deduplicated per row)
 # has its acyl chains cut off, keeping only the head group. A "tail" is exactly
-# what pair_descriptors._qualifying_tails already calls one: a connected run of
+# what descriptors._qualifying_tails already calls one: a connected run of
 # >=4 non-aromatic, non-ring carbons. Its outermost anchor atom -- the one bonded
 # to something outside that carbon-only run, typically the ester/amide carbonyl
 # carbon -- stays with the head group; only the carbons further down the chain
@@ -18,7 +18,7 @@
 # structure (here, distinct head group) plus the index needed to expand back to
 # per-candidate similarities, instead of one row per candidate instance.
 #
-# Output (same layout/dtypes as dataloader/tanimoto_compact_reader.py's files, under a
+# Output (same layout/dtypes as dataloader/tensors_reading/tanimoto_compact_tensors_reader.py's files, under a
 # separate prefix so this is never confused with or read as whole-molecule data):
 #   Tanimoto_headgroup_compact_matrix_uint8.npy      head groups x head groups
 #   Tanimoto_headgroup_compact_structure_index.npy   candidate -> head-group row

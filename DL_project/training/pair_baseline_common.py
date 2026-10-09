@@ -23,15 +23,17 @@ from preprocessing.compute_descriptors import hbond_capacity as _hbond_capacity
 from preprocessing.compute_descriptors import heavy_atom_count as _heavy_atom_count
 from preprocessing.compute_descriptors import longest_acyl_chain as _longest_acyl_chain
 from preprocessing.compute_descriptors import unsaturation_count as _unsaturation_count
-from dataloader.pair_descriptors import LIPID_DESCRIPTOR_NAMES
-from dataloader.pair_descriptors import PROTEIN_DERIVED_DESCRIPTOR_NAMES
-from dataloader.pair_descriptors import PROTEIN_DESCRIPTOR_NAMES
-from dataloader.pair_descriptor_cache_reader import load_pair_descriptor_cache
-from dataloader.sampler import (
+from dataloader.descriptors import LIPID_DESCRIPTOR_NAMES
+from dataloader.descriptors import PROTEIN_DERIVED_DESCRIPTOR_NAMES
+from dataloader.descriptors import PROTEIN_DESCRIPTOR_NAMES
+from dataloader.descriptor_cache_reader import load_lipid_descriptor_cache
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import (
     LIPID_COLDSPLIT_SETS,
+    lipid_classes_for_holdout,
+)
+from dataloader.sampler import (
     class_level_positive_labels,
     lipid_class_series,
-    lipid_classes_for_holdout,
     sample_protein_balanced_negatives,
 )
 from preprocessing.audit_lipid_identity_by_smiles import features as smiles_features
@@ -86,7 +88,7 @@ POCKET_CHEMISTRY_NAMES = (
 )
 POCKET23_NAMES = POCKET13_NAMES + POCKET_CHEMISTRY_NAMES
 
-# The four names dataloader/pair_descriptors.py's PROTEIN_DESCRIPTOR_NAMES has beyond
+# The four names dataloader/descriptors.py's PROTEIN_DESCRIPTOR_NAMES has beyond
 # POCKET23_NAMES -- e.g. protunion14 (protbind6's 13 plus protgeom8's pocket_extent)
 # is NOT a subset of pocket23 without these. Exact same formulas as dataloader/
 # protein_graph_builder.py's pocket_descriptor(), computed here from the same
@@ -249,7 +251,7 @@ def _headgroup_isolation_units(table: pd.DataFrame, context: str):
     either -- there is no isomeric variant of this artifact to disambiguate against).
     """
     from analysis.lipid_block_search import Units
-    from dataloader.tanimoto_compact_reader import CompactTanimoto
+    from dataloader.tensors_reading.tanimoto_compact_tensors_reader import CompactTanimoto
 
     cache_dir = PROJECT_ROOT / "data" / "cache"
     matrix_path = cache_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy"
@@ -411,7 +413,7 @@ def split_held_pairs(
 
 
 def _isolation_key(target) -> str:
-    """dataloader.lipid_isolation_blocks.LIPID_ISOLATION_BLOCKS' own key format --
+    """dataloader.splitting_on_blocks.lipid_isolation_blocks.LIPID_ISOLATION_BLOCKS' own key format --
     "%.2f" of the requested isolation, e.g. "0.8"/"0.80"/0.8 all normalize to "0.80".
     """
     return f"{float(target):.2f}"
@@ -438,7 +440,7 @@ def _lipid_isolation_units(table: pd.DataFrame, context: str):
     missing/stale compact matrix.
     """
     from analysis.lipid_block_search import Units
-    from dataloader.tanimoto_compact_reader import load_compact
+    from dataloader.tensors_reading.tanimoto_compact_tensors_reader import load_compact
 
     compact = load_compact(str(PROJECT_ROOT / "data"))
     if compact is None or len(np.unique(compact.row_ids)) != len(table):
@@ -479,7 +481,7 @@ def generate_lipid_isolation_groups(
 
     Each block's key is its own ACHIEVED isolation ("%.2f", extra decimal digits
     added only on a genuine collision with a DIFFERENT existing/sibling block).
-    Persisted into dataloader/lipid_isolation_blocks.py via analysis.
+    Persisted into dataloader/splitting_on_blocks/lipid_isolation_blocks.py via analysis.
     lipid_block_search.emit_module, same reviewable-in-a-diff reasoning as
     resolve_lipid_isolation_species. Returns the keys closest-to-target-first, ready
     to use as --families.
@@ -487,7 +489,7 @@ def generate_lipid_isolation_groups(
     import importlib
 
     from analysis.lipid_block_search import describe, emit_module, search
-    import dataloader.lipid_isolation_blocks as isolation_blocks
+    import dataloader.splitting_on_blocks.lipid_isolation_blocks as isolation_blocks
 
     units = _lipid_isolation_units(table, f"--families_number={count}")
     best, _ = search(
@@ -553,7 +555,7 @@ def generate_lipid_isolation_groups(
     print(
         f"--families_number={count}: generated {len(keys)} species block(s), not "
         f"forced disjoint ({', '.join(keys)}) -- written to "
-        "dataloader/lipid_isolation_blocks.py"
+        "dataloader/splitting_on_blocks/lipid_isolation_blocks.py"
     )
     return keys
 
@@ -562,9 +564,9 @@ def resolve_lipid_isolation_species(target: str, table: pd.DataFrame) -> tuple[s
     """Species set for one --lipid_coldsplit=<target> block, keyed by a REQUESTED
     Tanimoto isolation level (e.g. "0.8") rather than a named LIPID_COLDSPLIT_SETS
     chemistry -- the --lipid_isolation axis the network itself already supports
-    (dataloader/Dataloader.py, dataloader/lipid_isolation_blocks.py).
+    (dataloader/Dataloader.py, dataloader/splitting_on_blocks/lipid_isolation_blocks.py).
 
-    Looks up dataloader.lipid_isolation_blocks.LIPID_ISOLATION_BLOCKS first, trying
+    Looks up dataloader.splitting_on_blocks.lipid_isolation_blocks.LIPID_ISOLATION_BLOCKS first, trying
     `target` VERBATIM (as a string) before falling back to _isolation_key(target)'s
     2-decimal rounding: generate_lipid_isolation_groups disambiguates a same-2-
     decimal collision between two DIFFERENT sibling blocks with extra digits
@@ -575,14 +577,14 @@ def resolve_lipid_isolation_species(target: str, table: pd.DataFrame) -> tuple[s
     that does not have EITHER form yet is generated AND PERSISTED by calling
     analysis.lipid_block_search's own species-granularity search in-process (the
     same algorithm a hand-run `--emit_module` uses) and writing the result into
-    dataloader/lipid_isolation_blocks.py under its _isolation_key(...) form (e.g.
+    dataloader/splitting_on_blocks/lipid_isolation_blocks.py under its _isolation_key(...) form (e.g.
     "0.80"), so it stays reviewable in a git diff and fixed for every later run that
     asks for the same target -- exactly the guarantee that module's own docstring
     says a silently-regenerated-on-a-whim file would break. Re-imports the module
     after writing so this process sees its own freshly written block without a
     restart.
     """
-    import dataloader.lipid_isolation_blocks as isolation_blocks
+    import dataloader.splitting_on_blocks.lipid_isolation_blocks as isolation_blocks
 
     species = isolation_blocks.LIPID_ISOLATION_BLOCKS.get(str(target))
     key = _isolation_key(target)
@@ -606,7 +608,7 @@ def resolve_lipid_isolation_species(target: str, table: pd.DataFrame) -> tuple[s
             "default 40-140 positives window -- generate one by hand with a wider "
             "--min_positives/--max_positives via analysis/lipid_block_search.py "
             f"--targets {key} --granularity species --emit_module "
-            "dataloader/lipid_isolation_blocks.py"
+            "dataloader/splitting_on_blocks/lipid_isolation_blocks.py"
         )
     _, value, block, _ = best[0]
     report = describe(units, block)
@@ -614,7 +616,7 @@ def resolve_lipid_isolation_species(target: str, table: pd.DataFrame) -> tuple[s
         f"--lipid_coldsplit={target}: no existing LIPID_ISOLATION_BLOCKS entry, "
         f"generated one now (isolation {value:.3f} vs requested {key}, "
         f"{report['positives']} positives, {len(report['units'])} species) -- "
-        "writing it to dataloader/lipid_isolation_blocks.py for reuse"
+        "writing it to dataloader/splitting_on_blocks/lipid_isolation_blocks.py for reuse"
     )
     search_args = argparse.Namespace(
         granularity="species", targets=key, family="", min_positives=40, max_positives=140,
@@ -932,7 +934,7 @@ def _cavity_values(pocket_path: Path) -> tuple[float, float]:
     Voronoi cell of each LINING RESIDUE -- protein material, not empty space -- and
     since a residue's cell varies only ~21% around 198 A^3, summing it over the pocket
     tracks the residue count at rho=0.993 (see PROTEIN_DESCRIPTOR_NAMES' own comment in
-    dataloader/pair_descriptors.py, which is why pocket_volume_per_sasa replaced it).
+    dataloader/descriptors.py, which is why pocket_volume_per_sasa replaced it).
     A convex hull of the pocket atoms is no better on its own -- measured here across
     all 35 proteins, hull volume still correlates 0.972 with residue count.
 
@@ -1103,12 +1105,12 @@ def _fallback_nan(value: float | None) -> float:
 
 
 def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> dict[str, float]:
-    """`npr_cache`, when given, is a dataloader.pair_descriptor_cache_reader load result
+    """`npr_cache`, when given, is a dataloader.descriptor_cache_reader load result
     ({"raw_to_canonical", "values", ...}) -- npr1/npr2 are looked up there first (a
     disk-cached value skips the 10-conformer ETKDG+MMFF embed entirely), falling
-    back to dataloader.pair_descriptors.npr1/npr2 (which still hits that module's own
+    back to dataloader.descriptors.npr1/npr2 (which still hits that module's own
     in-process lru_cache on repeat calls within the same run) exactly as without a
-    cache. Same fallback discipline as dataloader.pair_descriptors.descriptor_values_
+    cache. Same fallback discipline as dataloader.descriptors.descriptor_values_
     by_row's own `cache` parameter.
     """
     parsed = smiles_features(smiles)
@@ -1182,11 +1184,11 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
             npr2_value = _compute_npr2(smiles)
             npr1_value = np.nan if npr1_value is None else npr1_value
             npr2_value = np.nan if npr2_value is None else npr2_value
-        # data/build_pair_descriptor_cache.py's own cache already stores these four
+        # data/build_descriptor_cache.py's own cache already stores these four
         # (built specifically "for --pair_descriptors'/--two_pair_descriptors_paths'
         # shared per-candidate ... base values (chain/unsaturation/hbond/heavy ...)"
         # -- see that script's module docstring) under "chain"/"unsaturation"/
-        # "hbond"/"heavy_atoms" (dataloader/pair_descriptor_cache_reader.py's own
+        # "hbond"/"heavy_atoms" (dataloader/descriptor_cache_reader.py's own
         # build_pair_value_cache renames "heavy_atoms" -> "heavy" at its own call
         # site; same rename applied here). A cache hit is a dict lookup instead of
         # re-parsing the SMILES with RDKit -- the same discipline npr1/npr2 already
@@ -1237,7 +1239,7 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
         "ring_count": ring_count,
         "npr1": npr1_value,
         "npr2": npr2_value,
-        # dataloader.pair_descriptors.LIPID_DESCRIPTOR_NAMES' own short aliases
+        # dataloader.descriptors.LIPID_DESCRIPTOR_NAMES' own short aliases
         # (--descriptor_names=chain,unsaturation,hbond,heavy in a real arg file) --
         # the SAME functions dataloader.chemistry_prior._lipid_descriptor_table
         # calls for the network's own null-model/PairDescriptorHead path (cache hit
@@ -1265,13 +1267,13 @@ def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) 
     uses ChainFragments when present.  Thus a candidate enumeration cannot turn into an
     arbitrary first-isomer choice.
 
-    `npr_cache`: a dataloader.pair_descriptor_cache_reader.load_pair_descriptor_cache result,
+    `npr_cache`: a dataloader.descriptor_cache_reader.load_lipid_descriptor_cache result,
     or None to auto-load the project's own on-disk cache (data/pair_descriptor_cache_
-    deterministic_<fingerprint>.json) -- the SAME cache dataloader/pair_descriptors.py's
+    deterministic_<fingerprint>.json) -- the SAME cache dataloader/descriptors.py's
     network path reads, so npr1/npr2/chain/unsaturation/hbond/heavy (the only fields
     this module does not always compute itself from scratch) are a dict lookup here
     too instead of a fresh ETKDG+MMFF embed or RDKit reparse, once
-    `data/build_pair_descriptor_cache.py` has been run since those were added. None
+    `data/build_descriptor_cache.py` has been run since those were added. None
     (not an error) when no current cache exists -- _candidate_explicit_features falls
     back to computing them directly, exactly as before this cache was wired in.
 
@@ -1289,7 +1291,7 @@ def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) 
     if cached is not None:
         return cached
     if npr_cache is None:
-        npr_cache = load_pair_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
+        npr_cache = load_lipid_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
     records = []
     classes = csv_classes(table)
     species_rows = table.assign(_lipid_class=classes).drop_duplicates("FullIdentityOfLipid")
@@ -1516,8 +1518,8 @@ def build_protein_kernel(
       (any subset of POCKET_ALL_NAMES -- pocket23 plus dataloader/pair_descriptors.
       py's PROTEIN_DESCRIPTOR_NAMES' four further promotions: ev28_q10,
       aromatic_share_rim, hydropathy_mean, ev14_q10) -- use this to match a network
-      run's own `--pocket_descriptor_names`/`--protein_descriptors` exactly, e.g.
-      the project's "protgeom8" or full "protunion14" set.
+      run's own `--protein_descriptors` exactly, e.g. the project's "protgeom8" or
+      full "protunion14" set.
     - "custom_features": any vectors of your own (`features_path`, see
       `load_feature_table`), turned into a kernel via `kernel_type`.
     - "custom_kernel": a precomputed similarity/kernel matrix of your own
@@ -1750,7 +1752,7 @@ def resolve_protein_feature_subset(
     subset on the lipid side.
 
     Resolution order: protein_pocket_features' own (partial) columns (POCKET_ALL_
-    NAMES) first; anything not there but in dataloader.pair_descriptors.
+    NAMES) first; anything not there but in dataloader.descriptors.
     PROTEIN_DESCRIPTOR_NAMES/PROTEIN_DERIVED_DESCRIPTOR_NAMES (e.g. the three
     *_lambda_sqrt shape variants) from _protein_catalog_features instead of being
     rejected. Raises ValueError on any other unknown name.
@@ -1774,7 +1776,7 @@ _LIPID_DESCRIPTOR_TABLE_CACHE: dict[int, dict] = {}
 
 
 def _lipid_catalog_features(table: pd.DataFrame, names: list[str]) -> pd.DataFrame:
-    """`names` (a subset of dataloader.pair_descriptors.LIPID_DESCRIPTOR_NAMES) as a
+    """`names` (a subset of dataloader.descriptors.LIPID_DESCRIPTOR_NAMES) as a
     per-species DataFrame, read straight from dataloader.chemistry_prior.
     _lipid_descriptor_table -- the network's own cached, mean-over-candidates
     per-species table for the FULL descriptor catalog -- rather than reimplementing
@@ -1805,7 +1807,7 @@ def resolve_lipid_feature_subset(table: pd.DataFrame, names: list[str]) -> pd.Da
     name resolves to.
 
     Resolution order: explicit_lipid_features' own (partial, median-aggregated)
-    columns first; anything not there but IN dataloader.pair_descriptors.
+    columns first; anything not there but IN dataloader.descriptors.
     LIPID_DESCRIPTOR_NAMES (the network's own descriptor catalog -- e.g.
     experimental_lipid_volume, the tail_* measures) from _lipid_catalog_features
     instead of being rejected; the special name "molformer" (the network's own raw
@@ -1850,7 +1852,7 @@ def species_headgroup_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarr
     Same max-reduction-over-candidate-structures scheme as species_tanimoto_
     similarity, over preprocessing/build_tanimoto_headgroup.py's artefacts instead
     of build_tanimoto_compact.py's: every candidate SMILES has its qualifying acyl
-    tails removed (dataloader.pair_descriptors._qualifying_tails' rule) before the
+    tails removed (dataloader.descriptors._qualifying_tails' rule) before the
     Tanimoto matrix is built, so two species differing only in chain length/
     unsaturation collapse onto the same head-group fingerprint. Answers "does
     headgroup chemistry alone carry the signal", the direct chemical counterpart

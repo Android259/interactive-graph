@@ -70,7 +70,7 @@ pooling rows across every seed that held the block out.
 
 MODE `species` -- subclass composition of --lipid_species_coldsplit's valid/test
 blocks, per seed. That split holds out a seeded, structure-disjoint set of individual
-lipid SPECIES (dataloader/lipid_species_blocks.py), not named subclasses the way
+lipid SPECIES (dataloader/splitting_on_blocks/lipid_species_blocks.py), not named subclasses the way
 --lipid_coldsplit/--lipid_subclass do, so which subclasses the draw lands in valid vs
 test, how much a subclass straddles both, and how consistent the draw is across the
 five seeds a grid runs are not otherwise reported anywhere. Two things this gets right,
@@ -121,12 +121,12 @@ if str(PROJECT_ROOT / "training") not in sys.path:
 
 import training.pair_baseline_common as pbc  # noqa: E402
 
-from dataloader.lipid_subclass_blocks import article_subclass_species  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_subclass_blocks import article_subclass_species  # noqa: E402
 
 # The nine blocks results/tables/cron_test_metrics/cron_fig3_lipidgroups.txt was actually
 # run over -- the singletons big enough to stand alone, plus three merges of subclasses
 # too small to be their own block. Kept here as the one spelling, so the Kron-RLS run,
-# the network's own --lipid_subclass grid (dataloader/lipid_subclass_blocks.py) and this
+# the network's own --lipid_subclass grid (dataloader/splitting_on_blocks/lipid_subclass_blocks.py) and this
 # report all name the same nine things the same way.
 FIG3_BLOCKS = (
     "PC",
@@ -508,7 +508,7 @@ def report_seed(seed, label, base_lines, full_csv, subclass_of):
     from reproducibility import seed_everything
 
     from dataloader.Dataloader import PLIDataset
-    from dataloader.lipid_species_blocks import species_coldsplit_block
+    from dataloader.splitting_on_blocks.lipid_species_blocks import species_coldsplit_block
 
     argv = ["lipid_subclass_report"] + base_lines + [
         f"--seed={seed}", "--num_workers=0",

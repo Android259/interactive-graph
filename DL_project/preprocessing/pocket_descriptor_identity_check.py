@@ -42,7 +42,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.protein_graph_builder import POCKET_DESCRIPTOR_NAMES
+from dataloader.graphs_builders.protein_graph_builder import POCKET_DESCRIPTOR_NAMES
 from preprocessing.compute_descriptors import KYTE_DOOLITTLE, pocket_descriptor
 from dataloader.tensors_reading.protein_graph_tensors_reader import _pocket_tensor  # noqa: E402
 
@@ -59,7 +59,7 @@ LEGACY_NAMES = (
 
 
 def legacy_descriptor(vertices, pocket):
-    """The pre-rewrite 14 numbers, reproduced from dataloader/protein_graph_builder.py."""
+    """The pre-rewrite 14 numbers, reproduced from dataloader/graphs_builders/protein_graph_builder.py."""
     mask = pocket.bool().numpy()
     site = vertices[mask]
     hydropathy = numpy.asarray(KYTE_DOOLITTLE)[site["residue_type"].to_numpy(dtype=int)]

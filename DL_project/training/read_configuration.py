@@ -3,12 +3,11 @@ from dataclasses import dataclass, field
 
 
 # Kept as a literal, not imported, for the same reason POCKET_DESCRIPTOR_COUNT below
-# is: dataloader/protein_graph_builder.py pulls in torch/torch_geometric, which would
+# is: dataloader/graphs_builders/protein_graph_builder.py pulls in torch/torch_geometric, which would
 # then land on every consumer of ModelConfig, including analysis scripts that only
-# want to read a run's settings. Source of truth is dataloader/pair_descriptors.py's
+# want to read a run's settings. Source of truth is dataloader/descriptors.py's
 # PROTEIN_DESCRIPTOR_NAMES -- change the order or membership there and change this in
-# the same commit (files/reference/pocket_shape_descriptors.md too); --pocket_descriptor_names
-# below validates against this copy.
+# the same commit (files/reference/pocket_shape_descriptors.md too).
 POCKET_DESCRIPTOR_NAMES = (
     "pocket_residue_share", "pocket_sasa_share", "pocket_volume_per_sasa",
     "pocket_extent", "pocket_elongation", "pocket_flatness", "ev14_q50",
@@ -17,9 +16,9 @@ POCKET_DESCRIPTOR_NAMES = (
     "hydropathy_mean", "ev14_q10", "pocket_extent_lambda_sqrt",
     "pocket_elongation_lambda_sqrt", "pocket_flatness_lambda_sqrt",
 )
-# Width of the cavity descriptor --pocket_descriptors appends to the fused pair vector.
-# Checked in dataloader/protein_graph_builder.py against the descriptor it actually
-# builds, so the two cannot drift silently.
+# Width of the per-protein cavity descriptor tensor. Checked in
+# dataloader/graphs_builders/protein_graph_builder.py against the descriptor it
+# actually builds, so the two cannot drift silently.
 POCKET_DESCRIPTOR_COUNT = len(POCKET_DESCRIPTOR_NAMES)
 
 POOL_TYPES = ("add", "max", "mean", "add_max", "gem")
@@ -148,7 +147,8 @@ EXCLUDED_GROUP_ALIASES.update({
 })
 
 # Names of the lipid-class sets --lipid_coldsplit accepts. The classes themselves live
-# in LIPID_COLDSPLIT_SETS (dataloader/sampler.py, which also records how each set was
+# in LIPID_COLDSPLIT_SETS (dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py,
+# which also records how each set was
 # chosen and how isolated it is); only the names are repeated here, so that a typo fails
 # at parse time instead of after a job reaches a GPU. PLIDataset checks the two agree.
 LIPID_COLDSPLIT_NAMES = ("sphingolipids", "phosphorus_free", "choline", "anionic")
@@ -158,7 +158,7 @@ LIPID_COLDSPLIT_NAMES = ("sphingolipids", "phosphorus_free", "choline", "anionic
 # rather than repeated here: that file IS the list, and a second copy is how the two
 # would drift (which is exactly what the comment above LIPID_COLDSPLIT_NAMES guards
 # against for the class sets, where the names and the classes live in two files).
-from dataloader.lipid_isolation_blocks import (  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_isolation_blocks import (  # noqa: E402
     LIPID_ISOLATION_BLOCKS,
 )
 
@@ -184,9 +184,9 @@ def read_lipid_subclass(value):
     Validated (and spelled canonically) at parse time rather than in the loader for the
     same reason read_lipid_coldsplit is: a typo in a subclass name must fail before a
     job reaches a GPU, not four hours later. Membership itself lives in
-    data/lipid_article_classification.json -- see dataloader/lipid_subclass_blocks.py.
+    data/lipid_article_classification.json -- see dataloader/splitting_on_blocks/lipid_subclass_blocks.py.
     """
-    from dataloader.lipid_subclass_blocks import canonical_subclass_spec
+    from dataloader.splitting_on_blocks.lipid_subclass_blocks import canonical_subclass_spec
 
     return canonical_subclass_spec(value)
 
@@ -500,7 +500,7 @@ class ModelConfig:
     compat_input_parts: str = "chain,clash"
     compat_extent_bins: int = 4
     # Descriptors from Lipovsky et al. (Nature 2025, s41586-025-10040-y), the paper
-    # behind this project's LTP-lipid measurements (dataloader/pair_descriptors.py):
+    # behind this project's LTP-lipid measurements (dataloader/descriptors.py):
     # chain length (reusing pocket_lipid_compatibility.chain_lengths_by_row),
     # unsaturation count, an H-bond-capacity proxy, and an occupancy term (heavy-atom
     # count vs the SAME coarsened pocket_extent --compatibility_split_input's "clash"
@@ -511,9 +511,11 @@ class ModelConfig:
     # findings, since this project has no docking pipeline to place them properly),
     # runs one self-attention layer over the token set, and mean-pools it to one
     # vector concatenated into the fused representation (Final_Layer), the same slot
-    # --compatibility_input uses. Requires --pocket_descriptors (the aromatic_share /
-    # apolar_sasa_share source) and is incompatible with --bilinear_fusion for the
-    # same reason --compatibility_input is (see validate()).
+    # --compatibility_input uses. Without --descriptor_names this builds the
+    # fixed-token PairDescriptorHead, whose aromatic/H-bond pair terms read
+    # aromatic_share/apolar_sasa_share off the per-protein pocket_descriptor tensor --
+    # which is why needs_pocket_descriptor derives from this flag (see validate()).
+    # Incompatible with --bilinear_fusion for the same reason --compatibility_input is.
     pair_descriptors: bool = False
     # Whether aromatic_share/polar_share (pocket_descriptor-derived, protein-only)
     # are among the head's tokens. Default True, matching every run so far. Set
@@ -640,15 +642,15 @@ class ModelConfig:
     # ablation of the full one: a checkpoint trained under --descriptors_head has a
     # different state_dict than one trained without it and the two cannot load into
     # each other. Implies --pair_descriptors (validate() sets it, so there is no
-    # separate flag to remember to pass alongside this one) -- which in turn requires
-    # --pocket_descriptors, unless --descriptor_names is also set (NamedDescriptorHead
-    # reads descriptor_catalog_input by name instead, nothing to read off the pocket
-    # descriptor tensor there). Everything that assumes the full architecture's
+    # separate flag to remember to pass alongside this one) -- which in turn attaches
+    # the pocket_descriptor tensor, unless --descriptor_names is also set
+    # (NamedDescriptorHead reads descriptor_catalog_input by name instead, nothing to
+    # read off the pocket descriptor tensor there). Everything that assumes the full architecture's
     # modules is rejected in combination (see validate()) since Final_Layer would not
     # have built them.
     descriptors_head: bool = False
     # --descriptor_names: names an arbitrary, comma-separated subset of the full
-    # descriptor catalog (dataloader/pair_descriptors.py's DESCRIPTOR_CATALOG -- same
+    # descriptor catalog (dataloader/descriptors.py's DESCRIPTOR_CATALOG -- same
     # names, same <name>_coarse=<spec> syntax, same parse_descriptor_list/
     # resolve_requested_tokens machinery --good_descriptors/--bad_descriptors already
     # use below) to REPLACE PairDescriptorHead's fixed DATALOADER_TOKENS set with,
@@ -671,8 +673,8 @@ class ModelConfig:
     # validate()). Instead of one fixed token set (PairDescriptorHead's own
     # DATALOADER_TOKENS), --good_descriptors and --bad_descriptors each name an
     # arbitrary, independent, comma-separated subset of the full descriptor catalog
-    # (dataloader/pair_descriptors.py's DESCRIPTOR_CATALOG -- every
-    # pair_descriptors.py name: LIPID_DESCRIPTOR_NAMES, PROTEIN_DESCRIPTOR_NAMES,
+    # (dataloader/descriptors.py's DESCRIPTOR_CATALOG -- every
+    # descriptors.py name: LIPID_DESCRIPTOR_NAMES, PROTEIN_DESCRIPTOR_NAMES,
     # PROTEIN_DERIVED_DESCRIPTOR_NAMES, PAIR_DESCRIPTOR_NAMES -- plus "extent",
     # PairDescriptorHead's own train-fit-coarsened, leak-safe pocket_extent). Each
     # list builds its OWN NamedDescriptorHead: its own token embeddings, its own
@@ -709,7 +711,7 @@ class ModelConfig:
     # two_pair_descriptors_paths above (mutually exclusive, see validate()). Two named
     # groups, --geometric_descriptors and --chemical_descriptors (same comma-separated
     # DESCRIPTOR_CATALOG syntax as good_descriptors/bad_descriptors), are each split
-    # into a lipid-side and a protein-side token list (dataloader.pair_descriptors.
+    # into a lipid-side and a protein-side token list (dataloader.descriptors.
     # split_names_by_side -- rejects PAIR_DESCRIPTOR_NAMES entries, which already
     # combine both sides and have none left to assign) and run through
     # architecture.thematic_descriptor_head.ThematicDescriptorHead: a small MLP per
@@ -805,11 +807,10 @@ class ModelConfig:
     # Feeds the SAME protein-only/lipid-only tokens --pair_descriptors' self-attention
     # head reads (aromatic_share, polar_share, and coarsened extent when
     # --pair_descriptor_extent is on, from POCKET_DESCRIPTOR_NAMES for protein; chain,
-    # unsaturation, hbond, heavy from dataloader/pair_descriptors.py for lipid -- NOT
+    # unsaturation, hbond, heavy from dataloader/descriptors.py for lipid -- NOT
     # occupancy, which is a pair term belonging to neither side) into the FULL model's
     # own encoders too: standardised and broadcast onto every protein node
-    # (architecture/protein_encoder.py, mirroring expand_pocket_descriptor's
-    # broadcast-not-reuse pattern) and onto every lipid node
+    # (architecture/protein_encoder.py's expand_pair_descriptors) and onto every lipid node
     # (architecture/lipid_encoder.py, which has no analogous mechanism before this).
     # Independent of --pair_descriptors -- both may be on at once, one feeding the
     # encoders early, the other still concatenating into Final_Layer's common_out
@@ -901,7 +902,7 @@ class ModelConfig:
     # group is not visible AS a ring, only as more C and O. Layers after the first
     # read the concatenated filter channels, not the one-hot.
     deepclip_conv_layers: int = 1
-    # Named DESCRIPTOR_CATALOG entries (dataloader/pair_descriptors.py) broadcast
+    # Named DESCRIPTOR_CATALOG entries (dataloader/descriptors.py) broadcast
     # onto every character position as extra input channels beside the one-hot.
     # The direct route to the same head-group question the stacked/wide filters
     # attack through the sequence: instead of hoping a window recognises a ring,
@@ -940,7 +941,7 @@ class ModelConfig:
     no_protein_embeddings: bool = False
     # Protein side only: drops residue_type/sas_area/volume (and
     # --protein_extra_node_features' columns, if also on) from every protein node --
-    # dataloader/protein_graph_builder.py's protein_node_columns(). Requires
+    # dataloader/graphs_builders/protein_graph_builder.py's protein_node_columns(). Requires
     # descriptors_in_protein (validate() below, also satisfied by
     # --descriptors_in_protein_lipid) for the same "node would end up empty" reason as
     # --no_protein_embeddings; independent of it otherwise (this one says nothing about
@@ -1202,7 +1203,7 @@ class ModelConfig:
     # label prior carries over to it. Empty means the old one-axis behaviour.
     # The second axis of the cold split. Both flags hold whole head-group classes out of
     # training on top of excluded_groups; which classes is DERIVED from the held-out
-    # family by dataloader.sampler.lipid_classes_for_holdout, not typed in, because the
+    # family by dataloader.splitting_on_blocks.lipid_coldsplit_blocks.lipid_classes_for_holdout, not typed in, because the
     # right set differs per family and the rule that finds it is what makes the split
     # honest. The derived list is printed at load time so a run's log records it.
     #
@@ -1223,7 +1224,7 @@ class ModelConfig:
     lipid_coldsplit: str = ""
     # The same axis, addressed by how far the block sits from training rather than by
     # which chemistry it is. Takes the key of a block in
-    # dataloader/lipid_isolation_blocks.py, each one a set of lipid SPECIES chosen by
+    # dataloader/splitting_on_blocks/lipid_isolation_blocks.py, each one a set of lipid SPECIES chosen by
     # analysis/lipid_block_search.py so that its isolation -- the mean over the block's
     # structures of the best Tanimoto similarity to a structure left in training --
     # lands on that value. Exists because the named class sets only reach 0.46-0.88 and
@@ -1239,7 +1240,7 @@ class ModelConfig:
     # this one is the task as the collaborators state it ("classify binders and
     # non-binders by lipid subclass"), which is why it gets its own flag rather than a
     # re-spelling of either. Same species-level machinery as lipid_isolation from here
-    # on; see dataloader/lipid_subclass_blocks.py.
+    # on; see dataloader/splitting_on_blocks/lipid_subclass_blocks.py.
     lipid_subclass: str = ""
     # The same axis again, cut at the CONCRETE LIPID instead of at a named chemical set:
     # a seeded draw of individual lipids leaves training for every protein, sized so the
@@ -1250,7 +1251,7 @@ class ModelConfig:
     # 149 of 1226 structures are offered by more than one name -- so a name-level draw
     # leaves 12-22% of the drawn structures in training under another name. The unit is
     # therefore the connected component of the name-structure graph, which is the finest
-    # structure-disjoint cut that exists; see dataloader/lipid_species_blocks.py.
+    # structure-disjoint cut that exists; see dataloader/splitting_on_blocks/lipid_species_blocks.py.
     lipid_species_coldsplit: float = 0.0
     # Drop from valid/test every row whose (LTPProtein, article lipid subclass) cell has
     # no training row at all, instead of scoring it.
@@ -1528,60 +1529,38 @@ class ModelConfig:
     # to. The columns are appended, so node[:, 0..2] keep their meaning for every path
     # that indexes them positionally (see Protein_encoder's frozen node adapter).
     protein_extra_node_features: bool = False
-    # One fixed-length descriptor of the binding cavity per protein, concatenated to
-    # the fused pair vector just before the classifier MLP. Built offline from the
-    # Voronota columns already in coarse_graph_nodes.csv, aggregated over the pocket
-    # residues -- no fpocket, no new data. See POCKET_DESCRIPTOR_NAMES in
-    # dataloader/protein_graph_builder.py for the exact list.
+    # The per-protein pocket_descriptor tensor (one fixed-length descriptor of the
+    # binding cavity, built offline from the Voronota columns already in
+    # coarse_graph_nodes.csv -- see POCKET_DESCRIPTOR_NAMES in
+    # dataloader/graphs_builders/protein_graph_builder.py for the exact list).
     #
-    # Measured before implementing, on the 32 proteins whose positives carry a parsable
-    # chain length (Spearman against the mean acyl carbon count of what each protein
-    # binds): pocket SASA +0.687 (p=2e-4), pocket volume +0.548, pocket residue count
-    # +0.559. But protein size alone gives +0.512, and pocket size tracks protein size
-    # at +0.707, so most of that is confounded. Controlling for protein residue count,
-    # only **pocket SASA survives** (+0.569, p=7e-4); volume (+0.332, p=0.06) and
-    # residue count (+0.323, p=0.07) do not. Burial (ev14/ev28/ev56), depth,
-    # hydrophobicity and apolar share showed nothing against chain length or head-group
-    # diversity (|r| < 0.35, all p > 0.05).
+    # DERIVED, not a flag. The old --pocket_descriptors broadcast it to every protein
+    # node from architecture/protein_encoder.py, and that path was removed: it was the
+    # one descriptor input nothing ever standardised. Its mean/std buffers were only
+    # ever filled under --rnabang_frozen_node_adapter, which no run that used the
+    # broadcast ever set, so every such run fed raw values (pocket_extent in angstrom
+    # beside pocket_residue_share in [0,1]) straight into the GAT input.
     #
-    # The size-like entries are kept anyway, but note what they are on a cold-family
-    # split: protein size is close to fold identity, which is exactly the shortcut the
-    # split is meant to withhold. If this flag helps, check it is not helping through
-    # them -- the shares (pocket_sasa_share, pocket_volume_share) are the scale-free
-    # versions and neither correlated with chain length on its own.
-    pocket_descriptors: bool = False
-    # Width of the descriptor, derived in validate(); 0 when the flag is off.
+    # The tensor itself is still built and attached, because two paths that DO handle
+    # their own scaling read columns out of it at forward time:
+    #   - PairDescriptorHead (--pair_descriptors without --descriptor_names) reads
+    #     aromatic_share/apolar_sasa_share raw -- bounded [0,1] shares by design -- and
+    #     hydropathy_core/rim under --pair_descriptor_pocket_shares_split, which
+    #     standardises them from train-only stats in its own buffers.
+    #   - Protein_encoder.expand_pair_descriptors (--descriptors_in_protein, and the
+    #     --descriptors_in_protein_lipid alias) reads the same two bounded shares.
+    # So this is true exactly when one of those needs the tensor; see validate().
+    needs_pocket_descriptor: bool = False
+    # Width of the descriptor, derived in validate(); 0 when nothing needs it.
     pocket_descriptor_count: int = 0
-    # Restricts the --pocket_descriptors broadcast (architecture/protein_encoder.py's
-    # expand_pocket_descriptor) to POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES (dataloader/
-    # protein_graph_builder.py) -- the 7 of 13 entries whose eta^2 against the 9-family
-    # split sits at or near the no-structure floor, dropping the 6 closest to a pure
-    # family label (files/reference/pocket_shape_descriptors.md section 5). Only affects that one
-    # broadcast: PairDescriptorHead (--descriptors_head, --pair_descriptors) reads
-    # aromatic_share/polar_share at their own fixed indices regardless of this flag, so
-    # under plain --descriptors_head it changes nothing measurable.
-    pocket_descriptors_family_neutral: bool = False
-    # --pocket_descriptor_names: an arbitrary, comma-separated subset of
-    # POCKET_DESCRIPTOR_NAMES (this file, top -- same list, no coarsening syntax:
-    # unlike --descriptor_names/DESCRIPTOR_CATALOG this only selects COLUMNS of the
-    # already-built 13-wide pocket_descriptor tensor, it does not build new ones), for
-    # the SAME --pocket_descriptors broadcast --pocket_descriptors_family_neutral
-    # restricts -- a differently-sized or differently-chosen subset than that flag's
-    # fixed 7, without touching PairDescriptorHead/NamedDescriptorHead (--pair_
-    # descriptors, --descriptors_head, --two_pair_descriptors_paths), which read
-    # aromatic_share/polar_share at their own fixed indices regardless, same as
-    # pocket_descriptors_family_neutral. Mutually exclusive with it (validate() below)
-    # -- both restrict the same broadcast, so combining them is ambiguous, not additive.
-    pocket_descriptor_names: str = ""
     # --protein_descriptors / --lipid_descriptors: an arbitrary, comma-separated subset of
-    # the FULL DESCRIPTOR_CATALOG (dataloader/pair_descriptors.py -- lipid, protein/pocket,
+    # the FULL DESCRIPTOR_CATALOG (dataloader/descriptors.py -- lipid, protein/pocket,
     # AND pair-level names, bare or <name>_coarse=<spec>), broadcast onto every node of the
     # protein branch / lipid branch respectively -- the same NamedDescriptorHead-style
     # name resolution --good_descriptors/--bad_descriptors/--descriptor_names already use
-    # (dataloader.pair_descriptors.full_catalog_order/parse_descriptor_list), just read as a
+    # (dataloader.descriptors.full_catalog_order/parse_descriptor_list), just read as a
     # raw broadcast instead of pooled through a head. Independent, coexisting mechanism from
-    # --pocket_descriptors/--pocket_descriptor_names (protein-pocket-only, fixed tensor) and
-    # --descriptors_in_lipid (fixed 4-token lipid broadcast) -- neither of those is touched
+    # --descriptors_in_lipid (fixed 4-token lipid broadcast) -- that one is not touched
     # or restricted by this. No derived width field: architecture/protein_encoder.py and
     # architecture/lipid_encoder.py each compute their own broadcast width inline from this
     # string via parse_descriptor_list, so there is nothing here that could drift from it.
@@ -2056,13 +2035,14 @@ class ModelConfig:
                 f"{', '.join(POCKET_ATTENTION_SITES)}; leave it unset for both, "
                 "which is what --attention_by_pockets alone means"
             )
-        # Kept as a literal rather than imported: dataloader.protein_graph_builder is
+        # Kept as a literal rather than imported: dataloader.graphs_builders.protein_graph_builder is
         # the source of truth for the list, but importing it here would pull torch and
         # torch_geometric into every consumer of ModelConfig, including the analysis
         # scripts that only want to read a run's settings. pocket_descriptor() checks
         # this number against the descriptor it actually built and names the mismatch,
-        # so the two cannot drift silently.
-        self.pocket_descriptor_count = POCKET_DESCRIPTOR_COUNT if self.pocket_descriptors else 0
+        # so the two cannot drift silently. needs_pocket_descriptor/
+        # pocket_descriptor_count are derived at the END of this method, after the
+        # descriptors_head -> pair_descriptors implication below has run.
         self.protein_node_feature_count = (
             0 if self.no_protein_geometry
             else 3 + (3 if self.protein_extra_node_features else 0)
@@ -2089,15 +2069,15 @@ class ModelConfig:
             4 if self.descriptors_in_lipid else 0
         )
         if (self.descriptors_in_protein or self.descriptors_in_lipid) and not (
-            self.pocket_descriptors and self.pair_descriptors
+            self.pair_descriptors
         ):
             raise ValueError(
                 "descriptors_in_protein/descriptors_in_lipid (or the "
                 "descriptors_in_protein_lipid alias) broadcast the same tensors "
-                "--pocket_descriptors/--pair_descriptors already attach "
-                "(pocket_descriptor, pair_descriptor_input) -- both must be on too, "
-                "even if --descriptors_head/the self-attention head's own use of "
-                "them is not wanted"
+                "--pair_descriptors already attaches (pocket_descriptor, "
+                "pair_descriptor_input) -- it must be on too, even if "
+                "--descriptors_head/the self-attention head's own use of them is "
+                "not wanted"
             )
         # no_embeddings implies no_protein_embeddings (backward compatible: it always
         # dropped ESM3 too), but is otherwise only about the lipid side -- see the two
@@ -2175,11 +2155,11 @@ class ModelConfig:
                         "pick one"
                     )
             if self.deepclip_lipid_descriptors or self.deepclip_protein_gate:
-                # Imported here, not at module scope: dataloader.pair_descriptors
+                # Imported here, not at module scope: dataloader.descriptors
                 # pulls in the descriptor machinery, and this module is deliberately
                 # importable without it (see the POCKET_DESCRIPTOR_NAMES note at the
                 # top). Same lazy-import shape read_lipid_subclass already uses.
-                from dataloader.pair_descriptors import (  # noqa: PLC0415
+                from dataloader.descriptors import (  # noqa: PLC0415
                     full_catalog_order, parse_descriptor_list,
                 )
                 catalog = set(full_catalog_order(self))
@@ -2206,7 +2186,7 @@ class ModelConfig:
                     "deepclip cannot be combined with "
                     "--lipid_fragments_treatment=concat/fragments_mask: those lay "
                     "several candidate STRUCTURES end to end on one sequence axis "
-                    "(dataloader/lipid_graph_builder.py), so a window would slide "
+                    "(dataloader/graphs_builders/lipid_graph_builder.py), so a window would slide "
                     "across the seam and read a motif spanning two different "
                     "molecules. Use --lipid_fragments_treatment=random_choice (the "
                     "default), which encodes one candidate per sample"
@@ -2801,56 +2781,15 @@ class ModelConfig:
                 "pooled vector would be concatenated after the bilinear product, the "
                 "same shortcut bilinear_fusion is meant to close"
             )
-        if self.pair_descriptors and not self.descriptor_names and not self.pocket_descriptors:
-            raise ValueError(
-                "pair_descriptors requires pocket_descriptors -- the descriptor "
-                "head's aromatic/H-bond pair terms read aromatic_share and "
-                "apolar_sasa_share off the pocket descriptor tensor. Not required "
-                "under --descriptor_names: NamedDescriptorHead reads everything "
-                "off descriptor_catalog_input by name instead, so there is "
-                "nothing here for it to read off the pocket descriptor tensor."
-            )
-        if self.pocket_descriptors_family_neutral and not self.pocket_descriptors:
-            raise ValueError(
-                "pocket_descriptors_family_neutral requires pocket_descriptors -- "
-                "there is no broadcast to restrict when the flag is off"
-            )
-        if self.pocket_descriptor_names and not self.pocket_descriptors:
-            raise ValueError(
-                "pocket_descriptor_names requires pocket_descriptors -- there is no "
-                "broadcast to restrict when the flag is off"
-            )
-        if self.pocket_descriptor_names and self.pocket_descriptors_family_neutral:
-            raise ValueError(
-                "pocket_descriptor_names and pocket_descriptors_family_neutral both "
-                "restrict the SAME --pocket_descriptors broadcast to a fixed subset "
-                "-- pick one"
-            )
-        if self.pocket_descriptor_names:
-            requested = tuple(
-                name.strip() for name in self.pocket_descriptor_names.split(",")
-                if name.strip()
-            )
-            unknown = [name for name in requested if name not in POCKET_DESCRIPTOR_NAMES]
-            if unknown:
-                raise ValueError(
-                    f"Unknown pocket descriptor name(s): {unknown}. Known: "
-                    f"{POCKET_DESCRIPTOR_NAMES}"
-                )
-            if not requested:
-                raise ValueError(
-                    "pocket_descriptor_names is set but names no descriptor -- "
-                    "leave it empty to use all of pocket_descriptors instead"
-                )
         if self.protein_descriptors or self.lipid_descriptors:
-            # Local import, not a module-level one: dataloader/pair_descriptors.py pulls in
+            # Local import, not a module-level one: dataloader/descriptors.py pulls in
             # rdkit, which analysis scripts that only want to read a run's settings off
             # ModelConfig should not be forced to have installed -- same reasoning as
             # POCKET_DESCRIPTOR_NAMES above being a literal copy rather than an import.
             # parse_descriptor_list already raises "Unknown descriptor name(s)..." against
             # the full DESCRIPTOR_CATALOG (lipid + protein/pocket + pair names) on a bad
             # token -- reused as-is so a typo here fails now, not at model-build time.
-            from dataloader.pair_descriptors import parse_descriptor_list
+            from dataloader.descriptors import parse_descriptor_list
 
             if self.protein_descriptors:
                 parse_descriptor_list(self.protein_descriptors)
@@ -3022,7 +2961,7 @@ class ModelConfig:
             # side raises here (bad token, or a pair descriptor with no single side)
             # so a bad --geometric_descriptors/--chemical_descriptors value fails now,
             # not at model-build time inside ThematicDescriptorHead.
-            from dataloader.pair_descriptors import (
+            from dataloader.descriptors import (
                 PAIR_DESCRIPTOR_NAMES, parse_descriptor_list, split_names_by_side,
             )
 
@@ -3159,6 +3098,19 @@ class ModelConfig:
                 "attention_by_pockets is on but restricts no site; check "
                 "pocket_attention_sites and cross_attention"
             )
+        # Last, so the descriptors_head/descriptor_mlp -> pair_descriptors implication
+        # above has already run. The pocket_descriptor tensor is attached exactly when
+        # a path that handles its own scaling reads columns out of it: the fixed-token
+        # PairDescriptorHead (no --descriptor_names, so NamedDescriptorHead is not what
+        # gets built) or expand_pair_descriptors' two bounded shares. See the
+        # needs_pocket_descriptor field docstring for why there is no flag here.
+        self.needs_pocket_descriptor = bool(
+            (self.pair_descriptors and not self.descriptor_names)
+            or self.descriptors_in_protein
+        )
+        self.pocket_descriptor_count = (
+            POCKET_DESCRIPTOR_COUNT if self.needs_pocket_descriptor else 0
+        )
 
     def effective_pu_rho(self, positive_count, unlabeled_count):
         """Return manual or train-count-derived PU rho."""
@@ -3496,8 +3448,6 @@ BOOL_FLAG_NAMES = (
     "esmif1_replace_esm3",
     "saprot_replace_esm3",
     "protein_extra_node_features",
-    "pocket_descriptors",
-    "pocket_descriptors_family_neutral",
     "protein_group_weight",
     "double_coldsplit",
     "mixed_coldsplit",
@@ -3707,7 +3657,6 @@ VALUE_HANDLERS = {
     "--geometric_pair_priors=": set_config_field("geometric_pair_priors"),
     "--chemical_pair_priors=": set_config_field("chemical_pair_priors"),
     "--thematical_orth_weight=": set_config_field("thematical_orth_weight", float),
-    "--pocket_descriptor_names=": set_config_field("pocket_descriptor_names"),
     "--protein_descriptors=": set_config_field("protein_descriptors"),
     "--lipid_descriptors=": set_config_field("lipid_descriptors"),
     "--dann_class_conditional=": set_config_field("dann_class_conditional", read_bool),

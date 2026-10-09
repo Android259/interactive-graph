@@ -74,7 +74,7 @@ EMBEDDING_FILE = "lipid_SMILES_embedding_deterministic.pkl"
 
 
 def canonical_key(smiles):
-    """Same recipe dataloader/lipid_graph_builder.py's _canonical_embedding_key uses
+    """Same recipe dataloader/graphs_builders/lipid_graph_builder.py's _canonical_embedding_key uses
     under the default (--lipid_isomers unset) config: isomericSmiles=False, so the
     key matches what the deterministic embedding table was built and is looked up
     with.

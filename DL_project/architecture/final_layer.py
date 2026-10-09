@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch_geometric
 
-from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
+from dataloader.descriptors import full_catalog_order, parse_descriptor_list
 from dataloader.pocket_lipid_compatibility import compat_input_width
 from torch_geometric.utils import softmax as scatter_softmax
 from torch_geometric.utils import to_dense_batch
@@ -764,9 +764,9 @@ class Final_Layer(torch.nn.Module):
                 raise ValueError(
                     "descriptors_head is set but forward() got no "
                     "pair_descriptor_input/pocket_descriptor -- Dataloader and "
-                    "forward_args only attach these when --pair_descriptors and "
-                    "--pocket_descriptors were both set at data-load time too; check "
-                    "the flags match."
+                    "forward_args only attach these when --pair_descriptors was set "
+                    "at data-load time too (needs_pocket_descriptor); check the "
+                    "flags match."
                 )
             batch_size = pocket_descriptor.shape[0]
             vec = self.pair_descriptor_head(
@@ -923,8 +923,8 @@ class Final_Layer(torch.nn.Module):
                     raise ValueError(
                         "pair_descriptors is set but forward() got no "
                         "pair_descriptor_input/pocket_descriptor -- Dataloader and "
-                        "forward_args only attach these when --pair_descriptors and "
-                        "--pocket_descriptors were both set at data-load time too; check "
+                        "forward_args only attach these when --pair_descriptors was "
+                        "set at data-load time too (needs_pocket_descriptor); check "
                         "the flags match."
                     )
                 descriptor_vec = self.pair_descriptor_head(

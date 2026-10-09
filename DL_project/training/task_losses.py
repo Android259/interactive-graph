@@ -18,8 +18,8 @@ from architecture.loss import (
     pairwise_ranking_loss,
 )
 from dataloader.lipid_classes import class_level_positive_labels
-from dataloader.lipid_subclass_blocks import article_subclass_species
-from dataloader.protein_graph_builder import FAMILY_NAMES
+from dataloader.splitting_on_blocks.lipid_subclass_blocks import article_subclass_species
+from dataloader.graphs_builders.protein_graph_builder import FAMILY_NAMES
 
 
 # Below this many train rows a subclass's count-derived prior is noise, not a prior --

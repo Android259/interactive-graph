@@ -14,7 +14,7 @@ from architecture.protein_edge_geometry import (
 )
 from architecture.thematic_descriptor_head import thematical_orthogonality_loss
 from dataloader.smiles_tokens import SMILES_VOCABULARY
-from training.read_configuration import ModelConfig
+from training.read_configuration import POCKET_DESCRIPTOR_COUNT, ModelConfig
 
 
 def make_config(
@@ -123,7 +123,7 @@ def synthetic_forward_args(config):
     if config.lipid_fragments_mask:
         args["lipid_batch"] = torch.tensor([0, 0, 1, 1], dtype=torch.long)
 
-    if getattr(config, "pocket_descriptors", False):
+    if getattr(config, "needs_pocket_descriptor", False):
         args["pocket_descriptor"] = torch.rand(2, config.pocket_descriptor_count)
     if getattr(config, "pair_descriptors", False):
         base_width = 5 + (4 if getattr(config, "pair_descriptor_lipid_shape", False) else 0)
@@ -133,7 +133,7 @@ def synthetic_forward_args(config):
             and getattr(config, "pair_descriptor_pocket_shares", True)
         )
         args["pair_descriptor_input"] = torch.randn(2, base_width + (2 if split else 0))
-    from dataloader.pair_descriptors import full_catalog_order
+    from dataloader.descriptors import full_catalog_order
 
     catalog_order = full_catalog_order(config)
     if catalog_order:
@@ -1004,7 +1004,6 @@ def test_active_configuration_has_no_parameters_without_gradients(mode):
 
 def test_pair_descriptors_head_trains_and_gets_gradients():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.validate()
 
@@ -1024,7 +1023,6 @@ def test_pair_descriptors_head_trains_and_gets_gradients():
 
 def test_pair_descriptor_lipid_shape_adds_four_tokens_and_trains():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_lipid_shape = True
     config.validate()
@@ -1050,7 +1048,6 @@ def test_pair_descriptor_lipid_shape_adds_four_tokens_and_trains():
 
 def test_pair_descriptors_only_ignores_lipid_and_protein_pooling():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptors_only = True
     config.validate()
@@ -1067,34 +1064,54 @@ def test_pair_descriptors_only_ignores_lipid_and_protein_pooling():
 
 def test_pair_descriptors_rejects_bilinear_fusion():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.bilinear_fusion = True
     with pytest.raises(ValueError, match="bilinear_fusion"):
         config.validate()
 
 
-def test_pair_descriptors_requires_pocket_descriptors():
+def test_pair_descriptors_attaches_the_pocket_descriptor_tensor():
+    """Plain --pair_descriptors builds the fixed-token PairDescriptorHead, whose
+    aromatic/H-bond pair terms read aromatic_share/apolar_sasa_share off the
+    per-protein pocket_descriptor tensor -- so needs_pocket_descriptor derives True
+    and the loader attaches it. There is no --pocket_descriptors flag to pass: the
+    broadcast that flag used to drive was the one descriptor input nothing ever
+    standardised, and it was removed."""
     config = make_config()
     config.pair_descriptors = True
-    with pytest.raises(ValueError, match="pocket_descriptors"):
-        config.validate()
+    config.validate()  # must not raise
+    assert config.needs_pocket_descriptor is True
+    assert config.pocket_descriptor_count == POCKET_DESCRIPTOR_COUNT
+
+    loss = one_training_step(config)
+    assert loss == loss  # not NaN
 
 
-def test_pair_descriptors_with_descriptor_names_does_not_require_pocket_descriptors():
-    """Under plain --pair_descriptors, PairDescriptorHead reads aromatic_share/
-    apolar_sasa_share off the pocket descriptor tensor, so pocket_descriptors is
-    required. NamedDescriptorHead (--descriptor_names) reads everything off
+def test_pair_descriptors_with_descriptor_names_needs_no_pocket_descriptor():
+    """NamedDescriptorHead (--descriptor_names) reads everything off
     descriptor_catalog_input by name instead -- there is nothing for it to read off
-    the pocket descriptor tensor, so pocket_descriptors is NOT required here."""
+    the pocket descriptor tensor, so it is never built or attached."""
     config = make_config()
     config.pair_descriptors = True
     config.descriptor_names = "chain,unsaturation,aromatic_share"
     config.validate()  # must not raise
-    assert config.pocket_descriptors is False
+    assert config.needs_pocket_descriptor is False
+    assert config.pocket_descriptor_count == 0
 
     loss = one_training_step(config)
     assert loss == loss  # not NaN
+
+
+def test_descriptors_in_protein_attaches_the_pocket_descriptor_tensor():
+    """expand_pair_descriptors reads the same two bounded shares off the tensor, so
+    it keeps needs_pocket_descriptor True even alongside --descriptor_names, which on
+    its own would not need it."""
+    config = make_config()
+    config.pair_descriptors = True
+    config.descriptor_names = "chain,unsaturation,aromatic_share"
+    config.descriptors_in_protein = True
+    config.validate()  # must not raise
+    assert config.needs_pocket_descriptor is True
 
 
 def test_descriptors_head_auto_enables_pair_descriptors():
@@ -1102,7 +1119,6 @@ def test_descriptors_head_auto_enables_pair_descriptors():
     configuration Final_Layer builds, not a capability of its own -- so validate() sets
     pair_descriptors rather than demanding the caller pass both flags."""
     config = make_config()
-    config.pocket_descriptors = True
     config.descriptors_head = True
     assert config.pair_descriptors is False  # not yet, before validate()
     config.validate()
@@ -1169,10 +1185,9 @@ def test_lipid_descriptors_broadcasts_onto_lipid_nodes_and_trains():
 
 def test_protein_descriptors_and_lipid_descriptors_coexist_with_old_mechanisms():
     """protein_descriptors/lipid_descriptors are additive: the old, fixed-set
-    --pocket_descriptors/--pair_descriptors broadcasts stay untouched and both
+    --pair_descriptors broadcasts stay untouched and both
     mechanisms can run in the same model at once."""
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.protein_descriptors = "chain,unsaturation"
     config.lipid_descriptors = "hbond,heavy"
@@ -1198,7 +1213,6 @@ def test_descriptor_names_requires_descriptors_head_or_pair_descriptors():
 
 def test_descriptors_head_builds_no_encoder_or_cross_attention_modules():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.descriptors_head = True
     config.validate()
@@ -1250,7 +1264,7 @@ def test_two_pair_descriptors_paths_builds_no_encoder_or_cross_attention_modules
 
 
 def test_two_pair_descriptors_paths_wires_coarse_tokens_correctly():
-    # good/bad_descriptors' <name>_coarse=<spec> tokens (dataloader.pair_descriptors.
+    # good/bad_descriptors' <name>_coarse=<spec> tokens (dataloader.descriptors.
     # parse_descriptor_token) must reach NamedDescriptorHead as CANONICAL tokens and
     # index into the SAME shared column order on both sides -- this pins that wiring
     # (not the coarsening arithmetic itself, which dataloader/Dataloader.py owns
@@ -1323,7 +1337,6 @@ def test_two_pair_descriptors_paths_requires_both_lists():
 
 def test_two_pair_descriptors_paths_conflicts_with_descriptors_head():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.descriptors_head = True
     config.two_pair_descriptors_paths = True
@@ -1369,7 +1382,7 @@ def test_thematical_paths_wires_columns_correctly():
     config.validate()
 
     model = InteractionClassification(config)
-    from dataloader.pair_descriptors import full_catalog_order
+    from dataloader.descriptors import full_catalog_order
 
     catalog_order = full_catalog_order(config)
     head = model.final_layer.thematical_head
@@ -1417,7 +1430,7 @@ def test_thematical_pair_priors_columns_point_at_the_right_catalog_names():
     config.validate()
 
     model = InteractionClassification(config)
-    from dataloader.pair_descriptors import full_catalog_order
+    from dataloader.descriptors import full_catalog_order
 
     catalog_order = full_catalog_order(config)
     head = model.final_layer.thematical_head
@@ -1461,7 +1474,6 @@ def test_thematical_paths_requires_both_groups():
 
 def test_thematical_paths_conflicts_with_descriptors_head():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.descriptors_head = True
     config.thematical_paths = True
@@ -1553,7 +1565,6 @@ def test_mlp_in_place_of_sa_does_not_leave_pocket_attention_bias_ungradiented():
 
 def test_mlp_in_place_of_sa_replaces_descriptor_head_attention():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.descriptors_head = True
     config.mlp_in_place_of_sa = True
@@ -1570,7 +1581,6 @@ def test_mlp_in_place_of_sa_replaces_descriptor_head_attention():
 
 def test_pair_descriptor_pocket_shares_can_be_dropped():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_pocket_shares = False
     config.validate()
@@ -1586,7 +1596,6 @@ def test_pair_descriptor_pocket_shares_can_be_dropped():
 
 def test_pair_descriptor_extent_can_be_dropped():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_extent = False
     config.validate()
@@ -1602,7 +1611,6 @@ def test_pair_descriptor_extent_can_be_dropped():
 
 def test_pair_descriptor_extent_combines_with_pocket_shares_split():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_extent = False
     config.pair_descriptor_pocket_shares_split = True
@@ -1620,7 +1628,6 @@ def test_pair_descriptor_extent_combines_with_pocket_shares_split():
 @pytest.mark.parametrize("pool_type", ["add", "max", "mean", "gem"])
 def test_pair_descriptor_head_pool_type_output_matches_hiddim(pool_type):
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pool_type = pool_type
     config.validate()
@@ -1637,7 +1644,6 @@ def test_pair_descriptor_head_pool_type_output_matches_hiddim(pool_type):
 
 def test_pair_descriptor_head_pool_type_add_max_doubles_output_dim():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pool_type = "add_max"
     config.validate()
@@ -1652,7 +1658,6 @@ def test_pair_descriptor_head_pool_type_add_max_doubles_output_dim():
 
 def test_pair_descriptor_flatten_concatenates_tokens_instead_of_pooling():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_flatten = True
     config.validate()
@@ -1668,7 +1673,6 @@ def test_pair_descriptor_flatten_concatenates_tokens_instead_of_pooling():
 
 def test_pair_descriptor_pocket_shares_split_replaces_them_with_four_tokens():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_pocket_shares_split = True
     config.validate()
@@ -1696,7 +1700,6 @@ def test_pair_descriptor_pocket_shares_split_replaces_them_with_four_tokens():
 
 def test_pair_descriptor_pocket_shares_split_requires_pocket_shares():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_pocket_shares = False
     config.pair_descriptor_pocket_shares_split = True
@@ -1706,7 +1709,6 @@ def test_pair_descriptor_pocket_shares_split_requires_pocket_shares():
 
 def test_pair_descriptor_pocket_shares_coarse_bands_the_original_two_tokens():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_pocket_shares_coarse = True
     config.validate()
@@ -1730,7 +1732,6 @@ def test_pair_descriptor_pocket_shares_coarse_bands_the_original_two_tokens():
 
 def test_pair_descriptor_pocket_shares_coarse_requires_pocket_shares():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_pocket_shares = False
     config.pair_descriptor_pocket_shares_coarse = True
@@ -1740,7 +1741,6 @@ def test_pair_descriptor_pocket_shares_coarse_requires_pocket_shares():
 
 def test_pair_descriptor_pocket_shares_coarse_conflicts_with_split():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.pair_descriptor_pocket_shares_split = True
     config.pair_descriptor_pocket_shares_coarse = True
@@ -1750,7 +1750,6 @@ def test_pair_descriptor_pocket_shares_coarse_conflicts_with_split():
 
 def test_descriptors_head_rejects_the_full_architecture_options():
     config = make_config()
-    config.pocket_descriptors = True
     config.pair_descriptors = True
     config.descriptors_head = True
     config.dann_family = True
@@ -1815,7 +1814,6 @@ def test_descriptor_mlp_conflicts_with_descriptors_head():
     config = make_config()
     config.descriptor_mlp = True
     config.descriptors_head = True
-    config.pocket_descriptors = True
     config.descriptor_names = "chain,unsaturation,aromatic_share"
     with pytest.raises(ValueError, match="descriptor_mlp, descriptors_head"):
         config.validate()

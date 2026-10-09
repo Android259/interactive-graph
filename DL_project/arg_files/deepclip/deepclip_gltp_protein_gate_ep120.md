@@ -63,7 +63,6 @@
 --deepclip_readout=mean
 
 --pair_descriptors
---pocket_descriptors
 --deepclip_protein_gate=pocket_volume_per_sasa,pocket_elongation,pocket_flatness,buriedness_q50,apolar_sasa_share,aromatic_share,hydropathy_rim,basic_share_core,basic_share_rim,hbond_donor_share_core,pocket_free_volume
 
 --balanced_proteins

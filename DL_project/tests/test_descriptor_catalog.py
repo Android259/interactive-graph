@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from dataloader.pocket_lipid_compatibility import coarsen_to_levels
-from dataloader.pair_descriptors import BOUNDED_SHARE_DESCRIPTOR_NAMES, CoarseSpec, DEFAULT_COARSE_SPECS, DESCRIPTOR_CATALOG, PAIR_DESCRIPTOR_NAMES, canonical_descriptor_token, parse_descriptor_list, parse_descriptor_token, resolve_requested_tokens
+from dataloader.descriptors import BOUNDED_SHARE_DESCRIPTOR_NAMES, CoarseSpec, DEFAULT_COARSE_SPECS, DESCRIPTOR_CATALOG, PAIR_DESCRIPTOR_NAMES, canonical_descriptor_token, parse_descriptor_list, parse_descriptor_token, resolve_requested_tokens
 from preprocessing.compute_descriptors import (
     acyl_chain_count,
     longest_acyl_chain,

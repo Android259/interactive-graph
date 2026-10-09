@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-from dataloader.pair_descriptors import parse_descriptor_list, split_names_by_side
+from dataloader.descriptors import parse_descriptor_list, split_names_by_side
 
 from .mlp_utils import make_activation, make_final_dropout
 
@@ -131,7 +131,7 @@ class ForcedInteraction(torch.nn.Module):
 class ThematicDescriptorHead(torch.nn.Module):
     """--thematical_paths (training/read_configuration.py): two named descriptor
     groups (--geometric_descriptors, --chemical_descriptors), each split into its own
-    lipid-side and protein-side tokens (dataloader.pair_descriptors.split_names_by_
+    lipid-side and protein-side tokens (dataloader.descriptors.split_names_by_
     side) and run through one small MLP per side (_ModalityMLP), forced together with
     ForcedInteraction (product-only, no skip) into one group vector. The two group
     vectors are then combined the SAME way at a second level, so the final vector can

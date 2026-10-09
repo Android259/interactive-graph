@@ -7,7 +7,6 @@
 --weight_decay=0.01
 --pool_type="add_max"
 
---pocket_descriptors
 --pair_descriptors
 --descriptors_head
 --no_pair_descriptor_extent

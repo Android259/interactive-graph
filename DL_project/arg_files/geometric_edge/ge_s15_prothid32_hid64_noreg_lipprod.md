@@ -2,7 +2,7 @@
 # Закрывает пустую клетку: --pair_descriptors выключен во всех 30 labels ge_s15*, то есть
 # 14 предрассчитанных парных величин в эту ветку не доходили ни разу. Путь через
 # --lipid_descriptors (он принимает парные имена каталога) выбран вместо
-# --pair_descriptors: тот конфликтует с --bilinear_fusion (read_configuration.py:2812) и
+# --pair_descriptors: тот конфликтует с --bilinear_fusion (read_configuration.py, validate()) и
 # потребовал бы снять базовый флаг, то есть сравнение перестало бы быть парным.
 # Набор: depth_bulk_match -- ровно измеренное взаимодействие (depth_q10 x размер липида,
 # rho -0.45..-0.38, files/proposals/species15_where_to_go_next.md §2.3); volume_fit -- объём кармана

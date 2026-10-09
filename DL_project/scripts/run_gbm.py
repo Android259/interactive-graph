@@ -30,7 +30,7 @@ gbm_baseline.py itself has no "custom features file" concept to alias) accept a
 comma-separated descriptor-name list, resolved the SAME way analysis/kronrls_
 baseline.py's --lipid_kernel=explicit_subset resolves --lipid_descriptor_names
 (training.pair_baseline_common.resolve_lipid_feature_subset: explicit_lipid_
-features' own columns, dataloader.pair_descriptors.LIPID_DESCRIPTOR_NAMES for the
+features' own columns, dataloader.descriptors.LIPID_DESCRIPTOR_NAMES for the
 rest, "molformer" for the network's own raw embedding) -- so a name behaves
 identically whether it reaches Kron-RLS or GBM. Unlike Kron-RLS, "tanimoto"/
 "tanimoto_headgroup" as the SOLE --lipid_features value routes to
@@ -41,7 +41,7 @@ Pair features: WIRED, unlike Kron-RLS's --pair_features (provably impossible for
 closed form -- see run_cron.py's own module docstring). GBM is an ordinary row
 classifier with no separable-kernel constraint, so a joint (protein, lipid) value is
 just one more feature column: --pair_features is a comma-separated list of
-dataloader.pair_descriptors.PAIR_DESCRIPTOR_NAMES entries (occupancy,
+dataloader.descriptors.PAIR_DESCRIPTOR_NAMES entries (occupancy,
 aromatic_contact, hbond_match, ...), each computed via pair_descriptor_value off
 analysis/baselines/gbm_baseline.py's build_pair_feature_inputs (the fixed lipid/protein input
 columns every pair descriptor formula reads).
@@ -449,7 +449,7 @@ def main() -> None:
     parser.add_argument(
         "--pair_features", default=None,
         help=(
-            "convenience shorthand: comma-separated dataloader.pair_descriptors."
+            "convenience shorthand: comma-separated dataloader.descriptors."
             "PAIR_DESCRIPTOR_NAMES entries -> --pair_descriptor_names. See module "
             "docstring's Pair features section."
         ),
@@ -489,7 +489,7 @@ def main() -> None:
             "lipid_block_search.py's search) instead of naming --families by hand -- "
             "not forced disjoint (lipids may repeat across groups), but each pair "
             "kept under 50% Jaccard overlap so groups stay genuinely different "
-            "chemistries, persisted into dataloader/lipid_isolation_blocks.py and "
+            "chemistries, persisted into dataloader/splitting_on_blocks/lipid_isolation_blocks.py and "
             "used as this run's --families. Only valid with --split_mode "
             "lipid_coldsplit. A single bare --families value combined with this "
             "names the target those groups cluster around, same as "

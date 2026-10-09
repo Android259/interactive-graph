@@ -6,7 +6,7 @@
 # out there) but directly the kind of shortcut --lipid_coldsplit is built to deny,
 # since it holds out named lipid sets. tail_length_mean/tail_double_bonds/
 # tail_unsaturation_density/tail_length_asymmetry are the least class-specific tokens
-# in the whole catalog (eta^2=0.31-0.34, dataloader/pair_descriptors.py:56-61).
+# in the whole catalog (eta^2=0.31-0.34, dataloader/descriptors.py:56-61).
 # Operational support from ge under lcs: within-protein signal
 # appeared exactly on the two held-out sets that differ mainly by acyl chain
 # (choline, phosphorus_free), not on the two that differ mainly by head group

@@ -86,7 +86,7 @@ from dataloader.lipid_classes import lipid_class_series  # noqa: E402
 from analysis.coldsplit_geometry import (  # noqa: E402
     isolation_from_structures,
 )
-from dataloader.tanimoto_compact_reader import load_compact  # noqa: E402
+from dataloader.tensors_reading.tanimoto_compact_tensors_reader import load_compact  # noqa: E402
 
 
 class Units:
@@ -391,9 +391,10 @@ def main():
         "--emit_module",
         default="",
         help=(
-            "write the chosen blocks as dataloader/lipid_isolation_blocks.py, the "
+            "write the chosen blocks as dataloader/splitting_on_blocks/lipid_isolation_blocks.py, the "
             "registry --lipid_isolation reads. Split definitions live in code in this "
-            "project (LIPID_COLDSPLIT_SETS is a dict in dataloader/sampler.py), so that "
+            "project (LIPID_COLDSPLIT_SETS is a dict in dataloader/"
+            "splitting_on_blocks/lipid_coldsplit_blocks.py), so that "
             "a run's block is reviewable in a diff and cannot change under a finished "
             "experiment -- a file regenerated on a whim would silently redefine what "
             "past runs held out"

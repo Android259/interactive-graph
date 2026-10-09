@@ -402,7 +402,8 @@ for requested in "${POSITIONALS[@]}"; do
 'ignoring --groups/--no_groups for %s -- all four lipid sets will run.\n' \
                 "${this_args_file}" >&2
         fi
-        # Keep in step with LIPID_COLDSPLIT_SETS (dataloader/sampler.py) and
+        # Keep in step with LIPID_COLDSPLIT_SETS
+        # (dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py) and
         # LIPID_COLDSPLIT_NAMES (training/read_configuration.py); a name absent from either
         # is rejected at parse time, so a drift here fails loudly on the first run.
         this_is_lipid_coldsplit=1
@@ -456,13 +457,13 @@ for requested in "${POSITIONALS[@]}"; do
     # rotate, so one pseudo-group named "random" runs against the seeds, and
     # --groups/--no_groups are ignored for such a label exactly as they are above.
     # --lipid_isolation=<key> is the lipid axis addressed by distance
-    # (dataloader/lipid_isolation_blocks.py). It already names its block, so there is
+    # (dataloader/splitting_on_blocks/lipid_isolation_blocks.py). It already names its block, so there is
     # nothing to expand: one pseudo-group, named the way new_train.py files the run.
     # The flag itself stays in the template.
     # --lipid_subclass is the same lipid axis cut by the SOURCE PAPER'S own subclass
     # (Titeca et al.'s LTP x lipid-subclass matrix) rather than by the four hand-built
     # sets above. Bare marker -> the grid iterates the eight blocks (kept in step with
-    # dataloader/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS and with
+    # dataloader/splitting_on_blocks/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS and with
     # scripts/launch/submit_grid.sh's copy of the same list); --lipid_subclass=<spec>
     # in the file -> that one block alone, flag left in the template.
     this_is_lipid_subclass=0
@@ -510,7 +511,7 @@ for requested in "${POSITIONALS[@]}"; do
     fi
 
     # --lipid_species_coldsplit=<share> is the lipid axis cut at the CONCRETE LIPID
-    # (dataloader/lipid_species_blocks.py). It names its own split, so one pseudo-group
+    # (dataloader/splitting_on_blocks/lipid_species_blocks.py). It names its own split, so one pseudo-group
     # runs against the seeds; the block behind that name is drawn per seed inside the
     # loader, so two seeds hold out different lipids on purpose.
     this_lipid_species=""
@@ -870,7 +871,7 @@ fi
 # them -- 25 threads measured on a 24-core machine for what is serial work,
 # thrashing on creation/synchronisation instead of finishing sooner. Cut this
 # builder's own rebuild from ~7 to ~3 minutes even after the far bigger
-# lipid_shape-gating fix (dataloader/pair_descriptor_cache_reader.py) removed the
+# lipid_shape-gating fix (dataloader/descriptor_cache_reader.py) removed the
 # redundant conformer generation that was most of the ~20-minute baseline.
 for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     if ! OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
@@ -881,12 +882,12 @@ for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     fi
 
     # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values
-    # (dataloader/pair_descriptor_cache_reader.py): built once here so the grid's N (group, seed) processes
+    # (dataloader/descriptor_cache_reader.py): built once here so the grid's N (group, seed) processes
     # share one cache instead of each re-running RDKit over the whole interaction table.
     # Never fatal: without it a job computes these values itself, exactly as before this
     # cache existed -- slower, not wrong.
     if ! OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
-        python3 "${PROJECT_ROOT}/data/build_pair_descriptor_cache.py" \
+        python3 "${PROJECT_ROOT}/data/build_descriptor_cache.py" \
         --args_file="${_label_args_file}"; then
         printf 'WARNING: could not build the pair descriptor cache for %s; its jobs will compute it themselves.\n' \
             "${_label_args_file}" >&2

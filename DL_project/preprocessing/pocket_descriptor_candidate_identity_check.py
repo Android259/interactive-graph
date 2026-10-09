@@ -34,7 +34,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from pocket_shape_descriptors import descriptors_for  # noqa: E402
-from dataloader.protein_graph_builder import POCKET_DESCRIPTOR_NAMES  # noqa: E402
+from dataloader.graphs_builders.protein_graph_builder import POCKET_DESCRIPTOR_NAMES  # noqa: E402
 from pocket_descriptor_identity_check import (  # noqa: E402
     eta_squared,
     mean_plm_embedding,

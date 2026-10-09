@@ -246,7 +246,7 @@ class _FixedSamples:
     def __init__(self, count, seed=0):
         from torch_geometric.data import Data
 
-        from dataloader.protein_graph_builder import ProteinGraphData
+        from dataloader.graphs_builders.protein_graph_builder import ProteinGraphData
 
         generator = torch.Generator().manual_seed(seed)
         self.samples = []

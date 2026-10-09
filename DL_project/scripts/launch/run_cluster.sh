@@ -331,7 +331,7 @@ remote_env="$(cluster_remote_env)"
 
 # GRICAD kills anything using >600s CPU on a frontend/login node (own
 # monitoring, not OAR) -- see e.g. the kraken warning for a
-# build_pair_descriptor_cache.py run that hit 351s there. The two prep builds
+# build_descriptor_cache.py run that hit 351s there. The two prep builds
 # below used to run as a plain `ssh ... python3 ...` on the login node, which
 # is exactly what that policy forbids once a cache build is not a no-op (a
 # stale/missing cache on a big args-file can run past the limit and get
@@ -550,7 +550,7 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
     fi
 
     # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values
-    # (dataloader/pair_descriptor_cache_reader.py). Never fatal, same as above: a job that
+    # (dataloader/descriptor_cache_reader.py). Never fatal, same as above: a job that
     # cannot read it just computes the values itself, slower but not wrong.
     #
     # Unlike the embedding store this cache is a few hundred KB, so
@@ -563,7 +563,7 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
     # mismatch (a table/protein-graph edit that has not round-tripped to this
     # machine yet) -- that RDKit/pocket-parse rebuild is what hit GRICAD's 600s
     # login-node CPU limit in the first place (see run_prep_job's comment).
-    variant_pair_cache_cmd="python3 data/build_pair_descriptor_cache.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")"
+    variant_pair_cache_cmd="python3 data/build_descriptor_cache.py --args_file=$(printf '%q' "${REMOTE_INPUT_PATH}")"
     if ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
         "cd '${REMOTE_PROJECT}' && source $(printf '%q' "${CONDA_SH}") && conda activate $(printf '%q' "${CONDA_ENV}") && OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 ${variant_pair_cache_cmd} --check_only" \
         2>&1 | sed 's/^/  /'

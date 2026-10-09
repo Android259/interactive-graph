@@ -38,7 +38,7 @@ between axes, so it is the only thing branched on (see Block/split_held_block):
                       (lipid_classes_for_holdout, --share).
   --sets              the lipid-class axis (`--lipid_coldsplit`): whole head-group
                       classes leave train, every protein stays in it
-                      (dataloader.sampler.LIPID_COLDSPLIT_SETS).
+                      (dataloader.splitting_on_blocks.lipid_coldsplit_blocks.LIPID_COLDSPLIT_SETS).
   --lipid_subclass    a species-keyed block (`--lipid_subclass`), e.g. "PA" or
                       "CerP+Hex2Cer+SHexCer".
   --lipid_species_coldsplit  a species-keyed block of this share, redrawn per seed
@@ -99,12 +99,14 @@ from dataloader.chemistry_prior import (  # noqa: E402
     null_scores_within_protein, species_similarity,
 )
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.lipid_species_blocks import species_coldsplit_block  # noqa: E402
-from dataloader.lipid_subclass_blocks import subclass_block_species  # noqa: E402
-from dataloader.sampler import (  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_species_blocks import species_coldsplit_block  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_subclass_blocks import subclass_block_species  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import (  # noqa: E402
     LIPID_COLDSPLIT_SETS,
-    lipid_class_series,
     lipid_classes_for_holdout,
+)
+from dataloader.sampler import (  # noqa: E402
+    lipid_class_series,
     split_and_sample_lipid_class_balanced_interactions,
     split_and_sample_protein_balanced_interactions,
 )
@@ -210,7 +212,7 @@ def resolve_similarity(csv, data_dir, features, label=None, zscore=False):
 
     `features` a single string, either TANIMOTO, MOLFORMER or a comma list drawing on
     dataloader.chemistry_prior.LIPID_DESCRIPTOR_NAMES /
-    dataloader.protein_graph_builder.POCKET_DESCRIPTOR_NAMES / PAIR_DESCRIPTOR_NAMES
+    dataloader.graphs_builders.protein_graph_builder.POCKET_DESCRIPTOR_NAMES / PAIR_DESCRIPTOR_NAMES
     in any combination -- feature_similarity resolves the mix and decides the null
     model's granularity (per lipid species, per protein, or per protein-lipid row).
 
@@ -532,7 +534,7 @@ def blocks_from_families(families):
     A name that is a LIPID_COLDSPLIT_SETS key is the lipid-class axis; anything else is
     a protein family. Kept as one list rather than two flags because `families` is the
     parameter every existing caller (analysis/full_label_report.py,
-    analysis/probes/greedy_pair_descriptor_search.py) already passes both kinds of name through.
+    analysis/probes/greedy_descriptor_search.py) already passes both kinds of name through.
     """
     return [
         lipid_set_block(name) if name in LIPID_COLDSPLIT_SETS else family_block(name)
@@ -1128,7 +1130,7 @@ def main():
             "preprocessing/build_molformer_similarity_matrix.py). "
             "Otherwise a comma-separated list of descriptor names, any mix of "
             f"lipid-only ({','.join(LIPID_DESCRIPTOR_NAMES)}), protein-only "
-            "(dataloader.protein_graph_builder.POCKET_DESCRIPTOR_NAMES, e.g. "
+            "(dataloader.graphs_builders.protein_graph_builder.POCKET_DESCRIPTOR_NAMES, e.g. "
             "pocket_extent,aromatic_share), and pair "
             f"({','.join(PAIR_DESCRIPTOR_NAMES)}). Lipid-only names alone give one "
             "entity per lipid species (as before); protein-only names alone give one "

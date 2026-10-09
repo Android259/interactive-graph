@@ -348,7 +348,7 @@ def run_test(run, run_summary, surviving_structure, discovered_dropout_report):
         f.write(f"AUC_within_protein_proteins: {metrics['AUC_within_protein_proteins']}\n")
         f.write(f"AUC_within_protein_pairs_proteins: {metrics['AUC_within_protein_pairs_proteins']}\n")
         # What --lipid_isolation actually removed from training. The flag's value is a
-        # key into a registry (dataloader/lipid_isolation_blocks.py), so the report
+        # key into a registry (dataloader/splitting_on_blocks/lipid_isolation_blocks.py), so the report
         # would otherwise record "0.85" and nothing about which chemistry that was --
         # and a report has to be readable years after the registry moved on. Taken from
         # the dataset rather than re-read from the registry: this is what the run held

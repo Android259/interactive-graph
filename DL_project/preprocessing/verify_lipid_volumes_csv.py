@@ -5,7 +5,7 @@ data/cache/pair_descriptor_cache_deterministic_v2.json's already-cached
 `experimental_lipid_volume` entries, computed earlier by whichever machine last had
 `openpyxl` and ran a cache build straight off the original .xlsx.
 
-Builds the same {canonical SMILES: volume} table dataloader/pair_descriptors.py's
+Builds the same {canonical SMILES: volume} table dataloader/descriptors.py's
 `_experimental_lipid_volume_table` builds (same RDKit canonicalisation, same
 flat-then-isomeric-on-top merge for the couple of structures that collapse under
 non-isomeric canonicalisation), then compares every entry against the cache's own
@@ -42,11 +42,11 @@ def main() -> int:
     parser.add_argument("--tolerance", type=float, default=1e-6)
     args = parser.parse_args()
 
-    import dataloader.pair_descriptors as pair_descriptors
+    import dataloader.descriptors as descriptors
 
-    pair_descriptors._LIPID_VOLUME_CSV = args.csv
-    pair_descriptors._experimental_lipid_volume_table.cache_clear()
-    table = pair_descriptors._experimental_lipid_volume_table()
+    descriptors._LIPID_VOLUME_CSV = args.csv
+    descriptors._experimental_lipid_volume_table.cache_clear()
+    table = descriptors._experimental_lipid_volume_table()
     print(f"{args.csv}: {len(table)} distinct canonical structures")
 
     cache = json.loads(args.cache.read_text())

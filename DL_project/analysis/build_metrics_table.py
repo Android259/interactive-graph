@@ -21,7 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataloader.pair_descriptors import parse_descriptor_list
+from dataloader.descriptors import parse_descriptor_list
 from training.read_configuration import ModelConfig
 from training.run_metrics import RUN_METRIC_FIELDS
 from training.results_layout import in_family_layout, split_result_path

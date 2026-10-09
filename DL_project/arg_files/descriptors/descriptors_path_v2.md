@@ -8,7 +8,6 @@
 --weight_decay=0.01
 --pool_type="gem"
 
---pocket_descriptors
 --pair_descriptors
 --descriptors_head
 --pair_descriptor_pocket_shares_split

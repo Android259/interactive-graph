@@ -1,6 +1,6 @@
 """Show which lipid classes the cold split will hold out, and what each costs.
 
-Reporting only: the rule itself lives in `dataloader.sampler.lipid_classes_for_holdout`
+Reporting only: the rule itself lives in `dataloader.splitting_on_blocks.lipid_coldsplit_blocks.lipid_classes_for_holdout`
 and the loader applies it on its own, so nothing here is passed to a run. Use it to see
 what --double_coldsplit is about to do, and to compare values of --coldsplit_share.
 
@@ -55,7 +55,7 @@ except ModuleNotFoundError:
     )
 
 from dataloader.dataset_source import interaction_csv_path
-from dataloader.sampler import (
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import (
     COLDSPLIT_MINIMUM_TEST_POSITIVES,
     lipid_classes_for_holdout,
 )

@@ -191,7 +191,8 @@ read -r -a REQUESTED_ARGS_FILES <<< "$*"
 # --lipid_coldsplit in the args file switches the grid to the other axis: whole chemical
 # families of lipids leave training while every protein stays, so there is no held-out
 # protein group and the grid iterates the four lipid sets instead. Keep the names in
-# step with LIPID_COLDSPLIT_SETS (dataloader/sampler.py); one absent from there is
+# step with LIPID_COLDSPLIT_SETS
+# (dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py); one absent from there is
 # rejected at parse time.
 LIPID_COLDSPLIT_SETS_LIST=(sphingolipids phosphorus_free choline anionic)
 
@@ -199,7 +200,7 @@ LIPID_COLDSPLIT_SETS_LIST=(sphingolipids phosphorus_free choline anionic)
 # (Titeca et al., the y axis of the LTP x lipid-subclass matrix) instead of by the four
 # hand-built sets above. Two forms, like --family_only: BARE expands into one job per
 # block below; --lipid_subclass=<spec> names one fixed block and runs it alone. Keep
-# this list in step with dataloader/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS --
+# this list in step with dataloader/splitting_on_blocks/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS --
 # a spec absent from data/lipid_article_classification.json is rejected at parse time.
 LIPID_SUBCLASS_BLOCKS_LIST=(
     PC PG FA PE "Cer+CerP+HexCer+Hex2Cer+SHexCer+SM" PI "LPC+LPE+LPG" PA
@@ -364,7 +365,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     # --family_only=<group> itself. --family_only=<value>, spelled out in the file, is
     # a FIXED family instead -- nothing to expand, the template already names it, and
     # this is what a --lipid_isolation ladder scoped to one family (a "<family>__<key>"
-    # block in dataloader/lipid_isolation_blocks.py) has to use: a bare marker would
+    # block in dataloader/splitting_on_blocks/lipid_isolation_blocks.py) has to use: a bare marker would
     # let the grid iterate all nine groups and overwrite the fixed family with whichever
     # one it is currently on, once appended after the template's own line (last flag
     # wins). This grid still runs FIXED as one job x seed, not nine, and the flag stays
@@ -387,7 +388,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     fi
 
     # --lipid_isolation=<key> in the args file is the lipid axis addressed by distance
-    # (dataloader/lipid_isolation_blocks.py). Unlike the bare --lipid_coldsplit marker
+    # (dataloader/splitting_on_blocks/lipid_isolation_blocks.py). Unlike the bare --lipid_coldsplit marker
     # it already names its block, so there is nothing for the grid to expand: it runs
     # one pseudo-group, named the way new_train.py files the run, against the seeds. The
     # flag stays in the template -- the trainer takes it as written.
@@ -408,7 +409,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     fi
 
     # --lipid_species_coldsplit=<share> is the lipid axis cut at the CONCRETE LIPID
-    # (dataloader/lipid_species_blocks.py). Like --lipid_isolation it names its own
+    # (dataloader/splitting_on_blocks/lipid_species_blocks.py). Like --lipid_isolation it names its own
     # split, so there is nothing to expand: one pseudo-group against the seeds. Unlike
     # it, the block is a per-seed draw, so the pseudo-group is the SHARE -- the same
     # name new_train.py files the run under.

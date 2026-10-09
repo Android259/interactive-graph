@@ -15,7 +15,7 @@ three places: a config option added here reaches training, validation and profil
 once, or fails in all three at once, which is the honest outcome.
 """
 
-from dataloader.pair_descriptors import descriptor_catalog_only, full_catalog_order
+from dataloader.descriptors import descriptor_catalog_only, full_catalog_order
 
 
 def build_forward_args(config, prot, lipid):
@@ -93,7 +93,7 @@ def build_forward_args(config, prot, lipid):
         or getattr(config, "pocket_attention_cross", False)
     ):
         forward_args["pocket_mask"] = prot.pocket
-    if getattr(config, "pocket_descriptors", False):
+    if getattr(config, "needs_pocket_descriptor", False):
         forward_args["pocket_descriptor"] = prot.pocket_descriptor
     if getattr(config, "use_esm3_v2_embeddings", False):
         forward_args["node_confidence"] = getattr(prot, "node_confidence", None)

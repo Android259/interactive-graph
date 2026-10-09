@@ -7,7 +7,7 @@ combination, which would re-pay loading the interaction table and recomputing ra
 protein/lipid features on every one of the several hundred combinations this
 evaluates.
 
-NOT a full grid: dataloader/pair_descriptors.py has 20 protein x 22 lipid descriptor
+NOT a full grid: dataloader/descriptors.py has 20 protein x 22 lipid descriptor
 names; every subset with >=2 protein and >=1 lipid names is ~4.4 trillion
 combinations, computationally impossible regardless of optimization. Joint greedy
 instead:
@@ -63,14 +63,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from analysis.baselines.kronrls_baseline import build_parser, evaluate_block, load_table  # noqa: E402
-from dataloader.pair_descriptors import (  # noqa: E402
+from dataloader.descriptors import (  # noqa: E402
     LIPID_DESCRIPTOR_NAMES,
     PROTEIN_DESCRIPTOR_NAMES as _NETWORK_PROTEIN_DESCRIPTOR_NAMES,
 )
 import training.pair_baseline_common as pbc  # noqa: E402
 
 # The pool this search picks protein descriptors FROM -- deliberately wider than
-# dataloader.pair_descriptors.PROTEIN_DESCRIPTOR_NAMES, and deliberately a separate
+# dataloader.descriptors.PROTEIN_DESCRIPTOR_NAMES, and deliberately a separate
 # name rather than an extension of it: that list's LENGTH is ModelConfig.
 # pocket_descriptor_count and its POSITIONS are indexed by bare integer literals in
 # architecture/pair_descriptor_head.py, so appending to it would silently break the

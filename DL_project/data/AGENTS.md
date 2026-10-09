@@ -22,7 +22,7 @@ lipid_graphs/*
 ```
 
 The old full-matrix pair (`Total_tanimoto_matrix_uint8.npy`, `Total_multiple_lipid_batch.npy`)
-is no longer built or read; see `dataloader/tanimoto_compact_reader.py` for the compact form and
+is no longer built or read; see `dataloader/tensors_reading/tanimoto_compact_tensors_reader.py` for the compact form and
 why it is byte-identical.
 
 ## Generated Caches (`data/cache/`)
@@ -35,12 +35,12 @@ in the matching top-level `dataloader/*.py` module (see `dataloader/AGENTS.md`).
 
 | cache file(s) under `data/cache/` | built by | read by |
 |---|---|---|
-| `Tanimoto_compact_*`, `Tanimoto_compact_isomeric_*` | `preprocessing/build_tanimoto_compact.py` | `dataloader/tanimoto_compact_reader.py` |
+| `Tanimoto_compact_*`, `Tanimoto_compact_isomeric_*` | `preprocessing/build_tanimoto_compact.py` | `dataloader/tensors_reading/tanimoto_compact_tensors_reader.py` |
 | `Tanimoto_headgroup_compact_*` | `preprocessing/build_tanimoto_headgroup.py` | `training/pair_baseline_common.py`, `analysis/coldsplit_geometry.py --blocks --tanimoto headgroup` |
 | `lipid_SMILES_embedding_deterministic.tensors.pt` + manifest | `data/build_lipid_embedding_store.py` | `dataloader/tensors_reading/lipid_embedding_tensors_reader.py` |
 | `lipid_graph_tensors.pt` + manifest | `data/build_lipid_graph_tensor_cache.py` | `dataloader/tensors_reading/lipid_graph_tensors_reader.py` |
 | `protein_graph_tensors.pt` (+ `.no_geometry.pt`) + manifests | `data/build_protein_graph_tensor_cache.py` | `dataloader/tensors_reading/protein_graph_tensors_reader.py` |
-| `pair_descriptor_cache_deterministic_v2.json` (+ older hash-named seeds), `pair_value_cache_deterministic_*.json` | `data/build_pair_descriptor_cache.py` | `dataloader/pair_descriptor_cache_reader.py` |
+| `pair_descriptor_cache_deterministic_v2.json` (+ older hash-named seeds), `pair_value_cache_deterministic_*.json` | `data/build_descriptor_cache.py` | `dataloader/descriptor_cache_reader.py` |
 
 `build_protein_graph_tensor_cache.py` derives `cache/protein_graph_tensors.pt` and
 `cache/protein_graph_tensors.manifest.json` from the protein graph CSV/PDB artifacts.

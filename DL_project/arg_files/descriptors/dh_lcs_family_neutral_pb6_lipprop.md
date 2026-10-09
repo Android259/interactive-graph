@@ -7,7 +7,7 @@
 #   - depth_q10, hydropathy_core: already in PROTEIN_DESCRIPTOR_NAMES, excluded from
 #     family-neutral-7 by eta^2 (0.55/0.77) but the two best "real site signal"
 #     candidates per files/reference/pocket_shape_descriptors.md section 4's within-family check.
-#   - ev14_q10, hydropathy_mean: new this session (dataloader/pair_descriptors.py).
+#   - ev14_q10, hydropathy_mean: new this session (dataloader/descriptors.py).
 # Single-variable sibling of the base file, same convention as its existing
 # _rankprot/_tailtokens/_protgeom8 siblings -- base file's descriptor_names and every
 # other flag left untouched.

@@ -104,7 +104,7 @@ is now one implementation here):
 
   --descriptors            rank every pair/lipid/protein descriptor name individually
                            (one row per name, sorted by how lopsidedly each leaks
-                           identity) -- was analysis/probes/rank_pair_descriptors.py.
+                           identity) -- was analysis/probes/rank_descriptors.py.
   --lipid_classes          which LIPID descriptors are head-group-class fingerprints,
                            on three kinds of axis (fine classes, the four
                            LIPID_COLDSPLIT_SETS, each set against the rest), each eta^2
@@ -151,7 +151,7 @@ from dataloader.chemistry_prior import (  # noqa: E402
     raw_feature_matrix, species_similarity,
 )
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.pair_descriptors import MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES  # noqa: E402
+from dataloader.descriptors import MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES  # noqa: E402
 from dataloader.sampler import lipid_class_series  # noqa: E402
 
 # The same coldsplit machinery analysis/baselines/null_model.py itself uses for its (family,
@@ -507,7 +507,7 @@ def print_global_report(entity_column, entities, similarity, matrix, column_name
     print()
 
 
-def rank_pair_descriptors(csv, data_dir, descriptor_names, zscore):
+def rank_descriptors(csv, data_dir, descriptor_names, zscore):
     """One row per PAIR descriptor: how lopsidedly it leaks identity, and how much of
     the combined-identity axis it explains beyond either single axis alone.
 
@@ -634,7 +634,7 @@ def parse_feature_tokens(features_arg):
 
     A token "<name>_coarse=<K>" means: fetch the named descriptor's RAW values (any
     lipid/protein/pair name raw_feature_matrix knows -- whether or not it already has
-    its own project "coarse" variant; dataloader.pair_descriptors' aromatic_share_
+    its own project "coarse" variant; dataloader.descriptors' aromatic_share_
     coarse/polar_share_coarse are hand-picked FIXED bands over a share already known
     to live in [0, 1], which does not generalise to a descriptor with a different
     native scale, e.g. depth_bulk_match) and quantile-bin it into K groups instead of
@@ -821,14 +821,14 @@ def candidate_matrix(csv, data_dir, names):
     chemistry_prior's own lipid table does, so the two agree on what "this species'
     value" means.
     """
-    from dataloader.pair_descriptor_cache_reader import load_pair_descriptor_cache
+    from dataloader.descriptor_cache_reader import load_lipid_descriptor_cache
     from dataloader.pocket_lipid_compatibility import candidates_for_row
     from preprocessing.compute_descriptors import _MEASURES
 
-    cache = load_pair_descriptor_cache(os.path.join(PROJECT_ROOT, "data"), isomeric=False)
+    cache = load_lipid_descriptor_cache(os.path.join(PROJECT_ROOT, "data"), isomeric=False)
     if cache is None:
         raise SystemExit(
-            "no pair-descriptor cache -- run data/build_pair_descriptor_cache.py first; "
+            "no pair-descriptor cache -- run data/build_descriptor_cache.py first; "
             "computing these from scratch here would re-embed conformers per lipid"
         )
     missing = [name for name in names if name not in _MEASURES]
@@ -866,10 +866,11 @@ def coldsplit_set_labels(classes):
     """Which LIPID_COLDSPLIT_SET each class belongs to, "kept" for the classes in none.
 
     Phosphatidyl- and lysophosphatidylethanolamine are deliberately in no set (see the
-    LIPID_COLDSPLIT_SETS comment in dataloader/sampler.py), so "kept" is a real group
+    LIPID_COLDSPLIT_SETS comment in
+    dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py), so "kept" is a real group
     with real members, not a leftover bucket to be dropped.
     """
-    from dataloader.sampler import LIPID_COLDSPLIT_SETS
+    from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS
 
     membership = {}
     for set_name, class_names in LIPID_COLDSPLIT_SETS.items():
@@ -970,8 +971,8 @@ def run_lipid_classes(args):
     separate sphingolipids perfectly from the rest).
     """
     from dataloader.lipid_classes import lipid_class_series as class_series
-    from dataloader.pair_descriptors import LIPID_DESCRIPTOR_NAMES as LIPID_NAMES
-    from dataloader.sampler import LIPID_COLDSPLIT_SETS
+    from dataloader.descriptors import LIPID_DESCRIPTOR_NAMES as LIPID_NAMES
+    from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS
     from preprocessing.compute_descriptors import CANDIDATE_LIPID_DESCRIPTOR_NAMES
 
     data_dir = os.path.join(PROJECT_ROOT, "data") + os.sep
@@ -1253,7 +1254,7 @@ def run_edge_geometry(args):
     import torch
 
     from architecture.protein_edge_geometry import structured_edge_features
-    from dataloader.protein_graph_builder import ProteinGraphBuilder
+    from dataloader.graphs_builders.protein_graph_builder import ProteinGraphBuilder
     from read_configuration import read_configuration
 
     from analysis.checkpoint_scores import arg_lines
@@ -1348,7 +1349,7 @@ def main():
             f'"{TANIMOTO}" (default): whole-structure Morgan-fingerprint similarity, '
             "one entity per lipid species. Otherwise a comma-separated list of "
             f"descriptor names, any mix of lipid-only ({','.join(LIPID_DESCRIPTOR_NAMES)}), "
-            "protein-only (dataloader.protein_graph_builder.POCKET_DESCRIPTOR_NAMES, "
+            "protein-only (dataloader.graphs_builders.protein_graph_builder.POCKET_DESCRIPTOR_NAMES, "
             "e.g. pocket_extent,aromatic_share), and pair "
             f"({','.join(PAIR_DESCRIPTOR_NAMES)}) -- exactly analysis/baselines/null_model.py's "
             "own --features. Any token may instead be '<name>_coarse=<K>' -- quantile-"
@@ -1387,9 +1388,9 @@ def main():
         help="Rank every one of these pair/lipid/protein descriptor names "
              "individually by how lopsidedly it leaks identity (rank_pair_"
              "descriptors -- folded in here from the former analysis/probes/"
-             "rank_pair_descriptors.py) instead of running the --features report "
+             "rank_descriptors.py) instead of running the --features report "
              "above. Comma-separated, no spaces. Bare --descriptors (no value) "
-             "ranks the full dataloader.pair_descriptors.PAIR_DESCRIPTOR_NAMES set.",
+             "ranks the full dataloader.descriptors.PAIR_DESCRIPTOR_NAMES set.",
     )
     parser.add_argument(
         "--zscore", action="store_true",
@@ -1486,7 +1487,7 @@ def main():
             else [name for name in args.descriptors.split(",") if name]
         )
         pandas.set_option("display.width", 200)
-        table = rank_pair_descriptors(csv, data_dir, descriptor_names, args.zscore)
+        table = rank_descriptors(csv, data_dir, descriptor_names, args.zscore)
         print(table.round(3).to_string())
         return
 

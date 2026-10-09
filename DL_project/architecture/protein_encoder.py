@@ -1,10 +1,7 @@
 import torch
 import torch_geometric
 
-from dataloader.protein_graph_builder import (
-    POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES, POCKET_DESCRIPTOR_NAMES,
-)
-from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
+from dataloader.descriptors import full_catalog_order, parse_descriptor_list
 
 from .edge_node_encoder import DeepSetsEdgeEncoder, SetTransformerEdgeEncoder
 from .geometric_transformer import ProteinGeometricTransformerBlock
@@ -156,70 +153,24 @@ class Protein_encoder(torch.nn.Module):
             # residue_type, SASA, volume, plus the optional Voronota extras appended
             # after them by the loader (see protein_graph_builder.EXTRA_NODE_COLUMNS).
             indim = getattr(self.config, "protein_node_feature_count", 3)
-            # The cavity descriptor conditions the protein encoding from the start:
-            # broadcast to every residue and concatenated next to plm and buriedness,
-            # so the GAT, the self-attention and -- the point -- the cross-attention
-            # the lipid reads all see it. Injecting it at pooling instead would leave
-            # the interaction itself blind to the shape of the cavity.
-            #
-            # Standardisation lives here rather than in the loader because the
-            # statistics must come from train proteins only; the buffers are filled by
-            # set_pocket_descriptor_normalization before the first epoch.
-            # --pocket_descriptors_family_neutral restricts this broadcast to the 7
-            # POCKET_DESCRIPTOR_NAMES entries at/near the no-structure eta^2 floor
-            # (dataloader/protein_graph_builder.py); --pocket_descriptor_names restricts
-            # it to an arbitrary named subset instead (mutually exclusive with
-            # family_neutral, enforced in training/read_configuration.py's validate()).
-            # Either way the incoming pocket_descriptor tensor stays the full 13-wide
-            # vector (pocket_descriptor() and PairDescriptorHead's fixed indices are
-            # untouched), sliced here at both normalisation and forward time.
-            pocket_descriptor_names = getattr(self.config, "pocket_descriptor_names", "")
-            if pocket_descriptor_names:
-                self.pocket_descriptor_indices = tuple(
-                    POCKET_DESCRIPTOR_NAMES.index(name)
-                    for name in (
-                        n.strip() for n in pocket_descriptor_names.split(",")
-                    )
-                    if name
-                )
-            elif getattr(self.config, "pocket_descriptors_family_neutral", False):
-                self.pocket_descriptor_indices = POCKET_DESCRIPTOR_FAMILY_NEUTRAL_INDICES
-            else:
-                self.pocket_descriptor_indices = None
-            self.pocket_descriptor_count = int(
-                len(self.pocket_descriptor_indices)
-                if self.pocket_descriptor_indices is not None
-                else getattr(self.config, "pocket_descriptor_count", 0)
-            )
-            if self.pocket_descriptor_count:
-                self.register_buffer(
-                    "pocket_descriptor_mean", torch.zeros(self.pocket_descriptor_count)
-                )
-                self.register_buffer(
-                    "pocket_descriptor_std", torch.ones(self.pocket_descriptor_count)
-                )
-                indim += self.pocket_descriptor_count
             # --descriptors_in_protein_lipid: aromatic_share/polar_share (already
             # bounded [0,1] shares, read raw like pair_descriptor_head.py does) plus
             # coarsened extent (already standardised in pair_descriptor_input by the
             # loader) when --pair_descriptor_extent is on -- see
-            # expand_pair_descriptors below. No normalisation buffers needed here,
-            # unlike pocket_descriptor_count above: nothing in this set is raw/
-            # unstandardised.
+            # expand_pair_descriptors below. No normalisation buffers needed here:
+            # nothing in this set is raw/unstandardised.
             self.pair_descriptor_broadcast_count = int(
                 getattr(self.config, "protein_pair_descriptor_broadcast_count", 0)
             )
             indim += self.pair_descriptor_broadcast_count
             # --protein_descriptors: broadcast an ARBITRARY named subset of the full
-            # DESCRIPTOR_CATALOG (lipid, protein/pocket, or pair-level names -- unlike
-            # pocket_descriptor_count above, not restricted to POCKET_DESCRIPTOR_NAMES)
-            # onto every node, read out of the shared descriptor_catalog_input tensor by
+            # DESCRIPTOR_CATALOG (lipid, protein/pocket, or pair-level names) onto
+            # every node, read out of the shared descriptor_catalog_input tensor by
             # column index -- same {name: position} lookup NamedDescriptorHead.__init__
             # uses (architecture/named_descriptor_head.py). Independent, coexisting
-            # mechanism from pocket_descriptor_count/pair_descriptor_broadcast_count
-            # above: neither is touched or restricted by this. No derived width field on
-            # ModelConfig -- the count is only ever this many tokens, computed here from
-            # the string itself.
+            # mechanism from pair_descriptor_broadcast_count above: it is not touched
+            # or restricted by this. No derived width field on ModelConfig -- the count
+            # is only ever this many tokens, computed here from the string itself.
             protein_descriptor_tokens = parse_descriptor_list(
                 getattr(self.config, "protein_descriptors", "")
             )
@@ -442,46 +393,14 @@ class Protein_encoder(torch.nn.Module):
         degree.index_add_(0, target, ones)
         return out + aggregate / degree.clamp_min(1).unsqueeze(-1)
 
-    def set_pocket_descriptor_normalization(self, stats):
-        """Install fixed descriptor statistics computed from train proteins only."""
-        if not getattr(self, "pocket_descriptor_count", 0) or stats is None:
-            return
-        indices = getattr(self, "pocket_descriptor_indices", None)
-        for name in ("pocket_descriptor_mean", "pocket_descriptor_std"):
-            target = getattr(self, name)
-            value = stats[name].to(device=target.device, dtype=target.dtype)
-            if indices is not None:
-                value = value[list(indices)]
-            if value.shape != target.shape:
-                raise ValueError(
-                    f"{name} shape {tuple(value.shape)} != {tuple(target.shape)}"
-                )
-            target.copy_(value)
-
-    def expand_pocket_descriptor(self, node, batch, pocket_descriptor):
-        """Standardise the per-protein descriptor and broadcast it over that protein's nodes."""
-        if not getattr(self, "pocket_descriptor_count", 0):
-            return node
-        if pocket_descriptor is None:
-            raise ValueError("pocket_descriptors requires pocket_descriptor")
-        indices = getattr(self, "pocket_descriptor_indices", None)
-        if indices is not None:
-            pocket_descriptor = pocket_descriptor[:, list(indices)]
-        scaled = (
-            pocket_descriptor.to(node.dtype) - self.pocket_descriptor_mean
-        ) / self.pocket_descriptor_std
-        return torch.cat((node, scaled[batch]), dim=-1)
-
     def expand_pair_descriptors(self, node, batch, pocket_descriptor, pair_descriptor_input):
         """--descriptors_in_protein_lipid: broadcast pair_descriptors' protein-only
         tokens (aromatic_share, polar_share, coarsened extent) over every node.
 
-        Deliberately not a reuse of expand_pocket_descriptor: that broadcasts the full
-        13-wide POCKET_DESCRIPTOR_NAMES vector, this only the 2-3 tokens
-        architecture/pair_descriptor_head.py's self-attention head itself reads --
-        the two are independent, coexisting mechanisms (see ModelConfig's
-        descriptors_in_protein_lipid docstring). aromatic_share/polar_share are read
-        raw (already-bounded [0,1] shares, no standardisation needed, same as
+        Reads only the 2-3 tokens architecture/pair_descriptor_head.py's self-attention
+        head itself reads, out of the same per-protein pocket_descriptor tensor (see
+        ModelConfig's descriptors_in_protein_lipid docstring). aromatic_share/polar_share
+        are read raw (already-bounded [0,1] shares, no standardisation needed, same as
         pair_descriptor_head.py); extent is pair_descriptor_input's last column,
         already standardised by the loader -- no local buffers needed either.
         """
@@ -502,7 +421,7 @@ class Protein_encoder(torch.nn.Module):
 
     def expand_named_protein_descriptors(self, node, batch, descriptor_catalog_input):
         """--protein_descriptors: broadcast an arbitrary named DESCRIPTOR_CATALOG subset
-        (dataloader/pair_descriptors.py) over every node, selected out of the shared
+        (dataloader/descriptors.py) over every node, selected out of the shared
         descriptor_catalog_input tensor by column index -- same shape as
         expand_pair_descriptors above, but reading named columns instead of a fixed pair
         of pocket_descriptor indices. Values are already standardised (train-only) by
@@ -655,7 +574,6 @@ class Protein_encoder(torch.nn.Module):
                 node = torch.cat((node, plm), -1)
             if self.config.buryon:
                 node = torch.cat((node, bury.unsqueeze(1)), -1)
-            node = self.expand_pocket_descriptor(node, batch, pocket_descriptor)
             node = self.expand_pair_descriptors(
                 node, batch, pocket_descriptor, pair_descriptor_input
             )

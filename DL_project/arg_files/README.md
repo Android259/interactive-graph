@@ -85,7 +85,7 @@
 | `esmif1` | `--esmif1_replace_esm3` |
 | `esm3` | эмбеддинги ESM3 остаются включены (без `--no_protein_embeddings`) |
 | `doubleattn` | `--double_attention` |
-| `3rd_head` | `--pair_descriptors --pocket_descriptors` поверх attention-модели (третий вход головы) |
+| `3rd_head` | `--pair_descriptors` поверх attention-модели (третий вход головы) |
 | `ffngate` | `--sparsity_gate_ffn` (структурная разреженность) |
 
 ### Размеры и регуляризация

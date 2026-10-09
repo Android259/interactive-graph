@@ -40,7 +40,7 @@ from read_configuration import read_configuration  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 from dataloader.Dataloader import PLIDataset  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.lipid_subclass_blocks import article_subclass_species  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_subclass_blocks import article_subclass_species  # noqa: E402
 
 DEFAULT_LABEL = "mlp_s15_nomb_hid64"
 # Lookup rules over the train rows of a (protein, subclass) cell. All three read train

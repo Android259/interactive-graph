@@ -51,11 +51,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--protein_descriptors", required=True,
-        help="comma-separated dataloader.pair_descriptors.PROTEIN_DESCRIPTOR_NAMES subset",
+        help="comma-separated dataloader.descriptors.PROTEIN_DESCRIPTOR_NAMES subset",
     )
     parser.add_argument(
         "--lipid_descriptors", required=True,
-        help="comma-separated dataloader.pair_descriptors.LIPID_DESCRIPTOR_NAMES subset",
+        help="comma-separated dataloader.descriptors.LIPID_DESCRIPTOR_NAMES subset",
     )
     parser.add_argument("--protein_lambda", type=float, default=1.0)
     parser.add_argument("--lipid_lambda", type=float, default=1.0)

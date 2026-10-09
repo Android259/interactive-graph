@@ -61,7 +61,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from dataloader.dataset_source import INTERACTION_CSV  # noqa: E402
-from dataloader.tanimoto_compact_reader import load_compact  # noqa: E402
+from dataloader.tensors_reading.tanimoto_compact_tensors_reader import load_compact  # noqa: E402
 
 
 def load_candidate_tanimoto(data_dir, csv_path, isomeric):

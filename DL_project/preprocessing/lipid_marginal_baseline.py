@@ -54,7 +54,7 @@ from dataloader.sampler import (
     split_and_sample_lipid_class_balanced_interactions,
     split_and_sample_protein_balanced_interactions,
 )
-from dataloader.sampler import lipid_classes_for_holdout
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import lipid_classes_for_holdout
 
 SAMPLERS = {
     "balanced_proteins": split_and_sample_protein_balanced_interactions,
@@ -152,7 +152,7 @@ def lipid_split(csvt, lipid_classes, seed, merge_valid_test=False):
     halving of the excluded block -- is `halve_excluded_block`.
 
     `lipid_classes` is a fixed set of class names (one entry of
-    dataloader.sampler.LIPID_COLDSPLIT_SETS), NOT derived from a family the way
+    dataloader.splitting_on_blocks.lipid_coldsplit_blocks.LIPID_COLDSPLIT_SETS), NOT derived from a family the way
     `lipid_classes_for_holdout` derives them for the two-axis split: under this split
     there is no held-out family to derive anything from.
 

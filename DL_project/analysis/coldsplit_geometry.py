@@ -101,11 +101,9 @@ if PROJECT_ROOT not in sys.path:
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "training"))
 
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.sampler import (  # noqa: E402
-    LIPID_COLDSPLIT_SETS,
-    lipid_class_series,
-)
-from dataloader.tanimoto_compact_reader import CompactTanimoto, load_compact  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS  # noqa: E402
+from dataloader.sampler import lipid_class_series  # noqa: E402
+from dataloader.tensors_reading.tanimoto_compact_tensors_reader import CompactTanimoto, load_compact  # noqa: E402
 from preprocessing.lipid_marginal_baseline import halve_excluded_block  # noqa: E402
 
 FAMILIES = (
@@ -224,7 +222,7 @@ def report_lipid_sets(csv, compact):
 def load_headgroup_compact(data_dir, source_csv, isomeric=False):
     """The head-group compact artifact, or None if missing/stale.
 
-    Mirrors dataloader.tanimoto_compact_reader.load_compact's staleness check (source table
+    Mirrors dataloader.tensors_reading.tanimoto_compact_tensors_reader.load_compact's staleness check (source table
     size + mtime against the manifest) but reads preprocessing/build_tanimoto_
     headgroup.py's own files and format, which load_compact does not know about.
     """
@@ -421,7 +419,7 @@ def evaluation_rows(csv, rows, cap):
 
 
 def report_double_split(csv, share, seeds, cap):
-    from dataloader.sampler import lipid_classes_for_holdout
+    from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import lipid_classes_for_holdout
 
     print(f"two-axis split, share {share}, negatives 2 per positive, seeds {seeds}")
     header = (
@@ -500,7 +498,7 @@ def sweep_shares(csv, compact, shares, seed, families):
     sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
     from lipid_marginal_baseline import report as marginal_report
 
-    from dataloader.sampler import lipid_classes_for_holdout
+    from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import lipid_classes_for_holdout
 
     print(f"share sweep, seed {seed}, negatives 2 per positive")
     print(

@@ -17,7 +17,7 @@
 # axis this run doesn't have, at the cost of dropping the two descriptors with a
 # measured, sign-stable link to a lipid property (depth_q10 <-> chain length;
 # hydropathy_core <-> head-group class count -- files/reference/descriptor_catalog.md section 2).
-# Full 15 = PROTEIN_DESCRIPTOR_NAMES (dataloader/pair_descriptors.py) in full, not just
+# Full 15 = PROTEIN_DESCRIPTOR_NAMES (dataloader/descriptors.py) in full, not just
 # protgeom8's curated 8.
 
 --ep=120

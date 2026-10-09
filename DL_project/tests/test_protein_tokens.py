@@ -240,7 +240,7 @@ def test_preassembled_loader_stacks_the_tokens_like_pyg():
     from torch_geometric.data import Data
 
     from dataloader.preassembled_loader import PreassembledLoader
-    from dataloader.protein_graph_builder import ProteinGraphData
+    from dataloader.graphs_builders.protein_graph_builder import ProteinGraphData
 
     codes, counts = _pockets([2, 5, 3, 4, 1, 5, 2], longest=5)
 

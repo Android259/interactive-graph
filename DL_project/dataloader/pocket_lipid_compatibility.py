@@ -8,7 +8,7 @@ BOTH the protein and the candidate lipid together cannot collapse to a protein l
 same way, because it is not a function of the protein alone.
 
 The one built here: pocket_extent(p) - chain_length(l), where pocket_extent is the same
-PCA-axis span POCKET_DESCRIPTOR_NAMES already computes (dataloader/protein_graph_builder)
+PCA-axis span POCKET_DESCRIPTOR_NAMES already computes (dataloader/graphs_builders/protein_graph_builder)
 and chain_length is the longest unbranched aliphatic run of the candidate lipid --
 literally "does the cavity reach as far as the tail is long". Documented in
 files/reference/pocket_lipid_compatibility.md, which also carries the measurement of whether it
@@ -130,7 +130,7 @@ def chain_lengths_by_species(csv):
     carbon at all, and a species with no usable candidate gets a single NaN -- the caller
     decides how to fill that in (see raw_compatibility_matrix).
     """
-    # Local import: dataloader/pair_descriptors.py (longest_acyl_chain's home, see
+    # Local import: dataloader/descriptors.py (longest_acyl_chain's home, see
     # that module's LIPID_DESCRIPTOR_NAMES) imports candidates_for_row from THIS
     # module at its own top level, so importing pair_descriptors here at module load
     # time would cycle -- deferred to call time, by when both modules are already
@@ -185,7 +185,7 @@ def chain_lengths_by_row(csv, isomeric=False, cache=None):
     Parsing is cached by field text and by candidate string, so the whole table costs
     about as many RDKit parses as it has distinct structures.
 
-    `cache`, when given, is a dataloader/pair_descriptor_cache_reader.py load result
+    `cache`, when given, is a dataloader/descriptor_cache_reader.py load result
     ({"raw_to_canonical", "values", ...}): a raw candidate present there skips both the
     canonicalising parse and the length computation entirely. A raw string the cache has
     never seen (a candidate added to the table since the cache was built) falls back to
@@ -259,7 +259,7 @@ def pocket_extent_by_protein(root_dir, protein_names, cache=None):
     Same pocket_atom_coordinates + pocket_shape that POCKET_DESCRIPTOR_NAMES' own
     pocket_extent entry uses -- this is that entry, not a second measurement of it.
 
-    `cache`, when given, is dataloader/pair_descriptor_cache_reader.py's per-protein dict
+    `cache`, when given, is dataloader/descriptor_cache_reader.py's per-protein dict
     ({name: {"extent", "aromatic_share_core", "aromatic_share_rim"}}); a name present
     there skips the PDB re-parse. A name the cache has never seen falls back to parsing
     it here, same as without a cache.
@@ -279,7 +279,7 @@ def pocket_extent_by_protein(root_dir, protein_names, cache=None):
 def pocket_rim_core_aromatic_share_by_protein(root_dir, protein_names, cache=None):
     """(aromatic_share_core, aromatic_share_rim) for each named protein.
 
-    `cache`, when given, is dataloader/pair_descriptor_cache_reader.py's per-protein dict; a
+    `cache`, when given, is dataloader/descriptor_cache_reader.py's per-protein dict; a
     name present there skips the PDB/CSV re-parse below entirely, same fallback
     discipline as pocket_extent_by_protein.
 
@@ -288,8 +288,8 @@ def pocket_rim_core_aromatic_share_by_protein(root_dir, protein_names, cache=Non
     hydropathy_core/hydropathy_rim, which POCKET_DESCRIPTOR_NAMES already carries and are
     read directly off the pocket descriptor tensor -- no aromatic_share_core/rim entry
     exists there to match, so it is computed independently here rather than widening
-    that shared tensor, which every --pocket_descriptors run depends on, not just this
-    one flag. project memory [[descriptors-path-fingerprint-leak]]: on the descriptors_path
+    that shared tensor, which every run with needs_pocket_descriptor depends on, not
+    just this one flag. project memory [[descriptors-path-fingerprint-leak]]: on the descriptors_path
     label, aromatic_share/polar_share are the suspected channel behind an excluded-family
     outlier (LBP_BPI_CETP test BA 0.796 vs 0.44-0.60 everywhere else); this pair is the
     untested alternative, motivated by files/reference/pocket_shape_descriptors.md section 4a, where

@@ -1,5 +1,7 @@
 # descriptors_head (одноветочная архитектура), double_coldsplit: вся линия (2026-09-13)
 
+> **Сноска 2026-10-09.** Часть лейблов ниже удалена вместе с флагом `--pocket_descriptors` (сырой ненормированный broadcast на узлы белка): `ge_protgeom8*`, `ge_protgeom_family_neutral*`, `geatt_protgeom8*`, `descriptors_2paths*`, `descriptors_no_extent_coarse_add_lipprop_family_neutral`, `bbp_smd_fa_pocket_desc_*`, `bbp_dcs_rand_smd_*_3rd_head_*`, `ge_s15_prothid32_hid64_noreg_pairdesc`. Измерения остаются в силе, но конфиг по имени метки уже не воспроизводится — см. [`reference/pocket_shape_descriptors.md`](../reference/pocket_shape_descriptors.md) (блок «Статус»).
+
 Снимок на 2026-09-13. Все 49 лейблов — `descriptors_*` под `--descriptors_head`
 (плоские дескрипторы, self-attention над именованными токенами, без графа/GATv2 ни
 на одной стороне, без bilinear_fusion — архитектурно одноветочная, в отличие от

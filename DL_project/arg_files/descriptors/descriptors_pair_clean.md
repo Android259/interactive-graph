@@ -5,7 +5,7 @@
 # full_label_report.py, pair_descriptor_family_eta2.py, etc.), which standardise the
 # multiplicative pair descriptors before multiplying via dataloader.chemistry_prior.
 # raw_feature_matrix/feature_similarity. Training's own pair-descriptor path
-# (dataloader/pair_descriptors.py:pair_descriptor_value, used by --pair_descriptors)
+# (dataloader/descriptors.py:pair_descriptor_value, used by --pair_descriptors)
 # always multiplies raw, non-standardised values with no toggle -- there is no
 # training-side equivalent to wire up. See files/results/geometric_edge_descriptors_baseline_
 # selection_results.md section 1. Below unchanged otherwise: this label tests whether

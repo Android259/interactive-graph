@@ -80,7 +80,7 @@ SYNC_EXCLUDES=(
     # for a graph_id or column the cluster's copy does not have yet (this is exactly how
     # a stale data/lipid_graphs/ was found: --lipid_graph_isomers jobs crashed on
     # KeyError: 'chain_rank' because the cluster still had the pre-chain_rank CSVs), and
-    # the per-run preflight cache builders (data/build_pair_descriptor_cache.py etc.)
+    # the per-run preflight cache builders (data/build_descriptor_cache.py etc.)
     # simply are not there to run. Together about 160 MB, against the 3.8 GB the
     # exclusion is there for:
     #   the interaction tables themselves;
@@ -120,7 +120,7 @@ SYNC_EXCLUDES=(
     # carved out above, so a cluster missing either fails at dataset construction with
     # a bare FileNotFoundError instead of falling back to computing it. Both found the
     # hard way: Lipid_Volumes.csv (experimental_lipid_volume, dataloader/
-    # pair_descriptors.py -- originally a .xlsx, converted by preprocessing/convert_
+    # descriptors.py -- originally a .xlsx, converted by preprocessing/convert_
     # lipid_volumes_xlsx.py specifically because the old format needed openpyxl AND
     # was never carved out of this same exclusion, so it silently never reached a
     # cluster at all) and lipid_article_classification.json (--lipid_subclass and
@@ -129,7 +129,7 @@ SYNC_EXCLUDES=(
     # classify_lipids_by_article.py).
     --include='/data/Lipid_Volumes.csv'
     --include='/data/lipid_article_classification.json'
-    # Self-validating (dataloader/pair_descriptor_cache_reader.py's store_is_current() embeds
+    # Self-validating (dataloader/descriptor_cache_reader.py's store_is_current() embeds
     # every source file's size/mtime_ns in the JSON itself and checks it fresh on every
     # load), so shipping a copy built on this machine is never a wrong answer on the
     # far side -- at worst its recorded sources don't match the cluster's copies (a

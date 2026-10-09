@@ -2,7 +2,7 @@ import torch
 
 from .mlp_utils import make_self_attention
 
-from dataloader.pair_descriptors import parse_descriptor_list, resolve_requested_tokens
+from dataloader.descriptors import parse_descriptor_list, resolve_requested_tokens
 
 
 class NamedDescriptorHead(torch.nn.Module):
@@ -24,7 +24,7 @@ class NamedDescriptorHead(torch.nn.Module):
 
     def __init__(self, config, token_names, catalog_order, act_fn=None):
         """`token_names`: this head's OWN tokens (already-canonical, e.g. from
-        dataloader.pair_descriptors.parse_descriptor_list(config.good_descriptors)).
+        dataloader.descriptors.parse_descriptor_list(config.good_descriptors)).
         `catalog_order`: the FULL, shared column order dataloader/Dataloader.py's
         descriptor_catalog_input tensor is stacked in for THIS config -- resolve_
         requested_tokens(config.good_descriptors, config.bad_descriptors), computed

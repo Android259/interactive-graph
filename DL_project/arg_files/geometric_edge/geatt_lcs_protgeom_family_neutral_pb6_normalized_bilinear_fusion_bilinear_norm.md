@@ -19,7 +19,7 @@
 #     entries whose correlation with a family-free proxy target (chain length /
 #     head-group-class count) survives an if-checked-within-family look (section 4) --
 #     the best candidates this project has for "real site signal", not fold leakage.
-#   - ev14_q10, hydropathy_mean: new this session (dataloader/pair_descriptors.py,
+#   - ev14_q10, hydropathy_mean: new this session (dataloader/descriptors.py,
 #     dataloader/protein_graph_builder.py -- promoted from section 7's research-only
 #     catalog). ev14_q10 eta^2=0.238 (at the family-neutral floor, ~0.235-0.25);
 #     hydropathy_mean eta^2=0.611 (well above it, same risk profile as depth_q10/

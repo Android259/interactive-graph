@@ -8,7 +8,6 @@
 --pool_type="add"
 --group_dro
 
---pocket_descriptors
 --pair_descriptors
 --descriptors_head
 --descriptor_names=pocket_volume_per_sasa,pocket_elongation,pocket_flatness,buriedness_q50,apolar_sasa_share,aromatic_share,hydropathy_rim

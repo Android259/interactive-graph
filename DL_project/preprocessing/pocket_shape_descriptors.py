@@ -4,7 +4,7 @@
 Why this exists
 ---------------
 The descriptor the model can already use (POCKET_DESCRIPTOR_NAMES in
-dataloader/protein_graph_builder.py) is 13 sums or means over the pocket residues and
+dataloader/graphs_builders/protein_graph_builder.py) is 13 sums or means over the pocket residues and
 one maximum. An average has no shape: a long narrow channel and a round bowl with the
 same total surface and the same mean burial produce the same numbers. What decides
 which lipid fits is exactly the shape the averaging removes -- how far the cavity

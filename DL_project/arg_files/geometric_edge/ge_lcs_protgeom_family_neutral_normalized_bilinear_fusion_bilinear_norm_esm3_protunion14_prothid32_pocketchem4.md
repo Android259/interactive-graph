@@ -5,7 +5,7 @@
 #
 # The four: basic_share_core, basic_share_rim, hbond_donor_share_core,
 # pocket_free_volume. They are new to the NETWORK's descriptor catalog
-# (dataloader/pair_descriptors.py's POCKET_CHEMISTRY_DESCRIPTOR_NAMES; values computed
+# (dataloader/descriptors.py's POCKET_CHEMISTRY_DESCRIPTOR_NAMES; values computed
 # by dataloader/protein_graph_builder.py's pocket_chemistry_descriptor, bit-identical
 # to training/pair_baseline_common.py's own POCKET_CHEMISTRY_NAMES/POCKET_CAVITY_NAMES
 # -- verified over all 35 proteins) but not to the project: the Kron-RLS side got them

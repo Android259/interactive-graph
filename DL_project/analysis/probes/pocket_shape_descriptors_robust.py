@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Candidate fix for three methodological gaps in pocket_shape() and their eta^2 effect.
 
-dataloader/protein_graph_builder.py:pocket_shape() already fixed one robustness problem
+dataloader/graphs_builders/protein_graph_builder.py:pocket_shape() already fixed one robustness problem
 (percentile span instead of raw eigenvalue for axis LENGTH) but left three more open,
 all flagged in files/reference/pocket_shape_descriptors.md and its own docstring:
 
@@ -23,7 +23,7 @@ section 5 used, and reports each variant's eta^2 against protein family so the
 cumulative effect of each fix is visible rather than asserted. Two length metrics are
 crossed with the three point-cloud/covariance fixes:
 
-  length_metric="span" (dataloader/protein_graph_builder.py's own choice): elongation
+  length_metric="span" (dataloader/graphs_builders/protein_graph_builder.py's own choice): elongation
   and flatness are ratios of the 5th-95th percentile span of the projections.
   length_metric="sqrt_eigenvalue" (preprocessing/pocket_shape_descriptors.py's choice, the
   wider research set, never covered by an eta^2 check before now): elongation and
@@ -31,7 +31,7 @@ crossed with the three point-cloud/covariance fixes:
   is the percentile span of PC1 in both cases; neither script ever computes extent from
   an eigenvalue.
 
-  v0  production, unmodified -- imported directly from dataloader.protein_graph_builder
+  v0  production, unmodified -- imported directly from dataloader.graphs_builders.protein_graph_builder
       for byte-for-byte parity with what actually feeds the model. span metric.
   v1  v0 + fix 2 (rank axes by their own span, not by eigenvalue). span metric.
   v2  v1 + fix 1 (MinCovDet robust covariance for center and directions). span metric.
@@ -148,7 +148,7 @@ def pocket_shape_variant(
     """extent, elongation, flatness under a chosen combination of fixes and length metric.
 
     length_metric="span": elongation/flatness are span[0]/span[1], span[1]/span[2] --
-    dataloader/protein_graph_builder.py's own formula. span_sort applies here.
+    dataloader/graphs_builders/protein_graph_builder.py's own formula. span_sort applies here.
     length_metric="sqrt_eigenvalue": elongation/flatness are sqrt(eigenvalue) ratios --
     preprocessing/pocket_shape_descriptors.py's formula. span_sort has no counterpart here:
     the eigenvalue order already IS the length order by construction, there is nothing

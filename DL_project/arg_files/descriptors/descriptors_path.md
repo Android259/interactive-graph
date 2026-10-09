@@ -10,7 +10,6 @@
 --weight_decay=0.01
 --pool_type="gem"
 
---pocket_descriptors
 --pair_descriptors
 --descriptors_head
 

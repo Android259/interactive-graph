@@ -7,18 +7,40 @@
 ## Cache Builders
 
 - `cache_builders/` holds the build-side (`build_*`/`write_*`) half of every disk cache
-  in this directory, one `*_writer.py` per cache (`tanimoto_compact_writer.py`,
-  `lipid_embedding_store_writer.py`, `lipid_graph_tensor_cache_writer.py`,
-  `protein_graph_tensor_cache_writer.py`, `pair_descriptor_cache_writer.py`). The
+  in this directory, one `*_builder.py` per cache, named `<cache>_<format>_builder.py`
+  (`tanimoto_compact_tensors_builder.py`, `lipid_embedding_tensors_builder.py`,
+  `lipid_graph_tensors_builder.py`, `protein_graph_tensors_builder.py`,
+  `descriptor_csv_builder.py`). The
   matching reader module keeps the reader (`load_*`), the shared path/format logic, and
   any staleness-validation code the hot training path or a builder both need —
   `Dataloader.py` only ever imports `load_*` names, never from `cache_builders/`.
-  Readers for the three tensor-archive caches live under `tensors_reading/`
+  Readers for the four tensor-archive caches live under `tensors_reading/`
   (`lipid_embedding_tensors_reader.py`, `lipid_graph_tensors_reader.py`,
-  `protein_graph_tensors_reader.py`); `pair_descriptor_cache_reader.py` (plain CSV
-  tables, not a tensor archive) and `tanimoto_compact_reader.py` stay top-level.
+  `protein_graph_tensors_reader.py`, `tanimoto_compact_tensors_reader.py`);
+  `descriptor_cache_reader.py` (plain CSV tables, not a tensor archive) is the
+  only one that stays top-level.
 - The cache files themselves live under `data/cache/`, not `data/` directly — see
   `data/AGENTS.md`.
+
+## Split Blocks (`splitting_on_blocks/`)
+
+One module per lipid-axis cut — the definition of **which** chemistry leaves training,
+not how negatives are drawn from what stays (that is `sampler.py`):
+
+| module | flag | block is |
+|---|---|---|
+| `lipid_coldsplit_blocks.py` | `--lipid_coldsplit` | four hand-built project head-group class sets (`LIPID_COLDSPLIT_SETS`); `lipid_classes_for_holdout` derives the per-family form for `--double_coldsplit`/`--mixed_coldsplit` |
+| `lipid_isolation_blocks.py` | `--lipid_isolation` | a species set at a requested Tanimoto isolation — **generated**, written by `analysis/lipid_block_search.py --emit_module`, never edited by hand |
+| `lipid_subclass_blocks.py` | `--lipid_subclass` | one Titeca et al. subclass (or a `+` merge), membership read from `data/lipid_article_classification.json` |
+| `lipid_species_blocks.py` | `--lipid_species_coldsplit` | a seeded draw of structure-disjoint name/structure components, recomputed per run from `(csv, share, seed)` |
+
+- Only `lipid_isolation_blocks.py` is a stored table: its block needs the compact
+  Tanimoto matrix to find, and nothing but `--tanimoto_weight` may open that at train
+  time. The other three either need no search (`subclass`) or reproduce from inputs the
+  run already has (`coldsplit`, `species`).
+- The generator side stays outside this directory, exactly as `cache_builders/` sits
+  outside the readers: `analysis/lipid_block_search.py` (isolation blocks) and
+  `preprocessing/classify_lipids_by_article.py` (the subclass JSON).
 
 ## PLIDataset (`Dataloader.py`)
 
@@ -33,10 +55,11 @@ train_dataset, valid_dataset, test_dataset = PLIDataset(root_dir, csv, seed,
   loaded artifacts, each pointing at a different `csv` slice (`csvtrain`,
   `csvalidate`, `csvtest`).
 - `sampler.py` owns interaction-pool sampling and `ClassBalancedBatchSampler`.
-- `lipid_graph_builder.py` owns the legacy SMILES-embedding path.
-- `lipid_isomer_graph_builder.py` owns the atom/bond graph path selected by
-  `lipid_graph_isomers=True`.
-- `protein_graph_builder.py` loads protein artifacts and assembles PyG tensors.
+- `graphs_builders/lipid_graph_builder.py` owns the legacy SMILES-embedding path.
+- `graphs_builders/lipid_isomer_graph_builder.py` owns the atom/bond graph path selected
+  by `lipid_graph_isomers=True`.
+- `graphs_builders/protein_graph_builder.py` loads protein artifacts and assembles PyG
+  tensors.
 - There is no protein registry: the interaction table is the only source of
   per-protein metadata. `ProteinGraphBuilder.protein_family` reads `ProteinDomain`
   straight from it, and artifacts are looked up under the `LTPProtein` name itself.
@@ -202,7 +225,7 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
   batches, order and drawn candidates are those of the DataLoader.
   `get()` = draw + `sample_for_candidate(idx, candidate)`; keep that split if either
   changes. Verified bit-identical end to end with `analysis/probes/compare_run_outputs.py`.
-- `--descriptors_head --descriptor_names` (`pair_descriptors.descriptor_catalog_only`)
+- `--descriptors_head --descriptor_names` (`descriptors.descriptor_catalog_only`)
   takes the same path with less still: no protein graph, no lipid encoding (empty lipid
   `Data`, no MoLFormer table or protein tensor cache loaded) -- the model reads only
   `descriptor_catalog_input`. Train is preassembled under the 1740-row cap too when
@@ -234,7 +257,7 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
 - Both lipid paths must survive: `lipid_isomers` / `lipid_graph_isomers` select the
   chemical-graph path; otherwise the legacy embedding path is used.
 
-## SMILES Fragments (`lipid_graph_builder.py`)
+## SMILES Fragments (`graphs_builders/lipid_graph_builder.py`)
 
 A `;`-separated SMILES field is a bag of candidate structures for one measured lipid
 species (sn-positional / double-bond isomers), written as `"A; B; C; "`. Parsing strips

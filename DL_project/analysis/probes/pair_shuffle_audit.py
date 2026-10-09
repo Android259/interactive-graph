@@ -55,7 +55,7 @@ from read_configuration import read_configuration  # noqa: E402
 from architecture.interaction_classification import InteractionClassification  # noqa: E402
 from dataloader.Dataloader import PLIDataset  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.pair_descriptors import full_catalog_order  # noqa: E402
+from dataloader.descriptors import full_catalog_order  # noqa: E402
 from reproducibility import seed_everything  # noqa: E402
 from analysis.checkpoint_scores import arg_lines, DEFAULT_FAMILIES  # noqa: E402
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """A lipid cold split cut by fingerprint distance instead of by head-group name.
 
-LIPID_COLDSPLIT_SETS (dataloader/sampler.py) names its four held-out blocks by
-chemistry -- "sphingolipids", "choline" -- and its isolation is a consequence of
+LIPID_COLDSPLIT_SETS (dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py)
+names its four held-out blocks by chemistry -- "sphingolipids", "choline" -- and
+its isolation is a consequence of
 that naming, measured afterwards: 0.458, 0.553, 0.653, 0.766 mean best Tanimoto
 from the block to what stays in training. `anionic`'s own comment says its 0.766
 is what the chemistry allows, because a fingerprint sees mostly the two acyl
@@ -44,11 +45,11 @@ if PROJECT_ROOT not in sys.path:
 from analysis.coldsplit_geometry import isolation  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.lipid_classes import lipid_class_series  # noqa: E402
-from dataloader.sampler import (  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import (  # noqa: E402
     COLDSPLIT_MINIMUM_TEST_POSITIVES,
     LIPID_COLDSPLIT_SETS,
 )
-from dataloader.tanimoto_compact_reader import load_compact  # noqa: E402
+from dataloader.tensors_reading.tanimoto_compact_tensors_reader import load_compact  # noqa: E402
 
 
 def cluster_structures(compact, count, method):

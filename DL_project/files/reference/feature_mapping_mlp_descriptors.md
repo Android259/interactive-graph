@@ -126,8 +126,9 @@ arg-файл: --pair_descriptors --descriptor_mlp --descriptor_names=<17 имё�
 семействам на 35 белках, пол «нет структуры» ≈ 0.235.
 
 - **Семь family-neutral (5–11):** η² у порога 0.24, отбирались как не отпечаток
-  семейства. В этом наборе они задаются явно по имени через `--descriptor_names`, а не
-  флагом `--pocket_descriptors_family_neutral`.
+  семейства. В этом наборе они задаются явно по имени через `--descriptor_names`;
+  флага `--pocket_descriptors_family_neutral` больше нет (удалён 2026-10-09 вместе с
+  `--pocket_descriptors`), сам список остался как `POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES`.
 - **`hydropathy_core` (η² 0.77), `depth_q10` (0.55), `hydropathy_mean` (0.611):**
   выше порога, то есть близки к метке семейства. `ev14_q10` (0.238) — на пороге.
   Для `ev28_q10` и `aromatic_share_rim` η² записан как «у порога», точного числа в коде

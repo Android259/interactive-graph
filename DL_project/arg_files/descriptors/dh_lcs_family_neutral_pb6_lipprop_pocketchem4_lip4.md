@@ -35,7 +35,7 @@
 #     hbond_acceptor_share_core / _rim, polar_share_core  at or below chance, dropped
 #
 # The four protein names are new to the NETWORK's catalog
-# (dataloader/pair_descriptors.py's POCKET_CHEMISTRY_DESCRIPTOR_NAMES, computed by
+# (dataloader/descriptors.py's POCKET_CHEMISTRY_DESCRIPTOR_NAMES, computed by
 # dataloader/protein_graph_builder.py's pocket_chemistry_descriptor and verified
 # bit-identical to the Kron-RLS side's own values over all 35 proteins), so a set found
 # by that search now means exactly the same thing in an arg file here. The four lipid

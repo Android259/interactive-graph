@@ -78,7 +78,8 @@ from dataloader.pocket_lipid_compatibility import (  # noqa: E402
     chain_length_by_species,
     pocket_extent_by_protein,
 )
-from dataloader.sampler import lipid_class_series, lipid_classes_for_holdout  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import lipid_classes_for_holdout  # noqa: E402
+from dataloader.sampler import lipid_class_series  # noqa: E402
 
 
 # Every route to a held-out score that does not need the pair. Order is the order they

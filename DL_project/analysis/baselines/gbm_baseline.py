@@ -60,9 +60,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dataloader.chemistry_prior import null_scores, null_scores_leave_one_row_out  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.pair_descriptors import PAIR_DESCRIPTOR_NAMES  # noqa: E402
+from dataloader.descriptors import PAIR_DESCRIPTOR_NAMES  # noqa: E402
 from preprocessing.compute_descriptors import pair_descriptor_value  # noqa: E402
-from dataloader.sampler import LIPID_COLDSPLIT_SETS, lipid_class_series  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS  # noqa: E402
+from dataloader.sampler import lipid_class_series  # noqa: E402
 from analysis.baselines.null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
 from training.pair_baseline_common import (  # noqa: E402
     auc_p_vs_u,
@@ -81,7 +82,7 @@ from training.pair_baseline_common import (  # noqa: E402
 
 DEFAULT_FAMILIES = ("CRAL-TRIO", "GLTP", "IP_trans", "LBP_BPI_CETP", "START", "lipocalin", "scp2")
 DEFAULT_LIPID_COLDSPLIT_GROUPS = tuple(LIPID_COLDSPLIT_SETS.keys())
-# dataloader.pair_descriptors.pair_descriptor_value's own lipid_values/protein_values
+# dataloader.descriptors.pair_descriptor_value's own lipid_values/protein_values
 # dict keys, across every PAIR_DESCRIPTOR_NAMES entry -- the fixed set of columns
 # build_pair_feature_inputs needs from explicit_lipid_features/protein_pocket_
 # features (via resolve_protein_feature_subset) regardless of which pair names are
@@ -114,7 +115,7 @@ def build_feature_tables(
     resolve_lipid_feature_subset (the SAME resolution analysis/baselines/kronrls_baseline.py's
     --protein_kernel=pocket_subset/--lipid_kernel=explicit_subset use: protein_
     pocket_features'/explicit_lipid_features' own columns first, dataloader.
-    pair_descriptors.PROTEIN_DESCRIPTOR_NAMES/LIPID_DESCRIPTOR_NAMES for anything
+    descriptors.PROTEIN_DESCRIPTOR_NAMES/LIPID_DESCRIPTOR_NAMES for anything
     they do not hand-implement, "molformer" for the network's own raw lipid
     embedding) -- so this baseline's --lipid_features/--protein_features shorthand
     (scripts/run_gbm.py) can never resolve a name differently than Kron-RLS's does.
@@ -135,7 +136,7 @@ def build_feature_tables(
 
 
 def build_pair_feature_inputs(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(lipid_inputs, protein_inputs): the fixed columns dataloader.pair_descriptors.
+    """(lipid_inputs, protein_inputs): the fixed columns dataloader.descriptors.
     pair_descriptor_value reads off its lipid_values/protein_values dicts, built once
     over the whole table/every protein -- the row-classifier counterpart of
     build_feature_tables, feeding pair_feature_columns below instead of the model
@@ -546,7 +547,7 @@ def build_parser() -> argparse.ArgumentParser:
             "training.pair_baseline_common.resolve_lipid_feature_subset -- the SAME "
             "name resolution analysis/baselines/kronrls_baseline.py's --lipid_kernel="
             "explicit_subset uses (explicit_lipid_features' own columns, "
-            "dataloader.pair_descriptors.LIPID_DESCRIPTOR_NAMES for the rest, plus "
+            "dataloader.descriptors.LIPID_DESCRIPTOR_NAMES for the rest, plus "
             "the special name 'molformer'). Default: every column "
             "explicit_lipid_features produces. scripts/run_gbm.py's --lipid_features "
             "is a convenience alias that sets this."
@@ -556,7 +557,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--pair_descriptor_names", default=None,
         type=lambda text: [name for name in text.split(",") if name],
         help=(
-            "add one feature column per named dataloader.pair_descriptors."
+            "add one feature column per named dataloader.descriptors."
             "PAIR_DESCRIPTOR_NAMES entry (occupancy, aromatic_contact, ...), computed "
             "via pair_descriptor_value from build_pair_feature_inputs' fixed lipid/"
             "protein input columns -- unlike Kron-RLS (see run_cron.py's own module "

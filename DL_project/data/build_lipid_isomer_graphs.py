@@ -85,7 +85,7 @@ def compute_chain_ranks(mol):
     1 (tail) -- the --cross_attention_chain_bias feature: how deep into the acyl
     tail an atom sits, for pairing against a protein residue's burial depth.
 
-    Uses the WHOLE bond graph (unlike pair_descriptors.longest_acyl_chain, which
+    Uses the WHOLE bond graph (unlike descriptors.longest_acyl_chain, which
     deliberately drops rings/aromatics to isolate just the acyl tail) so every atom
     gets a defined rank, not only ones on a qualifying chain. The two most
     topologically distant atoms (found by double-BFS, the standard tree-diameter

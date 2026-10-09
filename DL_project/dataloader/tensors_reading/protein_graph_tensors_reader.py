@@ -1,6 +1,6 @@
 """Validate and read the binary cache for precomputed protein graph CSVs.
 
-See dataloader/cache_builders/protein_graph_tensor_cache_writer.py for the builder.
+See dataloader/cache_builders/protein_graph_tensors_builder.py for the builder.
 """
 
 import json
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import torch
 
-from dataloader.protein_graph_builder import BASE_NODE_COLUMNS
+from dataloader.graphs_builders.protein_graph_builder import BASE_NODE_COLUMNS
 
 
 CACHE_FORMAT_VERSION = 1

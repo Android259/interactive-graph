@@ -1,5 +1,7 @@
 # Что модель выучивает и чего не выучивает
 
+> **Сноска 2026-10-09.** Часть лейблов ниже удалена вместе с флагом `--pocket_descriptors` (сырой ненормированный broadcast на узлы белка): `ge_protgeom8*`, `ge_protgeom_family_neutral*`, `geatt_protgeom8*`, `descriptors_2paths*`, `descriptors_no_extent_coarse_add_lipprop_family_neutral`, `bbp_smd_fa_pocket_desc_*`, `bbp_dcs_rand_smd_*_3rd_head_*`, `ge_s15_prothid32_hid64_noreg_pairdesc`. Измерения остаются в силе, но конфиг по имени метки уже не воспроизводится — см. [`reference/pocket_shape_descriptors.md`](../reference/pocket_shape_descriptors.md) (блок «Статус»).
+
 Сводка измерений на 2026-08-19: где сейчас стоит модель после закрытия утечки, какие
 связи в данных найдены и что из этого следует делать. Все числа получены на честных
 разрезах и, где отмечено, без отбора чекпойнта по валидации.

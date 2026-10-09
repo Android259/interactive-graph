@@ -182,7 +182,7 @@ def test_lipid_encoding_is_fixed_on_a_split_that_does_not_draw(monkeypatch):
     def fail(values):
         raise AssertionError("a non-drawing split must not consume the random stream")
 
-    monkeypatch.setattr("dataloader.lipid_graph_builder.random.choice", fail)
+    monkeypatch.setattr("dataloader.graphs_builders.lipid_graph_builder.random.choice", fail)
 
     encoding = dataset.lipid_encoding("0", "CC;CCC")
 
@@ -197,7 +197,7 @@ def test_cached_lipid_encoding_is_fixed_and_cached_without_the_draw(monkeypatch)
     def fail(values):
         raise AssertionError("a non-drawing split must not consume the random stream")
 
-    monkeypatch.setattr("dataloader.lipid_graph_builder.random.choice", fail)
+    monkeypatch.setattr("dataloader.graphs_builders.lipid_graph_builder.random.choice", fail)
 
     seen = [dataset.cached_lipid_encoding("0", "CC;CCC") for _ in range(3)]
 
@@ -215,7 +215,7 @@ def test_cached_lipid_encoding_redraws_on_every_access(monkeypatch):
     dataset._draw_lipid_candidate = True
     drawn = iter([0, 1, 1, 0])
     monkeypatch.setattr(
-        "dataloader.lipid_graph_builder.random.choice",
+        "dataloader.graphs_builders.lipid_graph_builder.random.choice",
         lambda values: values[next(drawn)],
     )
 
@@ -240,7 +240,7 @@ def test_warm_lipid_encoding_does_not_draw_under_random_choice(monkeypatch):
     def fail(values):
         raise AssertionError("warming must not consume the random stream")
 
-    monkeypatch.setattr("dataloader.lipid_graph_builder.random.choice", fail)
+    monkeypatch.setattr("dataloader.graphs_builders.lipid_graph_builder.random.choice", fail)
 
     dataset.warm_lipid_encoding("0", "CC;CCC")
 
@@ -344,7 +344,7 @@ def test_make_graph_lipid_concats_fragments_and_offsets_edges(tmp_path):
 
     assert graph.x.shape == (4, len(NODE_COLUMNS))
     # 6 topological EDGE_COLUMNS (excl. source/target) + 16 RBF-expanded
-    # mean_bond_length bins (dataloader/lipid_isomer_graph_builder.py).
+    # mean_bond_length bins (dataloader/graphs_builders/lipid_isomer_graph_builder.py).
     assert graph.edge_attr.shape == (4, len(EDGE_COLUMNS) - 2 + 16)
     assert graph.edge_index.tolist() == [[0, 1, 2, 3], [1, 0, 3, 2]]
     assert not hasattr(graph, "lipid_batch")

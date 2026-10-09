@@ -20,7 +20,7 @@
 |---|---|---|
 | [baselines_and_metrics.md](history/baselines_and_metrics.md) | 2026-10-06 | История эталонов и метрик: с чем сравнивают модель и по какому числу |
 | [descriptor_models.md](history/descriptor_models.md) | 2026-10-06 | История дескрипторных моделей: `descriptors_*`, `descriptors_head`, `descriptor_mlp` |
-| [geometric_edge.md](history/geometric_edge.md) | 2026-10-06 | История графовой модели: от attention-модели (`bbp`) до GE на `species15` |
+| [geometric_edge.md](history/geometric_edge.md) | 2026-10-09 | История графовой модели: от attention-модели (`bbp`) до GE на `species15` |
 
 ## reference/
 
@@ -28,15 +28,15 @@
 |---|---|---|
 | [data_source.md](reference/data_source.md) | 2026-09-28 | Источник данных о взаимодействиях LTP-липид |
 | [deepclip_architecture.md](reference/deepclip_architecture.md) | 2026-10-06 | DeepCLIP в проекте: устройство и что показали прогоны |
-| [descriptor_catalog.md](reference/descriptor_catalog.md) | 2026-09-06 | Каталог дескрипторов: что есть, как считается, что про них известно |
+| [descriptor_catalog.md](reference/descriptor_catalog.md) | 2026-10-09 | Каталог дескрипторов: что есть, как считается, что про них известно |
 | [double_cold_split.md](reference/double_cold_split.md) | 2026-08-29 | Как составляется двусторонний холодный сплит |
-| [feature_mapping_mlp_descriptors.md](reference/feature_mapping_mlp_descriptors.md) | 2026-10-06 | Feature mapping: 17 дескрипторов `mlp_sub_pb6` / `descriptors_head_..._protbind6` |
+| [feature_mapping_mlp_descriptors.md](reference/feature_mapping_mlp_descriptors.md) | 2026-10-09 | Feature mapping: 17 дескрипторов `mlp_sub_pb6` / `descriptors_head_..._protbind6` |
 | [lipid_class_ether_variant.md](reference/lipid_class_ether_variant.md) | 2026-09-28 | Вариант классификации с отдельным -O классом, и аудит на ошибки типа CL |
 | [lipid_species_coldsplit.md](reference/lipid_species_coldsplit.md) | 2026-09-28 | Сплит по конкретному липиду: флаг `--lipid_species_coldsplit`, приоритет балансировок и планки |
 | [local_cpu_layout.md](reference/local_cpu_layout.md) | 2026-08-29 | Локальный запуск: как раздаются ядра и память |
 | [marginals_and_cold_split.md](reference/marginals_and_cold_split.md) | 2026-08-29 | Маргиналы, холодный сплит и точка отсчёта |
 | [pocket_lipid_compatibility.md](reference/pocket_lipid_compatibility.md) | 2026-08-29 | Признак пары: карман против цепи |
-| [pocket_shape_descriptors.md](reference/pocket_shape_descriptors.md) | 2026-09-03 | Дескрипторы формы кармана |
+| [pocket_shape_descriptors.md](reference/pocket_shape_descriptors.md) | 2026-10-09 | Дескрипторы формы кармана |
 | [protein_edge_mlp_vs_attention.md](reference/protein_edge_mlp_vs_attention.md) | 2026-09-03 | `--protein_edge_mlp` vs `--protein_edge_attention`: как учитывается геометрия белка |
 
 ## results/
@@ -44,16 +44,16 @@
 | документ | дата | о чём |
 |---|---|---|
 | [compat_input_audit.md](results/compat_input_audit.md) | 2026-08-29 | Признак совместимости: чей это прирост |
-| [cron.md](results/cron.md) | 2026-09-03 | Kron-RLS: полное резюме (диагноз нейросетевой части, результаты Kron-RLS) |
+| [cron.md](results/cron.md) | 2026-10-09 | Kron-RLS: полное резюме (диагноз нейросетевой части, результаты Kron-RLS) |
 | [dcs_bilinear_norm_family_comparison.md](results/dcs_bilinear_norm_family_comparison.md) | 2026-09-13 | geometric_edge, double_coldsplit: вся линия `_bilinear_norm*` (2026-09-13) |
-| [dcs_descriptors_head_family_comparison.md](results/dcs_descriptors_head_family_comparison.md) | 2026-09-13 | descriptors_head (одноветочная архитектура), double_coldsplit: вся линия (2026-09-13) |
-| [dcs_lcs_final_baseline_decision.md](results/dcs_lcs_final_baseline_decision.md) | 2026-09-12 | DCS/LCS baseline decision for geometric_edge and descriptors (2026-09-12) |
+| [dcs_descriptors_head_family_comparison.md](results/dcs_descriptors_head_family_comparison.md) | 2026-10-09 | descriptors_head (одноветочная архитектура), double_coldsplit: вся линия (2026-09-13) |
+| [dcs_lcs_final_baseline_decision.md](results/dcs_lcs_final_baseline_decision.md) | 2026-10-09 | DCS/LCS baseline decision for geometric_edge and descriptors (2026-09-12) |
 | [descriptor_mlp_recheck_and_tuning.md](results/descriptor_mlp_recheck_and_tuning.md) | 2026-09-30 | `--descriptor_mlp`: re-check of the MLP-vs-head claim, and why it still trails the joint bar |
-| [descriptors_baseline_leak_confirmed.md](results/descriptors_baseline_leak_confirmed.md) | 2026-09-11 | Дескрипторный baseline (architecture 2): утечка подтверждена, честной замены не существует |
+| [descriptors_baseline_leak_confirmed.md](results/descriptors_baseline_leak_confirmed.md) | 2026-10-09 | Дескрипторный baseline (architecture 2): утечка подтверждена, честной замены не существует |
 | [descriptors_head_bottleneck.md](results/descriptors_head_bottleneck.md) | 2026-09-29 | Голова `NamedDescriptorHead` — узкое место, а не дескрипторы и не сплит |
-| [edge_geometry_pruning_rbf6_orient_raw3.md](results/edge_geometry_pruning_rbf6_orient_raw3.md) | 2026-09-06 | Обрезка геометрии рёбер (`edge_rbf6` / `edge_orientation_scalar` / `edge_raw3`) против бейзлайна |
+| [edge_geometry_pruning_rbf6_orient_raw3.md](results/edge_geometry_pruning_rbf6_orient_raw3.md) | 2026-10-09 | Обрезка геометрии рёбер (`edge_rbf6` / `edge_orientation_scalar` / `edge_raw3`) против бейзлайна |
 | [fig3_lipid_subclass_coldsplit_results.md](results/fig3_lipid_subclass_coldsplit_results.md) | 2026-09-19 | Figure-3 lipid-subclass cold split (Kron-RLS, `--excluded_lipid_groups`) — первый прогон |
-| [four_families_audit.md](results/four_families_audit.md) | 2026-08-31 | Аудит активных семейств архитектур: descriptors_*, geometric_edge_*, bbp_dcs_rand_smd_fa_nps_* |
+| [four_families_audit.md](results/four_families_audit.md) | 2026-10-09 | Аудит активных семейств архитектур: descriptors_*, geometric_edge_*, bbp_dcs_rand_smd_fa_nps_* |
 | [ge_s15_ablation.md](results/ge_s15_ablation.md) | 2026-10-06 | Абляция входов `ge_s15_prothid32_hid64_noreg` (geometric_edge, species15) |
 | [ge_s15_architecture_sweep_results.md](results/ge_s15_architecture_sweep_results.md) | 2026-10-06 | `ge_*` на `groups_species15`: 29 вариантов против базы `ge_s15_prothid32_hid64_noreg` |
 | [geometric_edge_descriptors_baseline_selection_results.md](results/geometric_edge_descriptors_baseline_selection_results.md) | 2026-09-12 | Разбор 33 прогонов (2026-09-11): что из предложений подтвердилось для geometric_edge и descriptors |
@@ -65,7 +65,7 @@
 | [lcs_descriptors_head_family_comparison.md](results/lcs_descriptors_head_family_comparison.md) | 2026-09-13 | descriptors_head (одноветочная архитектура), lipid_coldsplit: вся линия (2026-09-13) |
 | [lcs_geometric_edge_best_candidate_recheck.md](results/lcs_geometric_edge_best_candidate_recheck.md) | 2026-09-12 | Пересмотр "лучшего lcs-кандидата" для geometric_edge: advprot vs liphid32 vs остальные |
 | [lcs_protbind6_family_comparison.md](results/lcs_protbind6_family_comparison.md) | 2026-09-13 | geometric_edge, lipid_coldsplit: protbind6/protgeom8/protunion14 family comparison (2026-09-13) |
-| [lipid_coldsplit_architecture_direction.md](results/lipid_coldsplit_architecture_direction.md) | 2026-09-11 | Липидный колдсплит: что показали прогоны и куда тюнить архитектуру |
+| [lipid_coldsplit_architecture_direction.md](results/lipid_coldsplit_architecture_direction.md) | 2026-10-09 | Липидный колдсплит: что показали прогоны и куда тюнить архитектуру |
 | [lipid_species_coldsplit_composition.md](results/lipid_species_coldsplit_composition.md) | 2026-09-30 | Что реально держит `--lipid_species_coldsplit=0.15` в valid/test: подкласс за подклассом |
 | [lipid_species_coldsplit_tanimoto_isolation.md](results/lipid_species_coldsplit_tanimoto_isolation.md) | 2026-10-06 | `--lipid_species_coldsplit=0.15`: блок дизъюнктен по структурам, но НЕ изолирован по Tanimoto |
 | [lipid_subclass_split_and_cron_features.md](results/lipid_subclass_split_and_cron_features.md) | 2026-09-22 | Сплит по подклассу липида, признаки из химии кармана и справка по DeepCLIP |
@@ -80,10 +80,10 @@
 | [pocket_shape_metric_comparison.md](results/pocket_shape_metric_comparison.md) | 2026-09-14 | Две формулы длины оси кармана: percentile span против √λ |
 | [report_pocket_lipid_interaction.md](results/report_pocket_lipid_interaction.md) | 2026-08-29 | Pocket–Lipid Interaction |
 | [reuter_fig3a_dataset_consistency.md](results/reuter_fig3a_dataset_consistency.md) | 2026-10-06 | Reuter et al. Figure 3a vs. this project's interaction table |
-| [rotate_train_negatives_first_results.md](results/rotate_train_negatives_first_results.md) | 2026-09-23 | --rotate_train_negatives: первые четыре прогона против своих бейзлайнов |
-| [signal_state.md](results/signal_state.md) | 2026-09-04 | Что модель выучивает и чего не выучивает |
-| [split_similarity_four_baselines_and_deepclip.md](results/split_similarity_four_baselines_and_deepclip.md) | 2026-09-22 | Метрика против похожести отложенного блока: четыре базлайна и лучший DeepCLIP |
-| [split_similarity_vs_metric.md](results/split_similarity_vs_metric.md) | 2026-09-16 | Сходство отложенного блока с трейном против test BA / test F1 (2026-09-16) |
+| [rotate_train_negatives_first_results.md](results/rotate_train_negatives_first_results.md) | 2026-10-09 | --rotate_train_negatives: первые четыре прогона против своих бейзлайнов |
+| [signal_state.md](results/signal_state.md) | 2026-10-09 | Что модель выучивает и чего не выучивает |
+| [split_similarity_four_baselines_and_deepclip.md](results/split_similarity_four_baselines_and_deepclip.md) | 2026-10-09 | Метрика против похожести отложенного блока: четыре базлайна и лучший DeepCLIP |
+| [split_similarity_vs_metric.md](results/split_similarity_vs_metric.md) | 2026-10-09 | Сходство отложенного блока с трейном против test BA / test F1 (2026-09-16) |
 | [thematical_paths_summary.md](results/thematical_paths_summary.md) | 2026-10-06 | `--thematical_paths`: идея и почему не получилось (линия закрыта) |
 
 ## proposals/
@@ -94,7 +94,7 @@
 | [deepclip_proposals.md](proposals/deepclip_proposals.md) | 2026-10-06 | DeepCLIP: открытые предложения |
 | [interaction_embedding_design.md](proposals/interaction_embedding_design.md) | 2026-09-11 | Эмбеддинг взаимодействия вместо попарной классификации: постановка и условия валидности |
 | [species15_information_above_protein_subclass.md](proposals/species15_information_above_protein_subclass.md) | 2026-10-06 | Какую информацию добавить, чтобы подняться выше угадывания по «белок × подкласс» |
-| [species15_where_to_go_next.md](proposals/species15_where_to_go_next.md) | 2026-10-06 | Куда двигать проект: диагноз по измерениям 2026-10-01 |
+| [species15_where_to_go_next.md](proposals/species15_where_to_go_next.md) | 2026-10-09 | Куда двигать проект: диагноз по измерениям 2026-10-01 |
 
 ## literature/
 

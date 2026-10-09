@@ -15,7 +15,7 @@ from architecture.loss import get_pu_loss_diagnostics, reset_pu_loss_diagnostics
 from architecture.mlp_utils import collect_concrete_dropout_reg, collect_sparsity_penalty
 from architecture.thematic_descriptor_head import thematical_orthogonality_loss
 from candidate_averaging import CandidateAccumulator, average_candidate_predictions
-from dataloader.protein_graph_builder import FAMILY_NAMES
+from dataloader.graphs_builders.protein_graph_builder import FAMILY_NAMES
 from eval_metrics import (
     aggregate_values,
     format_metric,

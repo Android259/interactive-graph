@@ -538,7 +538,7 @@ def main() -> None:
             "lipid_block_search.py's search) instead of naming --families by hand -- "
             "not forced disjoint (lipids may repeat across groups), but each pair "
             "kept under 50% Jaccard overlap so groups stay genuinely different "
-            "chemistries, persisted into dataloader/lipid_isolation_blocks.py and "
+            "chemistries, persisted into dataloader/splitting_on_blocks/lipid_isolation_blocks.py and "
             "used as this run's --families. Only valid with --split_mode "
             "lipid_coldsplit. A single bare --families value combined with this "
             "names the target those groups cluster around, same as "

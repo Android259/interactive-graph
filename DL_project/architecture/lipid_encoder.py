@@ -1,7 +1,7 @@
 import torch
 import torch_geometric
 
-from dataloader.pair_descriptors import full_catalog_order, parse_descriptor_list
+from dataloader.descriptors import full_catalog_order, parse_descriptor_list
 from dataloader.smiles_tokens import SMILES_VOCABULARY
 
 from .self_attention import SelfAttention

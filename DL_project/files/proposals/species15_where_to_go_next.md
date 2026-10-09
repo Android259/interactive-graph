@@ -206,10 +206,12 @@
   отдельную пулированную голову вместо broadcast-а.
 
 `--descriptor_names` в `_pairdesc` обязателен не только для выбора набора: без него
-`--pair_descriptors` требует `--pocket_descriptors` (`read_configuration.py:2833`), а тот
-в этой ветке подаёт **ненормированные** значения —
-`set_pocket_descriptor_normalization` вызывается только под
-`rnabang_frozen_node_adapter` (`new_train.py:102`), который здесь никогда не ставился.
+`--pair_descriptors` строит фиксированную `PairDescriptorHead`, которая читает
+`aromatic_share`/`apolar_sasa_share` прямо из тензора кармана. **С 2026-10-09** флага
+`--pocket_descriptors` больше нет: ровно потому, что его broadcast на узлы белка подавал
+**ненормированные** значения (`set_pocket_descriptor_normalization` вызывался только под
+`rnabang_frozen_node_adapter`, который здесь никогда не ставился). Сам `_pairdesc` тоже
+удалён; тензор подаётся по производному `ModelConfig.needs_pocket_descriptor`.
 По той же причине не используется `--descriptors_in_lipid`: он требует обоих флагов
 (`read_configuration.py:2090`) и упирается в ту же ненормированность.
 
