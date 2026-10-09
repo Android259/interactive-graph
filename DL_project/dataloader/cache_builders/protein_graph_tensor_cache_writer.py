@@ -1,6 +1,6 @@
 """Build the binary cache for precomputed protein graph CSVs.
 
-See dataloader/protein_graph_tensor_cache_reader.py for the reader and the shared path/
+See dataloader/tensors_reading/protein_graph_tensors_reader.py for the reader and the shared path/
 format logic.
 """
 
@@ -11,7 +11,7 @@ import pandas
 import torch
 
 from dataloader.protein_graph_builder import BASE_NODE_COLUMNS
-from dataloader.protein_graph_tensor_cache_reader import CACHE_FORMAT_VERSION, _paths, _pocket_tensor
+from dataloader.tensors_reading.protein_graph_tensors_reader import CACHE_FORMAT_VERSION, _paths, _pocket_tensor
 
 
 def _source_record(path, root_dir):

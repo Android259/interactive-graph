@@ -97,7 +97,7 @@ SYNC_EXCLUDES=(
     #     geometric_transformer_nodes.csv (residue frames for --geometric_transformer/
     #     --protein_edge_attention/--protein_edge_mlp). Was excluded like the rest of
     #     data/, which does not just risk a stale copy: load_protein_graph_tensor_cache
-    #     (dataloader/protein_graph_tensor_cache_reader.py) rejects protein_graph_tensors.pt
+    #     (dataloader/tensors_reading/protein_graph_tensors_reader.py) rejects protein_graph_tensors.pt
     #     outright the moment ANY recorded source's mtime_ns does not match the file on
     #     disk, and an independently-timestamped copy of data/graphs/ never matches the
     #     mtimes protein_graph_tensors.manifest.json recorded when the cache was built --

@@ -29,7 +29,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import torch  # noqa: E402
 
-from dataloader.lipid_embedding_store_reader import (  # noqa: E402
+from dataloader.tensors_reading.lipid_embedding_tensors_reader import (  # noqa: E402
     load_lipid_embedding_store,
     store_is_current,
 )

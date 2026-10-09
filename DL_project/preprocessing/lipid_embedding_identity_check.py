@@ -3,7 +3,7 @@
 
 architecture/lipid_encoder.py's non-graph path feeds MolFormer's per-token SMILES
 embedding (preprocessing/embed_isomeric_smiles_molformer.py, IBM's pretrained
-transformer, dataloader/lipid_embedding_store_reader.py's cached table) straight into this
+transformer, dataloader/tensors_reading/lipid_embedding_tensors_reader.py's cached table) straight into this
 project's own self-attention (--lipid_self_attention). This is the lipid-side
 analogue of preprocessing/pocket_descriptor_identity_check.py's question on the
 protein side ("is this feature already identity in disguise"), never previously asked
@@ -63,7 +63,7 @@ from analysis.feature_identity_check import (  # noqa: E402
 )
 from dataloader.chemistry_prior import _standardised_similarity  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.lipid_embedding_store_reader import load_lipid_embedding_store  # noqa: E402
+from dataloader.tensors_reading.lipid_embedding_tensors_reader import load_lipid_embedding_store  # noqa: E402
 from dataloader.pocket_lipid_compatibility import candidates_for_row  # noqa: E402
 from preprocessing.pocket_descriptor_identity_check import (  # noqa: E402
     mantel, pair_distances, standardise,

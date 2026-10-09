@@ -546,7 +546,7 @@ def protein_descriptor_table(data_dir, force=False):
     that, in any process, reads the CSV back in milliseconds -- no separate prep
     script, no args-file flag to detect, nothing to remember to run before a grid
     launches. Still keyed on each source file's size/mtime (same discipline as
-    protein_graph_tensor_cache_reader.py) so a rebuilt data/graphs/<protein>/ is picked up
+    tensors_reading/protein_graph_tensors_reader.py) so a rebuilt data/graphs/<protein>/ is picked up
     rather than served stale.
 
     The two derived names (aromatic_share_coarse/polar_share_coarse) are computed
@@ -556,7 +556,7 @@ def protein_descriptor_table(data_dir, force=False):
     """
     import pandas as pd
 
-    from dataloader.protein_graph_tensor_cache_reader import _pocket_tensor
+    from dataloader.tensors_reading.protein_graph_tensors_reader import _pocket_tensor
 
     graphs_dir = os.path.join(data_dir, "graphs")
     protein_names = sorted(

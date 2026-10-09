@@ -17,7 +17,7 @@ import pandas
 import torch
 
 from architecture.protein_edge_geometry import rbf
-from dataloader.lipid_graph_tensor_cache_reader import CACHE_FORMAT_VERSION, _paths
+from dataloader.tensors_reading.lipid_graph_tensors_reader import CACHE_FORMAT_VERSION, _paths
 
 
 # Must match LipidIsomerGraphBuilder.make_graph_lipid's node_columns/edge_columns

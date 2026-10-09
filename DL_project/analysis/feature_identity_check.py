@@ -1520,7 +1520,7 @@ def main():
         # module, so importing it at module load time here would be circular --
         # by the time main() actually runs, this module is already fully defined,
         # so the cycle resolves fine deferred to call time.
-        from dataloader.lipid_embedding_store_reader import load_lipid_embedding_store
+        from dataloader.tensors_reading.lipid_embedding_tensors_reader import load_lipid_embedding_store
         from lipid_embedding_identity_check import EMBEDDING_FILE, species_embeddings
 
         smiles_encoding = load_lipid_embedding_store(data_dir, EMBEDDING_FILE)

@@ -10,10 +10,13 @@
   in this directory, one `*_writer.py` per cache (`tanimoto_compact_writer.py`,
   `lipid_embedding_store_writer.py`, `lipid_graph_tensor_cache_writer.py`,
   `protein_graph_tensor_cache_writer.py`, `pair_descriptor_cache_writer.py`). The
-  matching top-level `*_reader.py` module keeps the reader (`load_*`), the shared
-  path/format logic, and any staleness-validation code the hot training path or a
-  builder both need — `Dataloader.py` only ever imports `load_*` names, never from
-  `cache_builders/`.
+  matching reader module keeps the reader (`load_*`), the shared path/format logic, and
+  any staleness-validation code the hot training path or a builder both need —
+  `Dataloader.py` only ever imports `load_*` names, never from `cache_builders/`.
+  Readers for the three tensor-archive caches live under `tensors_reading/`
+  (`lipid_embedding_tensors_reader.py`, `lipid_graph_tensors_reader.py`,
+  `protein_graph_tensors_reader.py`); `pair_descriptor_cache_reader.py` (plain CSV
+  tables, not a tensor archive) and `tanimoto_compact_reader.py` stay top-level.
 - The cache files themselves live under `data/cache/`, not `data/` directly — see
   `data/AGENTS.md`.
 

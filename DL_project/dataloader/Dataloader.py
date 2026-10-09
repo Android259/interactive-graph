@@ -35,7 +35,7 @@ from preprocessing.compute_descriptors import (
     descriptor_values_by_row,
 )
 from dataloader.pair_descriptor_cache_reader import load_pair_descriptor_cache
-from dataloader.lipid_embedding_store_reader import load_lipid_embedding_store
+from dataloader.tensors_reading.lipid_embedding_tensors_reader import load_lipid_embedding_store
 from dataloader.lipid_graph_builder import LipidGraphBuilder
 from dataloader.lipid_isomer_graph_builder import (
     LipidGraphData,
@@ -48,12 +48,12 @@ from dataloader.protein_graph_builder import (
     protein_node_columns,
     restrict_parts_to_mask,
 )
-from dataloader.protein_graph_tensor_cache_reader import load_protein_graph_tensor_cache
+from dataloader.tensors_reading.protein_graph_tensors_reader import load_protein_graph_tensor_cache
 from dataloader.protein_tokens import (
     build_protein_token_table,
     parse_protein_token_alphabets,
 )
-from dataloader.lipid_graph_tensor_cache_reader import load_lipid_graph_tensor_cache
+from dataloader.tensors_reading.lipid_graph_tensors_reader import load_lipid_graph_tensor_cache
 from dataloader.tanimoto_compact_reader import load_compact
 from dataloader.lipid_isolation_blocks import (
     BLOCK_GEOMETRY,
@@ -330,7 +330,7 @@ class PLIDataset(
             )
             # Prefer the memory-mapped store, so concurrent jobs share one copy of the
             # table through the page cache instead of unpickling 267 MiB apiece (see
-            # dataloader/lipid_embedding_store_reader.py, and data/build_lipid_embedding_store.py
+            # dataloader/tensors_reading/lipid_embedding_tensors_reader.py, and data/build_lipid_embedding_store.py
             # which writes it). Same tensors either way; None means no store has been
             # built for this table yet, or the table has been regenerated since, and the
             # pickle is read exactly as before.
@@ -387,7 +387,7 @@ class PLIDataset(
             else ({}, {})
         )
         # Same idea for --lipid_graph_isomers' per-graph_id tensors
-        # (dataloader/lipid_graph_tensor_cache_reader.py, built by
+        # (dataloader/tensors_reading/lipid_graph_tensors_reader.py, built by
         # data/build_lipid_graph_tensor_cache.py):
         # {} when no cache has been built or data/lipid_graphs/ changed since, which
         # LipidIsomerGraphBuilder._one_lipid_graph_parts falls back on exactly as

@@ -35,7 +35,7 @@ from preprocessing.compute_descriptors import (
     pocket_atom_coordinates,
     pocket_shape,
 )
-from dataloader.protein_graph_tensor_cache_reader import _pocket_tensor
+from dataloader.tensors_reading.protein_graph_tensors_reader import _pocket_tensor
 
 # Sentinels this project's SMILES columns use for "no structure recorded", matching
 # analysis/protein_profile_probe.py (mode `correlate`), which imports EMPTY from here rather than

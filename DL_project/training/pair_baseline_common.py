@@ -1694,7 +1694,7 @@ def molformer_lipid_features(table: pd.DataFrame) -> pd.DataFrame:
     --lipid_kernel_type, matching how "explicit" turns hand-built descriptors into
     one -- a network's own embedding is what the fit sees, not a lookup similarity.
     """
-    from dataloader.lipid_embedding_store_reader import load_lipid_embedding_store
+    from dataloader.tensors_reading.lipid_embedding_tensors_reader import load_lipid_embedding_store
     from preprocessing.lipid_embedding_identity_check import EMBEDDING_FILE, species_embeddings
 
     data_dir = PROJECT_ROOT / "data"

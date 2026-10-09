@@ -55,11 +55,11 @@ different reads need canonicalisation skipped entirely to pay off:
 
 A raw string absent from raw_to_canonical (a candidate added to the table after the
 cache was built) falls back to computing it directly, same as a store_is_current() miss
-falls back to the source pickle in lipid_embedding_store_reader.py -- the table is an
+falls back to the source pickle in tensors_reading/lipid_embedding_tensors_reader.py -- the table is an
 accelerator, never a second source of truth a stale run could disagree with the current
 data from.
 
-The manifest guards staleness the same way protein_graph_tensor_cache_reader.py does: the source
+The manifest guards staleness the same way tensors_reading/protein_graph_tensors_reader.py does: the source
 interaction table's size and nanosecond mtime must still match what the table was built
 from, checked freshly on every load (cheap -- a couple of stat() calls, not a hash of file
 contents).

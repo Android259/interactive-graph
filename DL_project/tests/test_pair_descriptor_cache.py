@@ -170,7 +170,7 @@ def test_store_goes_stale_when_source_csv_changes(fixture_csv, csv_path, clean_c
     assert store_is_current(DATA_DIR, isomeric=False) is True
 
     # A later mtime AND a different size on the exact source file the manifest
-    # recorded, same discipline protein_graph_tensor_cache_reader's own staleness check uses.
+    # recorded, same discipline protein_graph_tensors_reader's own staleness check uses.
     with open(csv_path, "a") as handle:
         handle.write("\n")
     # A rebuild is still due: a regenerated table may name candidates the cache has

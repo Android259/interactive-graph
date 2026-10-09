@@ -4,7 +4,7 @@ import pandas as pd
 import torch
 
 from dataloader.cache_builders.lipid_graph_tensor_cache_writer import build_lipid_graph_tensor_cache
-from dataloader.lipid_graph_tensor_cache_reader import load_lipid_graph_tensor_cache
+from dataloader.tensors_reading.lipid_graph_tensors_reader import load_lipid_graph_tensor_cache
 from dataloader.lipid_isomer_graph_builder import LipidIsomerGraphBuilder
 from tests.test_dataloader_lipid_graphs import make_dataset, write_graph
 
