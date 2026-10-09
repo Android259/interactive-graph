@@ -8,9 +8,9 @@
 --weight_decay=0.01
 --pool_type="gem"
 
---pair_descriptors
+--descriptors
 --descriptors_head
---pair_descriptor_pocket_shares_split
+--descriptor_pocket_shares_split
 
 
 --balanced_batches

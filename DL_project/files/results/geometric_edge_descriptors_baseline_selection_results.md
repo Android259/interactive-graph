@@ -51,7 +51,7 @@ coldsplit_primary` в памяти проекта), но именно на не�
 оба содержат строку `--zscore`. Она реально существует — но только как флаг
 `argparse` в `analysis/null_model.py`, `analysis/full_label_report.py`,
 `analysis/feature_identity_check.py`, `analysis/interaction_increment.py`,
-`analysis/probes/rank_pair_descriptors.py`, `analysis/baselines/lipid_coldsplit_null_model.py`,
+`analysis/probes/rank_descriptors.py`, `analysis/baselines/lipid_coldsplit_null_model.py`,
 `analysis/probes/pair_descriptor_family_eta2.py` — все read-only анализные скрипты,
 не `training/read_configuration.py`. У обучающего парсера такого параметра нет:
 
@@ -76,7 +76,7 @@ lipprop_pair/*.md` содержат только текст ошибки.
 полностью непроверенными, не "опровергнутыми" — это баг в arg-файле, а не результат.
 Правка — убрать `--zscore` из обоих arg-файлов (сами `--descriptor_names` уже проходят
 через `DESCRIPTOR_CATALOG`, которое `training/read_configuration.py`/`dataloader/
-pair_descriptors.py` всегда стандартизует само, независимо от какого-либо флага — см.
+descriptors.py` всегда стандартизует само, независимо от какого-либо флага — см.
 `descriptors_baseline_leak_confirmed.md`'s собственное описание пути `--descriptor_names`).
 
 ## 2. Descriptors architecture, double_coldsplit: 3 выживших конфига, ни один не бьёт нуль-модель

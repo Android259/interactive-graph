@@ -153,7 +153,7 @@
    0.503) и `experimental_lipid_volume` (тот, чьё направление `depth_q10` предсказывает
    с ρ −0.45).
 
-3. **Готовые произведения в ge-ветку не подавались НИ РАЗУ.** `--pair_descriptors`
+3. **Готовые произведения в ge-ветку не подавались НИ РАЗУ.** `--descriptors`
    выключен во **всех 30** labels `ge_s15*`. То есть 14 предрассчитанных парных величин
    (`volume_fit`, `depth_bulk_match`, `chain_extent_gap`, `occupancy`,
    `tail_elongation_fit`) до этой ветки не доходили. В `mlp`-ветке они есть — но там
@@ -166,8 +166,8 @@
 
 ## 2.5 Конфигурации, закрывающие эту клетку (готовы, не прогнаны)
 
-Правка к первой редакции §2.4: совет «начать с `--pair_descriptors`» был неполным.
-`--pair_descriptors` **несовместим с `--bilinear_fusion`** (`read_configuration.py:2812`:
+Правка к первой редакции §2.4: совет «начать с `--descriptors`» был неполным.
+`--descriptors` **несовместим с `--bilinear_fusion`** (`read_configuration.py:2812`:
 пулированный вектор головы конкатенируется ПОСЛЕ произведения, то есть открывает ровно
 тот обходной путь, который `bilinear_fusion` закрывает), а базовая конфигурация
 `bilinear_fusion` ставит. Значит этот путь требует снять базовый флаг и перестаёт быть
@@ -184,7 +184,7 @@
 | `_liptail2` | `--lipid_descriptors=tail_double_bond_position,experimental_lipid_volume,tail_length_mean` | 538 766 | `_liptail` (0.879) и база |
 | `_lipforce` | `--lipid_head_descriptors=` те же две величины, только через ForcedInteraction с пулированным белком, без skip | 596 558 | `_liptail2` |
 | `_nobilin` | база минус `--bilinear_fusion`/`--bilinear_pooled_norm` | 292 494 | база (цена снятия) |
-| `_pairdesc` | `_nobilin` + `--pair_descriptors --descriptor_names=` тот же набор произведений | 359 182 | **`_nobilin`**, не база |
+| `_pairdesc` | `_nobilin` + `--descriptors --descriptor_names=` тот же набор произведений | 359 182 | **`_nobilin`**, не база |
 
 Проверено без обучения: все шесть конфигураций проходят `read_configuration`, все
 модели строятся, и `number_of_parameters` у каждой отличается — то есть новый вход
@@ -206,7 +206,7 @@
   отдельную пулированную голову вместо broadcast-а.
 
 `--descriptor_names` в `_pairdesc` обязателен не только для выбора набора: без него
-`--pair_descriptors` строит фиксированную `PairDescriptorHead`, которая читает
+`--descriptors` строит фиксированную `DescriptorHead`, которая читает
 `aromatic_share`/`apolar_sasa_share` прямо из тензора кармана. **С 2026-10-09** флага
 `--pocket_descriptors` больше нет: ровно потому, что его broadcast на узлы белка подавал
 **ненормированные** значения (`set_pocket_descriptor_normalization` вызывался только под

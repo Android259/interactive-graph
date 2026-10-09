@@ -125,14 +125,14 @@ def synthetic_forward_args(config):
 
     if getattr(config, "needs_pocket_descriptor", False):
         args["pocket_descriptor"] = torch.rand(2, config.pocket_descriptor_count)
-    if getattr(config, "pair_descriptors", False):
-        base_width = 5 + (4 if getattr(config, "pair_descriptor_lipid_shape", False) else 0)
-        base_width += 1 if getattr(config, "pair_descriptor_extent", True) else 0
+    if getattr(config, "descriptors", False):
+        base_width = 5 + (4 if getattr(config, "descriptor_lipid_shape", False) else 0)
+        base_width += 1 if getattr(config, "descriptor_extent", True) else 0
         split = (
-            getattr(config, "pair_descriptor_pocket_shares_split", False)
-            and getattr(config, "pair_descriptor_pocket_shares", True)
+            getattr(config, "descriptor_pocket_shares_split", False)
+            and getattr(config, "descriptor_pocket_shares", True)
         )
-        args["pair_descriptor_input"] = torch.randn(2, base_width + (2 if split else 0))
+        args["descriptor_input"] = torch.randn(2, base_width + (2 if split else 0))
     from dataloader.descriptors import full_catalog_order
 
     catalog_order = full_catalog_order(config)
@@ -1002,9 +1002,9 @@ def test_active_configuration_has_no_parameters_without_gradients(mode):
     assert unused == []
 
 
-def test_pair_descriptors_head_trains_and_gets_gradients():
+def test_descriptors_head_trains_and_gets_gradients():
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.validate()
 
     loss = one_training_step(config)
@@ -1015,20 +1015,20 @@ def test_pair_descriptors_head_trains_and_gets_gradients():
     F.cross_entropy(output, torch.tensor([0, 1])).backward()
     unused = [
         name
-        for name, parameter in model.final_layer.pair_descriptor_head.named_parameters()
+        for name, parameter in model.final_layer.descriptor_head.named_parameters()
         if parameter.requires_grad and parameter.grad is None
     ]
     assert unused == []
 
 
-def test_pair_descriptor_lipid_shape_adds_four_tokens_and_trains():
+def test_descriptor_lipid_shape_adds_four_tokens_and_trains():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_lipid_shape = True
+    config.descriptors = True
+    config.descriptor_lipid_shape = True
     config.validate()
 
     model = InteractionClassification(config)
-    head = model.final_layer.pair_descriptor_head
+    head = model.final_layer.descriptor_head
     assert head.token_names == (
         "chain", "unsaturation", "hbond", "heavy", "occupancy",
         "radius_of_gyration", "asphericity", "molecular_volume", "rotatable_fraction",
@@ -1046,10 +1046,10 @@ def test_pair_descriptor_lipid_shape_adds_four_tokens_and_trains():
     assert unused == []
 
 
-def test_pair_descriptors_only_ignores_lipid_and_protein_pooling():
+def test_descriptors_only_ignores_lipid_and_protein_pooling():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptors_only = True
+    config.descriptors = True
+    config.descriptors_only = True
     config.validate()
 
     model = InteractionClassification(config)
@@ -1062,23 +1062,23 @@ def test_pair_descriptors_only_ignores_lipid_and_protein_pooling():
     assert torch.allclose(output_a, output_b)
 
 
-def test_pair_descriptors_rejects_bilinear_fusion():
+def test_descriptors_rejects_bilinear_fusion():
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.bilinear_fusion = True
     with pytest.raises(ValueError, match="bilinear_fusion"):
         config.validate()
 
 
-def test_pair_descriptors_attaches_the_pocket_descriptor_tensor():
-    """Plain --pair_descriptors builds the fixed-token PairDescriptorHead, whose
+def test_descriptors_attaches_the_pocket_descriptor_tensor():
+    """Plain --descriptors builds the fixed-token DescriptorHead, whose
     aromatic/H-bond pair terms read aromatic_share/apolar_sasa_share off the
     per-protein pocket_descriptor tensor -- so needs_pocket_descriptor derives True
     and the loader attaches it. There is no --pocket_descriptors flag to pass: the
     broadcast that flag used to drive was the one descriptor input nothing ever
     standardised, and it was removed."""
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.validate()  # must not raise
     assert config.needs_pocket_descriptor is True
     assert config.pocket_descriptor_count == POCKET_DESCRIPTOR_COUNT
@@ -1087,12 +1087,12 @@ def test_pair_descriptors_attaches_the_pocket_descriptor_tensor():
     assert loss == loss  # not NaN
 
 
-def test_pair_descriptors_with_descriptor_names_needs_no_pocket_descriptor():
+def test_descriptors_with_descriptor_names_needs_no_pocket_descriptor():
     """NamedDescriptorHead (--descriptor_names) reads everything off
     descriptor_catalog_input by name instead -- there is nothing for it to read off
     the pocket descriptor tensor, so it is never built or attached."""
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.descriptor_names = "chain,unsaturation,aromatic_share"
     config.validate()  # must not raise
     assert config.needs_pocket_descriptor is False
@@ -1103,36 +1103,36 @@ def test_pair_descriptors_with_descriptor_names_needs_no_pocket_descriptor():
 
 
 def test_descriptors_in_protein_attaches_the_pocket_descriptor_tensor():
-    """expand_pair_descriptors reads the same two bounded shares off the tensor, so
+    """expand_descriptors reads the same two bounded shares off the tensor, so
     it keeps needs_pocket_descriptor True even alongside --descriptor_names, which on
     its own would not need it."""
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.descriptor_names = "chain,unsaturation,aromatic_share"
     config.descriptors_in_protein = True
     config.validate()  # must not raise
     assert config.needs_pocket_descriptor is True
 
 
-def test_descriptors_head_auto_enables_pair_descriptors():
-    """--descriptors_head has no meaning without --pair_descriptors -- it names WHICH
+def test_descriptors_head_auto_enables_descriptors():
+    """--descriptors_head has no meaning without --descriptors -- it names WHICH
     configuration Final_Layer builds, not a capability of its own -- so validate() sets
-    pair_descriptors rather than demanding the caller pass both flags."""
+    descriptors rather than demanding the caller pass both flags."""
     config = make_config()
     config.descriptors_head = True
-    assert config.pair_descriptors is False  # not yet, before validate()
+    assert config.descriptors is False  # not yet, before validate()
     config.validate()
-    assert config.pair_descriptors is True
+    assert config.descriptors is True
 
     loss = one_training_step(config)
     assert loss == loss  # not NaN
 
 
-def test_pair_descriptors_with_descriptor_names_swaps_in_named_head_and_trains():
+def test_descriptors_with_descriptor_names_swaps_in_named_head_and_trains():
     from architecture.named_descriptor_head import NamedDescriptorHead
 
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.descriptor_names = "chain,unsaturation,aromatic_share"
     config.validate()
 
@@ -1142,8 +1142,8 @@ def test_pair_descriptors_with_descriptor_names_swaps_in_named_head_and_trains()
     assert hasattr(model, "protein1")
     assert hasattr(model, "lipid1")
     assert hasattr(model, "cross_attention1")
-    assert isinstance(model.final_layer.pair_descriptor_head, NamedDescriptorHead)
-    assert model.final_layer.pair_descriptor_head.token_names == (
+    assert isinstance(model.final_layer.descriptor_head, NamedDescriptorHead)
+    assert model.final_layer.descriptor_head.token_names == (
         "chain", "unsaturation", "aromatic_share",
     )
 
@@ -1153,7 +1153,7 @@ def test_pair_descriptors_with_descriptor_names_swaps_in_named_head_and_trains()
     output = model(**synthetic_forward_args(config))
     F.cross_entropy(output, torch.tensor([0, 1])).backward()
     unused = [
-        name for name, parameter in model.final_layer.pair_descriptor_head.named_parameters()
+        name for name, parameter in model.final_layer.descriptor_head.named_parameters()
         if parameter.requires_grad and parameter.grad is None
     ]
     assert unused == []
@@ -1185,10 +1185,10 @@ def test_lipid_descriptors_broadcasts_onto_lipid_nodes_and_trains():
 
 def test_protein_descriptors_and_lipid_descriptors_coexist_with_old_mechanisms():
     """protein_descriptors/lipid_descriptors are additive: the old, fixed-set
-    --pair_descriptors broadcasts stay untouched and both
+    --descriptors broadcasts stay untouched and both
     mechanisms can run in the same model at once."""
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.protein_descriptors = "chain,unsaturation"
     config.lipid_descriptors = "hbond,heavy"
     config.validate()
@@ -1204,7 +1204,7 @@ def test_protein_descriptors_rejects_unknown_descriptor_name():
         config.validate()
 
 
-def test_descriptor_names_requires_descriptors_head_or_pair_descriptors():
+def test_descriptor_names_requires_descriptors_head_or_descriptors():
     config = make_config()
     config.descriptor_names = "chain,unsaturation"
     with pytest.raises(ValueError, match="descriptor_names only takes effect"):
@@ -1213,7 +1213,7 @@ def test_descriptor_names_requires_descriptors_head_or_pair_descriptors():
 
 def test_descriptors_head_builds_no_encoder_or_cross_attention_modules():
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.descriptors_head = True
     config.validate()
 
@@ -1221,7 +1221,7 @@ def test_descriptors_head_builds_no_encoder_or_cross_attention_modules():
     assert not hasattr(model, "lipid1")
     assert not hasattr(model, "protein1")
     assert not hasattr(model, "cross_attention1")
-    assert hasattr(model.final_layer, "pair_descriptor_head")
+    assert hasattr(model.final_layer, "descriptor_head")
 
     loss = one_training_step(config)
     assert loss == loss  # not NaN
@@ -1235,9 +1235,9 @@ def test_descriptors_head_builds_no_encoder_or_cross_attention_modules():
     assert unused == []
 
 
-def test_two_pair_descriptors_paths_builds_no_encoder_or_cross_attention_modules():
+def test_two_descriptors_paths_builds_no_encoder_or_cross_attention_modules():
     config = make_config()
-    config.two_pair_descriptors_paths = True
+    config.two_descriptors_paths = True
     config.good_descriptors = "chain,extent,polar_share"
     config.bad_descriptors = "pocket_extent,heavy"
     config.validate()
@@ -1263,7 +1263,7 @@ def test_two_pair_descriptors_paths_builds_no_encoder_or_cross_attention_modules
     assert unused == []
 
 
-def test_two_pair_descriptors_paths_wires_coarse_tokens_correctly():
+def test_two_descriptors_paths_wires_coarse_tokens_correctly():
     # good/bad_descriptors' <name>_coarse=<spec> tokens (dataloader.descriptors.
     # parse_descriptor_token) must reach NamedDescriptorHead as CANONICAL tokens and
     # index into the SAME shared column order on both sides -- this pins that wiring
@@ -1271,7 +1271,7 @@ def test_two_pair_descriptors_paths_wires_coarse_tokens_correctly():
     # and this synthetic-tensor harness bypasses; that path is exercised separately
     # against real data).
     config = make_config()
-    config.two_pair_descriptors_paths = True
+    config.two_descriptors_paths = True
     config.good_descriptors = "chain,aromatic_share_coarse=5"
     config.bad_descriptors = "pocket_extent_coarse=quantiles,heavy_coarse=quantiles:3"
     config.validate()
@@ -1300,10 +1300,10 @@ def test_two_pair_descriptors_paths_wires_coarse_tokens_correctly():
 
 
 @pytest.mark.parametrize("pool_type", ["mean", "max", "add_max", "gem"])
-def test_two_pair_descriptors_paths_trains_under_every_pool_type(pool_type):
+def test_two_descriptors_paths_trains_under_every_pool_type(pool_type):
     config = make_config()
     config.pool_type = pool_type
-    config.two_pair_descriptors_paths = True
+    config.two_descriptors_paths = True
     config.good_descriptors = "chain,extent"
     config.bad_descriptors = "pocket_extent,heavy"
     config.validate()
@@ -1318,31 +1318,31 @@ def test_two_pair_descriptors_paths_trains_under_every_pool_type(pool_type):
     assert unused == []
 
 
-def test_two_pair_descriptors_paths_rejects_unknown_descriptor_name():
+def test_two_descriptors_paths_rejects_unknown_descriptor_name():
     config = make_config()
-    config.two_pair_descriptors_paths = True
+    config.two_descriptors_paths = True
     config.good_descriptors = "not_a_real_descriptor"
     config.bad_descriptors = "heavy"
     with pytest.raises(ValueError, match="Unknown descriptor"):
         InteractionClassification(config)
 
 
-def test_two_pair_descriptors_paths_requires_both_lists():
+def test_two_descriptors_paths_requires_both_lists():
     config = make_config()
-    config.two_pair_descriptors_paths = True
+    config.two_descriptors_paths = True
     config.good_descriptors = "chain"
     with pytest.raises(ValueError, match="good_descriptors"):
         config.validate()
 
 
-def test_two_pair_descriptors_paths_conflicts_with_descriptors_head():
+def test_two_descriptors_paths_conflicts_with_descriptors_head():
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.descriptors_head = True
-    config.two_pair_descriptors_paths = True
+    config.two_descriptors_paths = True
     config.good_descriptors = "chain"
     config.bad_descriptors = "heavy"
-    with pytest.raises(ValueError, match="two_pair_descriptors_paths and descriptors_head"):
+    with pytest.raises(ValueError, match="two_descriptors_paths and descriptors_head"):
         config.validate()
 
 
@@ -1474,7 +1474,7 @@ def test_thematical_paths_requires_both_groups():
 
 def test_thematical_paths_conflicts_with_descriptors_head():
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.descriptors_head = True
     config.thematical_paths = True
     config.geometric_descriptors = "chain,pocket_extent"
@@ -1565,28 +1565,28 @@ def test_mlp_in_place_of_sa_does_not_leave_pocket_attention_bias_ungradiented():
 
 def test_mlp_in_place_of_sa_replaces_descriptor_head_attention():
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.descriptors_head = True
     config.mlp_in_place_of_sa = True
     config.validate()
 
     model = InteractionClassification(config)
     assert not isinstance(
-        model.final_layer.pair_descriptor_head.attention, torch.nn.MultiheadAttention
+        model.final_layer.descriptor_head.attention, torch.nn.MultiheadAttention
     )
 
     loss = one_training_step(config)
     assert loss == loss  # not NaN
 
 
-def test_pair_descriptor_pocket_shares_can_be_dropped():
+def test_descriptor_pocket_shares_can_be_dropped():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_pocket_shares = False
+    config.descriptors = True
+    config.descriptor_pocket_shares = False
     config.validate()
 
     model = InteractionClassification(config)
-    head = model.final_layer.pair_descriptor_head
+    head = model.final_layer.descriptor_head
     assert head.token_count == 6
     assert "aromatic_share" not in head.token_names
 
@@ -1594,14 +1594,14 @@ def test_pair_descriptor_pocket_shares_can_be_dropped():
     assert loss == loss  # not NaN
 
 
-def test_pair_descriptor_extent_can_be_dropped():
+def test_descriptor_extent_can_be_dropped():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_extent = False
+    config.descriptors = True
+    config.descriptor_extent = False
     config.validate()
 
     model = InteractionClassification(config)
-    head = model.final_layer.pair_descriptor_head
+    head = model.final_layer.descriptor_head
     assert head.token_count == 7  # 5 base + aromatic_share/polar_share
     assert "extent" not in head.token_names
 
@@ -1609,15 +1609,15 @@ def test_pair_descriptor_extent_can_be_dropped():
     assert loss == loss  # not NaN
 
 
-def test_pair_descriptor_extent_combines_with_pocket_shares_split():
+def test_descriptor_extent_combines_with_pocket_shares_split():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_extent = False
-    config.pair_descriptor_pocket_shares_split = True
+    config.descriptors = True
+    config.descriptor_extent = False
+    config.descriptor_pocket_shares_split = True
     config.validate()
 
     model = InteractionClassification(config)
-    head = model.final_layer.pair_descriptor_head
+    head = model.final_layer.descriptor_head
     assert head.token_count == 9  # 5 base + 4 split tokens
     assert "extent" not in head.token_names
 
@@ -1626,14 +1626,14 @@ def test_pair_descriptor_extent_combines_with_pocket_shares_split():
 
 
 @pytest.mark.parametrize("pool_type", ["add", "max", "mean", "gem"])
-def test_pair_descriptor_head_pool_type_output_matches_hiddim(pool_type):
+def test_descriptor_head_pool_type_output_matches_hiddim(pool_type):
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.pool_type = pool_type
     config.validate()
 
     model = InteractionClassification(config)
-    head = model.final_layer.pair_descriptor_head
+    head = model.final_layer.descriptor_head
     assert head.output_dim == config.hiddim
     if pool_type == "gem":
         assert hasattr(head, "gem_pool")
@@ -1642,28 +1642,28 @@ def test_pair_descriptor_head_pool_type_output_matches_hiddim(pool_type):
     assert loss == loss  # not NaN
 
 
-def test_pair_descriptor_head_pool_type_add_max_doubles_output_dim():
+def test_descriptor_head_pool_type_add_max_doubles_output_dim():
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.pool_type = "add_max"
     config.validate()
 
     model = InteractionClassification(config)
-    head = model.final_layer.pair_descriptor_head
+    head = model.final_layer.descriptor_head
     assert head.output_dim == 2 * config.hiddim
 
     loss = one_training_step(config)
     assert loss == loss  # not NaN
 
 
-def test_pair_descriptor_flatten_concatenates_tokens_instead_of_pooling():
+def test_descriptor_flatten_concatenates_tokens_instead_of_pooling():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_flatten = True
+    config.descriptors = True
+    config.descriptor_flatten = True
     config.validate()
 
     model = InteractionClassification(config)
-    head = model.final_layer.pair_descriptor_head
+    head = model.final_layer.descriptor_head
     assert head.output_dim == head.token_count * config.hiddim
     assert not hasattr(head, "gem_pool")
 
@@ -1671,14 +1671,14 @@ def test_pair_descriptor_flatten_concatenates_tokens_instead_of_pooling():
     assert loss == loss  # not NaN
 
 
-def test_pair_descriptor_pocket_shares_split_replaces_them_with_four_tokens():
+def test_descriptor_pocket_shares_split_replaces_them_with_four_tokens():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_pocket_shares_split = True
+    config.descriptors = True
+    config.descriptor_pocket_shares_split = True
     config.validate()
 
     model = InteractionClassification(config)
-    head = model.final_layer.pair_descriptor_head
+    head = model.final_layer.descriptor_head
     assert head.token_count == 10
     assert "aromatic_share" not in head.token_names
     assert "polar_share" not in head.token_names
@@ -1698,23 +1698,23 @@ def test_pair_descriptor_pocket_shares_split_replaces_them_with_four_tokens():
     assert unused == []
 
 
-def test_pair_descriptor_pocket_shares_split_requires_pocket_shares():
+def test_descriptor_pocket_shares_split_requires_pocket_shares():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_pocket_shares = False
-    config.pair_descriptor_pocket_shares_split = True
-    with pytest.raises(ValueError, match="pair_descriptor_pocket_shares_split"):
+    config.descriptors = True
+    config.descriptor_pocket_shares = False
+    config.descriptor_pocket_shares_split = True
+    with pytest.raises(ValueError, match="descriptor_pocket_shares_split"):
         config.validate()
 
 
-def test_pair_descriptor_pocket_shares_coarse_bands_the_original_two_tokens():
+def test_descriptor_pocket_shares_coarse_bands_the_original_two_tokens():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_pocket_shares_coarse = True
+    config.descriptors = True
+    config.descriptor_pocket_shares_coarse = True
     config.validate()
 
     model = InteractionClassification(config)
-    head = model.final_layer.pair_descriptor_head
+    head = model.final_layer.descriptor_head
     assert head.token_count == 8
     assert head.token_names[-2:] == ("aromatic_share_coarse", "polar_share_coarse")
 
@@ -1730,42 +1730,42 @@ def test_pair_descriptor_pocket_shares_coarse_bands_the_original_two_tokens():
     assert unused == []
 
 
-def test_pair_descriptor_pocket_shares_coarse_requires_pocket_shares():
+def test_descriptor_pocket_shares_coarse_requires_pocket_shares():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_pocket_shares = False
-    config.pair_descriptor_pocket_shares_coarse = True
-    with pytest.raises(ValueError, match="pair_descriptor_pocket_shares_coarse"):
+    config.descriptors = True
+    config.descriptor_pocket_shares = False
+    config.descriptor_pocket_shares_coarse = True
+    with pytest.raises(ValueError, match="descriptor_pocket_shares_coarse"):
         config.validate()
 
 
-def test_pair_descriptor_pocket_shares_coarse_conflicts_with_split():
+def test_descriptor_pocket_shares_coarse_conflicts_with_split():
     config = make_config()
-    config.pair_descriptors = True
-    config.pair_descriptor_pocket_shares_split = True
-    config.pair_descriptor_pocket_shares_coarse = True
+    config.descriptors = True
+    config.descriptor_pocket_shares_split = True
+    config.descriptor_pocket_shares_coarse = True
     with pytest.raises(ValueError, match="pick one"):
         config.validate()
 
 
 def test_descriptors_head_rejects_the_full_architecture_options():
     config = make_config()
-    config.pair_descriptors = True
+    config.descriptors = True
     config.descriptors_head = True
     config.dann_family = True
     with pytest.raises(ValueError, match="descriptors_head"):
         config.validate()
 
 
-def test_descriptor_mlp_auto_enables_pair_descriptors():
-    """--descriptor_mlp has no meaning without --pair_descriptors -- same reasoning as
+def test_descriptor_mlp_auto_enables_descriptors():
+    """--descriptor_mlp has no meaning without --descriptors -- same reasoning as
     --descriptors_head's own auto-enable just above."""
     config = make_config()
     config.descriptor_mlp = True
     config.descriptor_names = "chain,unsaturation,aromatic_share"
-    assert config.pair_descriptors is False  # not yet, before validate()
+    assert config.descriptors is False  # not yet, before validate()
     config.validate()
-    assert config.pair_descriptors is True
+    assert config.descriptors is True
 
     loss = one_training_step(config)
     assert loss == loss  # not NaN
@@ -1773,7 +1773,7 @@ def test_descriptor_mlp_auto_enables_pair_descriptors():
 
 def test_descriptor_mlp_requires_descriptor_names():
     """Unlike --descriptors_head, DescriptorMLPHead has no fixed-token
-    PairDescriptorHead fallback -- it always reads a caller-named token set."""
+    DescriptorHead fallback -- it always reads a caller-named token set."""
     config = make_config()
     config.descriptor_mlp = True
     with pytest.raises(ValueError, match="descriptor_mlp requires --descriptor_names"):
@@ -1840,7 +1840,7 @@ def test_descriptor_mlp_does_not_build_named_descriptor_head():
 
     model = InteractionClassification(config)
     assert not isinstance(model.final_layer.descriptor_mlp_head, NamedDescriptorHead)
-    assert not hasattr(model.final_layer, "pair_descriptor_head")
+    assert not hasattr(model.final_layer, "descriptor_head")
 
 
 def test_single_attention_pooling_uses_only_pocket_nodes():

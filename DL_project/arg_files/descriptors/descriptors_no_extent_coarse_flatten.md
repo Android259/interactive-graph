@@ -5,12 +5,12 @@
 
 --dropout=0.1
 --weight_decay=0.01
---pair_descriptor_flatten
+--descriptor_flatten
 
---pair_descriptors
+--descriptors
 --descriptors_head
---no_pair_descriptor_extent
---pair_descriptor_pocket_shares_coarse
+--no_descriptor_extent
+--descriptor_pocket_shares_coarse
 
 --save_model_in_dynamics
 

@@ -19,7 +19,7 @@ AttributeError: 'PreassembledBatch' object has no attribute 'pair_id'
 коде был буквально прав про единственного потребителя на момент, когда писался).
 `--pu_rho_by_subclass` — второй потребитель (ищет подкласс строки по её `pair_id`,
 `pu_prior_and_groups` в `training/new_train.py`), который это условие не предвидело.
-Под `--pair_descriptors --descriptor_mlp` данные грузятся через
+Под `--descriptors --descriptor_mlp` данные грузятся через
 `PreassembledBatch` (lean-loading путь, `dataloader/preassembled_loader.py`) —
 именно там отсутствие `pair_id` и вылезало.
 

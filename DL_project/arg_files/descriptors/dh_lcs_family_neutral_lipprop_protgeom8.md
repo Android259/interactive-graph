@@ -24,7 +24,7 @@
 --weight_decay=0.01
 --pool_type="add"
 
---pair_descriptors
+--descriptors
 --descriptors_head
 --descriptor_names=chain,unsaturation,hbond,heavy,pocket_extent,pocket_elongation,pocket_flatness,depth_q10,buriedness_q50,aromatic_share,hydropathy_core,hydropathy_rim
 

@@ -7,9 +7,9 @@
 --weight_decay=0.01
 --pool_type="mean"
 
---pair_descriptors
+--descriptors
 --descriptors_head
---no_pair_descriptor_extent
+--no_descriptor_extent
 
 --save_model_in_dynamics
 

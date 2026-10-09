@@ -11,7 +11,7 @@
 --weight_decay=0.01
 --pool_type="add"
 
---pair_descriptors
+--descriptors
 --descriptor_mlp
 --descriptor_names=buriedness_q50,aromatic_share,aromatic_share_rim,depth_q10,ev14_q10,tail_elongation_fit,hydropathy_rim_match,aromatic_contact_min
 

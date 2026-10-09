@@ -8,10 +8,10 @@
 --weight_decay=0.01
 --pool_type="add"
 
---pair_descriptors
+--descriptors
 --descriptors_head
---no_pair_descriptor_extent
---pair_descriptor_pocket_shares_coarse
+--no_descriptor_extent
+--descriptor_pocket_shares_coarse
 
 --loss_type=pairwise_rank
 --rank_within_protein

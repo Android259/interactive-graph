@@ -99,7 +99,7 @@ eval "set -- ${python_args}"
 
 # By analogy with --descriptors_head's OWN budget elsewhere (run_local.sh's
 # MAX_OMP_THREADS_PER_JOB default, cluster_common.sh's kraken-cpu
-# PACK_CPU_PER_RUN): a --descriptors_head/--pair_descriptors_only run (~1000
+# PACK_CPU_PER_RUN): a --descriptors_head/--descriptors_only run (~1000
 # parameters) tops out at 1 OMP thread before multithreading's own
 # synchronisation cost exceeds its payoff -- an un-pinned run here would
 # instead let PyTorch spread that tiny model's arithmetic across the WHOLE
@@ -110,15 +110,15 @@ eval "set -- ${python_args}"
 # process instead of paying a queue/IPC cost for parallelism the budget cannot
 # deliver -- same reasoning run_experiment_pack.sh's unconditional CPU_ONLY
 # --num_workers=0 already applies, narrowed here to the config class it was
-# actually measured on. --two_pair_descriptors_paths/--thematical_paths/
+# actually measured on. --two_descriptors_paths/--thematical_paths/
 # --descriptor_mlp are the same no-encoder-towers shape (architecture/
 # final_layer.py builds only a tiny descriptor head + classifier under any of
 # the four), so they get the same treatment.
 descriptors_head_sized=0
 for _flag in "$@"; do
     case "${_flag}" in
-        --descriptors_head|--descriptors_head=*|--pair_descriptors_only|--pair_descriptors_only=*|\
---two_pair_descriptors_paths|--two_pair_descriptors_paths=*|\
+        --descriptors_head|--descriptors_head=*|--descriptors_only|--descriptors_only=*|\
+--two_descriptors_paths|--two_descriptors_paths=*|\
 --thematical_paths|--thematical_paths=*|\
 --descriptor_mlp|--descriptor_mlp=*)
             descriptors_head_sized=1
@@ -128,7 +128,7 @@ for _flag in "$@"; do
 done
 
 if (( CPU_ONLY && descriptors_head_sized )); then
-    printf 'Detected --descriptors_head/--pair_descriptors_only/--two_pair_descriptors_paths/--thematical_paths/--descriptor_mlp: pinning to 1 OMP thread, num_workers=0.\n'
+    printf 'Detected --descriptors_head/--descriptors_only/--two_descriptors_paths/--thematical_paths/--descriptor_mlp: pinning to 1 OMP thread, num_workers=0.\n'
     # --num_workers=0 appended last so it wins over anything the args file set
     # (read_configuration.py applies flags in argv order) -- same rule
     # run_experiment_pack.sh's own CPU_ONLY branch follows.

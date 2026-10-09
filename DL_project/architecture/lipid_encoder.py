@@ -106,9 +106,9 @@ class Lipid_encoder(torch.nn.Module):
         else:
             # --descriptors_in_lipid's tokens (also settable together with the
             # protein-side broadcast via --descriptors_in_protein_lipid: chain,
-            # unsaturation, hbond, heavy -- pair_descriptor_input's first 4 columns,
+            # unsaturation, hbond, heavy -- descriptor_input's first 4 columns,
             # already standardised by the loader; see architecture/protein_encoder.py's
-            # expand_pair_descriptors for the protein-side equivalent and why no
+            # expand_descriptors for the protein-side equivalent and why no
             # normalisation buffers are needed here either).
             #
             # --no_embeddings: MolFormer contributes nothing at all -- there is no
@@ -121,17 +121,17 @@ class Lipid_encoder(torch.nn.Module):
             # Otherwise (no_embeddings off): MolFormer's per-token embedding stays the
             # base, and forward() broadcasts the same 4 scalars onto every token node
             # in addition to it -- concatenated, not replacing, same as
-            # descriptors_in_lipid coexists with --pair_descriptors elsewhere.
+            # descriptors_in_lipid coexists with --descriptors elsewhere.
             # Only for the start=True instance (lipid1): the start=False second pass
             # (lipid2, under --double_attention) receives lip1 -- already hiddim-wide,
             # nothing raw left to broadcast onto, same reason
             # architecture/protein_encoder.py's equivalent sits inside `if start:`.
             # Left at 0 here, forward() below reads it off self and skips the cat.
-            self.lipid_pair_descriptor_broadcast_count = 0
+            self.descriptors_in_lipid_count = 0
             no_embeddings = getattr(config, "no_embeddings", False)
             if start:
-                self.lipid_pair_descriptor_broadcast_count = int(
-                    getattr(config, "lipid_pair_descriptor_broadcast_count", 0)
+                self.descriptors_in_lipid_count = int(
+                    getattr(config, "descriptors_in_lipid_count", 0)
                 )
                 # --lipid_descriptors: same idea as --protein_descriptors
                 # (architecture/protein_encoder.py) but for the lipid side -- an
@@ -139,9 +139,9 @@ class Lipid_encoder(torch.nn.Module):
                 # --descriptors_in_lipid reads above), broadcast onto every lipid node,
                 # selected out of the shared descriptor_catalog_input tensor by column
                 # index. Independent, coexisting mechanism from
-                # lipid_pair_descriptor_broadcast_count just above -- neither is touched
+                # descriptors_in_lipid_count just above -- neither is touched
                 # or restricted by this. Only for start=True, same reason
-                # lipid_pair_descriptor_broadcast_count above is: lipid2 (start=False,
+                # descriptors_in_lipid_count above is: lipid2 (start=False,
                 # --double_attention) receives lip1, already hiddim-wide.
                 lipid_descriptor_tokens = parse_descriptor_list(
                     getattr(config, "lipid_descriptors", "")
@@ -176,7 +176,7 @@ class Lipid_encoder(torch.nn.Module):
                 else:
                     base_dim = 768
                 self.encodin = torch.nn.Linear(
-                    base_dim + self.lipid_pair_descriptor_broadcast_count
+                    base_dim + self.descriptors_in_lipid_count
                     + lipid_descriptor_broadcast_count,
                     hiddim,
                 )
@@ -206,7 +206,7 @@ class Lipid_encoder(torch.nn.Module):
 
     def forward(
         self, lipLM, lipbatch, attn_mask, mult_mask=None, edge_index=None,
-        edge_attr=None, start=True, fast_layout=None, pair_descriptor_input=None,
+        edge_attr=None, start=True, fast_layout=None, descriptor_input=None,
         descriptor_catalog_input=None,
     ):
         """Encode lipid nodes using the configured embedding or graph path."""
@@ -215,16 +215,16 @@ class Lipid_encoder(torch.nn.Module):
 
         if (
             not getattr(self.config, "lipid_graph_isomers", False)
-            and getattr(self, "lipid_pair_descriptor_broadcast_count", 0)
+            and getattr(self, "descriptors_in_lipid_count", 0)
             and not getattr(self.config, "no_embeddings", False)
         ):
             # MolFormer's per-token embedding is still the base here (no_embeddings
             # off) -- broadcast the 4 lipid-only tokens onto every one of its nodes.
             # Under no_embeddings, lipLM already IS these 4 scalars (one node, built
             # by the loader), nothing to broadcast onto.
-            if pair_descriptor_input is None:
-                raise ValueError("descriptors_in_lipid requires pair_descriptor_input")
-            per_lipid = pair_descriptor_input[:, :4].to(lipLM.dtype)
+            if descriptor_input is None:
+                raise ValueError("descriptors_in_lipid requires descriptor_input")
+            per_lipid = descriptor_input[:, :4].to(lipLM.dtype)
             lipLM = torch.cat((lipLM, per_lipid[lipbatch]), dim=-1)
 
         lipid_descriptor_columns = getattr(self, "lipid_descriptor_columns", None)
@@ -236,7 +236,7 @@ class Lipid_encoder(torch.nn.Module):
             # --lipid_descriptors: same guard as the fixed 4-token broadcast just above
             # (nothing to broadcast onto under lipid_graph_isomers/no_embeddings), but
             # an arbitrary named DESCRIPTOR_CATALOG subset selected out of the shared
-            # descriptor_catalog_input tensor instead of a fixed pair_descriptor_input
+            # descriptor_catalog_input tensor instead of a fixed descriptor_input
             # slice -- see architecture/protein_encoder.py's
             # expand_named_protein_descriptors for the protein-side equivalent.
             if descriptor_catalog_input is None:

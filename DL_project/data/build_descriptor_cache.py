@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the shared cache for --pair_descriptors'/--two_pair_descriptors_paths' shared
+"""Build the shared cache for --descriptors'/--two_descriptors_paths' shared
 per-candidate/per-protein base values (chain/unsaturation/hbond/heavy/tail_count/extent --
 see needs_cache below).
 
@@ -20,11 +20,11 @@ Usage:
                                                  [--check_only]
 
     --args_file=PATH  Pick whether a cache is needed, and which isomeric variant, from
-                       that run's flags: neither --pair_descriptors nor
-                       --two_pair_descriptors_paths means no cache is read at all (see
-                       dataloader/Dataloader.py._compute_pair_descriptors, which
+                       that run's flags: neither --descriptors nor
+                       --two_descriptors_paths means no cache is read at all (see
+                       dataloader/Dataloader.py._compute_descriptors, which
                        reads the cache under either flag), and --lipid_isomers selects
-                       the isomeric-SMILES variant. Without this, --pair_descriptors is
+                       the isomeric-SMILES variant. Without this, --descriptors is
                        assumed and the deterministic (non-isomeric) variant is built.
     --force           Rebuild even when the cache is already current.
     --quiet           Print nothing when there was nothing to do.
@@ -68,20 +68,20 @@ def flags_in(args_file):
 def needs_cache(args_file):
     """(needed, isomeric), from that run's flags, or (True, False) with no args file.
 
-    Needed under --pair_descriptors OR --two_pair_descriptors_paths OR anything that
+    Needed under --descriptors OR --two_descriptors_paths OR anything that
     makes dataloader.descriptors.full_catalog_order(config) non-empty:
-    Dataloader._compute_pair_descriptors computes chain/unsaturation/hbond/heavy (and
-    conditionally tail_count) the moment ANY of pair_descriptors_on/two_paths_on/
+    Dataloader._compute_descriptors computes chain/unsaturation/hbond/heavy (and
+    conditionally tail_count) the moment ANY of descriptors_on/two_paths_on/
     named_catalog_on is true (it returns early only when ALL THREE are false), so a
     config using only --descriptor_names/--good_descriptors/--bad_descriptors/
     --protein_descriptors/--lipid_descriptors/--geometric_descriptors/
-    --chemical_descriptors -- with neither --pair_descriptors nor
-    --two_pair_descriptors_paths itself -- still pays the ~12s-of-~13.6s RDKit/
+    --chemical_descriptors -- with neither --descriptors nor
+    --two_descriptors_paths itself -- still pays the ~12s-of-~13.6s RDKit/
     pocket-parse cost this cache exists to remove, independently in every job sharing
     a node, if this only checked the two bare flags. Checked here as raw flag presence
     rather than by calling full_catalog_order itself (which needs a parsed ModelConfig,
     not a flag list) -- --descriptor_names only counts when paired with --descriptors_head
-    or --pair_descriptors, matching that function's own guard. --geometric_descriptors/
+    or --descriptors, matching that function's own guard. --geometric_descriptors/
     --chemical_descriptors (--thematical_paths, architecture/thematic_descriptor_head.py)
     need no such pairing -- they are only ever read together with --thematical_paths
     (ModelConfig.validate rejects them otherwise), and unlike --descriptor_names they
@@ -104,12 +104,12 @@ def needs_cache(args_file):
         or "--chemical_descriptors" in flags
         or (
             "--descriptor_names" in flags
-            and ("--descriptors_head" in flags or "--pair_descriptors" in flags)
+            and ("--descriptors_head" in flags or "--descriptors" in flags)
         )
     )
     needed = (
-        "--pair_descriptors" in flags
-        or "--two_pair_descriptors_paths" in flags
+        "--descriptors" in flags
+        or "--two_descriptors_paths" in flags
         or "--thematical_paths" in flags
         or named_catalog_on
     )
@@ -140,7 +140,7 @@ def main(argv):
         if not quiet:
             print(
                 "pair descriptor cache: not needed "
-                "(neither --pair_descriptors nor --two_pair_descriptors_paths is on)"
+                "(neither --descriptors nor --two_descriptors_paths is on)"
             )
         return 0
 

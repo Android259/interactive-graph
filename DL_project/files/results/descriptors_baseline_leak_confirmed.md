@@ -3,7 +3,7 @@
 > **Сноска 2026-10-09.** Часть лейблов ниже удалена вместе с флагом `--pocket_descriptors` (сырой ненормированный broadcast на узлы белка): `ge_protgeom8*`, `ge_protgeom_family_neutral*`, `geatt_protgeom8*`, `descriptors_2paths*`, `descriptors_no_extent_coarse_add_lipprop_family_neutral`, `bbp_smd_fa_pocket_desc_*`, `bbp_dcs_rand_smd_*_3rd_head_*`, `ge_s15_prothid32_hid64_noreg_pairdesc`. Измерения остаются в силе, но конфиг по имени метки уже не воспроизводится — см. [`reference/pocket_shape_descriptors.md`](../reference/pocket_shape_descriptors.md) (блок «Статус»).
 
 Снимок на 2026-09-11. Источники: `metrics_summary.csv`, `graphics/dh_family_neutral_lipprop*`,
-`files/results/four_families_audit.md` §3.2, `files/results/signal_state.md` §8, `dataloader/pair_descriptors.py`,
+`files/results/four_families_audit.md` §3.2, `files/results/signal_state.md` §8, `dataloader/descriptors.py`,
 `dataloader/protein_graph_builder.py`, `training/read_configuration.py`.
 
 ## TL;DR
@@ -12,7 +12,7 @@
 descriptors-архитектуры (`files/results/four_families_audit.md` §3.2) — несёт утечку семейства
 LBP_BPI_CETP напрямую (test BA 0.826 на этом семействе против 0.549 на остальных
 шести, переживает поправку на chemistry-null). Попытки почистить его флагами
-(`--no_pair_descriptor_extent`, `--pair_descriptor_pocket_shares_coarse`) ничего не
+(`--no_descriptor_extent`, `--descriptor_pocket_shares_coarse`) ничего не
 меняют в этом разрыве.
 
 Собран честный кандидат — `dh_family_neutral_lipprop`

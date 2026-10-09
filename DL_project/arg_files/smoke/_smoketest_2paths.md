@@ -7,7 +7,7 @@
 --weight_decay=0.01
 --pool_type="add"
 
---two_pair_descriptors_paths
+--two_descriptors_paths
 
 --good_descriptors=chain_extent_gap,volume_fit,
                 aromatic_contact,hbond_match,tail_elongation_fit,occupancy

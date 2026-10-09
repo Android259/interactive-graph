@@ -1185,7 +1185,7 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
             npr1_value = np.nan if npr1_value is None else npr1_value
             npr2_value = np.nan if npr2_value is None else npr2_value
         # data/build_descriptor_cache.py's own cache already stores these four
-        # (built specifically "for --pair_descriptors'/--two_pair_descriptors_paths'
+        # (built specifically "for --descriptors'/--two_descriptors_paths'
         # shared per-candidate ... base values (chain/unsaturation/hbond/heavy ...)"
         # -- see that script's module docstring) under "chain"/"unsaturation"/
         # "hbond"/"heavy_atoms" (dataloader/descriptor_cache_reader.py's own
@@ -1242,7 +1242,7 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
         # dataloader.descriptors.LIPID_DESCRIPTOR_NAMES' own short aliases
         # (--descriptor_names=chain,unsaturation,hbond,heavy in a real arg file) --
         # the SAME functions dataloader.chemistry_prior._lipid_descriptor_table
-        # calls for the network's own null-model/PairDescriptorHead path (cache hit
+        # calls for the network's own null-model/DescriptorHead path (cache hit
         # or not, see above), so a value under this name can never drift from what
         # --descriptor_names=chain,... actually feeds the network. That function
         # mean-pools over candidates; explicit_lipid_features' own per-species
@@ -1515,7 +1515,7 @@ def build_protein_kernel(
 
     - "pocket13" / "pocket23": the full 13- or 23-name pocket-shape descriptor set.
     - "pocket_subset": the same pocket descriptors, restricted to `descriptor_names`
-      (any subset of POCKET_ALL_NAMES -- pocket23 plus dataloader/pair_descriptors.
+      (any subset of POCKET_ALL_NAMES -- pocket23 plus dataloader/descriptors.
       py's PROTEIN_DESCRIPTOR_NAMES' four further promotions: ev28_q10,
       aromatic_share_rim, hydropathy_mean, ev14_q10) -- use this to match a network
       run's own `--protein_descriptors` exactly, e.g. the project's "protgeom8" or

@@ -17,7 +17,7 @@ dataloader/cache_builders/descriptor_csv_builder.py; this module is the read sid
 code-fingerprinting that decides what either builder may still serve from an existing
 table and what it must recompute.
 
-Dataloader.py._compute_pair_descriptors runs RDKit over every candidate SMILES in the
+Dataloader.py._compute_descriptors runs RDKit over every candidate SMILES in the
 interaction table (chain length, unsaturation, H-bond capacity, heavy-atom count, tail
 count, and the three conformer-based lipid-shape measures) -- none of which depends on
 --seed or --excluded_groups. A local grid launches one process per (group, seed) pair

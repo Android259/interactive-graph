@@ -5,7 +5,7 @@
 геометрия рёбер белкового графа. Для каждого — что он физически считает, откуда взят,
 и что уже измерено про его связь с идентичностью белка/семейством (там, где измерено).
 
-> **Правило сопровождения.** Источник истины — `dataloader/pair_descriptors.py`
+> **Правило сопровождения.** Источник истины — `dataloader/descriptors.py`
 > (`DESCRIPTOR_CATALOG`, липидные/протеиновые/парные имена в одном месте) и
 > `dataloader/protein_graph_builder.py` (сами значения протеиновых, geometry рёбер).
 > Меняется состав любого набора там — правится и эта таблица в том же коммите. Числа
@@ -22,19 +22,19 @@
 | флаг | что делает | архитектура |
 |---|---|---|
 | `--protein_descriptors=` / `--lipid_descriptors=` | broadcast сырых именованных колонок `DESCRIPTOR_CATALOG` на каждую ноду белковой/липидной ветки | `architecture/protein_encoder.py::expand_named_protein_descriptors`, `architecture/lipid_encoder.py` — то, что используют текущие `geometric_edge_*` бейзлайны |
-| ~~`--pocket_descriptors`~~ (+`--pocket_descriptor_names`/`--pocket_descriptors_family_neutral`) | **удалён 2026-10-09.** Был фиксированный broadcast `POCKET_DESCRIPTOR_NAMES` на каждую ноду белка — единственный дескрипторный вход без нормировки (буферы заполнялись только под `--rnabang_frozen_node_adapter`, ни один такой прогон его не ставил) | код-путь `expand_pocket_descriptor` удалён. Нормированный путь к тем же именам — `--protein_descriptors` выше. Сам тензор ещё подаётся по производному `ModelConfig.needs_pocket_descriptor` для `PairDescriptorHead`/`--descriptors_in_protein`, которые читают из него доли в [0, 1] |
-| `--pair_descriptors` / `--descriptors_head` | self-attention голова над маленьким фиксированным набором токенов (aromatic_share, polar_share, extent, chain/unsaturation/hbond/heavy…) | `architecture/pair_descriptor_head.py::PairDescriptorHead` — отдельная архитектура, без белковой/липидной ветки вообще, не складывается с `bilinear_fusion` |
-| `--two_pair_descriptors_paths` / `--good_descriptors` / `--bad_descriptors` | явный именованный признак из `DESCRIPTOR_CATALOG` (тот же каталог, что у `--protein_descriptors`) как отдельный вход | `architecture/named_descriptor_head.py::NamedDescriptorHead` |
+| ~~`--pocket_descriptors`~~ (+`--pocket_descriptor_names`/`--pocket_descriptors_family_neutral`) | **удалён 2026-10-09.** Был фиксированный broadcast `POCKET_DESCRIPTOR_NAMES` на каждую ноду белка — единственный дескрипторный вход без нормировки (буферы заполнялись только под `--rnabang_frozen_node_adapter`, ни один такой прогон его не ставил) | код-путь `expand_pocket_descriptor` удалён. Нормированный путь к тем же именам — `--protein_descriptors` выше. Сам тензор ещё подаётся по производному `ModelConfig.needs_pocket_descriptor` для `DescriptorHead`/`--descriptors_in_protein`, которые читают из него доли в [0, 1] |
+| `--descriptors` / `--descriptors_head` | self-attention голова над маленьким фиксированным набором токенов (aromatic_share, polar_share, extent, chain/unsaturation/hbond/heavy…) | `architecture/descriptor_head.py::DescriptorHead` — отдельная архитектура, без белковой/липидной ветки вообще, не складывается с `bilinear_fusion` |
+| `--two_descriptors_paths` / `--good_descriptors` / `--bad_descriptors` | явный именованный признак из `DESCRIPTOR_CATALOG` (тот же каталог, что у `--protein_descriptors`) как отдельный вход | `architecture/named_descriptor_head.py::NamedDescriptorHead` |
 | `--protein_edge_mlp` / `--protein_edge_attention` | геометрия рёбер белкового графа (раздел 5 ниже) | `architecture/protein_edge_geometry.py` — ортогонально всем четырём выше (рёбра, не ноды) |
-| `--thematical_paths` (+`--geometric_descriptors=`/`--chemical_descriptors=`) | два именованных набора, каждый расщеплён на липидную/протеиновую сторону и принудительно перемножен (без skip-пути для сырых сторон) в один вектор группы, затем группы — друг с другом | `architecture/thematic_descriptor_head.py::ThematicDescriptorHead`/`ForcedInteraction` — третья sufficiency-test ветка, sibling `--descriptors_head`/`--two_pair_descriptors_paths`; полный разбор в [files/results/thematical_paths_summary.md](../results/thematical_paths_summary.md) |
+| `--thematical_paths` (+`--geometric_descriptors=`/`--chemical_descriptors=`) | два именованных набора, каждый расщеплён на липидную/протеиновую сторону и принудительно перемножен (без skip-пути для сырых сторон) в один вектор группы, затем группы — друг с другом | `architecture/thematic_descriptor_head.py::ThematicDescriptorHead`/`ForcedInteraction` — третья sufficiency-test ветка, sibling `--descriptors_head`/`--two_descriptors_paths`; полный разбор в [files/results/thematical_paths_summary.md](../results/thematical_paths_summary.md) |
 
 `analysis/null_model.py --features` читает тот же `DESCRIPTOR_CATALOG` независимо от
 того, что подано в саму сеть — это отдельный, безобучаемый бейзлайн для сравнения.
 
-## 1. Липидные дескрипторы (`LIPID_DESCRIPTOR_NAMES`, 13, `pair_descriptors.py:51`)
+## 1. Липидные дескрипторы (`LIPID_DESCRIPTOR_NAMES`, 13, `descriptors.py:51`)
 
 Все — из 2D RDKit-структуры (SMILES), без докинга и позы; мотивация — Lipovsky et al.,
-Nature 2025 (см. модульный docstring `pair_descriptors.py`).
+Nature 2025 (см. модульный docstring `descriptors.py`).
 
 | имя | считает | функция |
 |---|---|---|
@@ -63,7 +63,7 @@ Nature 2025 (см. модульный docstring `pair_descriptors.py`).
 того, какие классы липидов исключены на этом семействе. Не доказано, флаг открыт.
 
 ## 2. Протеиновые/карманные дескрипторы (`PROTEIN_DESCRIPTOR_NAMES`, 15,
-`pair_descriptors.py:115`, значения — `protein_graph_builder.py::pocket_descriptor`)
+`descriptors.py:115`, значения — `protein_graph_builder.py::pocket_descriptor`)
 
 Считаются по остаткам кармана (`coarse_graph_nodes.csv`) и атомам кармана
 (`pocketness.pdb`) — подробный разбор геометрии в
@@ -149,9 +149,9 @@ buriedness_q50, apolar_sasa_share, aromatic_share, hydropathy_rim` — испо�
 18 — расширять family-neutral набор есть чем, но на 1 число, не на 18.
 
 ## 4. Производные протеиновые (`PROTEIN_DERIVED_DESCRIPTOR_NAMES`, 3,
-`pair_descriptors.py:165`)
+`descriptors.py:165`)
 
-Читаются только `PairDescriptorHead` (`--pair_descriptors`), не broadcast-механизмом
+Читаются только `DescriptorHead` (`--descriptors`), не broadcast-механизмом
 раздела 0:
 
 | имя | считает |
@@ -161,14 +161,14 @@ buriedness_q50, apolar_sasa_share, aromatic_share, hydropathy_rim` — испо�
 | `polar_share_coarse` | `polar_share`, та же схема |
 
 Отдельно `extent` в `DESCRIPTOR_CATALOG` — не сырой `pocket_extent`, а его train-fit
-коарсенная, leak-safe версия, которую `PairDescriptorHead` и compat-механизм читают
+коарсенная, leak-safe версия, которую `DescriptorHead` и compat-механизм читают
 вместо сырого значения на холодном сплите (`Dataloader.py`'s `coarse_extent`).
 
-## 5. Парные дескрипторы (`PAIR_DESCRIPTOR_NAMES`, 14, `pair_descriptors.py:57`,
+## 5. Парные дескрипторы (`PAIR_DESCRIPTOR_NAMES`, 14, `descriptors.py:57`,
 формулы — `pair_descriptor_value`)
 
 Комбинируют одно липидное и одно протеиновое значение в одно число — «безобучаемая»
-версия того, что self-attention `PairDescriptorHead` должен бы находить сам. Используются
+версия того, что self-attention `DescriptorHead` должен бы находить сам. Используются
 и как признаки `analysis/null_model.py --features`, и как входы `NamedDescriptorHead`
 (`--good_descriptors`/`--bad_descriptors`).
 
@@ -190,7 +190,7 @@ buriedness_q50, apolar_sasa_share, aromatic_share, hydropathy_rim` — испо�
 | `flatness_shape_match` | `pocket_flatness × lipid npr2` | вторая ось той же идеи — форма туннеля (щель/трубка) встречает плоскостность лиганда (PMI2/PMI3) |
 
 **Что известно про утечку.** Прямая проверка была не для этого каталога целиком, а для
-механизма `pair_descriptor_pocket_shares` (aromatic_share/polar_share и их coarse-версии,
+механизма `descriptor_pocket_shares` (aromatic_share/polar_share и их coarse-версии,
 раздел 4) на `descriptors_path`: `LBP_BPI_CETP` даёт test BA 0.796–0.826, не объяснённую
 ни белко-слепой химией, ни pocket_extent (проверено раздельно, см.
 [signal_state.md §8](../results/signal_state.md)) — источник до сих пор не найден среди проверенных
@@ -311,6 +311,6 @@ ordinal-float, не как embedding/one-hot — архитектурный де
 PROTEIN_DESCRIPTOR_NAMES(15) + ("polar_share",) + PAIR_DESCRIPTOR_NAMES(14)` — 44
 именованных токена всего, читаемых `--protein_descriptors`/`--lipid_descriptors`/
 `--good_descriptors`/`--bad_descriptors`/`analysis/null_model.py --features` одним и тем
-же `parse_descriptor_list`/`full_catalog_order` (`pair_descriptors.py`). Плюс 18
+же `parse_descriptor_list`/`full_catalog_order` (`descriptors.py`). Плюс 18
 исследовательских протеиновых (раздел 3, не в каталоге, только `analysis/`-скрипты) и
 геометрия рёбер (раздел 6, отдельный код-путь, не имена).

@@ -51,7 +51,7 @@ WALLTIME="${WALLTIME:-5:00:00}"
 FAST_ATTENTION_WALLTIME="${FAST_ATTENTION_WALLTIME:-0:20:00}"
 
 # --descriptors_head budget: this is a ~1000-parameter model (only
-# architecture/pair_descriptor_head.py's self-attention head + a small
+# architecture/descriptor_head.py's self-attention head + a small
 # classifier, no protein/lipid encoders at all), not the fast-attention full
 # model FAST_ATTENTION_WALLTIME above is sized for -- using that number here
 # means asking for 35 minutes for a run that needs a fraction of it. Measured

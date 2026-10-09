@@ -8,17 +8,17 @@ from dataloader.descriptors import parse_descriptor_list, resolve_requested_toke
 class NamedDescriptorHead(torch.nn.Module):
     """Self-attention over an ARBITRARY, caller-named subset of dataloader.pair_
     descriptors.DESCRIPTOR_CATALOG (bare or <name>_coarse=<spec> tokens, see
-    parse_descriptor_token) -- --two_pair_descriptors_paths' --good_descriptors/
+    parse_descriptor_token) -- --two_descriptors_paths' --good_descriptors/
     --bad_descriptors, each building one of these (architecture/final_layer.py).
     Same token-embed -> self-attention -> FFN -> pool_type-reduce-to-one-vector
-    shape as architecture.pair_descriptor_head.PairDescriptorHead, generalised to
+    shape as architecture.descriptor_head.DescriptorHead, generalised to
     take its token names directly as an argument instead of deriving a fixed set
     from --pair_descriptor_* flags -- the two classes are kept separate rather than
-    merged so PairDescriptorHead's existing, tested token-composition logic
+    merged so DescriptorHead's existing, tested token-composition logic
     (aromatic_share_split/coarse etc.) is untouched.
 
     --mlp_in_place_of_sa swaps the self-attention block for a parameter-budget-matched
-    per-token MLP here exactly as it does for PairDescriptorHead -- see
+    per-token MLP here exactly as it does for DescriptorHead -- see
     mlp_utils.make_self_attention.
     """
 
@@ -73,16 +73,16 @@ class NamedDescriptorHead(torch.nn.Module):
             torch.nn.Linear(hidden, self.dim),
         )
 
-        # Token-axis reduction: pool_type, the same flag PairDescriptorHead's own
+        # Token-axis reduction: pool_type, the same flag DescriptorHead's own
         # reduction (and every other pooling site in this project) answers to -- see
-        # that class's __init__ for the full rationale. No --pair_descriptor_flatten
+        # that class's __init__ for the full rationale. No --descriptor_flatten
         # equivalent here (not requested; every head is pool_type-reduced to one
         # vector before the two heads are combined the same way, see final_layer.py).
         self.pool_type = getattr(config, "pool_type", "mean")
         if self.pool_type == "gem":
             # Deferred import: architecture.final_layer imports this module, so
             # importing GeMPool from there at module load time would be circular --
-            # see PairDescriptorHead's own identical comment.
+            # see DescriptorHead's own identical comment.
             from architecture.final_layer import GeMPool
 
             self.gem_pool = GeMPool()
@@ -104,7 +104,7 @@ class NamedDescriptorHead(torch.nn.Module):
         x = self.ln2(x)
         x = x + self.ffn(x)  # [batch, token_count, hiddim]
 
-        # Same synthetic-PyG-batch-index trick PairDescriptorHead's own reduction
+        # Same synthetic-PyG-batch-index trick DescriptorHead's own reduction
         # uses: every sample owns exactly token_count consecutive rows.
         batch_size = x.shape[0]
         flat = x.reshape(batch_size * self.token_count, self.dim)
@@ -120,7 +120,7 @@ def pool_descriptor_head_outputs(vectors, pool_type, pool_fn, gem_pool=None):
     the SAME mechanism (and the SAME flag) each head already uses internally to
     reduce its own tokens to one vector. `gem_pool` must be a persistent submodule
     (its exponent is learned) when pool_type == "gem" -- see Final_Layer.__init__,
-    which builds one under --two_pair_descriptors_paths the same way it builds
+    which builds one under --two_descriptors_paths the same way it builds
     lip_gem_pool/prot_gem_pool.
     """
     stacked = torch.stack(vectors, dim=1)  # [batch, N, dim]

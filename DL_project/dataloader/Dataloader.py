@@ -185,7 +185,7 @@ class PLIDataset(
             # below: 11018 rows, 11018 distinct pair_ids, none missing) because
             # pair_id is later read straight off `.index` (self.csvtrue["pair_id"] =
             # self.csvtrue.index, a few lines down) while arrays built from `csv`
-            # inside _compute_pair_descriptors (extent, chain, unsaturation, ...) go
+            # inside _compute_descriptors (extent, chain, unsaturation, ...) go
             # through `.to_numpy()`, which is purely positional and ignores index
             # labels entirely. The boolean mask above breaks that equality: it keeps
             # each surviving row's ORIGINAL label from the full table (e.g. 7901),
@@ -198,7 +198,7 @@ class PLIDataset(
         # --drop_proteins: named LTPProtein rows removed from the table outright,
         # before anything else runs -- same positional-invariant reasoning and same
         # reset_index(drop=True) as --family_only's own filter just above (pair_id is
-        # read straight off .index a few lines down, while _compute_pair_descriptors'
+        # read straight off .index a few lines down, while _compute_descriptors'
         # arrays are built with .to_numpy(), purely positional; a boolean mask without
         # resetting the index would leave those two disagreeing on what "row 2 of the
         # filtered frame" means). Unlike excluded_subgroups (which keeps a named
@@ -437,7 +437,7 @@ class PLIDataset(
         raw_columns = self._raw_frozen_prior_columns(csv)
         self._compute_frozen_prior(raw_columns)
         self._compute_compatibility_input(raw_columns)
-        self._compute_pair_descriptors(csv)
+        self._compute_descriptors(csv)
         if getattr(self.config, "lipid_propensity_weight", False):
             self._lipid_propensity_weights = self._compute_lipid_propensity_weights(csv)
         self.csv = self.csvtrain
@@ -1029,9 +1029,9 @@ class PLIDataset(
             )
             setattr(self, name, frame.assign(**assigned))
 
-    def _pair_descriptor_features_cache_key(self):
-        """Fingerprint for the finished (standardised, per-row) --pair_descriptors/
-        --descriptor_names feature columns _compute_pair_descriptors writes onto
+    def _descriptor_features_cache_key(self):
+        """Fingerprint for the finished (standardised, per-row) --descriptors/
+        --descriptor_names feature columns _compute_descriptors writes onto
         csvtrain/csvalidate/csvtest.
 
         Keyed by the FULL config (every bool/int/float/str/None field, not a hand-
@@ -1087,22 +1087,22 @@ class PLIDataset(
             "lipid_table": table_state(root_dir / "lipid_descriptors.manifest.json"),
             "protein_table": table_state(root_dir / "protein_descriptors.manifest.json"),
             "code": hashlib.sha256(
-                inspect.getsource(PLIDataset._compute_pair_descriptors).encode()
+                inspect.getsource(PLIDataset._compute_descriptors).encode()
             ).hexdigest()[:16],
         }
         blob = json.dumps(payload, sort_keys=True, default=str).encode()
         return hashlib.sha256(blob).hexdigest()[:24]
 
-    def _pair_descriptor_features_cache_path(self, key):
+    def _descriptor_features_cache_path(self, key):
         from pathlib import Path
 
-        return Path(self.ROOT_DIR) / "cache" / f"pair_descriptor_features_{key}.pt"
+        return Path(self.ROOT_DIR) / "cache" / f"descriptor_features_{key}.pt"
 
     @staticmethod
-    def _load_pair_descriptor_features_cache(path):
+    def _load_descriptor_features_cache(path):
         """{"csvtrain"/"csvalidate"/"csvtest": {column: array}} if a cache for this
         exact fingerprint exists, else None. Existence under the fingerprinted name
-        IS validity here -- see _pair_descriptor_features_cache_key -- so there is no
+        IS validity here -- see _descriptor_features_cache_key -- so there is no
         separate staleness check to run on a hit.
         """
         if not path.exists():
@@ -1115,7 +1115,7 @@ class PLIDataset(
             return None
 
     @staticmethod
-    def _save_pair_descriptor_features_cache(path, split_columns):
+    def _save_descriptor_features_cache(path, split_columns):
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(split_columns, path)
@@ -1123,11 +1123,11 @@ class PLIDataset(
             pass  # never fatal -- a read-only data/ still returns correct values,
                   # just unpersisted, same discipline as protein_descriptor_table
 
-    def _compute_pair_descriptors(self, csv):
-        """Attach --pair_descriptors' 6 standardised columns (5 under
-        --no_pair_descriptor_extent, 8 under --pair_descriptor_pocket_shares_split).
+    def _compute_descriptors(self, csv):
+        """Attach --descriptors' 6 standardised columns (5 under
+        --no_descriptor_extent, 8 under --descriptor_pocket_shares_split).
 
-        Fed to architecture/pair_descriptor_head.py's self-attention token set, one
+        Fed to architecture/descriptor_head.py's self-attention token set, one
         token each: chain length, unsaturation count and H-bond capacity (lipid-only),
         coarsened pocket extent (protein-only -- coarsened the same way
         --compatibility_split_input's "clash" coarsens it, on TRAIN-only quantile
@@ -1139,18 +1139,18 @@ class PLIDataset(
         dataloader/descriptors.py for why 3D volume itself is not attempted). Two
         more protein-only tokens (aromatic_share, polar_share) are read directly off the
         pocket descriptor tensor at forward time instead of duplicated here --
-        --pair_descriptors attaches that tensor (ModelConfig.needs_pocket_descriptor)
+        --descriptors attaches that tensor (ModelConfig.needs_pocket_descriptor)
         and it already carries them.
 
-        --pair_descriptor_pocket_shares_split swaps that pair for aromatic_share_core/
+        --descriptor_pocket_shares_split swaps that pair for aromatic_share_core/
         aromatic_share_rim (computed here, per protein, same as extent -- no split of
         aromatic_share exists in the pocket descriptor tensor to read at forward time
         the way extent's replacement, hydropathy_core/hydropathy_rim, does) plus
         hydropathy_core/hydropathy_rim (read at forward time, already in that tensor).
-        See architecture/pair_descriptor_head.py and project memory
+        See architecture/descriptor_head.py and project memory
         [[descriptors-path-fingerprint-leak]].
 
-        --no_pair_descriptor_extent drops the standalone extent token (the highest
+        --no_descriptor_extent drops the standalone extent token (the highest
         family-identity signal of the three protein-only entries, eta^2 0.78 at full
         resolution). occupancy keeps reading coarse_extent regardless -- it is a pair
         term (heavy_atom_count vs extent), not a duplicate of the extent token, so
@@ -1161,7 +1161,7 @@ class PLIDataset(
         _compute_compatibility_input; missing (RDKit-unparseable) values are filled
         with the train mean, same as _raw_frozen_prior_columns.
 
-        --two_pair_descriptors_paths (training/read_configuration.py, architecture/
+        --two_descriptors_paths (training/read_configuration.py, architecture/
         named_descriptor_head.py) -- and, sharing the same mechanism, --descriptor_names,
         --protein_descriptors, --lipid_descriptors -- additionally attaches
         `_descpath_<token>` for every token dataloader.descriptors.full_catalog_order
@@ -1175,42 +1175,42 @@ class PLIDataset(
         base name is its RAW pocket_descriptor()/dataloader.descriptors value
         unless a request coarsens it -- --good_descriptors/--bad_descriptors decide
         per name which of raw or coarse (and how coarse) an experiment reads; see
-        ModelConfig.two_pair_descriptors_paths for the leak-safety reasoning. Pair-
+        ModelConfig.two_descriptors_paths for the leak-safety reasoning. Pair-
         formula names are computed with dataloader.descriptors.
         pair_descriptor_value, the identical function analysis/baselines/null_model.py's
         chemistry null model uses, so a name means the same number in both places.
-        Independent of --pair_descriptors (ModelConfig.validate rejects combining
+        Independent of --descriptors (ModelConfig.validate rejects combining
         the two -- they build different Final_Layer branches), so this runs the
-        shared lipid/extent computation below even when --pair_descriptors itself
+        shared lipid/extent computation below even when --descriptors itself
         is off.
         """
-        pair_descriptors_on = getattr(self.config, "pair_descriptors", False)
-        two_paths_on = getattr(self.config, "two_pair_descriptors_paths", False)
+        descriptors_on = getattr(self.config, "descriptors", False)
+        two_paths_on = getattr(self.config, "two_descriptors_paths", False)
         # named_catalog_on: whether ANYTHING needs the wider, arbitrary-name catalog --
         # --good_descriptors/--bad_descriptors, --descriptor_names (under descriptors_head
-        # or pair_descriptors), or the node-broadcast --protein_descriptors/
+        # or descriptors), or the node-broadcast --protein_descriptors/
         # --lipid_descriptors. full_catalog_order (dataloader/descriptors.py) is the
         # ONE place that resolves all of those raw lists together -- every consumer
         # (this method, architecture/final_layer.py, architecture/protein_encoder.py,
         # architecture/lipid_encoder.py) calls it instead of recomputing the union, so
         # none of them can end up naming a token none of the others built.
         named_catalog_on = bool(full_catalog_order(self.config))
-        if not (pair_descriptors_on or two_paths_on or named_catalog_on):
+        if not (descriptors_on or two_paths_on or named_catalog_on):
             return
 
         # Disk-shared cache for the FINISHED (standardised, per-row) feature columns
-        # this method writes -- see _pair_descriptor_features_cache_key for why the
+        # this method writes -- see _descriptor_features_cache_key for why the
         # key covers the full config plus every split's exact pair_id set rather than
         # a hand-picked subset: train-only statistics (fill_train_mean, the coarse_
         # extent/named-catalog _coarse=<spec> bucket edges, and the z-score mean/
-        # spread every _pair_desc_*/_descpath_* column goes through) all read
+        # spread every _desc_*/_descpath_* column goes through) all read
         # self.csvtrain, whose row membership depends on --excluded_groups/
         # --test_group directly and on --seed indirectly through negative sampling
         # (dataloader/sampler.py) -- so two runs differing in EITHER one do not share
         # a cache entry, by construction, never by a flag this function has to name.
-        features_cache_key = self._pair_descriptor_features_cache_key()
-        features_cache_path = self._pair_descriptor_features_cache_path(features_cache_key)
-        cached_features = self._load_pair_descriptor_features_cache(features_cache_path)
+        features_cache_key = self._descriptor_features_cache_key()
+        features_cache_path = self._descriptor_features_cache_path(features_cache_key)
+        cached_features = self._load_descriptor_features_cache(features_cache_path)
         if cached_features is not None:
             self.csvtrain = self.csvtrain.assign(**cached_features["csvtrain"])
             self.csvalidate = self.csvalidate.assign(**cached_features["csvalidate"])
@@ -1225,7 +1225,7 @@ class PLIDataset(
         # before a grid launches so its N (group, seed) processes share one build. The
         # cache always carries every measure (no lipid_shape flag on load_pair_
         # descriptor_cache/store_is_current anymore) -- a run below that never sets
-        # --pair_descriptor_lipid_shape simply never reads the three conformer-based
+        # --descriptor_lipid_shape simply never reads the three conformer-based
         # keys the cache still has, same as it never reads any other unrequested key.
         pair_cache = load_lipid_descriptor_cache(self.ROOT_DIR, isomeric)
         # Protein-side values (extent, aromatic_share_core/rim) used to be a second,
@@ -1252,7 +1252,7 @@ class PLIDataset(
         heavy = as_arrays(
             descriptor_values_by_row(csv, "heavy_atoms", isomeric, cache=pair_cache)
         )
-        lipid_shape_on = getattr(self.config, "pair_descriptor_lipid_shape", False)
+        lipid_shape_on = getattr(self.config, "descriptor_lipid_shape", False)
         lipid_shape = {}
         if lipid_shape_on:
             from preprocessing.compute_descriptors import LIPID_SHAPE_DESCRIPTOR_NAMES
@@ -1265,19 +1265,19 @@ class PLIDataset(
         )
         extent = csv["LTPProtein"].map(extents).to_numpy(dtype=float)
 
-        # --no_pair_descriptor_extent drops only the standalone extent TOKEN below;
+        # --no_descriptor_extent drops only the standalone extent TOKEN below;
         # coarse_extent (right after) still feeds occupancy either way, since occupancy
         # is a pair term (heavy_atom_count vs extent) regardless of whether extent is
         # also exposed on its own. two_paths_on always wants "extent" available (its
         # own catalog has no separate on/off flag for one name -- --good_descriptors/
         # --bad_descriptors simply do or don't name it).
         include_extent = (
-            pair_descriptors_on and getattr(self.config, "pair_descriptor_extent", True)
+            descriptors_on and getattr(self.config, "descriptor_extent", True)
         ) or two_paths_on
 
-        split_pocket_shares = pair_descriptors_on and getattr(
-            self.config, "pair_descriptor_pocket_shares_split", False
-        ) and getattr(self.config, "pair_descriptor_pocket_shares", True)
+        split_pocket_shares = descriptors_on and getattr(
+            self.config, "descriptor_pocket_shares_split", False
+        ) and getattr(self.config, "descriptor_pocket_shares", True)
         if split_pocket_shares:
             rim_core = pocket_rim_core_aromatic_share_by_protein(
                 self.ROOT_DIR, self.protein_names, cache=protein_cache
@@ -1327,7 +1327,7 @@ class PLIDataset(
         # UNITLESS ~2.6-4.6 number on this project's data, next to coarse_extent's
         # ~13.6-32.0 angstrom range -- coarse_extent always won, and relu clipped
         # occupancy to exactly 0.0 on every row (verified directly), a dead token in
-        # every --pair_descriptors run to date. chain_length_angstrom converts the
+        # every --descriptors run to date. chain_length_angstrom converts the
         # chain's own carbon count to an estimated angstrom length (Tanford's
         # extended-chain formula, see dataloader/descriptors.py) so both sides
         # of the comparison are the same unit. Same fix as dataloader/pair_
@@ -1342,7 +1342,7 @@ class PLIDataset(
             "heavy": heavy, "occupancy": occupancy,
         }
         # Appended after occupancy, before "extent" (added below by `columns()`) --
-        # architecture/pair_descriptor_head.py's base_tokens builds the identical order.
+        # architecture/descriptor_head.py's base_tokens builds the identical order.
         raw.update(lipid_shape)
         stats = {}
         for name, values in raw.items():
@@ -1575,14 +1575,14 @@ class PLIDataset(
                 ["aromatic_share_core", "aromatic_share_rim"] if split_pocket_shares else []
             )
             if not len(rows):
-                out = {f"_pair_desc_{name}": [] for name in names}
+                out = {f"_desc_{name}": [] for name in names}
                 if named_catalog_on:
                     out.update({f"_descpath_{token}": [] for token in requested_tokens})
                 return out
             out = {}
             for name, values in raw.items():
                 mean, spread = stats[name]
-                out[f"_pair_desc_{name}"] = candidate_column(
+                out[f"_desc_{name}"] = candidate_column(
                     [(row - mean) / spread for row in ragged_rows(values, rows)]
                 )
             # Extent, and (under the split) aromatic_share_core/rim, are one value per
@@ -1590,12 +1590,12 @@ class PLIDataset(
             # the candidate count, not the value.
             counts = [len(row) for row in ragged_rows(chain, rows)]
             if include_extent:
-                out["_pair_desc_extent"] = candidate_column([
+                out["_desc_extent"] = candidate_column([
                     np.full(count, (coarse_extent[row] - extent_mean) / extent_spread)
                     for count, row in zip(counts, rows)
                 ])
             if split_pocket_shares:
-                out["_pair_desc_aromatic_share_core"] = candidate_column([
+                out["_desc_aromatic_share_core"] = candidate_column([
                     np.full(
                         count,
                         (aromatic_share_core[row] - aromatic_share_core_mean)
@@ -1603,7 +1603,7 @@ class PLIDataset(
                     )
                     for count, row in zip(counts, rows)
                 ])
-                out["_pair_desc_aromatic_share_rim"] = candidate_column([
+                out["_desc_aromatic_share_rim"] = candidate_column([
                     np.full(
                         count,
                         (aromatic_share_rim[row] - aromatic_share_rim_mean)
@@ -1631,7 +1631,7 @@ class PLIDataset(
             rows = self._original_rows(frame) if not frame.empty else np.array([], dtype=int)
             split_columns[name] = columns(rows)
 
-        self._save_pair_descriptor_features_cache(features_cache_path, split_columns)
+        self._save_descriptor_features_cache(features_cache_path, split_columns)
 
         self.csvtrain = self.csvtrain.assign(**split_columns["csvtrain"])
         self.csvalidate = self.csvalidate.assign(**split_columns["csvalidate"])
@@ -2472,35 +2472,35 @@ class PLIDataset(
         self._compat_input_tensor, self._compat_input_offsets = _ragged_tensor(
             [self.csv[name] for name in compat_columns] if compat_columns else None
         )
-        # Only columns under --pair_descriptors (_compute_pair_descriptors): the 6
-        # standardised tokens, in a fixed order architecture/pair_descriptor_head.py
+        # Only columns under --descriptors (_compute_descriptors): the 6
+        # standardised tokens, in a fixed order architecture/descriptor_head.py
         # relies on (chain, unsaturation, hbond, heavy, occupancy, extent) -- 5 under
-        # --no_pair_descriptor_extent, which _compute_pair_descriptors never creates
-        # the extent column for -- plus, under --pair_descriptor_lipid_shape,
+        # --no_descriptor_extent, which _compute_descriptors never creates
+        # the extent column for -- plus, under --descriptor_lipid_shape,
         # LIPID_SHAPE_DESCRIPTOR_NAMES (dataloader/descriptors.py) inserted between
-        # occupancy and extent, plus, under --pair_descriptor_pocket_shares_split,
+        # occupancy and extent, plus, under --descriptor_pocket_shares_split,
         # aromatic_share_core and aromatic_share_rim, in the same fixed order
-        # PairDescriptorHead.DATALOADER_TOKENS + SPLIT_DATALOADER_TOKENS relies on.
-        pair_descriptor_names = ["chain", "unsaturation", "hbond", "heavy", "occupancy"]
-        if getattr(self.config, "pair_descriptor_lipid_shape", False):
+        # DescriptorHead.DATALOADER_TOKENS + SPLIT_DATALOADER_TOKENS relies on.
+        descriptor_token_names = ["chain", "unsaturation", "hbond", "heavy", "occupancy"]
+        if getattr(self.config, "descriptor_lipid_shape", False):
             from preprocessing.compute_descriptors import LIPID_SHAPE_DESCRIPTOR_NAMES
-            pair_descriptor_names += list(LIPID_SHAPE_DESCRIPTOR_NAMES)
-        if getattr(self.config, "pair_descriptor_extent", True):
-            pair_descriptor_names.append("extent")
+            descriptor_token_names += list(LIPID_SHAPE_DESCRIPTOR_NAMES)
+        if getattr(self.config, "descriptor_extent", True):
+            descriptor_token_names.append("extent")
         if getattr(
-            self.config, "pair_descriptor_pocket_shares_split", False
-        ) and getattr(self.config, "pair_descriptor_pocket_shares", True):
-            pair_descriptor_names += ["aromatic_share_core", "aromatic_share_rim"]
-        pair_descriptor_columns = [
-            f"_pair_desc_{name}" for name in pair_descriptor_names
-            if f"_pair_desc_{name}" in self.csv.columns
+            self.config, "descriptor_pocket_shares_split", False
+        ) and getattr(self.config, "descriptor_pocket_shares", True):
+            descriptor_token_names += ["aromatic_share_core", "aromatic_share_rim"]
+        descriptor_columns = [
+            f"_desc_{name}" for name in descriptor_token_names
+            if f"_desc_{name}" in self.csv.columns
         ]
-        self._pair_descriptor_tensor, self._pair_descriptor_offsets = _ragged_tensor(
-            [self.csv[name] for name in pair_descriptor_columns]
-            if pair_descriptor_columns else None
+        self._descriptor_tensor, self._descriptor_offsets = _ragged_tensor(
+            [self.csv[name] for name in descriptor_columns]
+            if descriptor_columns else None
         )
-        # --two_pair_descriptors_paths (--good_descriptors/--bad_descriptors),
-        # --descriptor_names (under --descriptors_head or --pair_descriptors), and
+        # --two_descriptors_paths (--good_descriptors/--bad_descriptors),
+        # --descriptor_names (under --descriptors_head or --descriptors), and
         # --protein_descriptors/--lipid_descriptors: the wider, arbitrary-name catalog,
         # one column per token dataloader.descriptors.full_catalog_order resolves
         # out of all of those raw lists together, in THAT (sorted, deduped) order --
@@ -2718,7 +2718,7 @@ class PLIDataset(
             or catalog_only
         ):
             # no_embeddings: MolFormer is not used at all -- finish_sample builds the
-            # lipid graph's single node from pair_descriptor_input instead (see
+            # lipid graph's single node from descriptor_input instead (see
             # there). Skipped here too, not just unused later, so the embedding
             # cache is never even looked up for this run.
             lipid_enc = None
@@ -2809,12 +2809,12 @@ class PLIDataset(
                 self._compat_input_offsets, idx, candidate_index
             )
             protein_graph.compat_input = self._compat_input_tensor[position].view(1, -1)
-        if self._pair_descriptor_tensor is not None:
+        if self._descriptor_tensor is not None:
             position = _candidate_position(
-                self._pair_descriptor_offsets, idx, candidate_index
+                self._descriptor_offsets, idx, candidate_index
             )
-            protein_graph.pair_descriptor_input = (
-                self._pair_descriptor_tensor[position].view(1, -1)
+            protein_graph.descriptor_input = (
+                self._descriptor_tensor[position].view(1, -1)
             )
         if self._descriptor_catalog_tensor is not None:
             position = _candidate_position(
@@ -2837,16 +2837,16 @@ class PLIDataset(
             # reason) -- one node, whose feature vector is the same
             # chain/unsaturation/hbond/heavy columns architecture/lipid_encoder.py
             # broadcasts onto every node when embeddings ARE on. Sliced from
-            # protein_graph.pair_descriptor_input (attached above) rather than
+            # protein_graph.descriptor_input (attached above) rather than
             # recomputed -- same tensor, same fixed DATALOADER_TOKENS column order
-            # (architecture/pair_descriptor_head.py), one read instead of two.
-            if not hasattr(protein_graph, "pair_descriptor_input"):
+            # (architecture/descriptor_head.py), one read instead of two.
+            if not hasattr(protein_graph, "descriptor_input"):
                 raise ValueError(
-                    "no_embeddings requires pair_descriptors (pair_descriptor_input "
-                    "was not attached -- check --pair_descriptors is set, per "
+                    "no_embeddings requires descriptors (descriptor_input "
+                    "was not attached -- check --descriptors is set, per "
                     "ModelConfig.validate)"
                 )
-            lipid_graph = Data(x=protein_graph.pair_descriptor_input[:, :4].clone())
+            lipid_graph = Data(x=protein_graph.descriptor_input[:, :4].clone())
         else:
             # No edge_index here any more. It used to hold the complete graph over the
             # 768 embedding columns (295296 edges), which nothing consumed: lip_edgidx

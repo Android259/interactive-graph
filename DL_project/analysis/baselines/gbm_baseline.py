@@ -140,7 +140,7 @@ def build_pair_feature_inputs(table: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
     pair_descriptor_value reads off its lipid_values/protein_values dicts, built once
     over the whole table/every protein -- the row-classifier counterpart of
     build_feature_tables, feeding pair_feature_columns below instead of the model
-    directly (a --pair_descriptor_names name is a FUNCTION of these, not a column of
+    directly (a --descriptor_token_names name is a FUNCTION of these, not a column of
     either raw table).
     """
     lipid_inputs = explicit_lipid_features(table).loc[:, list(PAIR_DESCRIPTOR_LIPID_INPUTS)]
@@ -267,16 +267,16 @@ def evaluate_block(
         )
 
     train_pair = valid_pair = test_pair = None
-    if pair_feature_inputs is not None and args.pair_descriptor_names:
+    if pair_feature_inputs is not None and args.descriptor_token_names:
         lipid_inputs, protein_inputs = pair_feature_inputs
         train_pair = pair_feature_columns(
-            train_pool, lipid_inputs, protein_inputs, args.pair_descriptor_names
+            train_pool, lipid_inputs, protein_inputs, args.descriptor_token_names
         )
         valid_pair = pair_feature_columns(
-            valid_pool, lipid_inputs, protein_inputs, args.pair_descriptor_names
+            valid_pool, lipid_inputs, protein_inputs, args.descriptor_token_names
         )
         test_pair = pair_feature_columns(
-            test_pool, lipid_inputs, protein_inputs, args.pair_descriptor_names
+            test_pool, lipid_inputs, protein_inputs, args.descriptor_token_names
         )
 
     x_train = row_features(
@@ -381,7 +381,7 @@ def build_report(
     )
     similarity = build_similarity(table, args.lipid_similarity_feature)
     pair_feature_inputs = (
-        build_pair_feature_inputs(table) if args.pair_descriptor_names else None
+        build_pair_feature_inputs(table) if args.descriptor_token_names else None
     )
     rows = [
         evaluate_block(
@@ -554,7 +554,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--pair_descriptor_names", default=None,
+        "--descriptor_token_names", default=None,
         type=lambda text: [name for name in text.split(",") if name],
         help=(
             "add one feature column per named dataloader.descriptors."

@@ -1,6 +1,6 @@
 """A whole split held as a few tensors on the device, batched by indexing.
 
-For --deepclip, and for --descriptors_head --descriptor_names (pair_descriptors.
+For --deepclip, and for --descriptors_head --descriptor_names (descriptors.
 descriptor_catalog_only), whose samples carry no lipid at all: an empty lipid Data,
 served as a lipid batch with x=None.
 

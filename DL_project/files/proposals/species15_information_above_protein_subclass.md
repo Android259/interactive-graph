@@ -147,7 +147,7 @@ pooled AUC сидит около 0.5 — то есть признак не ко�
 
 Семь разных белков, не одна ячейка. Один выброс против — STARD2\|PC (0.368).
 
-**Подвох.** `dataloader/pair_descriptors.py::tail_double_bond_position` по построению
+**Подвох.** `dataloader/descriptors.py::tail_double_bond_position` по построению
 возвращает `None` для полностью насыщенного липида — величины там не существует. Но
 `dataloader/chemistry_prior.py::_lipid_descriptor_table` агрегирует как
 `float(np.mean(vals)) if vals else 0.0`, то есть **`None` схлопывается в `0.0`**. В
@@ -161,7 +161,7 @@ pooled AUC сидит около 0.5 — то есть признак не ко�
 Базовая конфигурация кормит липидную сторону **PLM-эмбеддингом, сжатым до 10
 измерений** (`plmon=True`, `plm_compression_dim=10`), и **ни одного** явного липидного
 дескриптора (`descriptor_names` пусто, `lipid_descriptors` пусто,
-`pair_descriptors=False`).
+`descriptors=False`).
 
 Проба: предсказать хвостовую величину из того же 768-мерного MolFormer-вектора, который
 получает `lipid_encoder`, и из него же после PCA→10 (та же размерность, что у
@@ -296,7 +296,7 @@ RDKit по неоднозначному мешку кандидатов. Цен�
 |---|---|---|
 | `lipid_isomers`, `lipid_graph_isomers` | выкл | **химического графа липида нет вообще.** Модель не видит ни одного атома липида, ни одной связи — только одну точку в 10-мерном пространстве |
 | `lipid_edge_mlp`, `lipid_edge_attention` | выкл | следствие предыдущего: нечему считать рёбра |
-| `pair_descriptors`, `pair_descriptors_only` | выкл | ни одного из 14 парных дескрипторов (`volume_fit`, `chain_extent_gap`, `occupancy`, `tail_elongation_fit`, …) |
+| `descriptors`, `descriptors_only` | выкл | ни одного из 14 парных дескрипторов (`volume_fit`, `chain_extent_gap`, `occupancy`, `tail_elongation_fit`, …) |
 | `descriptor_names`, `lipid_descriptors`, `lipid_head_descriptors` | пусто | ни одного из 22 липидных дескрипторов, включая весь хвостовой блок §3 |
 | `compatibility_input`, `pocket_compat_prior`, `chem_prior` | выкл | ни одного готового признака совместимости карман↔липид |
 | `tanimoto_weight`, `grab_loss`, `hard_negative_mining`, `lipid_propensity_weight` | выкл | химическое сходство не входит ни во вход, ни в лосс, ни в сэмплирование негативов |

@@ -28,12 +28,12 @@
 >
 > Сам тензор считается и подаётся по-прежнему, через производное
 > `ModelConfig.needs_pocket_descriptor`, потому что из него читают два пути, которые
-> масштаб обрабатывают сами: `PairDescriptorHead` (`--pair_descriptors` без
+> масштаб обрабатывают сами: `DescriptorHead` (`--descriptors` без
 > `--descriptor_names`) — `aromatic_share`/`apolar_sasa_share` как доли в [0, 1] и
-> `hydropathy_core/rim` под `--pair_descriptor_pocket_shares_split` со своими
-> train-only буферами; и `expand_pair_descriptors` (`--descriptors_in_protein`) — те же
+> `hydropathy_core/rim` под `--descriptor_pocket_shares_split` со своими
+> train-only буферами; и `expand_descriptors` (`--descriptors_in_protein`) — те же
 > две доли. Нормированный путь к тем же именам — `--protein_descriptors`, он читает их
-> из `descriptor_catalog_input` (z-score по train, `Dataloader._compute_pair_descriptors`).
+> из `descriptor_catalog_input` (z-score по train, `Dataloader._compute_descriptors`).
 > Набор из раздела 5 (`POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES`) оставлен как
 > справочный список имён — через `--protein_descriptors` их всё ещё можно запросить.
 
@@ -364,9 +364,9 @@ FA (48), SM (31), HexCer (26).
 вслепую, смотреть до/после на реальном обучении.
 
 **Обновление: добавлены в продакшен.** `aromatic_share_rim`/`ev28_q10` дописаны в
-`PROTEIN_DESCRIPTOR_NAMES` (`dataloader/pair_descriptors.py`) и `pocket_descriptor()`
+`PROTEIN_DESCRIPTOR_NAMES` (`dataloader/descriptors.py`) и `pocket_descriptor()`
 (`dataloader/protein_graph_builder.py`) — строго в конец кортежа, не рядом с
-тематическими соседями: `architecture/pair_descriptor_head.py`'s
+тематическими соседями: `architecture/descriptor_head.py`'s
 `_AROMATIC_SHARE_INDEX`/`_APOLAR_SASA_SHARE_INDEX` индексируют исходные 13 записей
 целочисленным литералом, не по имени, так что их позиции нельзя двигать.
 `POCKET_DESCRIPTOR_NAMES` теперь 15 записей, `POCKET_DESCRIPTOR_COUNT` (`training/

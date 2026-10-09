@@ -10,8 +10,8 @@
 [signal_state.md](signal_state.md) §8 называет эту семью **необъяснённой утечкой**, а не
 химическим сигналом, и перебирает каналы:
 
-- pocket shares в трёх формах (`--no_pair_descriptor_pocket_shares`,
-  `--pair_descriptor_pocket_shares_split`, `--pair_descriptor_pocket_shares_coarse`) —
+- pocket shares в трёх формах (`--no_descriptor_pocket_shares`,
+  `--descriptor_pocket_shares_split`, `--descriptor_pocket_shares_coarse`) —
   два первых сделали разрыв **шире**, третий поднял BA до 0.826;
 - `pocket_extent` — проверен `analysis/probes/pocket_extent_lbp_lipocalin_check.py`: доля
   белков, которых LBP_BPI_CETP обгоняет по банду, **0.48** при 0.5 = «разделения нет»;

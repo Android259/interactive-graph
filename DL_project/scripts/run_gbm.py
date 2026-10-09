@@ -242,7 +242,7 @@ def _resolve_descriptor_shorthand(args: argparse.Namespace) -> None:
         else:
             args.lipid_descriptor_names = requested
     if args.pair_features:
-        args.pair_descriptor_names = [name for name in args.pair_features.split(",") if name]
+        args.descriptor_token_names = [name for name in args.pair_features.split(",") if name]
 
 
 def _stddev(values: list[float]) -> float:
@@ -450,7 +450,7 @@ def main() -> None:
         "--pair_features", default=None,
         help=(
             "convenience shorthand: comma-separated dataloader.descriptors."
-            "PAIR_DESCRIPTOR_NAMES entries -> --pair_descriptor_names. See module "
+            "PAIR_DESCRIPTOR_NAMES entries -> --descriptor_token_names. See module "
             "docstring's Pair features section."
         ),
     )

@@ -121,11 +121,11 @@ def build_forward_args(config, prot, lipid):
         or getattr(config, "compatibility_split_input", False)
     ):
         forward_args["compat_input"] = prot.compat_input
-    if getattr(config, "pair_descriptors", False):
-        forward_args["pair_descriptor_input"] = prot.pair_descriptor_input
+    if getattr(config, "descriptors", False):
+        forward_args["descriptor_input"] = prot.descriptor_input
     if full_catalog_order(config):
-        # Covers --two_pair_descriptors_paths, --descriptor_names (under
-        # descriptors_head or pair_descriptors), and --protein_descriptors/
+        # Covers --two_descriptors_paths, --descriptor_names (under
+        # descriptors_head or descriptors), and --protein_descriptors/
         # --lipid_descriptors -- one shared predicate instead of re-deriving the same
         # boolean here a third time (dataloader/Dataloader.py's named_catalog_on is the
         # other).

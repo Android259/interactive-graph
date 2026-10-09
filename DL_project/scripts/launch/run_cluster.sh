@@ -549,7 +549,7 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
         fi
     fi
 
-    # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values
+    # Same idea, for --descriptors' per-candidate/per-protein RDKit values
     # (dataloader/descriptor_cache_reader.py). Never fatal, same as above: a job that
     # cannot read it just computes the values itself, slower but not wrong.
     #

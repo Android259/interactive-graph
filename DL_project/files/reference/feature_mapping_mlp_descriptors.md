@@ -6,7 +6,7 @@
 имена, не только эти 17) — [descriptor_catalog.md](descriptor_catalog.md); здесь только то,
 что реально подаётся в эти модели.
 
-Источник истины: `dataloader/pair_descriptors.py` (имена, липидные формулы),
+Источник истины: `dataloader/descriptors.py` (имена, липидные формулы),
 `dataloader/protein_graph_builder.py` (значения кармана), `dataloader/Dataloader.py`
 (сборка и стандартизация), `architecture/descriptor_mlp_head.py` (mlp).
 
@@ -42,7 +42,7 @@
 ## 2. Липидные: определение и реализация
 
 Считаются из 2D-структуры (RDKit по SMILES), без докинга и без 3D. Функции в
-`pair_descriptors.py`.
+`descriptors.py`.
 
 | имя | формула | функция | пропуск |
 |---|---|---|---|
@@ -99,7 +99,7 @@
 ## 4. Как значения доходят до сети
 
 ```text
-arg-файл: --pair_descriptors --descriptor_mlp --descriptor_names=<17 имён>
+arg-файл: --descriptors --descriptor_mlp --descriptor_names=<17 имён>
   -> Dataloader.py: full_catalog_order(config) -> parse_descriptor_token (имя, coarse-спека)
   -> raw_values[имя]: липидные по кандидатам; карманные из protein_descriptor_table
      (chemistry_prior.py, самосохраняется между запусками)

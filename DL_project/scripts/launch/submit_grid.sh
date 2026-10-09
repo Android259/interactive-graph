@@ -280,7 +280,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
         printf "Detected --descriptors_head in %s; per-experiment walltime=%s.\n" \
             "${args_file}" "${this_walltime}"
-    elif args_file_has_flag "${args_file}" --two_pair_descriptors_paths; then
+    elif args_file_has_flag "${args_file}" --two_descriptors_paths; then
         # Same no-encoder-towers cost class as --descriptors_head (Final_Layer
         # builds only the two NamedDescriptorHead instances + a small classifier) --
         # this branch was simply missing before, not a deliberate exclusion; closing
@@ -288,7 +288,7 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         # --fast_attention budgets below, which are sized for a real protein/lipid
         # encoder this config never builds.
         this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
-        printf "Detected --two_pair_descriptors_paths in %s; per-experiment walltime=%s.\n" \
+        printf "Detected --two_descriptors_paths in %s; per-experiment walltime=%s.\n" \
             "${args_file}" "${this_walltime}"
     elif args_file_has_flag "${args_file}" --descriptor_mlp; then
         # Same no-encoder-towers cost class as --descriptors_head (Final_Layer

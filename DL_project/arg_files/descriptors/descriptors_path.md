@@ -10,7 +10,7 @@
 --weight_decay=0.01
 --pool_type="gem"
 
---pair_descriptors
+--descriptors
 --descriptors_head
 
 --balanced_batches

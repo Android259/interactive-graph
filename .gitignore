@@ -1,0 +1,21 @@
+DL_project/data/isomeric_lipids/lipid_SMILES_isomeric_embedding.pkl
+DL_project/data/Total_tanimoto_matrix_float32.npy
+DL_project/data/lipid_SMILES_isomeric_embedding.pkl
+DL_project/data/lipid_SMILES_embedding.pkl
+
+# Root-level leftovers from the old flat layout, before everything moved into
+# DL_project/. All patterns are anchored with a leading / so they apply here only
+# and never shadow a same-named path inside DL_project/.
+
+# macOS archive artifact from an unzipped upload.
+/__MACOSX/
+
+# Old flat-layout run outputs: TensorBoard runs (247 MB), training logs (24 MB) and
+# the per-run test reports that predate test_metrics/<family>/<label>/.
+/run/
+/logs/
+/test_metrics_*.txt
+
+# Attention/ablation figures exported from the old pipeline; the current ones are
+# written to DL_project/graphics/ by scripts/graphics_generation/.
+/*.pdf

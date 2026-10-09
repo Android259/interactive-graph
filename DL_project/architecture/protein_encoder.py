@@ -8,7 +8,7 @@ from .geometric_transformer import ProteinGeometricTransformerBlock
 from .edge_geometric_conv import EdgeAttentionConv, EdgeMLPConv
 from .protein_edge_geometry import structured_edge_dim, structured_edge_features
 from .self_attention import ProteinSelfAttention
-from .pair_descriptor_head import _APOLAR_SASA_SHARE_INDEX, _AROMATIC_SHARE_INDEX
+from .descriptor_head import _APOLAR_SASA_SHARE_INDEX, _AROMATIC_SHARE_INDEX
 from .mlp_utils import (
     make_activation, make_dropout, make_extra_hidden_layer,
     make_optional_projection, make_norm_layer, apply_norm,
@@ -154,21 +154,21 @@ class Protein_encoder(torch.nn.Module):
             # after them by the loader (see protein_graph_builder.EXTRA_NODE_COLUMNS).
             indim = getattr(self.config, "protein_node_feature_count", 3)
             # --descriptors_in_protein_lipid: aromatic_share/polar_share (already
-            # bounded [0,1] shares, read raw like pair_descriptor_head.py does) plus
-            # coarsened extent (already standardised in pair_descriptor_input by the
-            # loader) when --pair_descriptor_extent is on -- see
-            # expand_pair_descriptors below. No normalisation buffers needed here:
+            # bounded [0,1] shares, read raw like descriptor_head.py does) plus
+            # coarsened extent (already standardised in descriptor_input by the
+            # loader) when --descriptor_extent is on -- see
+            # expand_descriptors below. No normalisation buffers needed here:
             # nothing in this set is raw/unstandardised.
-            self.pair_descriptor_broadcast_count = int(
-                getattr(self.config, "protein_pair_descriptor_broadcast_count", 0)
+            self.descriptors_in_protein_count = int(
+                getattr(self.config, "descriptors_in_protein_count", 0)
             )
-            indim += self.pair_descriptor_broadcast_count
+            indim += self.descriptors_in_protein_count
             # --protein_descriptors: broadcast an ARBITRARY named subset of the full
             # DESCRIPTOR_CATALOG (lipid, protein/pocket, or pair-level names) onto
             # every node, read out of the shared descriptor_catalog_input tensor by
             # column index -- same {name: position} lookup NamedDescriptorHead.__init__
             # uses (architecture/named_descriptor_head.py). Independent, coexisting
-            # mechanism from pair_descriptor_broadcast_count above: it is not touched
+            # mechanism from descriptors_in_protein_count above: it is not touched
             # or restricted by this. No derived width field on ModelConfig -- the count
             # is only ever this many tokens, computed here from the string itself.
             protein_descriptor_tokens = parse_descriptor_list(
@@ -393,29 +393,29 @@ class Protein_encoder(torch.nn.Module):
         degree.index_add_(0, target, ones)
         return out + aggregate / degree.clamp_min(1).unsqueeze(-1)
 
-    def expand_pair_descriptors(self, node, batch, pocket_descriptor, pair_descriptor_input):
-        """--descriptors_in_protein_lipid: broadcast pair_descriptors' protein-only
+    def expand_descriptors(self, node, batch, pocket_descriptor, descriptor_input):
+        """--descriptors_in_protein_lipid: broadcast descriptors' protein-only
         tokens (aromatic_share, polar_share, coarsened extent) over every node.
 
-        Reads only the 2-3 tokens architecture/pair_descriptor_head.py's self-attention
+        Reads only the 2-3 tokens architecture/descriptor_head.py's self-attention
         head itself reads, out of the same per-protein pocket_descriptor tensor (see
         ModelConfig's descriptors_in_protein_lipid docstring). aromatic_share/polar_share
         are read raw (already-bounded [0,1] shares, no standardisation needed, same as
-        pair_descriptor_head.py); extent is pair_descriptor_input's last column,
+        descriptor_head.py); extent is descriptor_input's last column,
         already standardised by the loader -- no local buffers needed either.
         """
-        if not getattr(self, "pair_descriptor_broadcast_count", 0):
+        if not getattr(self, "descriptors_in_protein_count", 0):
             return node
-        if pocket_descriptor is None or pair_descriptor_input is None:
+        if pocket_descriptor is None or descriptor_input is None:
             raise ValueError(
                 "descriptors_in_protein_lipid requires pocket_descriptor and "
-                "pair_descriptor_input"
+                "descriptor_input"
             )
         aromatic_share = pocket_descriptor[:, _AROMATIC_SHARE_INDEX]
         polar_share = 1.0 - pocket_descriptor[:, _APOLAR_SASA_SHARE_INDEX]
         parts = [aromatic_share.unsqueeze(-1), polar_share.unsqueeze(-1)]
-        if self.pair_descriptor_broadcast_count > 2:
-            parts.append(pair_descriptor_input[:, -1:].to(node.dtype))
+        if self.descriptors_in_protein_count > 2:
+            parts.append(descriptor_input[:, -1:].to(node.dtype))
         per_protein = torch.cat(parts, dim=-1).to(node.dtype)
         return torch.cat((node, per_protein[batch]), dim=-1)
 
@@ -423,10 +423,10 @@ class Protein_encoder(torch.nn.Module):
         """--protein_descriptors: broadcast an arbitrary named DESCRIPTOR_CATALOG subset
         (dataloader/descriptors.py) over every node, selected out of the shared
         descriptor_catalog_input tensor by column index -- same shape as
-        expand_pair_descriptors above, but reading named columns instead of a fixed pair
+        expand_descriptors above, but reading named columns instead of a fixed pair
         of pocket_descriptor indices. Values are already standardised (train-only) by
         the loader when it materialises descriptor_catalog_input, same as
-        pair_descriptor_input's tokens -- no local buffers needed here either.
+        descriptor_input's tokens -- no local buffers needed here either.
         """
         columns = getattr(self, "protein_descriptor_columns", None)
         if columns is None:
@@ -458,7 +458,7 @@ class Protein_encoder(torch.nn.Module):
         pocket_mask, start=True, fast_layout=None, frame_rotation=None,
         frame_translation=None, geometric_node_attr=None, edge_node_pairs=None,
         edge_node_degree=None, pocket_layout=None, pocket_index=None,
-        pocket_descriptor=None, pair_descriptor_input=None, descriptor_catalog_input=None
+        pocket_descriptor=None, descriptor_input=None, descriptor_catalog_input=None
     ):
         """Encode protein nodes while preserving graph-node alignment."""
         if self.use_rnabang_frozen_node_adapter:
@@ -574,8 +574,8 @@ class Protein_encoder(torch.nn.Module):
                 node = torch.cat((node, plm), -1)
             if self.config.buryon:
                 node = torch.cat((node, bury.unsqueeze(1)), -1)
-            node = self.expand_pair_descriptors(
-                node, batch, pocket_descriptor, pair_descriptor_input
+            node = self.expand_descriptors(
+                node, batch, pocket_descriptor, descriptor_input
             )
             node = self.expand_named_protein_descriptors(
                 node, batch, descriptor_catalog_input

@@ -7,11 +7,11 @@
 --weight_decay=0.01
 --pool_type="add"
 
---pair_descriptors
+--descriptors
 --descriptors_head
---no_pair_descriptor_extent
---no_pair_descriptor_occupancy
---no_pair_descriptor_pocket_shares
+--no_descriptor_extent
+--no_descriptor_occupancy
+--no_descriptor_pocket_shares
 
 --save_model_in_dynamics
 

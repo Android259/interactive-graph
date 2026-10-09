@@ -7,10 +7,10 @@
 --weight_decay=0.01
 --pool_type="max"
 
---pair_descriptors
+--descriptors
 --descriptors_head
---no_pair_descriptor_extent
---pair_descriptor_pocket_shares_coarse
+--no_descriptor_extent
+--descriptor_pocket_shares_coarse
 
 --save_model_in_dynamics
 

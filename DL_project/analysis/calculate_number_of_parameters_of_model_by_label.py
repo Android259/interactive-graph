@@ -184,10 +184,10 @@ CATEGORIES = [
         "protein1.ln", "protein2.ln"]),
     ("cross-attention, both directions", ["cross_attention1.", "cross_attention2."]),
     # Listed before the "final_layer." catch-all below (order matters, first match
-    # wins): --pair_descriptors' self-attention head lives on final_layer but is its
-    # own module (architecture/pair_descriptor_head.py), not part of the pool/binar/
+    # wins): --descriptors' self-attention head lives on final_layer but is its
+    # own module (architecture/descriptor_head.py), not part of the pool/binar/
     # adversary-head parameters "pooling and classifier" means to summarise.
-    ("pair descriptor head (self-attention)", ["final_layer.pair_descriptor_head."]),
+    ("pair descriptor head (self-attention)", ["final_layer.descriptor_head."]),
     ("pooling and classifier", ["final_layer."]),
 ]
 

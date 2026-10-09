@@ -566,7 +566,7 @@ Kron-RLS парные признаки **не принимает в принци
 - `dataloader/protein_graph_builder.py` — `pocket_chemistry_descriptor()` и
   `pocket_cavity_volume()`: двенадцать имён химии/полости кармана, формулы те же, что на
   стороне Kron-RLS.
-- `dataloader/pair_descriptors.py` — `POCKET_CHEMISTRY_DESCRIPTOR_NAMES` в каталоге
+- `dataloader/descriptors.py` — `POCKET_CHEMISTRY_DESCRIPTOR_NAMES` в каталоге
   дескрипторов; `dataloader/chemistry_prior.py` — их подмешивание в
   `protein_descriptor_table` и версия формата кэша 4 → 5.
 - `arg_files/` — три новых аргфайла (раздел 4).

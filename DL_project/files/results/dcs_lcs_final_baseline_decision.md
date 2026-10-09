@@ -75,14 +75,14 @@ if conf.rnabang_frozen_node_adapter:
   (см. arg-файлы, проверено grep'ом) — путь (a), всегда нормализован через
   `descriptor_catalog_input`, независимо от `rnabang_frozen_node_adapter`.
 - Канонический descriptors-baseline (`descriptors_no_extent_coarse_add_
-  lipprop`) использует `--pocket_descriptors` + `--pair_descriptors
-  --pair_descriptor_pocket_shares_coarse`, но под `--descriptors_head` ветка
+  lipprop`) использует `--pocket_descriptors` + `--descriptors
+  --descriptor_pocket_shares_coarse`, но под `--descriptors_head` ветка
   `ProteinEncoder` (где живёт `pocket_descriptor_mean/std`) вообще не строится
   (`protein1` не создаётся — `training/read_configuration.py`, п. C в
   `baselines_and_metrics.md`); реально читаемые из
   `pocket_descriptor` значения (`aromatic_share`, `1-apolar_sasa_share`) —
   ограниченные [0,1] доли, банding'уются `_coarse_band`, читаются СЫРЫМИ по
-  дизайну (`architecture/pair_descriptor_head.py:254-267`, докстринг: "no
+  дизайну (`architecture/descriptor_head.py:254-267`, докстринг: "no
   standardisation needed"), не через `pocket_descriptor_mean/std`.
 - Новые честные descriptors-кандидаты (`descriptors_head_family_neutral_
   lipprop*`, dcs и lcs) используют `--descriptor_names=` — путь (a).
@@ -292,7 +292,7 @@ choline почти так же (0.608 vs 0.615), но с на порядок м�
   leak_confirmed.md` (строки 16-23) — прочитаны напрямую; код-проверка
   `training/new_train.py:85-107`, `architecture/protein_encoder.py:160-239/
   440-518`, `architecture/interaction_classification.py:137-154`,
-  `architecture/pair_descriptor_head.py:104-267` — прочитаны и прослежены
+  `architecture/descriptor_head.py:104-267` — прочитаны и прослежены
   вручную (какая функция кем вызывается, при каком условии), не запускались.
   Arg-файлы geometric_edge dcs/lcs baseline и descriptors_head_family_neutral_
   lipprop* — прочитаны напрямую (`cat arg_files/...md`), подтверждают

@@ -1,8 +1,8 @@
 # = ge_s15_prothid32_hid64_noreg БЕЗ --bilinear_fusion/--bilinear_pooled_norm.
 # ВНИМАНИЕ: _pairdesc, для которого этот файл был знаменателем, удалён вместе с
 # --pocket_descriptors (он нёс сырой ненормированный broadcast на узлы белка).
-# Остаётся как замер цены снятия bilinear самого по себе: --pair_descriptors
-# несовместим с bilinear_fusion (read_configuration.py, validate(): "pair_descriptors
+# Остаётся как замер цены снятия bilinear самого по себе: --descriptors
+# несовместим с bilinear_fusion (read_configuration.py, validate(): "descriptors
 # cannot be combined with bilinear_fusion"), поэтому любая будущая парная голова на
 # этой базе снова потребует этот знаменатель.
 # Сравнивать с: базой (сколько стоит bilinear).

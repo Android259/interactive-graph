@@ -243,7 +243,7 @@ cross-attention.
 не только от белка), `occupancy`/`chain_extent_gap`, `aromatic_contact`.
 
 **Новые признаки, реализованные по итогам этого разбора** (`dataloader/
-pair_descriptors.py::PAIR_DESCRIPTOR_NAMES`, формулы —
+descriptors.py::PAIR_DESCRIPTOR_NAMES`, формулы —
 `pair_descriptor_value`, тесты — `tests/test_descriptor_catalog.py`):
 
 | имя | формула | мотивация |

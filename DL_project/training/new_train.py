@@ -92,8 +92,8 @@ def build_model(conf, train_dataset, device):
         model.set_rnabang_normalization(
             train_dataset.rnabang_normalization_stats()
         )
-    if conf.pair_descriptor_pocket_shares_split:
-        model.set_pair_descriptor_pocket_share_normalization(
+    if conf.descriptor_pocket_shares_split:
+        model.set_descriptor_pocket_share_normalization(
             train_dataset.pocket_descriptor_stats()
         )
     model = model.to(device)

@@ -30,12 +30,12 @@ class InteractionClassification(torch.nn.Module):
             return
 
         if not (
-            self.config.descriptors_head or self.config.two_pair_descriptors_paths
+            self.config.descriptors_head or self.config.two_descriptors_paths
             or self.config.thematical_paths or self.config.descriptor_mlp
         ):
-            # --descriptors_head, --two_pair_descriptors_paths, --thematical_paths and
+            # --descriptors_head, --two_descriptors_paths, --thematical_paths and
             # --descriptor_mlp (training/read_configuration.py) are all sufficiency
-            # tests -- one for --pair_descriptors alone, one for --good_descriptors/
+            # tests -- one for --descriptors alone, one for --good_descriptors/
             # --bad_descriptors, one for --geometric_descriptors/--chemical_
             # descriptors, one a plain-MLP sibling of --descriptors_head -- so none of
             # them builds the usual encoder/attention modules, and forward() below
@@ -131,13 +131,13 @@ class InteractionClassification(torch.nn.Module):
     def set_rnabang_normalization(self, stats):
         self.protein1.set_rnabang_normalization(stats)
 
-    def set_pair_descriptor_pocket_share_normalization(self, stats):
+    def set_descriptor_pocket_share_normalization(self, stats):
         """Train-only hydropathy_core/hydropathy_rim stats for --pair_descriptor_
-        pocket_shares_split (architecture/pair_descriptor_head.py). No-ops when
-        pair_descriptors is off (final_layer builds no head) or the split is off
-        (PairDescriptorHead.set_pocket_descriptor_normalization itself no-ops).
+        pocket_shares_split (architecture/descriptor_head.py). No-ops when
+        descriptors is off (final_layer builds no head) or the split is off
+        (DescriptorHead.set_pocket_descriptor_normalization itself no-ops).
         """
-        head = getattr(self.final_layer, "pair_descriptor_head", None)
+        head = getattr(self.final_layer, "descriptor_head", None)
         if head is not None:
             head.set_pocket_descriptor_normalization(stats)
 
@@ -284,7 +284,7 @@ class InteractionClassification(torch.nn.Module):
         pocket_descriptor=None,
         frozen_prior=None,
         compat_input=None,
-        pair_descriptor_input=None,
+        descriptor_input=None,
         descriptor_catalog_input=None,
         chain_rank=None,
         lip_lengths=None,
@@ -305,7 +305,7 @@ class InteractionClassification(torch.nn.Module):
             )
 
         if (
-            config.descriptors_head or config.two_pair_descriptors_paths
+            config.descriptors_head or config.two_descriptors_paths
             or config.thematical_paths or config.descriptor_mlp
         ):
             # No protein1/lipid1/cross_attention1 exist under any of these flags
@@ -315,7 +315,7 @@ class InteractionClassification(torch.nn.Module):
             return self.final_layer(
                 None, None, None, None, None,
                 pocket_descriptor=pocket_descriptor,
-                pair_descriptor_input=pair_descriptor_input,
+                descriptor_input=descriptor_input,
                 descriptor_catalog_input=descriptor_catalog_input,
             )
 
@@ -386,7 +386,7 @@ class InteractionClassification(torch.nn.Module):
             pocket_layout=self_pocket_layout,
             pocket_index=self_pocket_index,
             pocket_descriptor=pocket_descriptor,
-            pair_descriptor_input=pair_descriptor_input,
+            descriptor_input=descriptor_input,
             descriptor_catalog_input=descriptor_catalog_input,
             frame_rotation=prot_frame_rotation,
             frame_translation=prot_frame_translation,
@@ -412,13 +412,13 @@ class InteractionClassification(torch.nn.Module):
             lip1 = self.lipid1(
                 lip, lip_batch, lip_self_att_mask, multiple_lipid_mask,
                 fast_layout=lip_layout,
-                pair_descriptor_input=pair_descriptor_input,
+                descriptor_input=descriptor_input,
                 descriptor_catalog_input=descriptor_catalog_input,
             )
         else:
             lip1 = self.lipid1(
                 lip, lip_batch, lip_self_att_mask, fast_layout=lip_layout,
-                pair_descriptor_input=pair_descriptor_input,
+                descriptor_input=descriptor_input,
                 descriptor_catalog_input=descriptor_catalog_input,
             )
 
@@ -472,7 +472,7 @@ class InteractionClassification(torch.nn.Module):
                 frozen_prior=frozen_prior,
                 compat_input=compat_input,
                 pocket_descriptor=pocket_descriptor,
-                pair_descriptor_input=pair_descriptor_input,
+                descriptor_input=descriptor_input,
                 descriptor_catalog_input=descriptor_catalog_input,
                 node_bilinear_input=node_bilinear_vec,
             )
@@ -546,7 +546,7 @@ class InteractionClassification(torch.nn.Module):
                 frozen_prior=frozen_prior,
                 compat_input=compat_input,
                 pocket_descriptor=pocket_descriptor,
-                pair_descriptor_input=pair_descriptor_input,
+                descriptor_input=descriptor_input,
                 descriptor_catalog_input=descriptor_catalog_input,
                 # cross_attention2 is the block immediately before this pooling --
                 # see interaction_classification's own docstrings on why lip2/prot2

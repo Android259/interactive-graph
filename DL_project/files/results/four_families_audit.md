@@ -4,7 +4,7 @@
 
 Снимок на 2026-08-31. Источники: `metrics_summary.csv` (перестроен 2026-08-24, 6015
 строк), сырые TensorBoard-логи в `run/`, отчёты в `graphics/`, `script_logs/`,
-`arg_files/*.md`, код `architecture/`, `dataloader/pair_descriptors.py`,
+`arg_files/*.md`, код `architecture/`, `dataloader/descriptors.py`,
 `training/read_configuration.py`, и существующие заметки в `files/` (`signal_state.md`,
 `proposals.md`, `geometric_edge.md`, `marginals_and_cold_split.md`,
 `double_cold_split.md`, `compat_input_audit.md`, `pocket_lipid_compatibility.md`,
@@ -122,7 +122,7 @@ lipocalin) — в сторону specificity, и при усреднении sen
 ### 1.3. Что менялось под ногами
 
 `architecture/final_layer.py`, `protein_encoder.py`, `lipid_encoder.py`,
-`interaction_classification.py`, `dataloader/Dataloader.py`, `dataloader/pair_descriptors.py`,
+`interaction_classification.py`, `dataloader/Dataloader.py`, `dataloader/descriptors.py`,
 `training/read_configuration.py`, `training/forward_args.py` содержат незакоммиченные
 изменения на момент анализа (288 добавленных / 92 удалённых строк). Это преимущественно
 рефакторинг каталога дескрипторов (новый `full_catalog_order()`, новые флаги
@@ -173,7 +173,7 @@ signal_state.md §4.1 набирается pooled, но не within-protein). Т
 `chem_prot` vs `net_prot`) остаётся +0.165 increment_prot именно на LBP_BPI_CETP
 (`signal_state.md` §8) — то есть поверх ожидаемого химического маргинала есть ещё и
 специфический для этой архитектуры остаток. Статус этого остатка — см. §3.2: попытка
-его объяснить (`--pair_descriptor_extent`) не завершена.
+его объяснить (`--descriptor_extent`) не завершена.
 
 **Практический вывод для любого предложения ниже**: улучшение, которое поднимает
 среднее BA в первую очередь за счёт LBP_BPI_CETP (или "утягивает" туда), не
@@ -185,9 +185,9 @@ LBP_BPI_CETP/lipocalin.
 
 ## §3. `descriptors_*` (дескрипторная голова, `--descriptors_head`)
 
-Sufficiency-проба: `PairDescriptorHead`/`NamedDescriptorHead`, без белковой/липидной
+Sufficiency-проба: `DescriptorHead`/`NamedDescriptorHead`, без белковой/липидной
 ветки и cross-attention — только self-attention над горсткой скаляров
-(`architecture/pair_descriptor_head.py`).
+(`architecture/descriptor_head.py`).
 
 ### 3.1. Общая картина (47 лейблов, 1573 прогонов)
 
@@ -207,7 +207,7 @@ ranking-лосса, см. §3.4), `descriptors_path_v2` (0.570), `descriptors_2p
 ### 3.2. Проверка бейзлайна `descriptors_no_extent_coarse_add_lipprop`
 
 Конфигурация подтверждена совпадающей с закоммиченной версией арг-файла и с
-записанными в таблице полями (`descriptors_head=1, pair_descriptors=1,
+записанными в таблице полями (`descriptors_head=1, descriptors=1,
 pocket_descriptors=1`, все 35 строк, датированы 2026-08-26) — **это не расхождение**
 (первоначальное подозрение на смешение с новым `--protein_descriptors` не
 подтвердилось: тот флаг стоит у `ge_protgeom8_v2`, не у этого лейбла).
@@ -233,7 +233,7 @@ GLTP отсутствует полностью (0/5), а LBP_BPI_CETP — тол
 
 **Попутно, бесплатно исключён один кандидат.** `occupancy = relu(chain_length_angstrom(chain)
 − coarse_extent)` (`dataloader/Dataloader.py:1002-1013`) был технически "мёртвым"
-(тождественно нулевым) токеном во всех `--pair_descriptors`-прогонах до коммита `1d1c337a4`
+(тождественно нулевым) токеном во всех `--descriptors`-прогонах до коммита `1d1c337a4`
 (2026-08-28 17:57, фикс единиц измерения — `chain` безразмерный ~2.6–4.6 сравнивался с
 `coarse_extent` в ангстремах ~13.6–32.0, `relu` всегда обнулял результат). И бейзлайн
 (08-26 16:55), и его `_extent`-довесок (08-27 00:17) **старше этого коммита** — `occupancy`
@@ -274,7 +274,7 @@ BA при пороге 0.5, поэтому судить его по gap/BA ме�
    **Поправка**: `descriptors_no_extent_coarse_add_lipprop_family_neutral` (10/35) —
    **не тот же архитектурный вариант, что baseline**. Проверено напрямую по
    metrics_summary.csv: у него `descriptors_head=0` — это ПОЛНАЯ модель (белковая/
-   липидная ветка + cross-attention присутствуют) с `--pair_descriptors` как
+   липидная ветка + cross-attention присутствуют) с `--descriptors` как
    ДОБАВОЧНОЙ головой плюс `--descriptors_in_protein_lipid`, а не head-only
    sufficiency-проба, которой является baseline (`descriptors_head=1`). Его числа
    (§3.1 таблица, gap 0.378) не сравнимы напрямую со строкой baseline — сравнение в
@@ -457,9 +457,9 @@ LBP_BPI_CETP/lipocalin — в specificity), что и создаёт "иллюз
    локализована причина 0.500000-коллапса через уже существующий
    `geometric_edge_attention_diagnostics.py` — направить усилия на `_mlp_` варианты,
    которые тренируются рабочим образом.
-4. Проверить, добавляет ли `--pair_descriptor_extent`-подобное огрубление к `occupancy`
+4. Проверить, добавляет ли `--descriptor_extent`-подобное огрубление к `occupancy`
    (единственному оставшемуся плохому каналу в v2) то же лечение, что уже применено в
-   descriptors_head (`--pair_descriptor_pocket_shares_coarse`, §3.4) — сейчас
+   descriptors_head (`--descriptor_pocket_shares_coarse`, §3.4) — сейчас
    `occupancy` в v2 остаётся "сырым".
 
 ---
@@ -600,7 +600,7 @@ specificity монотонно растёт (0.63→0.70+), train BA тем вр
   ссылки на DTI/protein-ligand DL литературу, но это решение о содержании отчёта,
   не техническое.
 - **`architecture_section.tex` не описывает дескрипторную ветку вообще** (ни
-  `descriptors_head`, ни `pair_descriptors`, ни geometric_edge не упомянуты как
+  `descriptors_head`, ни `descriptors`, ни geometric_edge не упомянуты как
   часть архитектуры) — раз проект уделяет этим семьям столько внимания,
   стоит решить, входят ли они в финальный отчёт как альтернативная ветка, и если
   да — описать и процитировать наравне с self/cross-attention веткой.
@@ -668,7 +668,7 @@ bbp-семье без усреднения по ≥5 сидам (§6.2c).
 ## Источники
 
 `metrics_summary.csv`, `run/`, `script_logs/`, `test_metrics/`, `graphics/`,
-`arg_files/*.md`, `architecture/*.py`, `dataloader/pair_descriptors.py`,
+`arg_files/*.md`, `architecture/*.py`, `dataloader/descriptors.py`,
 `dataloader/protein_graph_builder.py`, `training/read_configuration.py`,
 `analysis/{summarize_label,compare_labels,run_dynamics,feature_identity_check,
 null_model,interaction_increment,shortcut_increment,geometric_edge_attention_diagnostics,

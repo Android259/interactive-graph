@@ -6,7 +6,7 @@
 > Новый шаг дописывается внизу.
 
 Общее у всех: модель видит только ручные числовые дескрипторы липида, кармана и пары
-(`--pair_descriptors --descriptor_names=...`, каталог —
+(`--descriptors --descriptor_names=...`, каталог —
 [../reference/descriptor_catalog.md](../reference/descriptor_catalog.md)), без графов,
 ESM3 и MoLFormer. Загрузка в этом режиме лёгкая: загрузчик не строит графы, а данные
 целиком собираются на устройстве.

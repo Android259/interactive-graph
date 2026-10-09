@@ -8,10 +8,10 @@
 --weight_decay=0.01
 --pool_type="add"
 
---pair_descriptors
+--descriptors
 --descriptors_head
---pair_descriptor_extent
---pair_descriptor_pocket_shares_coarse
+--descriptor_extent
+--descriptor_pocket_shares_coarse
 
 --save_model_in_dynamics
 

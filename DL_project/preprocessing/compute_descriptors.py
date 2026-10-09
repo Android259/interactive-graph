@@ -18,7 +18,7 @@ dataloader/descriptors.py can import nothing from here -- the arrow runs one way
 this module reads the name lists, never the reverse.
 
 Two readers of this module beyond the CLI below, both already live before any table
-exists: dataloader/Dataloader.py._compute_pair_descriptors computes values directly when
+exists: dataloader/Dataloader.py._compute_descriptors computes values directly when
 a cache is missing (the documented fallback -- a run never fails for want of a prebuilt
 table), and dataloader/cache_builders/descriptor_csv_builder.py calls the same functions to
 fill a whole table at once.
@@ -340,7 +340,7 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
         float(hydropathy[core].mean()),
         float(hydropathy[rim].mean()) if rim.any() else float(hydropathy.mean()),
         # Appended, not interleaved with their thematic siblings above: architecture/
-        # pair_descriptor_head.py's _AROMATIC_SHARE_INDEX/_APOLAR_SASA_SHARE_INDEX are
+        # descriptor_head.py's _AROMATIC_SHARE_INDEX/_APOLAR_SASA_SHARE_INDEX are
         # bare integer literals into this tuple, not name lookups, so every existing
         # position must stay put -- new entries only ever go at the end. The two
         # promoted from preprocessing/pocket_shape_descriptors.py's research catalog after
@@ -442,7 +442,7 @@ def pocket_chemistry_descriptor(vertices, pocket, pocketness_path=None):
     the pocket, split core/rim, plus the two cavity-volume measures.
 
     A DICT and not a row of pocket_descriptor()'s tensor, deliberately. Positions in
-    that tensor are load-bearing (architecture/pair_descriptor_head.py indexes it by
+    that tensor are load-bearing (architecture/descriptor_head.py indexes it by
     bare integer literal) and its length is ModelConfig.pocket_descriptor_count, which
     is part of the parameter count -- and therefore the run-directory identity -- of
     every run that reads the tensor; appending to it would silently renumber past runs. These
@@ -1045,7 +1045,7 @@ def ring_count(smiles):
     return float(rdMolDescriptors.CalcNumRings(mol))
 
 
-# --pair_descriptor_lipid_shape (LIPID_SHAPE_DESCRIPTOR_NAMES below): the one deliberate
+# --descriptor_lipid_shape (LIPID_SHAPE_DESCRIPTOR_NAMES below): the one deliberate
 # exception to this module's own "no 3D embedding" rule stated in its docstring above --
 # ETKDG is indeed slow and fails unpredictably per-molecule, which is why it is opt-in,
 # ensemble-averaged (not a single arbitrary conformer -- a flexible acyl tail has many
@@ -1406,7 +1406,7 @@ def as_arrays(per_row):
     """`descriptor_values_by_row`'s (or chain_lengths_by_row's) output as NaN-arrays.
 
     Same conversion pocket_lipid_compatibility._candidate_arrays does for chain
-    lengths; shared here since --pair_descriptors needs it for three more measures.
+    lengths; shared here since --descriptors needs it for three more measures.
     """
     return [
         numpy.array(
@@ -1428,7 +1428,7 @@ def as_arrays(per_row):
 # ~13.6-32.0 range) meant pocket_extent always won by a wide margin, occupancy's
 # relu clipped every single row to exactly 0.0 (verified directly on this project's
 # data: 100% of rows), and it silently carried zero information in every null-model
-# run AND every trained --pair_descriptors run (dataloader/Dataloader.py uses
+# run AND every trained --descriptors run (dataloader/Dataloader.py uses
 # the identical formula for the live training path -- fixed there too, in the same
 # commit as this).
 _CHAIN_BOND_PROJECTION_A = 1.265
@@ -1451,14 +1451,14 @@ def pair_descriptor_value(name, lipid_values, protein_values):
     is requested (see feature_similarity), so every key read here is always present
     regardless of which OTHER names the caller asked for.
 
-    architecture/pair_descriptor_head.py's own module docstring names the two
+    architecture/descriptor_head.py's own module docstring names the two
     remaining pair phenomena the paper (Lipovsky et al., Nature 2025,
     s41586-025-10040-y) reports beyond occupancy -- "aromatic residues near double
     bonds" and "polar pocket surface meets an H-bonding headgroup" -- as things the
     self-attention token set is left to learn to combine on its own, never spelled
     out as an explicit formula anywhere (there is nothing FOR a null model, which has
     no attention weights, to read). aromatic_contact/hbond_match below are that
-    formula -- the null-model-usable, unlearned version of what PairDescriptorHead's
+    formula -- the null-model-usable, unlearned version of what DescriptorHead's
     tokens ask the network to discover for itself.
 
         occupancy         : relu(chain_length_angstrom(chain) - pocket_extent) --
@@ -1468,7 +1468,7 @@ def pair_descriptor_value(name, lipid_values, protein_values):
                              chain shorter than the pocket is not a clash, only a
                              chain LONGER than it is. NOT cbrt(heavy_atom_count)
                              (an earlier version of this formula, and still what
-                             architecture/pair_descriptor_head.py's own occupancy
+                             architecture/descriptor_head.py's own occupancy
                              token computes) -- that compared a UNITLESS ~2.6-4.6
                              number directly against pocket_extent's ~13.6-32.0
                              angstrom range with no conversion between them, so

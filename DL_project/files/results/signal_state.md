@@ -226,7 +226,7 @@ ESM3 дескрипторами полости (измеримо хуже), ис
 ## 8. `--descriptors_head`: pocket_extent не объясняет LBP_BPI_CETP, lipocalin — объясняет
 
 Отдельная от разделов 1–7 архитектура (`training/read_configuration.py`, `ModelConfig.
-descriptors_head` docstring): только `--pair_descriptors`+`--pocket_descriptors`, без
+descriptors_head` docstring): только `--descriptors`+`--pocket_descriptors`, без
 белковой/липидной ветки и cross-attention — sufficiency-проба «хватает ли одних
 дескрипторов». Числа этого раздела относятся только к ней, не к «полной модели»
 разделов 1–7, и не усредняются с ней.
@@ -244,9 +244,9 @@ descriptors_head` docstring): только `--pair_descriptors`+`--pocket_descri
 LBP_BPI_CETP — то же семейство, что в project memory `[[descriptors-path-fingerprint-leak]]`
 (`training/read_configuration.py:376-435`): на `descriptors_path` его test BA (0.796) не
 объяснялась ни белко-слепой химией, ни нуль-моделью с богатым липидным входом. Два
-опробованных фикса (`--no_pair_descriptor_pocket_shares`, `--pair_descriptor_pocket_
+опробованных фикса (`--no_descriptor_pocket_shares`, `--pair_descriptor_pocket_
 shares_split`) сделали разрыв **шире**, не уже. Третий, уже применённый именно в
-`descriptors_no_extent_coarse_add_lipprop` (`--pair_descriptor_pocket_shares_coarse`),
+`descriptors_no_extent_coarse_add_lipprop` (`--descriptor_pocket_shares_coarse`),
 тоже не закрыл его — BA вырос до **0.826**, increment_prot до **+0.165**.
 
 **Проверено дёшево, без единого обучения**
@@ -256,7 +256,7 @@ shares_split`) сделали разрыв **шире**, не уже. Трети
 `--compat_extent_bins=4`), оба его белка попадают в ту же среднюю четверть, что медиана
 остальных пяти семейств — доля белков, которых LBP_BPI_CETP обгоняет по банду: **0.48**
 (0.5 = разделения нет). Значит `occupancy` (единственный канал, которым coarse_extent
-доходит до дескрипторной головы под `--no_pair_descriptor_extent`) источником +0.165
+доходит до дескрипторной головы под `--no_descriptor_extent`) источником +0.165
 быть не может.
 
 **lipocalin — другая история.** Тот же чек даёт чистое разделение: доля обгоняемых —
@@ -268,12 +268,12 @@ LBP_BPI_CETP.
 **Значит:** источник LBP_BPI_CETP всё ещё не найден среди проверенных каналов (pocket_
 shares raw/split/coarse, extent). Единственное, что дескрипторная голова читает и что
 ещё не изолировано по отдельности, — четыре липид-only токена (chain/unsaturation/hbond/
-heavy, `dataloader/pair_descriptors.py`); если это утечка, а не химия, она может быть по
+heavy, `dataloader/descriptors.py`); если это утечка, а не химия, она может быть по
 липидной, не по белковой оси — специфичная для того, какие классы липидов исключены
 именно на LBP_BPI_CETP (`Bismonoacylglycerolphosphate, Phosphatidylserine,
 Phosphatidylinositol, Phosphatidylcholine`).
 
-**Дальше:** `--pair_descriptor_extent` включён реальным прогоном
+**Дальше:** `--descriptor_extent` включён реальным прогоном
 (`arg_files/descriptors/descriptors_no_extent_coarse_add_lipprop_extent.md`) — если
 increment_prot lipocalin упадёт, а LBP_BPI_CETP нет, гипотеза подтверждается прямым
 измерением, а не только косвенным чеком выше.

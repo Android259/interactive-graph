@@ -62,3 +62,21 @@ data/Pretrained MoLFormer/
 # metrics_summary.csv and its analyses -- here (training/new_train.py, artifact_root),
 # so a smoke run cannot touch the real tables. Throwaway by construction.
 testmode_outputs/
+
+# Atomic-write leftovers from analysis/build_metrics_table.py: a temp file written
+# next to metrics_summary.csv and renamed over it on success, so one only survives a
+# crashed write. Six are currently tracked (~130 MB) -- copies of the table, never source.
+.metrics_summary.csv.*
+
+# Timestamped safety copies of the metrics table (the .bak_* form is covered above).
+metrics_summary.csv.backup_*
+
+# data/cache/ is builder output by definition (data/AGENTS.md): everything here comes
+# from a data/build_*.py builder or dataloader/cache_builders/ and is rebuildable from
+# source. 199 MB of it is tracked today, 61 files of which are per-run descriptor
+# feature caches keyed by a config/split fingerprint (Dataloader._descriptor_features_
+# cache_key) -- a different name on every config, so they only ever accumulate.
+# The Tanimoto compact sets stay tracked on purpose, as the note further up says.
+data/cache/*
+!data/cache/Tanimoto_compact*
+!data/cache/Tanimoto_headgroup_compact*

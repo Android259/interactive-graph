@@ -73,7 +73,7 @@ import training.pair_baseline_common as pbc  # noqa: E402
 # dataloader.descriptors.PROTEIN_DESCRIPTOR_NAMES, and deliberately a separate
 # name rather than an extension of it: that list's LENGTH is ModelConfig.
 # pocket_descriptor_count and its POSITIONS are indexed by bare integer literals in
-# architecture/pair_descriptor_head.py, so appending to it would silently break the
+# architecture/descriptor_head.py, so appending to it would silently break the
 # network. What a feature search may choose from is a search concern, not the
 # network's own catalog.
 #

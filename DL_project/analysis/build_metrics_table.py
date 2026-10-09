@@ -113,7 +113,7 @@ RUN_DERIVED_FIELDS = (
     # ("otherwise invisible" in the table without a dedicated column).
     "protein_descriptor_count",
     "lipid_descriptor_count",
-    "pair_descriptor_head_count",
+    "descriptor_head_count",
 )
 
 CSV_FIELDS = (
@@ -673,9 +673,9 @@ def metric_row(
     row["lipid_descriptor_count"] = str(
         len(parse_descriptor_list(row.get("lipid_descriptors", "")))
     )
-    row["pair_descriptor_head_count"] = (
+    row["descriptor_head_count"] = (
         str(len(parse_descriptor_list(row.get("descriptor_names", ""))))
-        if row.get("pair_descriptors") == "1" and row.get("descriptor_names")
+        if row.get("descriptors") == "1" and row.get("descriptor_names")
         else ""
     )
 

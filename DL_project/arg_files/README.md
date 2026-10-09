@@ -20,8 +20,8 @@
 | подпапка | что внутри | основные флаги |
 |---|---|---|
 | `geometric_edge/` | `geometric_edge_*`, `ge_*`: белковый граф с геометрией рёбер + bilinear fusion | `--protein_edge_mlp` / `--protein_edge_attention`, `--bilinear_fusion` |
-| `mlp/` | `mlp_*`: MLP по каталогу дескрипторов, без графов и эмбеддингов | `--pair_descriptors --descriptor_mlp --descriptor_names=...` |
-| `descriptors/` | `descriptors_*`, `dh_*`: дескрипторные головы | `--descriptors_head`, `--pair_descriptors` |
+| `mlp/` | `mlp_*`: MLP по каталогу дескрипторов, без графов и эмбеддингов | `--descriptors --descriptor_mlp --descriptor_names=...` |
+| `descriptors/` | `descriptors_*`, `dh_*`: дескрипторные головы | `--descriptors_head`, `--descriptors` |
 | `deepclip/` | `deepclip_*`: CNN+LSTM по токенам SMILES липида | `--deepclip --lipid_smiles_tokens` |
 | `thematical/` | `thematical_*`: раздельные геометрический/химический пути | `--thematical_paths` |
 | `structural_pretrain/` | предобучение белкового энкодера | `--structural_pretrain` |
@@ -85,7 +85,7 @@
 | `esmif1` | `--esmif1_replace_esm3` |
 | `esm3` | эмбеддинги ESM3 остаются включены (без `--no_protein_embeddings`) |
 | `doubleattn` | `--double_attention` |
-| `3rd_head` | `--pair_descriptors` поверх attention-модели (третий вход головы) |
+| `3rd_head` | `--descriptors` поверх attention-модели (третий вход головы) |
 | `ffngate` | `--sparsity_gate_ffn` (структурная разреженность) |
 
 ### Размеры и регуляризация

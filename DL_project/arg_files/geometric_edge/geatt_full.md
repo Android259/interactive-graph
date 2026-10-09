@@ -18,6 +18,6 @@
 
 --protein_edge_attention
 --lipid_graph_isomers
---pair_descriptor_lipid_shape
+--descriptor_lipid_shape
 --cross_attention_bury_bias
 --cross_attention_chain_bias

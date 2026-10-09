@@ -132,7 +132,7 @@ def chain_lengths_by_species(csv):
     """
     # Local import: dataloader/descriptors.py (longest_acyl_chain's home, see
     # that module's LIPID_DESCRIPTOR_NAMES) imports candidates_for_row from THIS
-    # module at its own top level, so importing pair_descriptors here at module load
+    # module at its own top level, so importing descriptors here at module load
     # time would cycle -- deferred to call time, by when both modules are already
     # fully loaded either way round.
     from preprocessing.compute_descriptors import longest_acyl_chain
@@ -283,7 +283,7 @@ def pocket_rim_core_aromatic_share_by_protein(root_dir, protein_names, cache=Non
     name present there skips the PDB/CSV re-parse below entirely, same fallback
     discipline as pocket_extent_by_protein.
 
-    --pair_descriptor_pocket_shares_split (architecture/pair_descriptor_head.py) swaps
+    --descriptor_pocket_shares_split (architecture/descriptor_head.py) swaps
     the whole-pocket aromatic_share/polar_share pair for this split plus
     hydropathy_core/hydropathy_rim, which POCKET_DESCRIPTOR_NAMES already carries and are
     read directly off the pocket descriptor tensor -- no aromatic_share_core/rim entry

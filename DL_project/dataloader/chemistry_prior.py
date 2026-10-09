@@ -392,7 +392,7 @@ def feature_similarity(csv, data_dir, names, zscore=False):
                      buriedness_q50, depth_q10, apolar_sasa_share, aromatic_share,
                      hydropathy_core, hydropathy_rim), plus
                      PROTEIN_DERIVED_DESCRIPTOR_NAMES (polar_share = 1 -
-                     apolar_sasa_share, PairDescriptorHead's own token name for the
+                     apolar_sasa_share, DescriptorHead's own token name for the
                      plain pocket-shares pair; aromatic_share_coarse/
                      polar_share_coarse, the same fixed-3-band --pair_descriptor_
                      pocket_shares_coarse reads -- for an exact-token-set comparison
