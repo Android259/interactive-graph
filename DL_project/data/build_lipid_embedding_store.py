@@ -5,7 +5,7 @@ Every training job otherwise unpickles the whole table into itself -- 267 MiB re
 and roughly 1 GiB of transient peak for the deterministic table -- so N concurrent jobs
 pay for it N times over. Built once by this script, the table is mapped instead of read,
 and the jobs share one copy through the page cache. See
-``dataloader/lipid_embedding_store.py`` for why that leaves every computed number
+``dataloader/lipid_embedding_store_reader.py`` for why that leaves every computed number
 unchanged.
 
 Meant to be run before a grid launches (``scripts/run_local.sh`` calls it, and the
@@ -41,10 +41,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataloader.cache_builders.lipid_embedding_store import (  # noqa: E402
+from dataloader.cache_builders.lipid_embedding_store_writer import (  # noqa: E402
     build_lipid_embedding_store,
 )
-from dataloader.lipid_embedding_store import store_is_current  # noqa: E402
+from dataloader.lipid_embedding_store_reader import store_is_current  # noqa: E402
 
 
 DETERMINISTIC_TABLE = "lipid_SMILES_embedding_deterministic.pkl"

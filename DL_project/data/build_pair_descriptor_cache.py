@@ -8,7 +8,7 @@ table and re-parses every protein's pocketness.pdb/coarse_graph_nodes.csv itself
 ~12.2s of a ~13.6s dataset construction, measured on the current 35-protein table, and
 none of it depends on --seed or --excluded_groups. Built once by this script, N
 concurrent jobs share one cache file instead of paying that N times. See
-dataloader/pair_descriptor_cache.py for the cache format and the fallback discipline a
+dataloader/pair_descriptor_cache_reader.py for the cache format and the fallback discipline a
 missing/stale cache falls back to (compute directly, exactly as before this existed).
 
 Meant to be run before a grid launches (scripts/run_local.sh calls it, alongside
@@ -46,10 +46,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataloader.cache_builders.pair_descriptor_cache import (  # noqa: E402
+from dataloader.cache_builders.pair_descriptor_cache_writer import (  # noqa: E402
     build_pair_descriptor_cache,
 )
-from dataloader.pair_descriptor_cache import store_is_current  # noqa: E402
+from dataloader.pair_descriptor_cache_reader import store_is_current  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 
 
@@ -87,7 +87,7 @@ def needs_cache(args_file):
     (ModelConfig.validate rejects them otherwise), and unlike --descriptor_names they
     are never a bare, ambiguous name shared with an unrelated mode.
 
-    No lipid_shape distinction anymore: dataloader/pair_descriptor_cache.py's build
+    No lipid_shape distinction anymore: dataloader/pair_descriptor_cache_reader.py's build
     always computes every measure (see that module's docstring) regardless of whether
     THIS run's own flags read radius_of_gyration/asphericity/molecular_volume, so the
     next run that does never finds a cache silently missing them.

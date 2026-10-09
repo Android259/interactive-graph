@@ -98,8 +98,9 @@ class _CandidateView:
 
 
 def compact_paths(root_dir, isomeric=False):
-    """Cache-file paths under ``<root_dir>/cache`` -- see dataloader/cache_builders/
-    tanimoto_compact.py for the builder that writes them."""
+    """Cache-file paths under ``<root_dir>/cache`` -- see
+    dataloader/cache_builders/tanimoto_compact_writer.py for the builder that writes
+    them."""
     root_dir = Path(root_dir).resolve() / CACHE_SUBDIR
     prefix = ISOMERIC_COMPACT_PREFIX if isomeric else COMPACT_PREFIX
     return (

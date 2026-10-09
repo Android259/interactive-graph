@@ -7,12 +7,13 @@
 ## Cache Builders
 
 - `cache_builders/` holds the build-side (`build_*`/`write_*`) half of every disk cache
-  in this directory. The matching top-level module (`tanimoto_compact.py`,
-  `lipid_embedding_store.py`, `lipid_graph_tensor_cache.py`,
-  `protein_graph_tensor_cache.py`, `pair_descriptor_cache.py`) keeps the reader
-  (`load_*`), the shared path/format logic, and any staleness-validation code the hot
-  training path or a builder both need — `Dataloader.py` only ever imports `load_*`
-  names, never from `cache_builders/`.
+  in this directory, one `*_writer.py` per cache (`tanimoto_compact_writer.py`,
+  `lipid_embedding_store_writer.py`, `lipid_graph_tensor_cache_writer.py`,
+  `protein_graph_tensor_cache_writer.py`, `pair_descriptor_cache_writer.py`). The
+  matching top-level `*_reader.py` module keeps the reader (`load_*`), the shared
+  path/format logic, and any staleness-validation code the hot training path or a
+  builder both need — `Dataloader.py` only ever imports `load_*` names, never from
+  `cache_builders/`.
 - The cache files themselves live under `data/cache/`, not `data/` directly — see
   `data/AGENTS.md`.
 

@@ -128,7 +128,7 @@ from dataloader.sampler import (  # noqa: E402
     split_and_sample_protein_balanced_interactions,
 )
 from dataloader.lipid_subclass_blocks import subclass_block_species  # noqa: E402
-from dataloader.tanimoto_compact import load_compact  # noqa: E402
+from dataloader.tanimoto_compact_reader import load_compact  # noqa: E402
 
 # Pocket descriptors the protein-side similarity may be computed over. The Kron-RLS
 # protein kernel's own catalog (POCKET_ALL_NAMES) plus the three lambda_sqrt shape

@@ -1,6 +1,6 @@
 """Build the binary cache for precomputed lipid isomer graph CSVs.
 
-Mirrors dataloader/cache_builders/protein_graph_tensor_cache.py: data/build_lipid_isomer_graphs.py
+Mirrors dataloader/cache_builders/protein_graph_tensor_cache_writer.py: data/build_lipid_isomer_graphs.py
 writes one nodes.csv/edges.csv pair per canonical-SMILES lipid under
 data/lipid_graphs/<graph_id>/, and LipidIsomerGraphBuilder.make_graph_lipid
 otherwise re-reads and re-parses those CSVs (RBF-expanding mean_bond_length in
@@ -17,7 +17,7 @@ import pandas
 import torch
 
 from architecture.protein_edge_geometry import rbf
-from dataloader.lipid_graph_tensor_cache import CACHE_FORMAT_VERSION, _paths
+from dataloader.lipid_graph_tensor_cache_reader import CACHE_FORMAT_VERSION, _paths
 
 
 # Must match LipidIsomerGraphBuilder.make_graph_lipid's node_columns/edge_columns

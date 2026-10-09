@@ -44,7 +44,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from dataloader.chemistry_prior import _standardised_similarity  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.lipid_embedding_store import load_lipid_embedding_store  # noqa: E402
+from dataloader.lipid_embedding_store_reader import load_lipid_embedding_store  # noqa: E402
 from preprocessing.lipid_embedding_identity_check import (  # noqa: E402
     EMBEDDING_FILE, species_embeddings,
 )

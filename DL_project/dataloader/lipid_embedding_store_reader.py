@@ -46,7 +46,7 @@ CACHE_SUBDIR = "cache"
 
 def store_paths(root_dir, source_name):
     """Archive and manifest paths for one embedding table, under ``<root_dir>/cache`` --
-    see dataloader/cache_builders/lipid_embedding_store.py for the builder."""
+    see dataloader/cache_builders/lipid_embedding_store_writer.py for the builder."""
     root_dir = Path(root_dir).resolve() / CACHE_SUBDIR
     stem = Path(source_name).stem
     return (

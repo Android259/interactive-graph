@@ -44,7 +44,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.protein_graph_builder import POCKET_DESCRIPTOR_NAMES
 from preprocessing.compute_descriptors import KYTE_DOOLITTLE, pocket_descriptor
-from dataloader.protein_graph_tensor_cache import _pocket_tensor  # noqa: E402
+from dataloader.protein_graph_tensor_cache_reader import _pocket_tensor  # noqa: E402
 
 # The set as it stood before the shape rewrite, kept here and nowhere else: the point of
 # this script is to say whether the replacement traded one fingerprint for another, and

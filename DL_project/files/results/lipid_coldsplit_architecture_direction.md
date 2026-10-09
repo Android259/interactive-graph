@@ -1486,7 +1486,7 @@ SulfoHexCer).
   тронутых файлов; это уже существовавшие падения, не следствие этих правок.
 - Степень липидных графов (§7d) — [analysis/probes/lipid_graph_degree.py](../../analysis/probes/lipid_graph_degree.py),
   читает `data/lipid_graphs/*/{nodes,edges}.csv`, ничего не строит и не обучает.
-- Кэш дескрипторов (`dataloader/pair_descriptor_cache.py`): годность значения решалась
+- Кэш дескрипторов (`dataloader/pair_descriptor_cache_reader.py`): годность значения решалась
   ОДНИМ хешем по всему `pair_descriptors.py` + `pocket_lipid_compatibility.py`, зашитым в
   ИМЯ файла. Любая правка где угодно в этих файлах разом делала недостижимыми все
   посчитанные значения — не портила их, а просто уводила имя, после чего каждый читатель

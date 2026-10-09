@@ -870,7 +870,7 @@ fi
 # them -- 25 threads measured on a 24-core machine for what is serial work,
 # thrashing on creation/synchronisation instead of finishing sooner. Cut this
 # builder's own rebuild from ~7 to ~3 minutes even after the far bigger
-# lipid_shape-gating fix (dataloader/pair_descriptor_cache.py) removed the
+# lipid_shape-gating fix (dataloader/pair_descriptor_cache_reader.py) removed the
 # redundant conformer generation that was most of the ~20-minute baseline.
 for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     if ! OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
@@ -880,8 +880,8 @@ for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
             "${_label_args_file}" >&2
     fi
 
-    # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values (dataloader/
-    # pair_descriptor_cache.py): built once here so the grid's N (group, seed) processes
+    # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values
+    # (dataloader/pair_descriptor_cache_reader.py): built once here so the grid's N (group, seed) processes
     # share one cache instead of each re-running RDKit over the whole interaction table.
     # Never fatal: without it a job computes these values itself, exactly as before this
     # cache existed -- slower, not wrong.

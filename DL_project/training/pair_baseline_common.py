@@ -26,7 +26,7 @@ from preprocessing.compute_descriptors import unsaturation_count as _unsaturatio
 from dataloader.pair_descriptors import LIPID_DESCRIPTOR_NAMES
 from dataloader.pair_descriptors import PROTEIN_DERIVED_DESCRIPTOR_NAMES
 from dataloader.pair_descriptors import PROTEIN_DESCRIPTOR_NAMES
-from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
+from dataloader.pair_descriptor_cache_reader import load_pair_descriptor_cache
 from dataloader.sampler import (
     LIPID_COLDSPLIT_SETS,
     class_level_positive_labels,
@@ -249,7 +249,7 @@ def _headgroup_isolation_units(table: pd.DataFrame, context: str):
     either -- there is no isomeric variant of this artifact to disambiguate against).
     """
     from analysis.lipid_block_search import Units
-    from dataloader.tanimoto_compact import CompactTanimoto
+    from dataloader.tanimoto_compact_reader import CompactTanimoto
 
     cache_dir = PROJECT_ROOT / "data" / "cache"
     matrix_path = cache_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy"
@@ -438,7 +438,7 @@ def _lipid_isolation_units(table: pd.DataFrame, context: str):
     missing/stale compact matrix.
     """
     from analysis.lipid_block_search import Units
-    from dataloader.tanimoto_compact import load_compact
+    from dataloader.tanimoto_compact_reader import load_compact
 
     compact = load_compact(str(PROJECT_ROOT / "data"))
     if compact is None or len(np.unique(compact.row_ids)) != len(table):
@@ -1103,7 +1103,7 @@ def _fallback_nan(value: float | None) -> float:
 
 
 def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> dict[str, float]:
-    """`npr_cache`, when given, is a dataloader.pair_descriptor_cache load result
+    """`npr_cache`, when given, is a dataloader.pair_descriptor_cache_reader load result
     ({"raw_to_canonical", "values", ...}) -- npr1/npr2 are looked up there first (a
     disk-cached value skips the 10-conformer ETKDG+MMFF embed entirely), falling
     back to dataloader.pair_descriptors.npr1/npr2 (which still hits that module's own
@@ -1186,7 +1186,7 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
         # (built specifically "for --pair_descriptors'/--two_pair_descriptors_paths'
         # shared per-candidate ... base values (chain/unsaturation/hbond/heavy ...)"
         # -- see that script's module docstring) under "chain"/"unsaturation"/
-        # "hbond"/"heavy_atoms" (dataloader/pair_descriptor_cache.py's own
+        # "hbond"/"heavy_atoms" (dataloader/pair_descriptor_cache_reader.py's own
         # build_pair_value_cache renames "heavy_atoms" -> "heavy" at its own call
         # site; same rename applied here). A cache hit is a dict lookup instead of
         # re-parsing the SMILES with RDKit -- the same discipline npr1/npr2 already
@@ -1265,7 +1265,7 @@ def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) 
     uses ChainFragments when present.  Thus a candidate enumeration cannot turn into an
     arbitrary first-isomer choice.
 
-    `npr_cache`: a dataloader.pair_descriptor_cache.load_pair_descriptor_cache result,
+    `npr_cache`: a dataloader.pair_descriptor_cache_reader.load_pair_descriptor_cache result,
     or None to auto-load the project's own on-disk cache (data/pair_descriptor_cache_
     deterministic_<fingerprint>.json) -- the SAME cache dataloader/pair_descriptors.py's
     network path reads, so npr1/npr2/chain/unsaturation/hbond/heavy (the only fields
@@ -1694,7 +1694,7 @@ def molformer_lipid_features(table: pd.DataFrame) -> pd.DataFrame:
     --lipid_kernel_type, matching how "explicit" turns hand-built descriptors into
     one -- a network's own embedding is what the fit sees, not a lookup similarity.
     """
-    from dataloader.lipid_embedding_store import load_lipid_embedding_store
+    from dataloader.lipid_embedding_store_reader import load_lipid_embedding_store
     from preprocessing.lipid_embedding_identity_check import EMBEDDING_FILE, species_embeddings
 
     data_dir = PROJECT_ROOT / "data"

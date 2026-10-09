@@ -18,7 +18,7 @@
 # structure (here, distinct head group) plus the index needed to expand back to
 # per-candidate similarities, instead of one row per candidate instance.
 #
-# Output (same layout/dtypes as dataloader/tanimoto_compact.py's files, under a
+# Output (same layout/dtypes as dataloader/tanimoto_compact_reader.py's files, under a
 # separate prefix so this is never confused with or read as whole-molecule data):
 #   Tanimoto_headgroup_compact_matrix_uint8.npy      head groups x head groups
 #   Tanimoto_headgroup_compact_structure_index.npy   candidate -> head-group row

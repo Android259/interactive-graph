@@ -3,8 +3,8 @@ from types import SimpleNamespace
 import pandas as pd
 import torch
 
-from dataloader.cache_builders.lipid_graph_tensor_cache import build_lipid_graph_tensor_cache
-from dataloader.lipid_graph_tensor_cache import load_lipid_graph_tensor_cache
+from dataloader.cache_builders.lipid_graph_tensor_cache_writer import build_lipid_graph_tensor_cache
+from dataloader.lipid_graph_tensor_cache_reader import load_lipid_graph_tensor_cache
 from dataloader.lipid_isomer_graph_builder import LipidIsomerGraphBuilder
 from tests.test_dataloader_lipid_graphs import make_dataset, write_graph
 

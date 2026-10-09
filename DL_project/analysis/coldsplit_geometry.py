@@ -105,7 +105,7 @@ from dataloader.sampler import (  # noqa: E402
     LIPID_COLDSPLIT_SETS,
     lipid_class_series,
 )
-from dataloader.tanimoto_compact import CompactTanimoto, load_compact  # noqa: E402
+from dataloader.tanimoto_compact_reader import CompactTanimoto, load_compact  # noqa: E402
 from preprocessing.lipid_marginal_baseline import halve_excluded_block  # noqa: E402
 
 FAMILIES = (
@@ -224,7 +224,7 @@ def report_lipid_sets(csv, compact):
 def load_headgroup_compact(data_dir, source_csv, isomeric=False):
     """The head-group compact artifact, or None if missing/stale.
 
-    Mirrors dataloader.tanimoto_compact.load_compact's staleness check (source table
+    Mirrors dataloader.tanimoto_compact_reader.load_compact's staleness check (source table
     size + mtime against the manifest) but reads preprocessing/build_tanimoto_
     headgroup.py's own files and format, which load_compact does not know about.
     """

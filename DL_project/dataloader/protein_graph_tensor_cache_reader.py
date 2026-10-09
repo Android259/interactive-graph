@@ -1,6 +1,6 @@
 """Validate and read the binary cache for precomputed protein graph CSVs.
 
-See dataloader/cache_builders/protein_graph_tensor_cache.py for the builder.
+See dataloader/cache_builders/protein_graph_tensor_cache_writer.py for the builder.
 """
 
 import json

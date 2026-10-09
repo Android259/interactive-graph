@@ -34,8 +34,8 @@ from preprocessing.compute_descriptors import (
     chain_length_angstrom,
     descriptor_values_by_row,
 )
-from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
-from dataloader.lipid_embedding_store import load_lipid_embedding_store
+from dataloader.pair_descriptor_cache_reader import load_pair_descriptor_cache
+from dataloader.lipid_embedding_store_reader import load_lipid_embedding_store
 from dataloader.lipid_graph_builder import LipidGraphBuilder
 from dataloader.lipid_isomer_graph_builder import (
     LipidGraphData,
@@ -48,13 +48,13 @@ from dataloader.protein_graph_builder import (
     protein_node_columns,
     restrict_parts_to_mask,
 )
-from dataloader.protein_graph_tensor_cache import load_protein_graph_tensor_cache
+from dataloader.protein_graph_tensor_cache_reader import load_protein_graph_tensor_cache
 from dataloader.protein_tokens import (
     build_protein_token_table,
     parse_protein_token_alphabets,
 )
-from dataloader.lipid_graph_tensor_cache import load_lipid_graph_tensor_cache
-from dataloader.tanimoto_compact import load_compact
+from dataloader.lipid_graph_tensor_cache_reader import load_lipid_graph_tensor_cache
+from dataloader.tanimoto_compact_reader import load_compact
 from dataloader.lipid_isolation_blocks import (
     BLOCK_GEOMETRY,
     LIPID_ISOLATION_BLOCKS,
@@ -255,7 +255,7 @@ class PLIDataset(
             # per distinct structure instead of one per candidate instance, so it
             # expands to the identical submatrix out of 1.4 MiB rather than slicing it
             # out of a 2.89 GB file with random access. Byte-identical by construction --
-            # see dataloader/tanimoto_compact.py -- and verified against the full matrix.
+            # see dataloader/tanimoto_compact_reader.py -- and verified against the full matrix.
             #
             # Which pair: the isomeric artifacts for an isomeric run, matching the
             # canonicalization the loader itself uses. NOTE this is a real change for
@@ -330,7 +330,7 @@ class PLIDataset(
             )
             # Prefer the memory-mapped store, so concurrent jobs share one copy of the
             # table through the page cache instead of unpickling 267 MiB apiece (see
-            # dataloader/lipid_embedding_store.py, and data/build_lipid_embedding_store.py
+            # dataloader/lipid_embedding_store_reader.py, and data/build_lipid_embedding_store.py
             # which writes it). Same tensors either way; None means no store has been
             # built for this table yet, or the table has been regenerated since, and the
             # pickle is read exactly as before.
@@ -386,8 +386,9 @@ class PLIDataset(
             if protein_token_alphabets
             else ({}, {})
         )
-        # Same idea for --lipid_graph_isomers' per-graph_id tensors (dataloader/
-        # lipid_graph_tensor_cache.py, built by data/build_lipid_graph_tensor_cache.py):
+        # Same idea for --lipid_graph_isomers' per-graph_id tensors
+        # (dataloader/lipid_graph_tensor_cache_reader.py, built by
+        # data/build_lipid_graph_tensor_cache.py):
         # {} when no cache has been built or data/lipid_graphs/ changed since, which
         # LipidIsomerGraphBuilder._one_lipid_graph_parts falls back on exactly as
         # before this cache existed.
@@ -1217,7 +1218,7 @@ class PLIDataset(
         isomeric = getattr(self.config, "lipid_isomers", False)
         # None (no current cache -- never built, or the interaction table/data/graphs
         # changed since it was) falls every lookup below back to computing directly,
-        # exactly as before this cache existed. See dataloader/pair_descriptor_cache.py
+        # exactly as before this cache existed. See dataloader/pair_descriptor_cache_reader.py
         # and data/build_pair_descriptor_cache.py, which scripts/run_local.sh runs once
         # before a grid launches so its N (group, seed) processes share one build. The
         # cache always carries every measure (no lipid_shape flag on load_pair_

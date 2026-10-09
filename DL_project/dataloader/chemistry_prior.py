@@ -1,12 +1,14 @@
 """The chemistry-only lipid propensity score, shared by the dataloader and analysis.
 
-One function, two callers. `analysis/baselines/null_model.py` uses it as a standalone
-predictor to compare against the network. `Dataloader` (under `--chem_prior`)
-attaches it to every row as a frozen input, so the network is scored against it rather
-than having to re-derive it -- the point files/history/geometric_edge.md makes.
-Kept in one place because the two callers must compute the identical number: a null
-model that silently drifted from the number the network is judged against would make
-every AUC in that file wrong without anything failing loudly.
+Callers :
+    analysis/baselines/null_model.py uses it as a standalone
+    predictor to compare against the network. 
+
+    Dataloader (under `--chem_prior`) attaches it to every row as a frozen input, 
+    so the network is scored against it rather than having to re-derive it -- the point 
+    files/history/geometric_edge.md makes. Kept in one place because the two callers must 
+    compute the identical number: a null model that silently drifted from the number the 
+    network is judged against would make every AUC in that file wrong without anything failing loudly.
 """
 import json
 import os
@@ -16,7 +18,7 @@ import numpy as np
 import pandas
 
 import preprocessing.compute_descriptors as compute_descriptors
-from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
+from dataloader.pair_descriptor_cache_reader import load_pair_descriptor_cache
 from dataloader.pair_descriptors import (
     LIPID_DESCRIPTOR_NAMES,
     MIN_PAIR_DESCRIPTOR_NAMES,

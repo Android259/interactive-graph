@@ -143,7 +143,7 @@ lipid_descriptor_class_identity.py` покрывает только 13 ручн�
 не сам выученный MolFormer-эмбеддинг.
 
 **Кэш проверен перед запуском**: `data/lipid_SMILES_embedding_deterministic.pkl` (и
-его mmap-версия `dataloader/lipid_embedding_store.py`) — таблица, которую
+его mmap-версия `dataloader/lipid_embedding_store_reader.py`) — таблица, которую
 дефолтный путь загрузчика (`--lipid_isomers` не установлен) реально читает
 (`dataloader/Dataloader.py:279-295`), содержит 1226 записей, "каждый кандидат каждой
 строки" (комментарий в коде). Прогон нового скрипта не нашёл ни одного отсутствующего

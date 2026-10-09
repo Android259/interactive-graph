@@ -7,14 +7,14 @@
 # per candidate instance, so the per-candidate similarity is
 # compact[structure_index[i], structure_index[j]] -- byte-identical to the old
 # per-candidate square matrix (2.89 GB, Total_tanimoto_matrix_uint8.npy), which is no
-# longer built or read. Why byte-identity holds: dataloader/tanimoto_compact.py.
+# longer built or read. Why byte-identity holds: dataloader/tanimoto_compact_reader.py.
 #
 # The candidate rule here (row_candidates/collect) is the loader's: SmileGlobal unless it
 # is "0", candidates split on ";", canonicalized, deduplicated within the row.
 # preprocessing/build_tanimoto_headgroup.py and analysis/probes/split_similarity_vs_metric.py
 # import it from here, so there is one transcription of it.
 #
-# Output (dataloader/tanimoto_compact.py reads them):
+# Output (dataloader/tanimoto_compact_reader.py reads them):
 #   Tanimoto_compact_matrix_uint8.npy      structures x structures
 #   Tanimoto_compact_structure_index.npy   candidate -> structure row
 #   Tanimoto_compact_row_ids.npy           candidate -> interaction table row
@@ -22,12 +22,7 @@
 #
 # Usage:
 #     python3 preprocessing/build_tanimoto_compact.py [--data-dir DIR] [--input CSV]
-#                                                     [--verify-candidates N]
-#
-#     --verify-candidates N  Also build the first N candidates the old way, densely, and
-#                             assert the compact form expands to the identical block.
-#                             Costs N^2 bytes and one extra fingerprint pass; 3000 is a
-#                             good check at 9 MB.
+#                                                     [--isomeric]
 
 import argparse
 import sys
@@ -40,7 +35,7 @@ from rdkit.Chem import AllChem
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dataloader.dataset_source import INTERACTION_CSV
-from dataloader.cache_builders.tanimoto_compact import write_compact
+from dataloader.cache_builders.tanimoto_compact_writer import write_compact
 
 
 DEFAULT_DATA_DIR = Path("data")
@@ -132,29 +127,10 @@ def distinct_structures(smiles):
     return list(order), structure_index
 
 
-def verify_against_dense(smiles, structure_index, compact, count):
-    """Assert the compact form expands to the matrix the old builder would have written."""
-    subset = smiles[:count]
-    dense = tanimoto_matrix(subset, progress_every=0)
-    rows = structure_index[:count]
-    expanded = compact[np.ix_(rows, rows)]
-    if not np.array_equal(dense, expanded):
-        differing = int((dense != expanded).sum())
-        raise SystemExit(
-            f"VERIFY FAILED: {differing} of {dense.size} bytes differ between the dense "
-            "matrix and the expanded compact form"
-        )
-    print(
-        f"verify: first {count} candidates, {dense.size} bytes, "
-        "dense and expanded compact forms are byte-identical"
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--input", type=Path, default=None)
-    parser.add_argument("--verify-candidates", type=int, default=0)
     parser.add_argument(
         "--isomeric",
         action="store_true",
@@ -183,13 +159,6 @@ def main():
     )
 
     compact = tanimoto_matrix(structures)
-    if args.verify_candidates > 0:
-        verify_against_dense(
-            smiles,
-            structure_index,
-            compact,
-            min(args.verify_candidates, len(smiles)),
-        )
 
     written = write_compact(
         args.data_dir,

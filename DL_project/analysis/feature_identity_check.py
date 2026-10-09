@@ -821,7 +821,7 @@ def candidate_matrix(csv, data_dir, names):
     chemistry_prior's own lipid table does, so the two agree on what "this species'
     value" means.
     """
-    from dataloader.pair_descriptor_cache import load_pair_descriptor_cache
+    from dataloader.pair_descriptor_cache_reader import load_pair_descriptor_cache
     from dataloader.pocket_lipid_compatibility import candidates_for_row
     from preprocessing.compute_descriptors import _MEASURES
 
@@ -1520,7 +1520,7 @@ def main():
         # module, so importing it at module load time here would be circular --
         # by the time main() actually runs, this module is already fully defined,
         # so the cycle resolves fine deferred to call time.
-        from dataloader.lipid_embedding_store import load_lipid_embedding_store
+        from dataloader.lipid_embedding_store_reader import load_lipid_embedding_store
         from lipid_embedding_identity_check import EMBEDDING_FILE, species_embeddings
 
         smiles_encoding = load_lipid_embedding_store(data_dir, EMBEDDING_FILE)

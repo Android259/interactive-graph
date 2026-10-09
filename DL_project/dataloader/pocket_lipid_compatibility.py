@@ -35,7 +35,7 @@ from preprocessing.compute_descriptors import (
     pocket_atom_coordinates,
     pocket_shape,
 )
-from dataloader.protein_graph_tensor_cache import _pocket_tensor
+from dataloader.protein_graph_tensor_cache_reader import _pocket_tensor
 
 # Sentinels this project's SMILES columns use for "no structure recorded", matching
 # analysis/protein_profile_probe.py (mode `correlate`), which imports EMPTY from here rather than
@@ -185,7 +185,7 @@ def chain_lengths_by_row(csv, isomeric=False, cache=None):
     Parsing is cached by field text and by candidate string, so the whole table costs
     about as many RDKit parses as it has distinct structures.
 
-    `cache`, when given, is a dataloader/pair_descriptor_cache.py load result
+    `cache`, when given, is a dataloader/pair_descriptor_cache_reader.py load result
     ({"raw_to_canonical", "values", ...}): a raw candidate present there skips both the
     canonicalising parse and the length computation entirely. A raw string the cache has
     never seen (a candidate added to the table since the cache was built) falls back to
@@ -259,7 +259,7 @@ def pocket_extent_by_protein(root_dir, protein_names, cache=None):
     Same pocket_atom_coordinates + pocket_shape that POCKET_DESCRIPTOR_NAMES' own
     pocket_extent entry uses -- this is that entry, not a second measurement of it.
 
-    `cache`, when given, is dataloader/pair_descriptor_cache.py's per-protein dict
+    `cache`, when given, is dataloader/pair_descriptor_cache_reader.py's per-protein dict
     ({name: {"extent", "aromatic_share_core", "aromatic_share_rim"}}); a name present
     there skips the PDB re-parse. A name the cache has never seen falls back to parsing
     it here, same as without a cache.
@@ -279,7 +279,7 @@ def pocket_extent_by_protein(root_dir, protein_names, cache=None):
 def pocket_rim_core_aromatic_share_by_protein(root_dir, protein_names, cache=None):
     """(aromatic_share_core, aromatic_share_rim) for each named protein.
 
-    `cache`, when given, is dataloader/pair_descriptor_cache.py's per-protein dict; a
+    `cache`, when given, is dataloader/pair_descriptor_cache_reader.py's per-protein dict; a
     name present there skips the PDB/CSV re-parse below entirely, same fallback
     discipline as pocket_extent_by_protein.
 

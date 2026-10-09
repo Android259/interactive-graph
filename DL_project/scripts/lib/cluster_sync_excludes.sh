@@ -97,7 +97,7 @@ SYNC_EXCLUDES=(
     #     geometric_transformer_nodes.csv (residue frames for --geometric_transformer/
     #     --protein_edge_attention/--protein_edge_mlp). Was excluded like the rest of
     #     data/, which does not just risk a stale copy: load_protein_graph_tensor_cache
-    #     (dataloader/protein_graph_tensor_cache.py) rejects protein_graph_tensors.pt
+    #     (dataloader/protein_graph_tensor_cache_reader.py) rejects protein_graph_tensors.pt
     #     outright the moment ANY recorded source's mtime_ns does not match the file on
     #     disk, and an independently-timestamped copy of data/graphs/ never matches the
     #     mtimes protein_graph_tensors.manifest.json recorded when the cache was built --
@@ -129,7 +129,7 @@ SYNC_EXCLUDES=(
     # classify_lipids_by_article.py).
     --include='/data/Lipid_Volumes.csv'
     --include='/data/lipid_article_classification.json'
-    # Self-validating (dataloader/pair_descriptor_cache.py's store_is_current() embeds
+    # Self-validating (dataloader/pair_descriptor_cache_reader.py's store_is_current() embeds
     # every source file's size/mtime_ns in the JSON itself and checks it fresh on every
     # load), so shipping a copy built on this machine is never a wrong answer on the
     # far side -- at worst its recorded sources don't match the cluster's copies (a

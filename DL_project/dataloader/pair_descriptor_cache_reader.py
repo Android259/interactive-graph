@@ -13,7 +13,7 @@
                                     load_pair_value_cache below).
 
 Builders (data/build_pair_descriptor_cache.py calls them, before a grid launches) live in
-dataloader/cache_builders/pair_descriptor_cache.py; this module is the read side plus the
+dataloader/cache_builders/pair_descriptor_cache_writer.py; this module is the read side plus the
 code-fingerprinting that decides what either builder may still serve from an existing
 table and what it must recompute.
 
@@ -33,7 +33,7 @@ Every measure this module knows how to compute is ALWAYS included -- no flag gat
 them out of a build. Three of them (radius_of_gyration/asphericity/molecular_volume,
 LIPID_SHAPE_DESCRIPTOR_NAMES) are genuinely expensive (a 10-conformer ETKDG+MMFF embed per
 candidate, not microseconds like the rest), so the values are filled through a process
-pool (dataloader/cache_builders/pair_descriptor_cache.py's _parallel_measures) -- ~1300
+pool (dataloader/cache_builders/pair_descriptor_cache_writer.py's _parallel_measures) -- ~1300
 unique candidates on a 24-core box still takes real minutes the first time any build runs,
 but it is paid exactly once per (isomeric, code version, table version), never per run and
 never per job.
@@ -55,11 +55,11 @@ different reads need canonicalisation skipped entirely to pay off:
 
 A raw string absent from raw_to_canonical (a candidate added to the table after the
 cache was built) falls back to computing it directly, same as a store_is_current() miss
-falls back to the source pickle in lipid_embedding_store.py -- the table is an
+falls back to the source pickle in lipid_embedding_store_reader.py -- the table is an
 accelerator, never a second source of truth a stale run could disagree with the current
 data from.
 
-The manifest guards staleness the same way protein_graph_tensor_cache.py does: the source
+The manifest guards staleness the same way protein_graph_tensor_cache_reader.py does: the source
 interaction table's size and nanosecond mtime must still match what the table was built
 from, checked freshly on every load (cheap -- a couple of stat() calls, not a hash of file
 contents).
@@ -229,7 +229,7 @@ def store_is_current(root_dir, isomeric):
 # Not built for speed -- Dataloader.py's own inline pair_descriptor_value() calls over
 # already-loaded numpy arrays cost about the same microseconds this table would save.
 # Built so this is the one place the finished, genuinely joint lipid x protein numbers
-# live on disk at all -- see dataloader/cache_builders/pair_descriptor_cache.py's
+# live on disk at all -- see dataloader/cache_builders/pair_descriptor_cache_writer.py's
 # build_pair_value_cache, the writer.
 
 

@@ -4,8 +4,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-import dataloader.pair_descriptor_cache as pair_descriptor_cache
-from dataloader.pair_descriptor_cache import (
+import dataloader.pair_descriptor_cache_reader as pair_descriptor_cache
+from dataloader.pair_descriptor_cache_reader import (
     lipid_descriptors_csv_path,
     lipid_descriptors_manifest_path,
     load_pair_descriptor_cache,
@@ -15,7 +15,7 @@ from dataloader.pair_descriptor_cache import (
     pair_value_cache_is_current,
     store_is_current,
 )
-from dataloader.cache_builders.pair_descriptor_cache import (
+from dataloader.cache_builders.pair_descriptor_cache_writer import (
     _compute_one,
     _previous_cache_values,
     build_pair_descriptor_cache,
@@ -85,7 +85,7 @@ def clean_pair_value_cache_files():
 
 @pytest.fixture
 def csv_path(fixture_csv):
-    """A source CSV under data/ -- _source_record (protein_graph_tensor_cache.py,
+    """A source CSV under data/ -- _source_record (protein_graph_tensor_cache_writer.py,
     reused by build_pair_descriptor_cache) stores every source path relative to
     root_dir, which only works for a source actually inside it, same as the real
     interaction table (dataloader/dataset_source.interaction_csv_path) always is."""
@@ -170,7 +170,7 @@ def test_store_goes_stale_when_source_csv_changes(fixture_csv, csv_path, clean_c
     assert store_is_current(DATA_DIR, isomeric=False) is True
 
     # A later mtime AND a different size on the exact source file the manifest
-    # recorded, same discipline protein_graph_tensor_cache's own staleness check uses.
+    # recorded, same discipline protein_graph_tensor_cache_reader's own staleness check uses.
     with open(csv_path, "a") as handle:
         handle.write("\n")
     # A rebuild is still due: a regenerated table may name candidates the cache has
@@ -303,7 +303,7 @@ def test_build_pair_descriptor_cache_seeds_expensive_measures_across_a_code_chan
     # dataloader.pair_descriptors itself, the module _compute_one's own _MEASURES
     # name is bound from at import time in dataloader/cache_builders/pair_descriptor_
     # cache.py -- patching there is what that module actually reads.
-    import dataloader.cache_builders.pair_descriptor_cache as cache_builder
+    import dataloader.cache_builders.pair_descriptor_cache_writer as cache_builder
 
     original_measures = dict(cache_builder._MEASURES)
     monkeypatch.setattr(

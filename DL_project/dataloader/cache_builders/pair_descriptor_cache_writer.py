@@ -1,7 +1,7 @@
 """Build data/lipid_descriptors.csv (candidate-level lipid descriptor values) and
 data/pair_descriptors.csv (candidate x protein PAIR_DESCRIPTOR_NAMES values).
 
-See dataloader/pair_descriptor_cache.py for the read path, the table/manifest layout,
+See dataloader/pair_descriptor_cache_reader.py for the read path, the table/manifest layout,
 and the per-measure fingerprinting/staleness machinery this builder's output is
 validated against.
 """
@@ -13,8 +13,8 @@ from pathlib import Path
 import pandas as pd
 from rdkit import Chem
 
-from dataloader.cache_builders.protein_graph_tensor_cache import _source_record
-from dataloader.pair_descriptor_cache import (
+from dataloader.cache_builders.protein_graph_tensor_cache_writer import _source_record
+from dataloader.pair_descriptor_cache_reader import (
     CACHE_FORMAT_VERSION,
     lipid_descriptors_csv_path,
     lipid_descriptors_manifest_path,
@@ -138,7 +138,7 @@ def _previous_cache_values(root_dir, isomeric):
     if not path.exists():
         return {}
     try:
-        # float_precision="round_trip": see dataloader/pair_descriptor_cache.py's
+        # float_precision="round_trip": see dataloader/pair_descriptor_cache_reader.py's
         # load_pair_descriptor_cache for why this flag is not optional here -- without
         # it, a seeded value already in the table can read back one ULP off from what
         # was actually written.
@@ -174,8 +174,8 @@ def build_pair_descriptor_cache(
 
     Rebuilds unconditionally -- the caller (data/build_pair_descriptor_cache.py)
     decides whether that is needed, same division of responsibility as
-    cache_builders.lipid_embedding_store.build_lipid_embedding_store. Every
-    _MEASURES entry is computed by DEFAULT (see dataloader/pair_descriptor_cache.py's
+    cache_builders.lipid_embedding_store_writer.build_lipid_embedding_store. Every
+    _MEASURES entry is computed by DEFAULT (see dataloader/pair_descriptor_cache_reader.py's
     module docstring) -- there is no lipid_shape flag here anymore; an ordinary run
     (skip_measures=()) that never reads radius_of_gyration/asphericity/molecular_volume
     still gets a table that carries them, because the NEXT run that does must never

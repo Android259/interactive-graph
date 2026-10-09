@@ -20,11 +20,11 @@ this module reads the name lists, never the reverse.
 Two readers of this module beyond the CLI below, both already live before any table
 exists: dataloader/Dataloader.py._compute_pair_descriptors computes values directly when
 a cache is missing (the documented fallback -- a run never fails for want of a prebuilt
-table), and dataloader/cache_builders/pair_descriptor_cache.py calls the same functions to
+table), and dataloader/cache_builders/pair_descriptor_cache_writer.py calls the same functions to
 fill a whole table at once.
 
 Editing a formula here does NOT invalidate a stored column: the tables hold numbers, and
-dataloader/pair_descriptor_cache.py serves any column that holds one. So a changed formula
+dataloader/pair_descriptor_cache_reader.py serves any column that holds one. So a changed formula
 and the numbers already on disk will disagree until the column is recomputed on purpose --
 `compute_descriptors.py NAME` below is how, and doing it is the editor's job, not the cache's.
 
@@ -509,7 +509,7 @@ def _protein_descriptor_table_manifest_path(data_dir):
 
 
 def _protein_descriptor_table_sources(data_dir, protein_names):
-    from dataloader.cache_builders.protein_graph_tensor_cache import _source_record
+    from dataloader.cache_builders.protein_graph_tensor_cache_writer import _source_record
 
     root_dir = Path(data_dir).resolve()
     paths = []
@@ -535,7 +535,7 @@ def protein_descriptor_table(data_dir, force=False):
     Dataloader instance (one per (group, seed) job) used to recompute the whole table
     from scratch: ~10ms/protein once imports are warm, ~4s cold on the very first call
     in a process, paid independently by every one of a grid's N processes with nothing
-    shared between them (measured; unlike dataloader/pair_descriptor_cache.py, which at
+    shared between them (measured; unlike dataloader/pair_descriptor_cache_reader.py, which at
     least amortises the lipid side, this had no persistence at all).
 
     Self-persisting rather than a build-it-first-or-fall-back-slow cache: the first
@@ -546,7 +546,7 @@ def protein_descriptor_table(data_dir, force=False):
     that, in any process, reads the CSV back in milliseconds -- no separate prep
     script, no args-file flag to detect, nothing to remember to run before a grid
     launches. Still keyed on each source file's size/mtime (same discipline as
-    protein_graph_tensor_cache.py) so a rebuilt data/graphs/<protein>/ is picked up
+    protein_graph_tensor_cache_reader.py) so a rebuilt data/graphs/<protein>/ is picked up
     rather than served stale.
 
     The two derived names (aromatic_share_coarse/polar_share_coarse) are computed
@@ -556,7 +556,7 @@ def protein_descriptor_table(data_dir, force=False):
     """
     import pandas as pd
 
-    from dataloader.protein_graph_tensor_cache import _pocket_tensor
+    from dataloader.protein_graph_tensor_cache_reader import _pocket_tensor
 
     graphs_dir = os.path.join(data_dir, "graphs")
     protein_names = sorted(
@@ -1192,7 +1192,7 @@ LIPID_SHAPE_DESCRIPTOR_NAMES = (
 )
 
 # The five _MEASURES entries whose per-candidate cost is a real 10-conformer
-# ETKDG+MMFF embed, not microseconds -- dataloader/pair_descriptor_cache.py's build
+# ETKDG+MMFF embed, not microseconds -- dataloader/pair_descriptor_cache_reader.py's build
 # routes exactly these through its process pool (_parallel_measures) rather than
 # computing every measure serially; npr1/npr2 share the SAME cached ensemble
 # radius_of_gyration/asphericity/molecular_volume already pay for, so adding them
@@ -1347,7 +1347,7 @@ def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
     this function's per-row list a different length than chain's, and
     Dataloader._ragged_tensor stacks columns on the assumption they agree.
 
-    `cache`, when given, is a dataloader/pair_descriptor_cache.py load result: a raw
+    `cache`, when given, is a dataloader/pair_descriptor_cache_reader.py load result: a raw
     candidate present in its "raw_to_canonical" skips the canonicalising parse, and a
     canonical key present in its "values" skips `fn`. Same fallback discipline as
     chain_lengths_by_row -- an entry the cache has never seen is computed here exactly
@@ -1387,7 +1387,7 @@ def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
                     # latter's default is evaluated eagerly regardless of the lookup,
                     # which would call fn (an ETKDG embed, for the three lipid_shape
                     # measures) on every candidate even on a cache hit. A cache built
-                    # with lipid_shape=False (dataloader/pair_descriptor_cache.py)
+                    # with lipid_shape=False (dataloader/pair_descriptor_cache_reader.py)
                     # carries every OTHER measure for a SMILES it has seen, just not
                     # those three, so this still must fall back per-measure rather than
                     # KeyError.
@@ -1646,7 +1646,7 @@ PROTEIN_SIDE_NAMES = tuple(
     + POCKET_CHEMISTRY_DESCRIPTOR_NAMES
 )
 # "chain" is longest_acyl_chain, which _MEASURES does not carry (the table writes it as
-# its own column) -- same exception dataloader/pair_descriptor_cache.py's
+# its own column) -- same exception dataloader/pair_descriptor_cache_reader.py's
 # _measure_functions makes, and for the same reason.
 LIPID_SIDE_NAMES = ("chain",) + tuple(_MEASURES)
 
@@ -1699,7 +1699,7 @@ def compute_lipid_descriptor(data_dir, name, isomeric=False):
     needs, and duplicating it here would be a second, divergent builder.
     """
     from dataloader.dataset_source import interaction_csv_path
-    from dataloader.pair_descriptor_cache import lipid_descriptors_csv_path
+    from dataloader.pair_descriptor_cache_reader import lipid_descriptors_csv_path
 
     table_path = lipid_descriptors_csv_path(data_dir)
     if not table_path.exists():
@@ -1751,7 +1751,7 @@ def compute_pair_descriptor(data_dir, name, isomeric=False):
     Cheap arithmetic, never RDKit: both inputs are read from data/lipid_descriptors.csv
     and data/protein_descriptors.csv, the same division build_pair_value_cache uses.
     """
-    from dataloader.pair_descriptor_cache import (
+    from dataloader.pair_descriptor_cache_reader import (
         load_pair_descriptor_cache,
         pair_descriptors_csv_path,
     )
@@ -1760,7 +1760,7 @@ def compute_pair_descriptor(data_dir, name, isomeric=False):
     if not table_path.exists():
         raise SystemExit(
             f"{table_path} does not exist yet -- build it once with "
-            "`dataloader.cache_builders.pair_descriptor_cache.build_pair_value_cache` "
+            "`dataloader.cache_builders.pair_descriptor_cache_writer.build_pair_value_cache` "
             "before writing one column"
         )
     lipid_cache = load_pair_descriptor_cache(Path(data_dir).resolve(), isomeric)

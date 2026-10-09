@@ -1,6 +1,6 @@
 """Builder for the lipid-embedding memory-mapped store.
 
-dataloader/lipid_embedding_store.py holds the reader and the shared path/format logic,
+dataloader/lipid_embedding_store_reader.py holds the reader and the shared path/format logic,
 and explains why the mmap'd archive computes exactly what the source pickle computes.
 """
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import torch
 
-from dataloader.lipid_embedding_store import STORE_FORMAT_VERSION, store_paths
+from dataloader.lipid_embedding_store_reader import STORE_FORMAT_VERSION, store_paths
 
 
 def _source_record(path):

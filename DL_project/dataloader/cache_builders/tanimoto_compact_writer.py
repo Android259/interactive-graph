@@ -1,7 +1,8 @@
 """Builder for the compact Tanimoto artifacts.
 
-dataloader/tanimoto_compact.py holds the reader, the shared path/format logic, and the
-explanation of why this compact form is byte-identical to the retired full matrix.
+dataloader/tanimoto_compact_reader.py holds the reader, the shared path/format logic,
+and the explanation of why this compact form is byte-identical to the retired full
+matrix.
 """
 
 import json
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from dataloader.tanimoto_compact import COMPACT_FORMAT_VERSION, compact_paths
+from dataloader.tanimoto_compact_reader import COMPACT_FORMAT_VERSION, compact_paths
 
 
 def write_compact(

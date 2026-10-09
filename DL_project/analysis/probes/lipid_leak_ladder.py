@@ -68,7 +68,7 @@ from analysis.coldsplit_geometry import isolation  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.lipid_classes import lipid_class_series  # noqa: E402
 from dataloader.sampler import LIPID_COLDSPLIT_SETS  # noqa: E402
-from dataloader.tanimoto_compact import load_compact  # noqa: E402
+from dataloader.tanimoto_compact_reader import load_compact  # noqa: E402
 
 MINIMUM_BLOCK_POSITIVES = 20
 

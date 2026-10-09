@@ -48,7 +48,7 @@ from dataloader.sampler import (  # noqa: E402
     COLDSPLIT_MINIMUM_TEST_POSITIVES,
     LIPID_COLDSPLIT_SETS,
 )
-from dataloader.tanimoto_compact import load_compact  # noqa: E402
+from dataloader.tanimoto_compact_reader import load_compact  # noqa: E402
 
 
 def cluster_structures(compact, count, method):

@@ -86,7 +86,7 @@ from dataloader.lipid_classes import lipid_class_series  # noqa: E402
 from analysis.coldsplit_geometry import (  # noqa: E402
     isolation_from_structures,
 )
-from dataloader.tanimoto_compact import load_compact  # noqa: E402
+from dataloader.tanimoto_compact_reader import load_compact  # noqa: E402
 
 
 class Units:

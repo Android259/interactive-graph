@@ -550,7 +550,7 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
     fi
 
     # Same idea, for --pair_descriptors' per-candidate/per-protein RDKit values
-    # (dataloader/pair_descriptor_cache.py). Never fatal, same as above: a job that
+    # (dataloader/pair_descriptor_cache_reader.py). Never fatal, same as above: a job that
     # cannot read it just computes the values itself, slower but not wrong.
     #
     # Unlike the embedding store this cache is a few hundred KB, so
