@@ -1,3 +1,5 @@
+# LEGACY: ran on a version that had --lipid_head_descriptors; the flag was removed (descriptor heads now come from --descriptor_heads),
+# so this file no longer parses. Kept as the record of what ran; its results stay in metrics_summary.csv.
 # The two-branch lipid split (files/results/lipid_coldsplit_architecture_direction.md section
 # 7q), over ..._advprot.
 #

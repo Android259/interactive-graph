@@ -18,5 +18,4 @@
 
 --protein_edge_attention
 --lipid_graph_isomers
---descriptor_lipid_shape
 

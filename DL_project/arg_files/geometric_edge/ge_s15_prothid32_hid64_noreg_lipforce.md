@@ -1,3 +1,5 @@
+# LEGACY: ran on a version that had --lipid_head_descriptors; the flag was removed (descriptor heads now come from --descriptor_heads),
+# so this file no longer parses. Kept as the record of what ran; its results stay in metrics_summary.csv.
 # = ge_s15_prothid32_hid64_noreg + те же две величины, но ТОЛЬКО через произведение
 # с пулированным белком (--lipid_head_descriptors -> ForcedInteraction, skip-пути нет,
 # read_configuration.py:1566-1584). Сильная форма "подтолкнуть к взаимодействию": эти

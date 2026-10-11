@@ -7,9 +7,8 @@
 --weight_decay=0.01
 --pool_type="add"
 
---descriptors
 --descriptors_head
---descriptor_names=pocket_extent,pocket_elongation,pocket_flatness,depth_q10,buriedness_q50,aromatic_share,hydropathy_core,hydropathy_rim
+--descriptor_heads=pocket_extent,pocket_elongation,pocket_flatness,depth_q10,buriedness_q50,aromatic_share,hydropathy_core,hydropathy_rim
 
 --save_model_in_dynamics
 

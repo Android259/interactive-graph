@@ -10,6 +10,33 @@
 Строка с отступом сразу после `--flag=...` продолжает длинное значение
 (`scripts/lib/args_file_lib.sh`).
 
+## Дескрипторные флаги
+
+Дескрипторы из каталога (`dataloader/descriptors.py`) задаются этими флагами, все читают
+один тензор `descriptor_catalog_input`:
+
+| флаг | куда идут дескрипторы |
+|---|---|
+| `--descriptor_heads=a,b/c,d` | головы `NamedDescriptorHead`, по одной на сегмент между `/` (не `\|` и не `;` — их шелл читает как синтаксис, и без кавычек они бы не доехали). Один сегмент — одна голова, два — две, их векторы сводятся одним `pool_type`. Сама по себе добавляет вектор голов к башням модели; с `--descriptors_head` строится только голова и маленький классификатор |
+| `--descriptor_mlp` | то же, но один сегмент читает обычный MLP (`DescriptorMLPHead`) |
+| `--protein_descriptors=` / `--lipid_descriptors=` | значения приклеиваются к каждому узлу белкового / липидного графа |
+| `--deepclip_protein_gate=` | карман, который взвешивает профиль DeepCLIP |
+
+Токен — имя из каталога, с огрублением при необходимости: `имя_coarse=N` (N равных бинов) или
+`имя_coarse=quantiles:N` (N квантильных бинов по train).
+
+### Конфиги с пометкой `# LEGACY`
+
+Первая строка файла `# LEGACY: …` значит, что запуск шёл на версии кода, где ещё были флаги
+фиксированной дескрипторной головы (`--descriptors` без списка имён, `--descriptor_pocket_shares_*`,
+`--no_descriptor_*`, `--descriptor_flatten`, `--lipid_head_descriptors`, `--*_pair_priors`). Этих флагов
+больше нет, файл не разбирается и не запускается; он остаётся записью того, что считалось, а
+результаты лежат в `results/tables/metrics_summary.csv` (колонки старых флагов там сохранены).
+Фиксированную голову нельзя переписать на `--descriptor_heads`: она читала `aromatic_share` и
+`polar_share` сырыми, а каталог стандартизует их по train, и `occupancy` в каталоге считается
+иначе. Исключение — `descriptors_lipid_only`: четыре липидных токена совпали с каталогом
+побитово, поэтому он переписан.
+
 ## Раскладка
 
 Та же подпапка — уровень во всех папках результатов: `run/<семейство>/<label>/`,
@@ -20,10 +47,9 @@
 | подпапка | что внутри | основные флаги |
 |---|---|---|
 | `geometric_edge/` | `geometric_edge_*`, `ge_*`: белковый граф с геометрией рёбер + bilinear fusion | `--protein_edge_mlp` / `--protein_edge_attention`, `--bilinear_fusion` |
-| `mlp/` | `mlp_*`: MLP по каталогу дескрипторов, без графов и эмбеддингов | `--descriptors --descriptor_mlp --descriptor_names=...` |
-| `descriptors/` | `descriptors_*`, `dh_*`: дескрипторные головы | `--descriptors_head`, `--descriptors` |
+| `mlp/` | `mlp_*`: MLP по каталогу дескрипторов, без графов и эмбеддингов | `--descriptor_mlp --descriptor_heads=...` |
+| `descriptors/` | `descriptors_*`, `dh_*`: дескрипторные головы | `--descriptors_head`, `--descriptor_heads=...` |
 | `deepclip/` | `deepclip_*`: CNN+LSTM по токенам SMILES липида | `--deepclip --lipid_smiles_tokens` |
-| `thematical/` | `thematical_*`: раздельные геометрический/химический пути | `--thematical_paths` |
 | `structural_pretrain/` | предобучение белкового энкодера | `--structural_pretrain` |
 | `bbp/` | исходная attention-архитектура (GAT + cross-attention) | `--balanced_batches --balanced_proteins` |
 | `archive/` | июльские переборы гиперпараметров первой модели (lr, wd, dropout, h16/h32, `no_post_sa`, `nps3mlp`, …) | — |
@@ -85,7 +111,7 @@
 | `esmif1` | `--esmif1_replace_esm3` |
 | `esm3` | эмбеддинги ESM3 остаются включены (без `--no_protein_embeddings`) |
 | `doubleattn` | `--double_attention` |
-| `3rd_head` | `--descriptors` поверх attention-модели (третий вход головы) |
+| `3rd_head` | `--descriptor_heads` без `--descriptors_head`: головы поверх attention-модели (третий вход) |
 | `ffngate` | `--sparsity_gate_ffn` (структурная разреженность) |
 
 ### Размеры и регуляризация
@@ -123,7 +149,7 @@
 ### Наборы дескрипторов
 
 Числа в именах наборов — это сколько дескрипторов в наборе. Точный список задан флагом
-`--protein_descriptors=` / `--descriptor_names=` внутри файла, а описание каждого
+`--protein_descriptors=` / `--descriptor_heads=` внутри файла, а описание каждого
 дескриптора — в `files/reference/descriptor_catalog.md`.
 
 | кусок | смысл |
@@ -139,7 +165,7 @@
 | `all70`, `dNN` | все 70 дескрипторов / первые NN по рангу |
 | `keep5`, `all6`, `pair3`, `pocket3` | 5 отобранных по абляции; `+ 3 парных + 3 карманных`; только 3 парных / 3 карманных |
 | `drop_<имя>` | абляция: этот дескриптор убран |
-| `GB` | `--good_descriptors` / `--bad_descriptors` |
+| `GB` | две головы: `--descriptor_heads=good/bad` |
 | `rim`, `core` | дескриптор посчитан на краю / в ядре кармана |
 | `ev14`, `ev28`, `ev56`, `q10`, `q50` | окрестности 14/28/56 Å и квантили 10%/50% (имена дескрипторов) |
 

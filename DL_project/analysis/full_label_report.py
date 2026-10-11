@@ -58,8 +58,8 @@ from analysis.baselines.null_model import (  # noqa: E402
 from interaction_increment import increment_table, print_increment_report  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 
-# Fallback --features when --label's own arg file sets neither --good_descriptors nor
-# --bad_descriptors (most labels, historically): the four lipid-only tokens, unchanged
+# Fallback --features when --label's own arg file sets no --descriptor_heads
+# (most labels, historically): the four lipid-only tokens, unchanged
 # from this file's old hardcoded default -- see checkpoint_scores.label_descriptor_features.
 LIPID_ONLY_FALLBACK = "chain,unsaturation,hbond,heavy"
 
@@ -198,10 +198,10 @@ def main():
     parser.add_argument(
         "--features", default=None,
         help=(
-            f'Default: --good_descriptors/--bad_descriptors read off --label\'s own '
+            f'Default: --descriptor_heads read off --label\'s own '
             f"args file (see label_descriptor_features), so the null model runs on "
             f"exactly the descriptor set the network was trained to see -- falling "
-            f"back to \"{LIPID_ONLY_FALLBACK}\" when the label sets neither flag. "
+            f"back to \"{LIPID_ONLY_FALLBACK}\" when the label sets none. "
             f'Pass "{TANIMOTO}" for full-structure Morgan-fingerprint similarity (the '
             "original null model), or any comma-separated descriptor-name list -- "
             "lipid-only, protein-only, pair, or any combination -- see null_model.py "

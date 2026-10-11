@@ -2,7 +2,7 @@
 """Mean degree of this project's lipid graphs -- the value --lipid_edge_mlp_lambda wants.
 
 EdgeMLPConv (architecture/edge_geometric_conv.py, Dauparas et al. ProteinMPNN Sec 3.4.2)
-aggregates a node's incoming messages as `sum(m_ij) / lambda` with lambda a CONSTANT, not
+aggregates a node's incoming messages as `sum(m_ij) / lambda` with lambda CONSTANT, not
 the node's actual degree. The paper's experimentally-found 30 is the mean degree of a
 protein contact graph, which is what makes that division approximately a mean there.
 

@@ -55,6 +55,21 @@ train_dataset, valid_dataset, test_dataset = PLIDataset(root_dir, csv, seed,
   loaded artifacts, each pointing at a different `csv` slice (`csvtrain`,
   `csvalidate`, `csvtest`).
 - `sampler.py` owns interaction-pool sampling and `ClassBalancedBatchSampler`.
+- `Dataloader.py` holds both halves of `PLIDataset` in one file: one-time construction
+  (`__init__`, sampling/splitting, descriptor computation, cache warm-up/release, the
+  `get_*_weights()` accessors) followed by everything called on every `get()`, every
+  epoch (`__iter__`, `set_epoch`, `_subsample_residues`, `get`, `candidate_count`,
+  `sample_for_candidate`, `finish_sample`, `_expand_candidate_rows`, `len`) -- marked off
+  by a comment in the file. `dataloader/preassembled_loader.py` depends only on the
+  per-sample half (it replays `sample_for_candidate()`'s draw-then-assemble logic and
+  nothing from construction). Under `--eval_average_candidates`, `_expand_candidate_rows`
+  is the input-side half of one feature; `training/candidate_averaging.py` is the
+  output-side half that collapses the per-candidate predictions back into one per pair
+  after the forward pass.
+- `ragged_tensors.py` holds the per-row-tuple <-> flat-tensor-plus-offsets helpers
+  (`candidate_column`, `_ragged_tensor`, `_candidate_position`, `ragged_rows`) shared by
+  `Dataloader.py` and `frozen_prior.py` -- `frozen_prior.py` may not import them back
+  from `Dataloader.py` without a cycle.
 - `graphs_builders/lipid_graph_builder.py` owns the legacy SMILES-embedding path.
 - `graphs_builders/lipid_isomer_graph_builder.py` owns the atom/bond graph path selected
   by `lipid_graph_isomers=True`.
@@ -85,7 +100,7 @@ is decided in `PLIDataset.__init__`, most specific first:
   The two cannot both be met — matching per (`LTPProtein`, class) starves the cells
   (376 negatives available against 756 positives) and ends up more skewed than the
   coarser samplers. Lipid class comes from `lipid_class_series`, the head group of
-  `FullIdentityOfLipid` (36 classes over 312 lipids); the column is present in both
+  `FullIdentityOfLipid`; the column is present in both
   the isomer and non-isomer CSVs.
 - Per-family balance leaves individual proteins skewed, because the family draws
   from one shared negative pool — a positive-rich protein keeps mostly positives.
@@ -225,12 +240,12 @@ by the three `copy.copy` clones, now serve what only depends on run-fixed inputs
   batches, order and drawn candidates are those of the DataLoader.
   `get()` = draw + `sample_for_candidate(idx, candidate)`; keep that split if either
   changes. Verified bit-identical end to end with `analysis/probes/compare_run_outputs.py`.
-- `--descriptors_head --descriptor_names` (`descriptors.descriptor_catalog_only`)
+- `--descriptors_head --descriptor_heads` (`descriptors.descriptor_catalog_only`)
   takes the same path with less still: no protein graph, no lipid encoding (empty lipid
   `Data`, no MoLFormer table or protein tensor cache loaded) -- the model reads only
   `descriptor_catalog_input`. Train is preassembled under the 1740-row cap too when
   `num_workers=0`. Bit-identical on `dh_s15_mbw_hid32` (2 epochs), ~2x per epoch.
-  `--descriptor_mlp --descriptor_names` (architecture/descriptor_mlp_head.py, the plain-
+  `--descriptor_mlp --descriptor_heads` (architecture/descriptor_mlp_head.py, the plain-
   MLP sibling of `--descriptors_head`) reads `descriptor_catalog_input` through the same
   `descriptor_catalog_only` predicate, so it gets the identical lean-loading/preassembly
   path -- nothing here is specific to which head reads the tensor.

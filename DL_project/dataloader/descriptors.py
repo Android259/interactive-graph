@@ -1,36 +1,18 @@
-"""Cheap, docking-free descriptors for --descriptors (architecture/descriptor_head.py).
+"""The descriptor catalog: every name a --descriptor_heads / --protein_descriptors /
+--lipid_descriptors / --deepclip_protein_gate token may spell, and how a request for them
+is resolved into the one column order of Dataloader.py's descriptor_catalog_input.
 
 Motivated by Lipovsky et al., "Systematic analyses of lipid mobilization by human lipid
 transfer proteins" (Nature 2025, s41586-025-10040-y), whose measured LTP-lipid complexes
-this project's interaction table draws on. That paper reports acyl-chain-length and
-unsaturation preferences per LTP, aromatic (Phe) clusters contacting acyl double bonds in
-MD-simulated poses, headgroup hydrogen bonding, and a pocket-occupancy ("buffer zone")
-ratio between bound-ligand and cavity volume.
-
-Two of those need a bound POSE (which residue sits near which double bond, which residue
-H-bonds which headgroup atom) -- this project has no docking pipeline and the paper's own
-solved poses cover only the ~110 purified complexes, not the ~9905-row candidate grid this
-model scores. Building them here would mean fabricating a pose for every candidate, which
-is worse than not having the feature. What IS computed here, per row, from 2D structure
-alone (same discipline as pocket_lipid_compatibility.longest_acyl_chain -- no 3D
-embedding, which is slow and fails unpredictably across ~10k rows of stereo-ambiguous
-candidates):
-
-    unsaturation_count(l)  : non-aromatic C=C bonds -- the paper's chain-saturation axis.
-    hbond_capacity(l)      : RDKit NumHDonors + NumHAcceptors -- a headgroup H-bonding
-                              PROXY, not the pose-specific pattern the paper measured.
-    heavy_atom_count(l)    : a cheap, robust size proxy standing in for the paper's
-                              bound-ligand volume (no 3D embedding).
-
-architecture/descriptor_head.py combines these with the pocket's own aromatic_share
-and (1 - apolar_sasa_share) (POCKET_DESCRIPTOR_NAMES, already scale-free) as multiplicative
-pair terms -- proxies for "aromatic residues near double bonds" and "polar pocket surface
-meets an H-bonding headgroup" that need no pose because they use pocket-wide chemistry
-shares instead of a specific residue-double-bond contact. Dataloader.py separately
-builds the occupancy term (heavy_atom_count vs the SAME coarsened pocket_extent
---compatibility_split_input's "clash" term uses) with pocket_lipid_compatibility's own
-coarsen_to_levels, so a held-out protein's raw cavity size still cannot leak through it
-(files/results/compat_input_audit.md).
+this project's interaction table draws on: acyl-chain-length and unsaturation
+preferences, aromatic clusters contacting acyl double bonds, headgroup hydrogen bonding
+and a pocket-occupancy ratio between bound ligand and cavity volume. Two of those need a
+bound POSE, which this project has no docking pipeline to produce and would have to
+fabricate for every candidate of the ~9905-row grid, so the catalog carries only what 2D
+structure and the pocket tables give (same discipline as
+pocket_lipid_compatibility.longest_acyl_chain -- no 3D embedding of stereo-ambiguous
+candidates). The pair terms are multiplicative or difference proxies built from
+pocket-wide chemistry shares instead of a specific residue-double-bond contact.
 """
 import functools
 import os
@@ -46,9 +28,8 @@ from rdkit.Chem import AllChem, Descriptors, rdMolDescriptors
 # PROTEIN_DESCRIPTOR_NAMES from THIS module (see the bottom of protein_graph_builder.py)
 # -- an eager import here would complete the triangle into a circular import.
 
-# The full descriptor catalog analysis/baselines/null_model.py's --features and
-# architecture/descriptor_head.py's token set both draw on, named together in one
-# place.
+# The full descriptor catalog analysis/baselines/null_model.py's --features and every
+# --descriptor_heads token draw on, named together in one place.
 LIPID_DESCRIPTOR_NAMES = (
     "chain", "unsaturation", "hbond", "heavy", "tail_count", "npr1", "npr2",
     "logp", "tpsa", "molar_refractivity", "rotatable_bond_count",
@@ -68,7 +49,7 @@ LIPID_DESCRIPTOR_NAMES = (
     # waited on an eta^2-against-head-group-class measurement first. What was
     # actually checked here is coverage, not eta^2 -- at the CANDIDATE level (a raw
     # SmileFragment/SmileGlobal entry) only ~30% resolve, but chemistry_prior.
-    # _lipid_descriptor_table (this name's only consumer through --descriptor_names/
+    # _lipid_descriptor_table (this name's only consumer through --descriptor_heads/
     # feature_similarity) averages over every resolved candidate PER SPECIES the
     # same way it does for every other name here, and at that grain coverage is
     # 100% (283/283 distinct FullIdentityOfLipid species, positive and negative rows
@@ -116,8 +97,7 @@ MIN_PAIR_DESCRIPTOR_NAMES = ("aromatic_contact_min", "hbond_match_min")
 
 # One descriptor of the binding cavity per protein, in this order. Aggregated over the
 # pocket residues of coarse_graph_nodes.csv plus the pocket atom coordinates of
-# pocketness.pdb, by dataloader/graphs_builders/protein_graph_builder.py's pocket_descriptor() --
-# ModelConfig.pocket_descriptor_count must equal len(PROTEIN_DESCRIPTOR_NAMES).
+# pocketness.pdb, by dataloader/graphs_builders/protein_graph_builder.py's pocket_descriptor().
 # Documented in files/reference/pocket_shape_descriptors.md, which is to be updated in the same
 # commit as any change here. Defined here (not in protein_graph_builder.py, which
 # imports it back as POCKET_DESCRIPTOR_NAMES) so the whole descriptor catalog --
@@ -163,10 +143,8 @@ PROTEIN_DESCRIPTOR_NAMES = (
     "hydropathy_core",
     "hydropathy_rim",
     # Appended, not interleaved -- dataloader/graphs_builders/protein_graph_builder.py's
-    # pocket_descriptor() has the full reasoning (architecture/descriptor_head.py
-    # indexes earlier entries by bare integer literal, so their positions are load-
-    # bearing). Promoted from the research-only catalog by files/pocket_shape_
-    # descriptors.md section 7's eta^2 check.
+    # pocket_descriptor() has the full reasoning. Promoted from the research-only
+    # catalog by files/pocket_shape_descriptors.md section 7's eta^2 check.
     "ev28_q10",
     "aromatic_share_rim",
     # Third promotion, same section 7 catalog: whole-pocket mean hydropathy (unlike
@@ -210,32 +188,18 @@ PROTEIN_DESCRIPTOR_NAMES = (
     "pocket_flatness_lambda_sqrt",
 )
 
-# Not raw pocket_descriptor() output, so not in PROTEIN_DESCRIPTOR_NAMES itself --
-# these are exactly what architecture/descriptor_head.py's DescriptorHead
-# actually reads, under --descriptors alone (polar_share) or with
-# --descriptor_pocket_shares_coarse on top (the two _coarse names):
-#   polar_share            : 1 - apolar_sasa_share. DescriptorHead's own token
-#                             name for the plain (uncoarsened) pocket-shares pair
-#                             (aromatic_share needs no rename -- it already matches
-#                             its raw PROTEIN_DESCRIPTOR_NAMES entry).
+# Not raw pocket_descriptor() output, so not in PROTEIN_DESCRIPTOR_NAMES itself:
+#   polar_share            : 1 - apolar_sasa_share.
 #   aromatic_share_coarse,
 #   polar_share_coarse     : aromatic_share/polar_share banded into one of 3 fixed
-#                             (not train-fit) thirds -- see coarse_share below, which
-#                             duplicates _SHARE_BAND_EDGES/_SHARE_BAND_CENTRES as
-#                             plain floats rather than importing them (that module
-#                             pulls in torch; this one -- the descriptor catalog --
-#                             should not depend on architecture/). Verified against
-#                             torch.bucketize's own output at both edges and interior
-#                             points.
+#                             (not train-fit) thirds. Kept for analysis/baselines/
+#                             null_model.py's own --features catalog; --descriptor_heads
+#                             tokens use the <name>_coarse=<spec> syntax below instead.
 PROTEIN_DERIVED_DESCRIPTOR_NAMES = ("polar_share", "aromatic_share_coarse", "polar_share_coarse")
 
 # Pocket CHEMISTRY and CAVITY descriptors. Protein-side and nameable through
-# --descriptor_names/--protein_descriptors like everything in PROTEIN_DESCRIPTOR_NAMES
-# above, but deliberately NOT part of that tuple: its length is
-# ModelConfig.pocket_descriptor_count and its positions are indexed by bare integer
-# literal in architecture/descriptor_head.py, so appending there would change the
-# parameter count -- and therefore the run-directory identity -- of every past run
-# that reads the tensor (ModelConfig.needs_pocket_descriptor). Reached by name only, computed by
+# --descriptor_heads/--protein_descriptors like everything in PROTEIN_DESCRIPTOR_NAMES
+# above, but kept out of that tuple. Computed by
 # dataloader/graphs_builders/protein_graph_builder.py's pocket_chemistry_descriptor() and merged into
 # the per-protein table by dataloader/chemistry_prior.py's protein_descriptor_table,
 # exactly the way PROTEIN_DERIVED_DESCRIPTOR_NAMES already is.
@@ -259,17 +223,15 @@ POCKET_CHEMISTRY_DESCRIPTOR_NAMES = (
     "pocket_free_volume", "pocket_packing_density",
 )
 
-# --two_descriptors_paths' --good_descriptors/--bad_descriptors (training/
-# read_configuration.py, architecture/named_descriptor_head.py): every BASE name a
-# live NamedDescriptorHead can be built from -- either bare, or coarsened via the
-# <name>_coarse=<spec> syntax below (parse_descriptor_token). "extent" is
-# Dataloader's own train-fit-coarsened, leak-safe pocket_extent (the same value
-# DescriptorHead's DATALOADER_TOKENS "extent" already reads); "tail_count" is
+# --descriptor_heads (training/read_configuration.py, architecture/named_descriptor_head.py):
+# every BASE name a live NamedDescriptorHead can be built from -- either bare, or
+# coarsened via the <name>_coarse=<spec> syntax below (parse_descriptor_token). "extent"
+# is Dataloader's own train-fit-coarsened, leak-safe pocket_extent; "tail_count" is
 # acyl_chain_count. Everything else named here is its RAW dataloader/pair_
 # descriptors.py or pocket_descriptor() value -- in particular "pocket_extent"
 # (inside PROTEIN_DESCRIPTOR_NAMES) is the SAME cavity size "extent" coarsens,
-# deliberately left nameable raw too -- see ModelConfig.two_descriptors_paths
-# for why (an explicit, opt-in leak probe, not a vetted-safe default). Distinct from
+# deliberately left nameable raw too (an explicit, opt-in leak probe, not a
+# vetted-safe default). Distinct from
 # PROTEIN_DERIVED_DESCRIPTOR_NAMES (still used by analysis/baselines/null_model.py's own,
 # unrelated --features catalog): "aromatic_share_coarse"/"polar_share_coarse" are
 # NOT in this catalog, only "polar_share" is -- the new <name>_coarse=<spec> syntax
@@ -371,7 +333,7 @@ DEFAULT_COARSE_SPECS = {
 
 
 def parse_descriptor_token(token):
-    """One --good_descriptors/--bad_descriptors comma-separated entry ->
+    """One comma-separated --descriptor_heads entry ->
     (base_name, coarse_spec_or_None), validated against DESCRIPTOR_CATALOG.
 
     A bare `name` (must be in DESCRIPTOR_CATALOG) -> (name, None), read as-is --
@@ -447,9 +409,9 @@ def canonical_descriptor_token(name, spec):
 
 
 def parse_descriptor_list(value):
-    """"--good_descriptors"/"--bad_descriptors" string -> tuple of CANONICAL
-    descriptor tokens (see canonical_descriptor_token), comma-separated input, same
-    convention --features (analysis/baselines/null_model.py) and --excluded_groups use.
+    """Comma-separated string -> tuple of CANONICAL descriptor tokens (see
+    canonical_descriptor_token), same convention --features (analysis/baselines/
+    null_model.py) and --excluded_groups use.
     """
     tokens = []
     for raw in value.split(","):
@@ -461,15 +423,24 @@ def parse_descriptor_list(value):
     return tuple(tokens)
 
 
+def parse_descriptor_heads(value):
+    """--descriptor_heads string -> tuple of heads, each a tuple of canonical tokens.
+
+    Heads are separated by "/" -- not "|" or ";", which a shell reads as syntax and
+    which would need quotes in an arg file. A head that comes out empty is skipped: a
+    wrapped arg-file line (scripts/lib/args_file_lib.sh) is joined with a comma, so
+    "a,b/" + "c,d" reaches here as "a,b/,c,d".
+    """
+    heads = (parse_descriptor_list(part) for part in value.split("/"))
+    return tuple(head for head in heads if head)
+
+
 def resolve_requested_tokens(*raw_lists):
-    """Any number of --good_descriptors/--bad_descriptors/--descriptor_names-style raw
-    strings -> the sorted, deduped union of their canonical tokens -- the SAME
-    deterministic column order dataloader/Dataloader.py's descriptor_catalog_input
-    tensor is stacked in and architecture/named_descriptor_head.py's NamedDescriptorHead
-    instances index into it by. Every caller building the SAME descriptor_catalog_input
-    tensor calls this one function against the SAME raw strings -- two, under
-    --two_descriptors_paths' --good_descriptors/--bad_descriptors pair; one, under
-    --descriptors_head's --descriptor_names -- so they always agree without the
+    """Any number of comma-separated raw strings -> the sorted, deduped union of their
+    canonical tokens -- the SAME deterministic column order dataloader/Dataloader.py's
+    descriptor_catalog_input tensor is stacked in and every head and encoder indexes
+    into it by. Every caller building the SAME descriptor_catalog_input tensor calls
+    this one function against the SAME raw strings, so they always agree without the
     ordering itself needing to be passed between them.
     """
     union = set()
@@ -481,110 +452,49 @@ def resolve_requested_tokens(*raw_lists):
 def descriptor_catalog_only(config):
     """True when descriptor_catalog_input is ALL the model reads of a sample.
 
-    --descriptors_head with --descriptor_names: Final_Layer runs NamedDescriptorHead on
-    that one tensor and returns (architecture/final_layer.py), so the protein graph
+    --descriptors_head with --descriptor_heads: Final_Layer runs the named heads on that
+    one tensor and returns (architecture/final_layer.py), so the protein graph
     (1536-wide ESM3 rows per residue) and the MoLFormer lipid encoding were built,
     collated into every batch and then ignored -- ~26 MB of torch.cat per batch of 16
     against 0.3 kB per sample actually read. Dataloader builds lean samples under this,
     and new_train.py preassembles them exactly as it does for --deepclip.
 
     --descriptor_mlp (architecture/descriptor_mlp_head.py) reads the exact same
-    descriptor_catalog_input tensor by name, through the same --descriptor_names --
-    it is DescriptorMLPHead in place of NamedDescriptorHead, not a different input, so
-    it gets the identical lean-loading/preassembly treatment.
+    tensor by name, through the same --descriptor_heads -- DescriptorMLPHead in place of
+    NamedDescriptorHead, not a different input, so it gets the identical lean-loading/
+    preassembly treatment.
     """
     return bool(
         (
             getattr(config, "descriptors_head", False)
             or getattr(config, "descriptor_mlp", False)
         )
-        and getattr(config, "descriptor_names", "")
+        and getattr(config, "descriptor_heads", "")
     )
 
 
 def full_catalog_order(config):
     """Every raw name-list that feeds the ONE shared descriptor_catalog_input tensor for
     this config, resolved through resolve_requested_tokens to the single deterministic
-    column order every consumer indexes into: --good_descriptors/--bad_descriptors
-    (--two_descriptors_paths), --descriptor_names (usable under --descriptors_head OR
-    --descriptors -- architecture/final_layer.py builds a NamedDescriptorHead instead
-    of DescriptorHead/the fixed head-only descriptor head under either), the two
-    node-broadcast lists --protein_descriptors/--lipid_descriptors (architecture/
-    protein_encoder.py, architecture/lipid_encoder.py), --lipid_head_descriptors
-    (architecture/final_layer.py's forced-interaction channel), --geometric_descriptors/
-    --chemical_descriptors, and --geometric_pair_priors/--chemical_pair_priors
-    (--thematical_paths, architecture/thematic_descriptor_head.py).
-    Every one of those call sites uses THIS function rather than assembling its own tuple,
-    so no destination can end up naming a token none of the others built.
+    column order every consumer indexes into: --descriptor_heads (all its heads), the
+    node-broadcast lists --protein_descriptors/
+    --lipid_descriptors (architecture/protein_encoder.py, architecture/lipid_encoder.py)
+    and --deepclip_protein_gate (architecture/deepclip.py). Every one of those call
+    sites uses THIS function rather than assembling its own tuple, so no destination can
+    end up naming a token none of the others built.
     """
-    named_descriptor_names = (
-        getattr(config, "descriptor_names", "")
-        if getattr(config, "descriptors_head", False) or getattr(config, "descriptors", False)
-        else ""
-    )
     return resolve_requested_tokens(
-        getattr(config, "good_descriptors", ""),
-        getattr(config, "bad_descriptors", ""),
-        named_descriptor_names,
+        getattr(config, "descriptor_heads", "").replace("/", ","),
         getattr(config, "protein_descriptors", ""),
         getattr(config, "lipid_descriptors", ""),
-        getattr(config, "lipid_head_descriptors", ""),
-        getattr(config, "geometric_descriptors", ""),
-        getattr(config, "chemical_descriptors", ""),
-        getattr(config, "geometric_pair_priors", ""),
-        getattr(config, "chemical_pair_priors", ""),
-        # architecture/deepclip.py: extra per-character input channels, and the
-        # pocket vector that weights the binding profile. Listed here for the same
-        # reason every other name-list is -- a destination may only name tokens this
-        # function also builds a column for.
-        getattr(config, "deepclip_lipid_descriptors", ""),
         getattr(config, "deepclip_protein_gate", ""),
     )
 
 
-def split_names_by_side(names):
-    """Canonical descriptor tokens (parse_descriptor_list's output) -> (lipid_names,
-    protein_names), both tuples, preserving `names`' own order within each side.
-
-    --thematical_paths (architecture/thematic_descriptor_head.py) needs this: each of
-    --geometric_descriptors/--chemical_descriptors names a GROUP, and a forced
-    lipid<->protein interaction within that group needs to know which of the group's
-    tokens are lipid-side and which are protein-side. LIPID_DESCRIPTOR_NAMES and
-    PROTEIN_DESCRIPTOR_NAMES + ("extent", "polar_share") are disjoint from each other
-    by construction (DESCRIPTOR_CATALOG concatenates them once each), so every
-    non-pair token lands on exactly one side.
-
-    Raises ValueError for a PAIR_DESCRIPTOR_NAMES entry (occupancy, aromatic_contact,
-    ...) or a <name>_coarse=<spec> token built from one -- those already combine both
-    sides by formula (pair_descriptor_value), so there is no single side of a forced
-    interaction to put them on. A caller that wants a PAIR_DESCRIPTOR_NAMES value
-    belongs in a plain --descriptors/--good_descriptors self-attention head
-    instead, not a --thematical_paths group.
-    """
-    protein_side = (
-        PROTEIN_DESCRIPTOR_NAMES + ("extent", "polar_share")
-        + POCKET_CHEMISTRY_DESCRIPTOR_NAMES
-    )
-    lipid, protein = [], []
-    for token in names:
-        base = token.partition(_COARSE_SUFFIX)[0]
-        if base in LIPID_DESCRIPTOR_NAMES:
-            lipid.append(token)
-        elif base in protein_side:
-            protein.append(token)
-        else:
-            raise ValueError(
-                f"Descriptor {token!r} is a pair descriptor (already combines lipid "
-                "and protein) and has no single side to assign in a --thematical_paths "
-                f"group. Known pair descriptors: {PAIR_DESCRIPTOR_NAMES}"
-            )
-    return tuple(lipid), tuple(protein)
-
-
 def resolve_similarity_feature_names(*raw_lists):
-    """Any number of --good_descriptors/--bad_descriptors/--descriptor_names-style raw
-    strings -> the sorted, deduped union of their BASE names, with any coarse-
-    bucketing spec dropped.
+    """Any number of comma-separated raw strings (a --descriptor_heads value may be
+    passed whole: "/" separates heads like "," separates tokens) -> the sorted, deduped
+    union of their BASE names, with any coarse-bucketing spec dropped.
 
     A different projection of the same raw strings resolve_requested_tokens reads:
     that one keeps the coarse spec (canonical_descriptor_token) because it names the
@@ -597,7 +507,7 @@ def resolve_similarity_feature_names(*raw_lists):
     """
     names = set()
     for value in raw_lists:
-        for raw in value.split(","):
+        for raw in value.replace("/", ",").split(","):
             raw = raw.strip()
             if not raw:
                 continue

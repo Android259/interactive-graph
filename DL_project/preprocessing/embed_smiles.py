@@ -1,4 +1,16 @@
 #! /usr/bin/env python3
+"""Collect every distinct SMILES (non-isomeric candidate list) that needs embedding.
+
+Legacy predecessor of preprocessing/embed_isomeric_smiles.py: reads
+../data/Processed_dataset.csv, takes whichever of SmileGlobal/SmileFragment is
+populated per row (falling back to the other when one is "0"), splits ";"-joined
+candidates, deduplicates, and pickles the resulting list to primary_embedding.pkl
+for a downstream embedding script (e.g. frozen_embedding.py) to consume. Must be run
+from within preprocessing/ (paths are relative).
+
+Usage:
+    python3 embed_smiles.py
+"""
 
 import pandas as pd
 import pickle as pkl

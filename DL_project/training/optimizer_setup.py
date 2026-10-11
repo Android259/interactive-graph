@@ -5,7 +5,6 @@ Which parameters get their own group, and why:
   ConcreteDropout logits           train objective, never weight-decayed
   Final_Layer.bilinear             --bilinear_weight_decay
   DeepCLIP gate                    --deepclip_gate_weight_decay
-  thematic ForcedInteraction       --thematical_interaction_lr (lr multiplier)
   lipid branch                     --lipid_path_handicap (lr scaled per epoch)
 """
 
@@ -13,8 +12,6 @@ import torch
 
 from architecture.mlp_utils import collect_gate_parameters, ConcreteDropout
 
-
-THEMATICAL_INTERACTION_LR_MULTIPLIER = 5.0
 
 
 class OptimizerSetup:
@@ -37,9 +34,9 @@ class OptimizerSetup:
         # the network. Empty list, no-op group, when bilinear_fusion is off.
         # getattr on the MODEL, not just on final_layer: --deepclip builds architecture/
         # deepclip.py alone and has no Final_Layer at all (InteractionClassification.__init__
-        # returns before building one), so this and the thematic lookup below have nothing to
-        # read. Both resolve to None there, which is the same no-op empty optimizer group a
-        # run with bilinear_fusion/thematical_paths off already gets.
+        # returns before building one), so this lookup has nothing to read. It resolves
+        # to None there, which is the same no-op empty optimizer group a run with
+        # bilinear_fusion off already gets.
         final_layer = getattr(model, "final_layer", None)
         bilinear_module = getattr(final_layer, "bilinear", None)
         bilinear_params = list(bilinear_module.parameters()) if bilinear_module is not None else []
@@ -54,21 +51,6 @@ class OptimizerSetup:
             list(deepclip_gate_module.parameters()) if deepclip_gate_module is not None else []
         )
         deepclip_gate_param_ids = {id(p) for p in deepclip_gate_params}
-        # --thematical_interaction_lr (ModelConfig docstring, files/results/thematical_paths_dynamics_
-        # and_pair_auc.md section 7): ForcedInteraction's parameters sit behind two chained
-        # hard-normalisation ops MLB's own paper reports as slow/hyperparameter-sensitive to
-        # converge -- give all three sites (geom/chem/level2) their own optimizer group at a
-        # higher lr instead of raising --lr globally. Empty list, no-op group, when off or
-        # not a thematical_paths run.
-        thematic_head = getattr(final_layer, "thematical_head", None)
-        thematic_interaction_params = (
-            list(thematic_head.geom_interaction.parameters())
-            + list(thematic_head.chem_interaction.parameters())
-            + list(thematic_head.group_interaction.parameters())
-            if (thematic_head is not None and conf.thematical_interaction_lr)
-            else []
-        )
-        thematic_interaction_param_ids = {id(p) for p in thematic_interaction_params}
         bilinear_weight_decay = (
             conf.weight_decay if conf.bilinear_weight_decay is None else conf.bilinear_weight_decay
         )
@@ -83,7 +65,6 @@ class OptimizerSetup:
             if id(p) not in gate_param_ids
             and id(p) not in dropout_logit_ids
             and id(p) not in bilinear_param_ids
-            and id(p) not in thematic_interaction_param_ids
             and id(p) not in deepclip_gate_param_ids
         ]
 
@@ -109,12 +90,6 @@ class OptimizerSetup:
                 )
             if dropout_logit_params:
                 main_groups.append({"params": dropout_logit_params, "weight_decay": 0.0})
-            if thematic_interaction_params:
-                main_groups.append({
-                    "params": thematic_interaction_params,
-                    "weight_decay": conf.weight_decay,
-                    "lr": conf.lr * THEMATICAL_INTERACTION_LR_MULTIPLIER,
-                })
             self.optimizer = torch.optim.Adam(self.split_lipid_branch(main_groups), lr=conf.lr)
             self.hyper_optimizer = torch.optim.Adam(gate_params, lr=conf.bilevel_lr)
         elif dropout_logit_params:
@@ -133,12 +108,6 @@ class OptimizerSetup:
                 groups.append(
                     {"params": deepclip_gate_params, "weight_decay": deepclip_gate_weight_decay}
                 )
-            if thematic_interaction_params:
-                groups.append({
-                    "params": thematic_interaction_params,
-                    "weight_decay": conf.weight_decay,
-                    "lr": conf.lr * THEMATICAL_INTERACTION_LR_MULTIPLIER,
-                })
             self.optimizer = torch.optim.Adam(self.split_lipid_branch(groups), lr=conf.lr)
         else:
             # No bilevel, no ConcreteDropout: everything (including gate_params, if any exist
@@ -149,7 +118,6 @@ class OptimizerSetup:
             base_params = [
                 p for p in model.parameters()
                 if id(p) not in bilinear_param_ids
-                and id(p) not in thematic_interaction_param_ids
                 and id(p) not in deepclip_gate_param_ids
             ]
             groups = [{"params": base_params}]
@@ -159,11 +127,6 @@ class OptimizerSetup:
                 groups.append(
                     {"params": deepclip_gate_params, "weight_decay": deepclip_gate_weight_decay}
                 )
-            if thematic_interaction_params:
-                groups.append({
-                    "params": thematic_interaction_params,
-                    "lr": conf.lr * THEMATICAL_INTERACTION_LR_MULTIPLIER,
-                })
             self.optimizer = torch.optim.Adam(
                 self.split_lipid_branch(groups),
                 lr=conf.lr,

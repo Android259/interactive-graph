@@ -22,9 +22,8 @@
 --weight_decay=0.01
 --pool_type="add"
 
---descriptors
 --descriptors_head
---descriptor_names=chain,unsaturation,tail_length_mean,tail_double_bonds,tail_unsaturation_density,tail_length_asymmetry,pocket_volume_per_sasa,pocket_elongation,pocket_flatness,buriedness_q50,apolar_sasa_share,aromatic_share,hydropathy_rim
+--descriptor_heads=chain,unsaturation,tail_length_mean,tail_double_bonds,tail_unsaturation_density,tail_length_asymmetry,pocket_volume_per_sasa,pocket_elongation,pocket_flatness,buriedness_q50,apolar_sasa_share,aromatic_share,hydropathy_rim
 
 --save_model_in_dynamics
 

@@ -14,28 +14,20 @@ literally "does the cavity reach as far as the tail is long". Documented in
 files/reference/pocket_lipid_compatibility.md, which also carries the measurement of whether it
 adds anything over files/history/geometric_edge.md chemistry prior.
 
-Two independent consumers of the raw value, wired in Dataloader:
+Consumer of the raw value, wired in Dataloader:
   --pocket_compat_prior : frozen, calibrated, added to the logit outside the network
                           (same mechanism as --chem_prior, and jointly calibrated with
                           it when both are on -- see dataloader/chemistry_prior.py).
-  --compatibility_input : standardised (not calibrated) and concatenated into the
-                          fused representation, so the network's own weights decide
-                          how to use it.
-Neither requires the other; both read the same raw_compatibility() output.
 """
 import os
-from pathlib import Path
 
 import numpy
-import pandas
 from rdkit import Chem
 
 from preprocessing.compute_descriptors import (
-    AROMATIC_RESIDUE_TYPES,
     pocket_atom_coordinates,
     pocket_shape,
 )
-from dataloader.tensors_reading.protein_graph_tensors_reader import _pocket_tensor
 
 # Sentinels this project's SMILES columns use for "no structure recorded", matching
 # analysis/protein_profile_probe.py (mode `correlate`), which imports EMPTY from here rather than
@@ -259,8 +251,7 @@ def pocket_extent_by_protein(root_dir, protein_names, cache=None):
     Same pocket_atom_coordinates + pocket_shape that POCKET_DESCRIPTOR_NAMES' own
     pocket_extent entry uses -- this is that entry, not a second measurement of it.
 
-    `cache`, when given, is dataloader/descriptor_cache_reader.py's per-protein dict
-    ({name: {"extent", "aromatic_share_core", "aromatic_share_rim"}}); a name present
+    `cache`, when given, is a per-protein dict ({name: {"extent"}}); a name present
     there skips the PDB re-parse. A name the cache has never seen falls back to parsing
     it here, same as without a cache.
     """
@@ -274,118 +265,6 @@ def pocket_extent_by_protein(root_dir, protein_names, cache=None):
         path = os.path.join(root_dir, "graphs", protein, "pocketness.pdb")
         extents[protein] = pocket_shape(pocket_atom_coordinates(path))[0]
     return extents
-
-
-def pocket_rim_core_aromatic_share_by_protein(root_dir, protein_names, cache=None):
-    """(aromatic_share_core, aromatic_share_rim) for each named protein.
-
-    `cache`, when given, is dataloader/descriptor_cache_reader.py's per-protein dict; a
-    name present there skips the PDB/CSV re-parse below entirely, same fallback
-    discipline as pocket_extent_by_protein.
-
-    --descriptor_pocket_shares_split (architecture/descriptor_head.py) swaps
-    the whole-pocket aromatic_share/polar_share pair for this split plus
-    hydropathy_core/hydropathy_rim, which POCKET_DESCRIPTOR_NAMES already carries and are
-    read directly off the pocket descriptor tensor -- no aromatic_share_core/rim entry
-    exists there to match, so it is computed independently here rather than widening
-    that shared tensor, which every run with needs_pocket_descriptor depends on, not
-    just this one flag. project memory [[descriptors-path-fingerprint-leak]]: on the descriptors_path
-    label, aromatic_share/polar_share are the suspected channel behind an excluded-family
-    outlier (LBP_BPI_CETP test BA 0.796 vs 0.44-0.60 everywhere else); this pair is the
-    untested alternative, motivated by files/reference/pocket_shape_descriptors.md section 4a, where
-    hydropathy_core is the one entry whose sign survives both the within-family and the
-    all-protein check.
-
-    Same median-buriedness core/rim split and AROMATIC_RESIDUE_TYPES mask
-    protein_graph_builder.pocket_descriptor uses for hydropathy_core/hydropathy_rim --
-    imported, not re-derived, so the two definitions of "core" cannot silently diverge.
-    """
-    cache = cache or {}
-    shares = {}
-    for protein in protein_names:
-        cached = cache.get(protein)
-        if cached is not None:
-            shares[protein] = (cached["aromatic_share_core"], cached["aromatic_share_rim"])
-            continue
-        protein_dir = os.path.join(root_dir, "graphs", protein)
-        pocket = _pocket_tensor(Path(protein_dir) / "pocketness.pdb")
-        vertices = pandas.read_csv(os.path.join(protein_dir, "coarse_graph_nodes.csv"))
-        site = vertices[pocket.bool().numpy()]
-        residue_types = site["residue_type"].to_numpy(copy=True).astype(int)
-        aromatic = numpy.isin(residue_types, AROMATIC_RESIDUE_TYPES)
-        burial = site["residue_mean_buriedness"].to_numpy(dtype=float)
-        core = burial >= numpy.median(burial)
-        rim = ~core
-        shares[protein] = (
-            float(aromatic[core].mean()),
-            float(aromatic[rim].mean()) if rim.any() else float(aromatic.mean()),
-        )
-    return shares
-
-
-SPLIT_INPUT_PARTS = ("chain", "clash")
-
-
-def compat_input_parts(config):
-    """Which halves --compatibility_split_input feeds, in a fixed order.
-
-    Order is `SPLIT_INPUT_PARTS`, not the order the flag lists them in: the columns are
-    positional once they reach the classifier, so a run that wrote `clash,chain` would
-    otherwise train a model whose weights mean something different from an otherwise
-    identical run -- and nothing downstream would say so.
-    """
-    if not getattr(config, "compatibility_split_input", False):
-        return ()
-    requested = {
-        name.strip()
-        for name in str(getattr(config, "compat_input_parts", "") or "").split(",")
-        if name.strip()
-    }
-    return tuple(name for name in SPLIT_INPUT_PARTS if name in requested)
-
-
-def compat_input_width(config):
-    """How many columns --compatibility_input / --compatibility_split_input attach.
-
-    Read by Final_Layer to size `classifier_input_dim` and by Dataloader to build
-    the tensor, so the two cannot disagree about the width -- which is exactly the kind
-    of mismatch that surfaces as a shape error deep inside the classifier, several
-    hundred epochs of wall clock after the flag was set.
-    """
-    if getattr(config, "compatibility_split_input", False):
-        return len(compat_input_parts(config))
-    if getattr(config, "compatibility_input", False):
-        return 1
-    return 0
-
-
-def raw_compatibility_parts(csv, root_dir, isomeric=False):
-    """The two halves of the compatibility term, unmixed: (chain, extent, missing).
-
-    `chain` and `missing` are one array per row, as long as that row's candidate list,
-    and `extent` is one value per row, for the reason spelled out in raw_compatibility:
-    the lipid half is a property of the candidate structure, the protein half is not.
-
-    Why the halves are worth having separately (files/results/compat_input_audit.md 1 and 7):
-    `raw_compatibility` returns their DIFFERENCE, and a difference of a protein-only
-    number and a lipid-only number is additive -- its two-way interaction term is
-    identically zero, measured at 0.0000 by analysis/probes/compat_feature_forms.py. Every
-    quantity with real pair content in it (a clash term, a fit score) is a NON-additive
-    combination, and building one needs the halves rather than the difference.
-
-    Returned raw and uncoarsened: whether `extent` should be rounded to a few levels,
-    and where those levels are cut, is a train-only decision, and this function has no
-    notion of train. `_compute_compatibility_input` in dataloader/Dataloader.py
-    makes it, next to the standardisation that is train-only for the same reason.
-
-    Neither half reads Interaction, so nothing here can leak a label.
-    """
-    protein_names = sorted(csv["LTPProtein"].dropna().unique().tolist())
-    extents = pocket_extent_by_protein(root_dir, protein_names)
-
-    chain = _candidate_arrays(chain_lengths_by_row(csv, isomeric))
-    extent = csv["LTPProtein"].map(extents).to_numpy(dtype=float)
-    return chain, extent, [numpy.isnan(values) for values in chain]
 
 
 def coarsen_to_levels(values, edges):

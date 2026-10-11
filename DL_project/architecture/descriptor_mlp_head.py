@@ -19,13 +19,13 @@ class DescriptorMLPHead(torch.nn.Module):
     ordinary 2-hidden-layer MLP of the same 11 standardized descriptors at test BA
     0.853 against that head's 0.535 on identical input/split/weights. --descriptor_mlp
     (training/read_configuration.py) builds this class instead of NamedDescriptorHead
-    in Final_Layer's --descriptor_names sufficiency-test branch, so that comparison is
-    a --descriptor_names sweep like --descriptors_head's own, not a one-off script.
+    in Final_Layer's --descriptor_heads sufficiency-test branch, so that comparison is
+    a --descriptor_heads sweep like --descriptors_head's own, not a one-off script.
     """
 
     def __init__(self, config, token_names, catalog_order, act_fn=None):
         """`token_names`: this head's own tokens (already-canonical, e.g. from
-        dataloader.descriptors.parse_descriptor_list(config.descriptor_names)).
+        one --descriptor_heads segment, dataloader.descriptors.parse_descriptor_heads).
         `catalog_order`: the full, shared column order dataloader/Dataloader.py's
         descriptor_catalog_input tensor is stacked in for this config
         (dataloader.descriptors.full_catalog_order).

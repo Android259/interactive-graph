@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Greedy forward search for a --descriptor_names set to train --descriptors_head with.
+"""Greedy forward search for a --descriptor_heads set to train --descriptors_head with.
 
 The task stated the way the rest of analysis/feature_identity_check.py and analysis/feature_identity_check.py --descriptors already have it: generalise to a
 protein-lipid pair neither side of which training has seen, not memorise which
@@ -48,7 +48,7 @@ long search is legible while it runs rather than only at the end.
     python3 analysis/probes/greedy_descriptor_search.py --candidates occupancy,volume_fit,chain_extent_gap,aromatic_contact,hbond_match
     python3 analysis/probes/greedy_descriptor_search.py --leak-weight 0.3 --auc-std-weight 0.5 --seeds 0,1,2,3,4
 
-Reads only. Trains nothing itself -- prints a --descriptor_names value for an actual
+Reads only. Trains nothing itself -- prints a --descriptor_heads value for an actual
 training run to use.
 """
 import argparse
@@ -199,7 +199,7 @@ def main():
         remaining.remove(top_name)
         print(f"{round_number:<7}{top_name:<24}{top_score:>8.3f}{top_auc:>10.3f}{top_auc_std:>9.3f}{top_leak:>8.3f}")
 
-    print(f"\n--descriptor_names={','.join(chosen)}")
+    print(f"\n--descriptor_heads={','.join(chosen)}")
     print(f"final: score={best_score:.3f}")
     if len(seeds) < 5:
         print(

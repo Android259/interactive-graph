@@ -359,7 +359,7 @@ def run_test(run, run_summary, surviving_structure, discovered_dropout_report):
             # Counted on the run's own working set (positives plus the negatives its
             # sampler drew), not on the full table: that is what this run actually
             # removed from training, and it is also what the held-out block then holds.
-            pool = getattr(run.train_dataset, "csvt", None)
+            pool = getattr(run.train_dataset, "sampled_split", None)
             if pool is not None:
                 held_rows = pool["FullIdentityOfLipid"].isin(held_species)
                 f.write(f"lipid_isolation_rows: {int(held_rows.sum())}\n")

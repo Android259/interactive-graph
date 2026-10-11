@@ -7,9 +7,8 @@
 --weight_decay=0.01
 --pool_type="add"
 
---descriptors
 --descriptors_head
---descriptor_names=chain,unsaturation,hbond,heavy,occupancy,aromatic_share_coarse,polar_share_coarse,pocket_elongation
+--descriptor_heads=chain,unsaturation,hbond,heavy,occupancy,aromatic_share_coarse,polar_share_coarse,pocket_elongation
 
 --save_model_in_dynamics
 

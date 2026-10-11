@@ -7,15 +7,10 @@
 --weight_decay=0.01
 --pool_type="add"
 
---two_descriptors_paths
+--descriptors_head
+--descriptor_heads=chain_extent_gap,volume_fit,aromatic_contact,hbond_match,tail_elongation_fit,occupancy/buriedness_q50,depth_q10,ev14_q50,hydropathy_rim,polar_share,aromatic_share,pocket_elongation,pocket_extent,pocket_flatness,unsaturation,hbond,heavy,tail_count,chain
 
---good_descriptors=chain_extent_gap,volume_fit,
-                aromatic_contact,hbond_match,tail_elongation_fit,occupancy
 
---bad_descriptors=buriedness_q50,depth_q10,ev14_q50,hydropathy_rim,
-                polar_share,aromatic_share,
-                pocket_elongation,pocket_extent,pocket_flatness,
-                unsaturation,hbond,heavy,tail_count,chain
 
 
 --save_model_in_dynamics

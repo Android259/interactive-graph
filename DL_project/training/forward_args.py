@@ -93,8 +93,6 @@ def build_forward_args(config, prot, lipid):
         or getattr(config, "pocket_attention_cross", False)
     ):
         forward_args["pocket_mask"] = prot.pocket
-    if getattr(config, "needs_pocket_descriptor", False):
-        forward_args["pocket_descriptor"] = prot.pocket_descriptor
     if getattr(config, "use_esm3_v2_embeddings", False):
         forward_args["node_confidence"] = getattr(prot, "node_confidence", None)
     if (
@@ -116,18 +114,9 @@ def build_forward_args(config, prot, lipid):
         forward_args["prot_edge_node_degree"] = prot.edge_node_degree
     if getattr(config, "chem_prior", False) or getattr(config, "pocket_compat_prior", False):
         forward_args["frozen_prior"] = prot.frozen_prior
-    if (
-        getattr(config, "compatibility_input", False)
-        or getattr(config, "compatibility_split_input", False)
-    ):
-        forward_args["compat_input"] = prot.compat_input
-    if getattr(config, "descriptors", False):
-        forward_args["descriptor_input"] = prot.descriptor_input
     if full_catalog_order(config):
-        # Covers --two_descriptors_paths, --descriptor_names (under
-        # descriptors_head or descriptors), and --protein_descriptors/
-        # --lipid_descriptors -- one shared predicate instead of re-deriving the same
-        # boolean here a third time (dataloader/Dataloader.py's named_catalog_on is the
-        # other).
+        # --descriptor_heads, --protein_descriptors/--lipid_descriptors: one shared
+        # predicate (dataloader.descriptors.full_catalog_order) instead of re-deriving
+        # the same boolean here a second time.
         forward_args["descriptor_catalog_input"] = prot.descriptor_catalog_input
     return forward_args

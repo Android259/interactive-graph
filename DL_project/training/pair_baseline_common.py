@@ -1185,7 +1185,7 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
             npr1_value = np.nan if npr1_value is None else npr1_value
             npr2_value = np.nan if npr2_value is None else npr2_value
         # data/build_descriptor_cache.py's own cache already stores these four
-        # (built specifically "for --descriptors'/--two_descriptors_paths'
+        # (built specifically "for the descriptor catalog's
         # shared per-candidate ... base values (chain/unsaturation/hbond/heavy ...)"
         # -- see that script's module docstring) under "chain"/"unsaturation"/
         # "hbond"/"heavy_atoms" (dataloader/descriptor_cache_reader.py's own
@@ -1240,11 +1240,11 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
         "npr1": npr1_value,
         "npr2": npr2_value,
         # dataloader.descriptors.LIPID_DESCRIPTOR_NAMES' own short aliases
-        # (--descriptor_names=chain,unsaturation,hbond,heavy in a real arg file) --
+        # (--descriptor_heads=chain,unsaturation,hbond,heavy in a real arg file) --
         # the SAME functions dataloader.chemistry_prior._lipid_descriptor_table
-        # calls for the network's own null-model/DescriptorHead path (cache hit
+        # calls for the network's own null-model/descriptor-head path (cache hit
         # or not, see above), so a value under this name can never drift from what
-        # --descriptor_names=chain,... actually feeds the network. That function
+        # --descriptor_heads=chain,... actually feeds the network. That function
         # mean-pools over candidates; explicit_lipid_features' own per-species
         # reduction is a median (see its docstring) -- these values are aggregated
         # the same way every other column here is, not literally reproduced

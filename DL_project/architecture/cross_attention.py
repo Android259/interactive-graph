@@ -8,7 +8,7 @@ from .mlp_utils import (
 from .fast_attention import (
     grouped_attention, can_use_grouped_attention, make_grouped_attention_layout,
 )
-from .thematic_descriptor_head import ForcedInteraction
+from .forced_interaction import ForcedInteraction
 
 
 class CrossAttention(torch.nn.Module):
@@ -65,7 +65,7 @@ class CrossAttention(torch.nn.Module):
         # weighted SUM of the OTHER side's raw value vectors (see the "Current compact
         # variant" comment in forward()); the interaction only ever decides which
         # values to copy in, never fuses both sides' content per output dimension.
-        # ForcedInteraction (architecture/thematic_descriptor_head.py) is reused
+        # ForcedInteraction (architecture/forced_interaction.py) is reused
         # unmodified for that missing product: lip_dim == prot_dim == config.hiddim
         # always (both CrossAttention instances are built with (hiddim, hiddim) in
         # architecture/interaction_classification.py), so its single `dim` matches
@@ -84,8 +84,8 @@ class CrossAttention(torch.nn.Module):
         # -- a skip path survives whenever attention degenerates toward uniform/near-
         # zero output, since the residual add alone still passes the node's own
         # content through unchanged. Routing (lip, lip_outs) through ForcedInteraction
-        # (product-only, no skip -- same class node_bilinear_fusion/thematical_paths
-        # reuse) before the residual add means the UPDATE ITSELF is forced to depend
+        # (product-only, no skip -- same class node_bilinear_fusion
+        # reuses) before the residual add means the UPDATE ITSELF is forced to depend
         # on both the node's own content and what it pulled from the partner, not an
         # additional term next to an unforced one.
         self.cross_forced_interaction_on = bool(

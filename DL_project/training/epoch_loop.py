@@ -1,7 +1,7 @@
 """One training epoch followed by one full validation pass.
 
 Order of a training step: forward -> task loss (TaskLosses.train_loss) -> the task loss
-is banked into the epoch metrics -> sparsity / Concrete Dropout / adversary / thematic
+is banked into the epoch metrics -> sparsity / Concrete Dropout / adversary
 penalties are added -> backward -> optimizer step -> bilevel gate step on validation.
 Penalties are added after the banking on purpose: `epoch/train loss` stays the task
 loss alone and comparable across configurations; the penalties get their own scalars.
@@ -13,7 +13,6 @@ import torch.nn.functional as F
 from architecture.final_layer import chem_adversary_loss, family_dann_loss
 from architecture.loss import get_pu_loss_diagnostics, reset_pu_loss_diagnostics
 from architecture.mlp_utils import collect_concrete_dropout_reg, collect_sparsity_penalty
-from architecture.thematic_descriptor_head import thematical_orthogonality_loss
 from candidate_averaging import CandidateAccumulator, average_candidate_predictions
 from dataloader.graphs_builders.protein_graph_builder import FAMILY_NAMES
 from eval_metrics import (
@@ -79,7 +78,6 @@ def log_adversary_metrics(run, epoch_index, stats):
         ("adv", "adv_batches", "adversary loss"),
         ("dann", "dann_batches", "family dann loss"),
         ("chem", "chem_batches", "chem adversary loss"),
-        ("thematical_orth", "thematical_orth_batches", "thematical orthogonality penalty"),
     ):
         batches = stats.get(batches_key, 0)
         if batches:
@@ -142,7 +140,6 @@ def train_one_epoch(run, idx, counttrain, countval):
     adversary_stats = {
         "adv": 0.0, "adv_batches": 0, "dann": 0.0, "dann_batches": 0,
         "chem": 0.0, "chem_batches": 0,
-        "thematical_orth": 0.0, "thematical_orth_batches": 0,
     }
     for i, graph in enumerate(run.train_loader):
         #dataset is reduced because of high variety of experience parameters
@@ -237,22 +234,6 @@ def train_one_epoch(run, idx, counttrain, countval):
                     los = los + conf.chem_weight * chem_loss
                     adversary_stats["chem"] += float(chem_loss.detach())
                     adversary_stats["chem_batches"] += 1
-
-            # Thematic-interaction non-redundancy penalty: pushes each --thematical_
-            # paths ForcedInteraction's output away from correlating with what a
-            # stop-gradient probe already predicts from ONE side alone. Read as a
-            # narrower leak gauge than adversarial_grl/dann_family, not a replacement
-            # for them -- see thematical_orthogonality_loss's own docstring for the
-            # blind spot it does not close (a fingerprint jointly correlated across
-            # both sides at once).
-            if conf.thematical_paths and conf.thematical_orth_weight:
-                orth_penalty, probe_loss = thematical_orthogonality_loss(
-                    model.final_layer.thematical_head, interaction_labels
-                )
-                if orth_penalty is not None:
-                    los = los + conf.thematical_orth_weight * (orth_penalty + probe_loss)
-                    adversary_stats["thematical_orth"] += float(orth_penalty.detach())
-                    adversary_stats["thematical_orth_batches"] += 1
 
             # A batch whose loss carries no gradient is a real, documented outcome, not
             # a bug to crash on: pairwise_ranking_loss returns a plain zero when the

@@ -11,9 +11,8 @@
 --weight_decay=0.01
 --pool_type="add"
 
---descriptors
 --descriptor_mlp
---descriptor_names=buriedness_q50,aromatic_share,aromatic_share_rim,depth_q10,ev14_q10,tail_elongation_fit
+--descriptor_heads=buriedness_q50,aromatic_share,aromatic_share_rim,depth_q10,ev14_q10,tail_elongation_fit
 
 --save_model_in_dynamics
 

@@ -39,8 +39,8 @@ EXTRA_NODE_FEATURE_COUNT = len(EXTRA_NODE_COLUMNS) + 1
 # POCKET_DESCRIPTOR_NAMES itself now lives in dataloader/descriptors.py
 # (PROTEIN_DESCRIPTOR_NAMES, imported above) so the whole descriptor catalog --
 # lipid, protein, pair -- is named in one file; the VALUES are still computed here,
-# by pocket_descriptor() below, from coarse_graph_nodes.csv plus pocketness.pdb --
-# ModelConfig.pocket_descriptor_count must equal len(POCKET_DESCRIPTOR_NAMES).
+# by pocket_descriptor() (preprocessing/compute_descriptors.py), from
+# coarse_graph_nodes.csv plus pocketness.pdb.
 
 # The seven POCKET_DESCRIPTOR_NAMES entries whose eta^2 against the 9-family split sits
 # at or near the no-structure floor of 0.24 (files/reference/pocket_shape_descriptors.md
@@ -49,12 +49,12 @@ EXTRA_NODE_FEATURE_COUNT = len(EXTRA_NODE_COLUMNS) + 1
 # pocket_residue_share (0.71), pocket_extent (0.62), ev14_q50 (0.59), depth_q10 (0.55).
 #
 # Reference list only -- nothing reads it at runtime. It used to back
-# --pocket_descriptors_family_neutral, which restricted the raw per-node broadcast of
-# this tensor; that broadcast and its flags were removed (the values were never
-# standardised, see ModelConfig.needs_pocket_descriptor). Kept because the selection is
-# a measured result several comments and files/reference/ still cite, and because these
-# names can still be requested individually through --protein_descriptors, which reads
-# them standardised out of descriptor_catalog_input.
+# --pocket_descriptors_family_neutral, which restricted a raw per-node broadcast of the
+# per-protein cavity tensor; that broadcast and its flags were removed (the values were
+# never standardised). Kept because the selection is a measured result several comments
+# and files/reference/ still cite, and because these names can still be requested
+# individually through --protein_descriptors, which reads them standardised out of
+# descriptor_catalog_input.
 POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES = (
     "pocket_volume_per_sasa", "pocket_elongation", "pocket_flatness",
     "buriedness_q50", "apolar_sasa_share", "aromatic_share", "hydropathy_rim",
@@ -102,8 +102,8 @@ def protein_node_columns(config):
 
     --no_protein_geometry drops BASE_NODE_COLUMNS (and EXTRA_NODE_COLUMNS with it,
     since the latter is meaningless without the former) -- the node vector is then
-    built entirely from --descriptors_in_protein_lipid's broadcast and/or ESM,
-    neither of which this function's caller reads.
+    built entirely from --protein_descriptors' broadcast and/or ESM, neither of which
+    this function's caller reads.
     """
     if getattr(config, "no_protein_geometry", False):
         return []
@@ -252,41 +252,7 @@ class ProteinGraphBuilder:
                 )
         if node_confidence is not None:
             parts["node_confidence"] = node_confidence
-        if getattr(self.config, "needs_pocket_descriptor", False):
-            parts["pocket_descriptor"] = cached.get(
-                "pocket_descriptor"
-            ) if cached.get("pocket_descriptor") is not None else (
-                self._memoized_pocket_descriptor(nodes_path, parts["pocket"])
-            )
         return parts
-
-    def _memoized_pocket_descriptor(self, nodes_path, pocket):
-        """Cavity descriptor for one protein, read from its residue table once.
-
-        The on-disk tensor cache predates this flag and does not carry the descriptor.
-        Rather than force a rebuild of data/cache/protein_graph_tensors.pt, recompute it here
-        and keep it: the descriptor depends on the protein alone, so one CSV read per
-        protein covers every interaction row that mentions it -- the same reasoning the
-        surrounding per-protein cache is built on.
-        """
-        memo = getattr(self, "_pocket_descriptor_memo", None)
-        if memo is None:
-            memo = {}
-            self._pocket_descriptor_memo = memo
-        cached = memo.get(nodes_path)
-        if cached is None:
-            # pocketness.pdb sits beside the residue table, and the shape entries are
-            # read from it -- the tensor cache carries the mask but not the atoms.
-            cached = pocket_descriptor(
-                pandas.read_csv(nodes_path),
-                pocket,
-                self.config,
-                pocketness_path=os.path.join(
-                    os.path.dirname(nodes_path), "pocketness.pdb"
-                ),
-            )
-            memo[nodes_path] = cached
-        return cached
 
     def _load_node_confidence(self, path):
         """Per-node real pLDDT/B-factor-derived confidence, aligned to graph node order.
@@ -339,10 +305,6 @@ class ProteinGraphBuilder:
             # collation cannot mix a real tensor and a missing/None value for one key
             # across a batch.
             graph_kwargs["node_confidence"] = parts["node_confidence"]
-        if "pocket_descriptor" in parts:
-            # [1, D] per protein, so PyG concatenates it to [num_graphs, D] -- one row
-            # per sample, aligned with the pooled partners rather than with nodes.
-            graph_kwargs["pocket_descriptor"] = parts["pocket_descriptor"]
         return ProteinGraphData(**graph_kwargs)
 
     @staticmethod
@@ -352,22 +314,6 @@ class ProteinGraphBuilder:
             values.mean(dim=0),
             values.std(dim=0, unbiased=False).clamp_min(1e-6),
         )
-
-    def pocket_descriptor_stats(self):
-        """Mean/std of the cavity descriptor over unique TRAIN proteins only.
-
-        Same rule as every other statistic here: validation and test proteins never
-        contribute, so a held-out family cannot shift the scale the model was fitted
-        under. Returns None when nothing needs the tensor.
-        """
-        if not getattr(self.config, "needs_pocket_descriptor", False):
-            return None
-        descriptors = torch.cat([
-            self.protein_graph_parts(name)[0]["pocket_descriptor"]
-            for name in sorted(self.csvtrain["LTPProtein"].unique())
-        ])
-        mean, std = self._feature_mean_std(descriptors)
-        return {"pocket_descriptor_mean": mean, "pocket_descriptor_std": std}
 
     def rnabang_normalization_stats(self):
         """Compute fixed statistics from unique training proteins only."""
@@ -508,13 +454,6 @@ class ProteinGraphBuilder:
             "x": x, "edge_index": edge_index.t().contiguous(), "edge_attr": edge_attr,
             "bury": bury, "plm": plm, "pocket": poket,
         }
-        if getattr(self.config, "needs_pocket_descriptor", False):
-            # Computed on the intact residue table on purpose: the shares compare the
-            # pocket against the whole protein, which protein_pockets_only would have
-            # already thrown away by the time _restrict_to_pockets runs.
-            parts["pocket_descriptor"] = pocket_descriptor(
-                vertices, poket, self.config, pocketness_path=pok
-            )
         use_precomputed_geometric_nodes = (
             getattr(self.config, "geometric_transformer", False)
             or getattr(self.config, "rnabang_frozen_node_adapter", False)
@@ -656,8 +595,8 @@ class ProteinGraphBuilder:
         into data/protein_registry.csv and read back from there; the table is the
         source, and a second copy could only drift from it.
         """
-        domains = self.csvt.loc[
-            self.csvt["LTPProtein"] == prot_file, "ProteinDomain"
+        domains = self.sampled_split.loc[
+            self.sampled_split["LTPProtein"] == prot_file, "ProteinDomain"
         ].unique()
         if len(domains) != 1:
             raise ValueError(
@@ -665,6 +604,23 @@ class ProteinGraphBuilder:
                 f"table, found {list(domains)}"
             )
         return str(domains[0])
+
+    def protein_family_one_hot(self, prot_file):
+        """The 9-wide family one-hot of one protein, without loading its graph.
+
+        Same vector protein_graph_parts returns; memoized because sampled_split (read by
+        protein_family) does not survive initialization.
+        """
+        cached = self._protein_family_cache.get(prot_file)
+        if cached is not None:
+            return cached
+        family = self.protein_family(prot_file)
+        tenfam = torch.zeros(9)
+        for i in range(len(FAMILY_NAMES)):
+            if FAMILY_NAMES[i] == family.strip():
+                tenfam[i] = 1
+        self._protein_family_cache[prot_file] = tenfam
+        return tenfam
 
     def protein_graph_parts(self, prot_file):
         """Graph tensors and family one-hot of one protein, parsed once per protein.

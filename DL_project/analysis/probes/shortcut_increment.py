@@ -149,8 +149,8 @@ def shortcut_table(csv, similarity, index, lengths, extents, classes, network, n
     for family in families:
         held_classes = lipid_classes_for_holdout(csv, family, share)[0]
         for seed in seeds:
-            csvt = working_set(csv, seed, ratio, held_classes)
-            train, valid, test = split_func(csvt, family, seed, held_classes, double=True)
+            sampled_split = working_set(csv, seed, ratio, held_classes)
+            train, valid, test = split_func(sampled_split, family, seed, held_classes, double=True)
             block = valid if split == "valid" else test
             labels = block["Interaction"].to_numpy()
             if len(set(labels)) < 2:
@@ -274,8 +274,17 @@ def main():
     parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
     parser.add_argument("--seeds", default="0,1")
     parser.add_argument("--neighbours", type=int, default=15)
-    parser.add_argument("--share", type=float, default=0.8)
-    parser.add_argument("--ratio", type=int, default=2)
+    parser.add_argument(
+        "--share", type=float, default=None,
+        help="--coldsplit_share of the run; default reads it off --label's own args file "
+             "(see analysis.full_label_report.label_coldsplit_params), falling back to 0.8 "
+             "with --shortcuts_only or --scores and no --label",
+    )
+    parser.add_argument(
+        "--ratio", type=int, default=None,
+        help="--negatives_per_positive of the run; default reads it off --label's own args "
+             "file, same fallback (2) as --share",
+    )
     parser.add_argument("--split", default="valid", choices=("valid", "test", "both"))
     args = parser.parse_args()
 
@@ -289,6 +298,16 @@ def main():
 
     families = [f for f in args.families.split(",") if f]
     seeds = [int(s) for s in args.seeds.split(",")]
+
+    share, ratio = args.share, args.ratio
+    if args.label and (share is None or ratio is None):
+        from full_label_report import label_coldsplit_params
+
+        label_share, label_ratio = label_coldsplit_params(args.label, families)
+        share = label_share if share is None else share
+        ratio = label_ratio if ratio is None else ratio
+    share = 0.8 if share is None else share
+    ratio = 2 if ratio is None else ratio
     splits = ("valid", "test") if args.split == "both" else (args.split,)
 
     data_dir = os.path.join(PROJECT_ROOT, "data") + os.sep
@@ -321,7 +340,7 @@ def main():
         table = shortcut_table(
             csv, similarity, index, lengths, extents, classes, network, names,
             families=families, seeds=seeds, neighbours=args.neighbours,
-            share=args.share, ratio=args.ratio, split=split, epoch=args.epoch,
+            share=share, ratio=ratio, split=split, epoch=args.epoch,
         )
         print_shortcut_report(table, split, names, args.label)
 

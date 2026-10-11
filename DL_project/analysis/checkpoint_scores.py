@@ -104,7 +104,7 @@ def arg_lines(label):
 
     A "--flag=value" line whose value continues onto an indented line right after it
     (scripts/lib/args_file_lib.sh's own multi-line convention, for a
-    --good_descriptors/--bad_descriptors list too long for one line) is joined back
+    --descriptor_heads list too long for one line) is joined back
     onto that flag here, comma-separated, the same way the bash side does --
     read_configuration would otherwise see the continuation as its own bare, unknown
     parameter. Any other line -- unindented, or indented with no flag currently open
@@ -245,18 +245,13 @@ def default_groups_for_label(label):
 
 
 def label_descriptor_features(label, families):
-    """--good_descriptors/--bad_descriptors/--descriptor_names resolved off `label`'s
-    own args file, as a sorted comma-separated base-name list for null_model.py's
-    --features (see dataloader.descriptors.resolve_similarity_feature_names) --
-    the chemistry null model then runs on exactly the descriptor set the network
-    itself was trained to see, instead of a fixed guess (analysis/full_label_report.py,
-    analysis/probes/build_rand_results_tables.py). Empty string when the label's config sets
-    none of the three (most labels, historically -- no --descriptors_head at all).
-
-    --descriptor_names (ModelConfig docstring) is --descriptors_head's own single-
-    head equivalent of --good_descriptors/--bad_descriptors -- validate() guarantees
-    at most one of the two pairs is ever non-empty for a given label, so passing all
-    three here always resolves to exactly whichever one that label actually set.
+    """--descriptor_heads resolved off `label`'s own args file, as a sorted
+    comma-separated base-name list for null_model.py's --features (see
+    dataloader.descriptors.resolve_similarity_feature_names) -- the chemistry null
+    model then runs on exactly the descriptor set the network itself was trained to
+    see, instead of a fixed guess (analysis/full_label_report.py,
+    analysis/probes/build_rand_results_tables.py). Empty string when the label's config
+    sets none (most labels, historically -- no descriptor head at all).
 
     `families[0]` is a dummy held-out group (read_configuration requires one; the
     result does not vary by group) -- same trick full_label_report.py's
@@ -267,9 +262,7 @@ def label_descriptor_features(label, families):
         arg_lines(label), families[0]
     ) + ["--seed=0"]
     conf = read_configuration(argv)
-    names = resolve_similarity_feature_names(
-        conf.good_descriptors, conf.bad_descriptors, conf.descriptor_names
-    )
+    names = resolve_similarity_feature_names(conf.descriptor_heads)
     return ",".join(names)
 
 

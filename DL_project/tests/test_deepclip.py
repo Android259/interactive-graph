@@ -393,3 +393,22 @@ def test_preassembled_loader_replays_the_candidate_draws(balanced):
         for (positions, flat), (fast_positions, fast_lipid) in zip(expected, got):
             assert torch.equal(fast_positions, positions)
             assert torch.equal(fast_lipid.x[fast_lipid.mask], flat)
+
+
+def test_protein_gate_reads_the_catalog_without_any_other_descriptor_flag():
+    """The gate's names are themselves a request for the catalog tensor, so no
+    companion flag is needed for the loader to build it."""
+    from dataloader.descriptors import full_catalog_order
+
+    config = make_config(deepclip_protein_gate="pocket_extent,hydropathy_core")
+    assert full_catalog_order(config) == ("hydropathy_core", "pocket_extent")
+
+    model = InteractionClassification(config)
+    assert model.deepclip.gate_columns.tolist() == [1, 0]
+    rows, batch = one_hot([5, 4])
+    out = model(
+        config=config, plm=None, bury=None, prot=None, prot_edgidx=None,
+        prot_e_attr=None, prot_batch=None, lip=rows, lip_batch=batch,
+        descriptor_catalog_input=torch.randn(2, 2),
+    )
+    assert out.shape == (2, 2)

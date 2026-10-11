@@ -249,7 +249,7 @@ def resolve_similarity(csv, data_dir, features, label=None, zscore=False):
 
 def working_set(csv, seed, ratio, lipid_classes, balanced_lipid_classes=False,
                 species=None):
-    """The loader's `csvt`, carrying the loader's `pair_id`.
+    """The loader's `sampled_split`, carrying the loader's `pair_id`.
 
     `lipid_marginal_baseline.working_set` builds the same rows in the same order but
     renumbers them 0..N-1 and keeps no trace of where they came from, and `pair_id` --
@@ -582,15 +582,15 @@ def split_held_block(csv, block, seed, share, ratio, balanced_lipid_classes=Fals
         block = blocks_from_families([block])[0]
     species = block.species_of_seed(seed) if block.species_of_seed is not None else None
     held_classes = held_classes_for(csv, block, share)
-    csvt = working_set(
+    sampled_split = working_set(
         csv, seed, ratio, held_classes,
         balanced_lipid_classes=balanced_lipid_classes, species=species,
     )
     if block.kind == "species":
-        return lipid_isolation_split(csvt, species, seed)
+        return lipid_isolation_split(sampled_split, species, seed)
     if block.kind == "lipid_set":
-        return lipid_split_func(csvt, held_classes, seed)
-    return split_func(csvt, block.name, seed, held_classes, double=True)
+        return lipid_split_func(sampled_split, held_classes, seed)
+    return split_func(sampled_split, block.name, seed, held_classes, double=True)
 
 
 def usable_group_counts(held, minimum_rows=6, group_column="lipid_class"):
@@ -810,7 +810,7 @@ def null_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4
 
                 mine = _network_rows(network, block, seed, split_name)
                 if mine is not None:
-                    # The loader renumbers csvt 0..N-1 before splitting, and both sides
+                    # The loader renumbers sampled_split 0..N-1 before splitting, and both sides
                     # of this comparison carry that number, so equal pair_id sets mean
                     # the two reproductions of the split agree row for row.
                     if set(mine["pair_id"]) != set(held["pair_id"]):

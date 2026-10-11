@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""Rewrite each protein's ProteinDomain to the single value its positive rows agree on.
+
+Used as a one-time cleanup pass over an interaction CSV whose ProteinDomain column
+is inconsistent for some LTPProtein (e.g. copied inconsistently across rows): this
+infers the correct domain per protein from its Interaction==1 rows and overwrites
+every row of that protein with it. Raises if a protein's positive rows disagree
+on ProteinDomain, or if a protein has no positive rows to infer from.
+
+Usage:
+    python3 preprocessing/correct_protein_domains.py input.csv output.csv
+"""
 
 import argparse
 from pathlib import Path

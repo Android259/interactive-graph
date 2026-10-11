@@ -166,11 +166,11 @@ def main():
     parser.add_argument(
         "--features", default=None,
         help=(
-            "Default: --good_descriptors/--bad_descriptors read off --label's own args "
+            "Default: --descriptor_heads read off --label's own args "
             "file (see analysis.checkpoint_scores.label_descriptor_features), so the null "
             f'model runs on exactly the descriptor set the network was trained to see -- '
             f'falling back to "{TANIMOTO}" (this file\'s original, unconditional default) '
-            "when the label sets neither flag. Pass an explicit comma-separated "
+            "when the label sets none. Pass an explicit comma-separated "
             "descriptor-name list, or \"tanimoto\", to override -- see null_model.py "
             "--features."
         ),

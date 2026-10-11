@@ -69,7 +69,7 @@ SAMPLERS = {
 
 
 def working_set(csv, seed, sampler, ratio=1, lipid_classes=()):
-    """The loader's `csvt`: positives plus sampled negatives, renumbered 0..N-1.
+    """The loader's `sampled_split`: positives plus sampled negatives, renumbered 0..N-1.
 
     `lipid_classes` reproduces the loader's stratified draw: negatives are matched to
     positives inside each side of the coming class cut, so no protein arrives in train
@@ -84,18 +84,18 @@ def working_set(csv, seed, sampler, ratio=1, lipid_classes=()):
     return both.set_index(pandas.Index(list(range(len(both)))))
 
 
-def split(csvt, family, seed, lipid_classes=(), double=False):
+def split(sampled_split, family, seed, lipid_classes=(), double=False):
     """The loader's cold split, valid/test halves included.
 
     With `lipid_classes` non-empty this is the two-axis split: the classes leave train
     for every protein, exactly as `_split_interactions` does it, and everything the two
     filters remove lands in the same excluded pool that is halved into valid and test.
     """
-    train = csvt[csvt["ProteinDomain"].str.lower() != family.lower()]
+    train = sampled_split[sampled_split["ProteinDomain"].str.lower() != family.lower()]
     if lipid_classes:
         held = {name.lower() for name in lipid_classes}
         train = train[~lipid_class_series(train).str.lower().isin(held)]
-    excluded = csvt.drop(train.index)
+    excluded = sampled_split.drop(train.index)
     if double and lipid_classes:
         # --double_coldsplit: the family's rows in classes that stayed in train are
         # dropped rather than evaluated, so no evaluated lipid has been seen in train,
@@ -140,7 +140,7 @@ def halve_excluded_block(excluded, seed, merge_valid_test=False):
     return valid, test
 
 
-def lipid_split(csvt, lipid_classes, seed, merge_valid_test=False):
+def lipid_split(sampled_split, lipid_classes, seed, merge_valid_test=False):
     """The loader's `--lipid_coldsplit`, valid/test halves included.
 
     The OTHER axis from `split` above, and the reason it needs its own function rather
@@ -162,12 +162,12 @@ def lipid_split(csvt, lipid_classes, seed, merge_valid_test=False):
     held = {name.lower() for name in lipid_classes}
     if not held:
         raise ValueError("lipid_split needs a non-empty lipid class set")
-    train = csvt[~lipid_class_series(csvt).str.lower().isin(held)]
-    excluded = csvt.drop(train.index)
+    train = sampled_split[~lipid_class_series(sampled_split).str.lower().isin(held)]
+    excluded = sampled_split.drop(train.index)
     return (train,) + halve_excluded_block(excluded, seed, merge_valid_test=merge_valid_test)
 
 
-def lipid_isolation_split(csvt, species, seed, merge_valid_test=False):
+def lipid_isolation_split(sampled_split, species, seed, merge_valid_test=False):
     """The loader's `--lipid_isolation`, valid/test halves included.
 
     `lipid_split`'s counterpart keyed by SPECIES (FullIdentityOfLipid) instead of
@@ -183,8 +183,8 @@ def lipid_isolation_split(csvt, species, seed, merge_valid_test=False):
     held = set(species)
     if not held:
         raise ValueError("lipid_isolation_split needs a non-empty species set")
-    train = csvt[~csvt["FullIdentityOfLipid"].isin(held)]
-    excluded = csvt.drop(train.index)
+    train = sampled_split[~sampled_split["FullIdentityOfLipid"].isin(held)]
+    excluded = sampled_split.drop(train.index)
     return (train,) + halve_excluded_block(excluded, seed, merge_valid_test=merge_valid_test)
 
 
@@ -215,8 +215,8 @@ def report(csv, families, seeds, sampler, ratio=1, share=None, double=False):
             held = []
             if share is not None:
                 held = lipid_classes_for_holdout(csv, family, share)[0]
-            csvt = working_set(csv, seed, sampler, ratio, held)
-            train, valid, test = split(csvt, family, seed, held, double)
+            sampled_split = working_set(csv, seed, sampler, ratio, held)
+            train, valid, test = split(sampled_split, family, seed, held, double)
             if len(test) == 0:
                 continue
             for split_name, held in (("valid", valid), ("test", test)):

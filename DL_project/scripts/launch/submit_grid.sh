@@ -280,16 +280,6 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
         printf "Detected --descriptors_head in %s; per-experiment walltime=%s.\n" \
             "${args_file}" "${this_walltime}"
-    elif args_file_has_flag "${args_file}" --two_descriptors_paths; then
-        # Same no-encoder-towers cost class as --descriptors_head (Final_Layer
-        # builds only the two NamedDescriptorHead instances + a small classifier) --
-        # this branch was simply missing before, not a deliberate exclusion; closing
-        # it here rather than leaving it to fall through to the full WALLTIME/
-        # --fast_attention budgets below, which are sized for a real protein/lipid
-        # encoder this config never builds.
-        this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
-        printf "Detected --two_descriptors_paths in %s; per-experiment walltime=%s.\n" \
-            "${args_file}" "${this_walltime}"
     elif args_file_has_flag "${args_file}" --descriptor_mlp; then
         # Same no-encoder-towers cost class as --descriptors_head (Final_Layer
         # builds only DescriptorMLPHead + a small classifier, architecture/
@@ -299,16 +289,8 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
         printf "Detected --descriptor_mlp in %s; per-experiment walltime=%s.\n" \
             "${args_file}" "${this_walltime}"
-    elif args_file_has_flag "${args_file}" --thematical_paths; then
-        # Third sibling of the same sufficiency-test/no-towers shape (architecture/
-        # thematic_descriptor_head.py) -- see THEMATICAL_PATHS_WALLTIME's own comment
-        # in settings.sh for why it is a separate, independently re-measurable
-        # variable rather than a literal reuse of DESCRIPTORS_HEAD_WALLTIME.
-        this_walltime="${THEMATICAL_PATHS_WALLTIME}"
-        printf "Detected --thematical_paths in %s; per-experiment walltime=%s.\n" \
-            "${args_file}" "${this_walltime}"
     elif args_file_has_flag "${args_file}" --deepclip; then
-        # Fourth sibling of the same no-towers shape, and the most extreme of them:
+        # Another sibling of the same no-towers shape, and the most extreme of them:
         # under --deepclip, InteractionClassification builds architecture/deepclip.py
         # and nothing else at all (1960 parameters at DeepCLIP's published settings,
         # 8960 at the widest sweep arm). Checked ahead of --fast_attention below for

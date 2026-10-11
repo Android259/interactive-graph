@@ -9,12 +9,12 @@ import torch
 
 def split_and_sample_interactions(csv, seed, unlabeled_fraction=0.056):
     """Keep every positive row and sample only rows labeled as unlabeled."""
-    csvtrue = csv[csv["Interaction"] == 1].copy()
-    csvfalse = csv[csv["Interaction"] == 0].sample(
+    positive_pairs = csv[csv["Interaction"] == 1].copy()
+    unlabeled_pairs = csv[csv["Interaction"] == 0].sample(
         frac=unlabeled_fraction,
         random_state=seed,
     ).copy()
-    return csvtrue, csvfalse
+    return positive_pairs, unlabeled_pairs
 
 
 def _hard_negative_weights(candidates, positive_lipid_names, similarity, species_index, share):
@@ -243,12 +243,12 @@ def split_and_sample_family_balanced_interactions(
     hard_negative_share=0.5, negative_mode="hard",
 ):
     """Keep every positive and sample per-family-matched negatives (1:1)."""
-    csvtrue = csv[csv["Interaction"] == 1].copy()
-    csvfalse = sample_family_balanced_negatives(
+    positive_pairs = csv[csv["Interaction"] == 1].copy()
+    unlabeled_pairs = sample_family_balanced_negatives(
         csv, seed, ratio, strata, hard_negative_pool, excluded_groups,
         hard_negative_share, negative_mode,
     ).copy()
-    return csvtrue, csvfalse
+    return positive_pairs, unlabeled_pairs
 
 
 def sample_protein_balanced_negatives(
@@ -281,12 +281,12 @@ def split_and_sample_protein_balanced_interactions(
     hard_negative_share=0.5, negative_mode="hard",
 ):
     """Keep every positive and sample per-protein-matched negatives (1:1)."""
-    csvtrue = csv[csv["Interaction"] == 1].copy()
-    csvfalse = sample_protein_balanced_negatives(
+    positive_pairs = csv[csv["Interaction"] == 1].copy()
+    unlabeled_pairs = sample_protein_balanced_negatives(
         csv, seed, ratio, strata, hard_negative_pool, excluded_groups,
         hard_negative_share, negative_mode,
     ).copy()
-    return csvtrue, csvfalse
+    return positive_pairs, unlabeled_pairs
 
 
 # lipid_class_series and the ambiguity table live in dataloader.lipid_classes so the
@@ -396,15 +396,15 @@ def split_and_sample_lipid_class_balanced_interactions(
     excluded_groups=None, hard_negative_share=0.5, negative_mode="hard",
 ):
     """Keep every positive and sample per-(group, lipid class)-matched negatives (1:1)."""
-    csvtrue = csv[csv["Interaction"] == 1].copy()
-    csvfalse = sample_lipid_class_balanced_negatives(
+    positive_pairs = csv[csv["Interaction"] == 1].copy()
+    unlabeled_pairs = sample_lipid_class_balanced_negatives(
         csv, seed, group_column, ratio, hard_negative_pool, excluded_groups,
         hard_negative_share, negative_mode,
     ).copy()
-    return csvtrue, csvfalse
+    return positive_pairs, unlabeled_pairs
 
 
-def rebalance_excluded_group_negatives(csv, csvfalse, excluded_groups, seed):
+def rebalance_excluded_group_negatives(csv, unlabeled_pairs, excluded_groups, seed):
     """Resample each excluded group's negatives to match its positive count (1:1).
 
     `split_and_sample_interactions` only keeps a global random subsample of
@@ -417,15 +417,15 @@ def rebalance_excluded_group_negatives(csv, csvfalse, excluded_groups, seed):
     pos:neg ratio is 1:1 either way.
     """
     if not excluded_groups:
-        return csvfalse
+        return unlabeled_pairs
     excluded_lower = {group.lower() for group in excluded_groups}
     domain_lower = csv["ProteinDomain"].str.lower()
-    csvfalse_domain = domain_lower.loc[csvfalse.index]
-    parts = [csvfalse[~csvfalse_domain.isin(excluded_lower)]]
+    unlabeled_domain = domain_lower.loc[unlabeled_pairs.index]
+    parts = [unlabeled_pairs[~unlabeled_domain.isin(excluded_lower)]]
     for group in excluded_lower:
         group_mask = domain_lower == group
         positive_count = int(((csv["Interaction"] == 1) & group_mask).sum())
-        current_negatives = csvfalse[csvfalse_domain == group]
+        current_negatives = unlabeled_pairs[unlabeled_domain == group]
         current_count = len(current_negatives)
         if positive_count == 0 or current_count == positive_count:
             parts.append(current_negatives)

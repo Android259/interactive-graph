@@ -1,4 +1,26 @@
 #! /usr/bin/env python3
+"""Legacy, multi-section protein embedding script (pre-dates the dedicated
+embed_protein_*.py scripts in this directory). Three unrelated pieces, in order:
+
+1. (commented out, lines ~1-99) The original ESM3 call this project used, before
+   preprocessing/embed_protein_esm3_v2.py replaced it: loads a single FASTA given as
+   sys.argv[1], embeds it with ESM3 (sequence-only, no structure/confidence tracks),
+   and prints the per-residue embedding shape (the actual pkl.dump is itself commented
+   out here).
+2. (active) A ProstT5 (Rostlab/ProstT5) per-residue/per-protein embedding generator,
+   with its own CLI (see create_arg_parser()):
+       python3 preprocessing/EmbedProtein.py --input seqs.fasta --output embeddings.h5 \\
+           --half 1 --is_3Di 0 --per_protein 1
+3. (active, runs unconditionally at import time, not inside main()) A UniProt-to-PDB
+   sequence alignment step that remaps a per-UniProt-sequence embedding pickle onto the
+   PDB's own (possibly shorter/gapped) residue numbering with biotite, used via
+   preprocessing/embedscript.sh's positional invocation:
+       python3 preprocessing/EmbedProtein.py <uniprot.fasta> <pdb.fasta> <embedding.pkl>
+   This writes <stem>_ESM2pdb.pkl next to the input embedding. Superseded by the
+   explicit alignment check in preprocessing/plm_alignment.py.
+
+Kept for history; see preprocessing/embed_protein_esm3_v2.py for the active ESM3 path.
+"""
 
 #ESM
 

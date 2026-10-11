@@ -1,4 +1,16 @@
 #!/usr/bin/env python3
+"""Collect every distinct isomeric-canonical SMILES used in the interaction table.
+
+Reads SmileGlobal/SmileFragment from the (negative-interaction-corrected) processed
+CSV, splits each cell's ";"-joined candidates, canonicalizes each with RDKit
+(isomericSmiles=True), and deduplicates. Used as the input list for
+preprocessing/embed_isomeric_smiles_molformer.py, which embeds each of these SMILES
+with the pretrained MoLFormer model -- this script only decides WHICH strings need an
+embedding, it does not compute one.
+
+Usage:
+    python3 preprocessing/embed_isomeric_smiles.py
+"""
 
 import argparse
 import pickle as pkl

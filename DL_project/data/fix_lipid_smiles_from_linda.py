@@ -36,7 +36,7 @@ from pathlib import Path
 import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent
-XLS_PATH = DATA_DIR / "lipid_data_iso_correct_FROM_LINDA.xls"
+LINDA_CSV_PATH = DATA_DIR / "lipid_data_iso_correct_FROM_LINDA.csv"
 CSV_PATH = DATA_DIR / "Processed_Negative_Interaction_Corrected_Domains.csv"
 OUT_PATH = DATA_DIR / "Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed.csv"
 
@@ -59,16 +59,16 @@ def parse_chain_suffix(lipid_chains):
 
 
 def load_corrections():
-    xls = pd.read_excel(XLS_PATH)
+    xls = pd.read_csv(LINDA_CSV_PATH)
     expected_cols = {"LTP", "Lipid", "Lipid Chains", "OLD Lipid SMILES", "NEW Lipid SMILES"}
     missing = expected_cols - set(xls.columns)
     if missing:
-        raise ValueError(f"xls file missing expected columns: {missing}")
+        raise ValueError(f"Linda CSV missing expected columns: {missing}")
 
     for col in ("LTP", "Lipid", "OLD Lipid SMILES", "NEW Lipid SMILES"):
         n_null = xls[col].isnull().sum()
         if n_null:
-            print(f"[warn] xls column {col!r} has {n_null} null values")
+            print(f"[warn] Linda CSV column {col!r} has {n_null} null values")
 
     changed = xls[xls["OLD Lipid SMILES"] != xls["NEW Lipid SMILES"]].copy()
 

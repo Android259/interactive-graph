@@ -2,8 +2,7 @@ import torch
 import torch.nn.functional as F
 import torch_geometric
 
-from dataloader.descriptors import full_catalog_order, parse_descriptor_list
-from dataloader.pocket_lipid_compatibility import compat_input_width
+from dataloader.descriptors import full_catalog_order, parse_descriptor_heads
 from torch_geometric.utils import softmax as scatter_softmax
 from torch_geometric.utils import to_dense_batch
 
@@ -12,11 +11,8 @@ from .mlp_utils import (
     insert_hidden_gate, insert_input_gate, insert_output_gate,
     mlp_hidden_dims, link_concrete_dropouts, build_ffn_with_residual,
 )
-from .descriptor_head import DescriptorHead
 from .named_descriptor_head import NamedDescriptorHead, pool_descriptor_head_outputs
 from .descriptor_mlp_head import DescriptorMLPHead
-from .thematic_descriptor_head import ForcedInteraction
-from .thematic_descriptor_head import ThematicDescriptorHead
 
 
 class _GradientReversal(torch.autograd.Function):
@@ -291,135 +287,26 @@ class Final_Layer(torch.nn.Module):
         super(Final_Layer, self).__init__()
         self.config = config
 
-        if config.descriptors_head:
-            # Sufficiency test for --descriptors alone (ModelConfig docstring):
-            # nothing but the descriptor head and a small classifier on its output. No
-            # pooling/bilinear/adversary/DANN/chem-prior machinery -- none of it
-            # applies (validate() rejects the combinations that would need it), and
+        if config.descriptors_head or config.descriptor_mlp:
+            # Sufficiency tests (ModelConfig docstring on --descriptor_heads): nothing but
+            # the descriptor path and a small classifier on its output. No pooling/
+            # bilinear/adversary/DANN/chem-prior machinery -- none of it applies
+            # (validate() rejects the combinations that would need it), and
             # InteractionClassification never builds protein1/lipid1/cross_attention1
-            # under this flag, so forward() must not read anything else either.
-            #
-            # DescriptorHead.output_dim, not a hardcoded hiddim: pool_type=
-            # "add_max" doubles it (concat of add+max, same as it doubles
-            # pooled_lip_dim/pooled_prot_dim below) and --descriptor_flatten
-            # widens it to token_count*hiddim.
-            #
-            # --descriptor_names (ModelConfig docstring): swaps the fixed
-            # DATALOADER_TOKENS set for an arbitrary named one, the same
-            # NamedDescriptorHead --two_descriptors_paths' good/bad pair already
-            # builds -- ONE head here, not two, so catalog_order is just this head's
-            # own tokens (nothing else shares the descriptor_catalog_input tensor to
-            # agree on column order with).
-            if config.descriptor_names:
-                catalog_order = full_catalog_order(config)
-                self.descriptor_head = NamedDescriptorHead(
-                    config, parse_descriptor_list(config.descriptor_names),
-                    catalog_order, act_fn,
+            # under these flags, so forward() must not read anything else either.
+            heads = parse_descriptor_heads(config.descriptor_heads)
+            catalog_order = full_catalog_order(config)
+            if config.descriptor_mlp:
+                # An ordinary feedforward network over the one head's tokens, with none
+                # of NamedDescriptorHead's shared per-token Linear(1, dim) embedding --
+                # see files/results/descriptors_head_bottleneck.md for why that
+                # embedding was suspected of bottlenecking the self-attention head.
+                self.descriptor_mlp_head = DescriptorMLPHead(
+                    config, heads[0], catalog_order, act_fn
                 )
+                head_dim = self.descriptor_mlp_head.output_dim
             else:
-                self.descriptor_head = DescriptorHead(config, act_fn)
-            head_dim = self.descriptor_head.output_dim
-            self.binar = torch.nn.Sequential(
-                torch.nn.Linear(head_dim, config.hiddim),
-                make_activation(config, act_fn),
-                *make_final_dropout(config, config.hiddim),
-                torch.nn.Linear(config.hiddim, 2),
-            )
-            self._adv = None
-            self._pooled_partners = None
-            self._dann_features = None
-            self._chem_features = None
-            return
-
-        if config.two_descriptors_paths:
-            # Second sufficiency-test branch, sibling to descriptors_head just above
-            # (mutually exclusive, ModelConfig.validate): --good_descriptors and
-            # --bad_descriptors each build their OWN NamedDescriptorHead (arbitrary
-            # named token subset instead of DescriptorHead's fixed set), and the
-            # two heads' pooled vectors are reduced to one with pool_descriptor_head_
-            # outputs -- the same pool_type reduction each head already uses
-            # internally on its own tokens, just applied again over the 2-vector axis.
-            # The FULL, shared column order dataloader/Dataloader.py's
-            # descriptor_catalog_input tensor is stacked in for this config -- both
-            # heads are built against this SAME order (not each recomputing its own
-            # union) so they agree on where their tokens live in the one tensor both
-            # read from.
-            catalog_order = full_catalog_order(config)
-            self.good_descriptor_head = NamedDescriptorHead(
-                config, parse_descriptor_list(config.good_descriptors), catalog_order, act_fn
-            )
-            self.bad_descriptor_head = NamedDescriptorHead(
-                config, parse_descriptor_list(config.bad_descriptors), catalog_order, act_fn
-            )
-            # Both heads share config, so both have the same output_dim; the combine
-            # step below only makes sense stacking equal-width vectors.
-            head_dim = self.good_descriptor_head.output_dim
-            self.descriptor_combine_pool_type = getattr(config, "pool_type", "mean")
-            if self.descriptor_combine_pool_type == "gem":
-                self.descriptor_combine_gem_pool = GeMPool()
-            # add_max concatenates add-pool and max-pool over the 2-vector axis, so it
-            # doubles combined_dim on TOP of whatever head_dim already is (head_dim
-            # itself is already doubled by add_max if that is how EACH head reduced
-            # its own tokens -- the two doublings are independent, one per pooling
-            # step, same as pooled_lip_dim/pooled_prot_dim vs classifier_input_dim
-            # elsewhere in this class).
-            combined_dim = (
-                2 * head_dim if self.descriptor_combine_pool_type == "add_max" else head_dim
-            )
-            self.binar = torch.nn.Sequential(
-                torch.nn.Linear(combined_dim, config.hiddim),
-                make_activation(config, act_fn),
-                *make_final_dropout(config, config.hiddim),
-                torch.nn.Linear(config.hiddim, 2),
-            )
-            self._adv = None
-            self._pooled_partners = None
-            self._dann_features = None
-            self._chem_features = None
-            return
-
-        if config.thematical_paths:
-            # Third sufficiency-test branch, sibling to descriptors_head/two_pair_
-            # descriptors_paths above (mutually exclusive, ModelConfig.validate):
-            # forces a lipid<->protein interaction within each of --geometric_
-            # descriptors/--chemical_descriptors, then forces the two group vectors
-            # together -- see architecture/thematic_descriptor_head.py and files/
-            # files/results/thematical_paths_summary.md.
-            catalog_order = full_catalog_order(config)
-            self.thematical_head = ThematicDescriptorHead(
-                config, config.geometric_descriptors, config.chemical_descriptors,
-                catalog_order, act_fn,
-                geometric_pair_priors=getattr(config, "geometric_pair_priors", ""),
-                chemical_pair_priors=getattr(config, "chemical_pair_priors", ""),
-            )
-            head_dim = self.thematical_head.output_dim
-            self.binar = torch.nn.Sequential(
-                torch.nn.Linear(head_dim, config.hiddim),
-                make_activation(config, act_fn),
-                *make_final_dropout(config, config.hiddim),
-                torch.nn.Linear(config.hiddim, 2),
-            )
-            self._adv = None
-            self._pooled_partners = None
-            self._dann_features = None
-            self._chem_features = None
-            return
-
-        if config.descriptor_mlp:
-            # Fourth sufficiency-test branch, sibling to descriptors_head/two_pair_
-            # descriptors_paths/thematical_paths above (mutually exclusive,
-            # ModelConfig.validate): DescriptorMLPHead (architecture/
-            # descriptor_mlp_head.py) instead of NamedDescriptorHead -- an ordinary
-            # feedforward network over --descriptor_names' own tokens, with none of
-            # NamedDescriptorHead's shared per-token Linear(1, dim) embedding. See
-            # files/results/descriptors_head_bottleneck.md for why that embedding was
-            # suspected of bottlenecking --descriptors_head on this same input.
-            catalog_order = full_catalog_order(config)
-            self.descriptor_mlp_head = DescriptorMLPHead(
-                config, parse_descriptor_list(config.descriptor_names),
-                catalog_order, act_fn,
-            )
-            head_dim = self.descriptor_mlp_head.output_dim
+                head_dim = self._build_descriptor_heads(heads, catalog_order, act_fn)
             self.binar = torch.nn.Sequential(
                 torch.nn.Linear(head_dim, config.hiddim),
                 make_activation(config, act_fn),
@@ -470,27 +357,20 @@ class Final_Layer(torch.nn.Module):
                 self.prot_pool_norm = torch.nn.LayerNorm(pooled_prot_dim)
         else:
             classifier_input_dim = pooled_lip_dim + pooled_prot_dim
-        # Extra columns concatenated into common_out in forward(): one standardised
-        # pocket-vs-chain-length difference under --compatibility_input, or the chain
-        # length and the clash term separately under --compatibility_split_input
-        # (files/reference/pocket_lipid_compatibility.md, files/results/compat_input_audit.md). Added
-        # here, before every head that reads classifier_input_dim (binar,
+        # Extra columns concatenated into common_out in forward() are added to
+        # classifier_input_dim here, before every head that reads it (binar,
         # family_adversaries, chem_head) is built, so all of them size correctly for
-        # the wider vector without a second special case each. ModelConfig.validate
-        # rejects either combined with bilinear_fusion -- Bilinear takes exactly two
-        # vectors, and pair-level scalars have no well-defined place in that product.
-        self.compat_width = compat_input_width(self.config)
-        classifier_input_dim += self.compat_width
+        # the wider vector without a second special case each.
 
         # --node_bilinear_fusion (training/read_configuration.py, architecture/
         # cross_attention.py): CrossAttention stashes one interaction vector per graph
         # pair -- a genuine elementwise/Hadamard fusion of a lipid node's own content
         # and a protein node's own content (ForcedInteraction's signed_sqrt(proj_a(lip)
-        # * proj_b(prot)) recipe, architecture/thematic_descriptor_head.py), summed
+        # * proj_b(prot)) recipe, architecture/forced_interaction.py), summed
         # over every lipid/protein node pair the cross-attention already scores,
-        # BEFORE either side is pooled. Concatenated into common_out the same way
-        # compat_input is, just below -- but unlike compat_input/descriptors this
-        # is NOT rejected alongside --bilinear_fusion (ModelConfig.validate): it is
+        # BEFORE either side is pooled. Concatenated into common_out just below -- but
+        # unlike the descriptor heads this is NOT rejected alongside
+        # --bilinear_fusion (ModelConfig.validate): it is
         # already a bottlenecked multiplicative quantity in its own right, so stacking
         # it next to the pool-level bilinear product adds a second, independent
         # bilinear channel rather than reopening the single-partner shortcut
@@ -500,60 +380,16 @@ class Final_Layer(torch.nn.Module):
         if self.node_bilinear_fusion:
             classifier_input_dim += lip_dim
 
-        # --descriptors (training/read_configuration.py, architecture/
-        # descriptor_head.py): one self-attention-pooled vector, concatenated
-        # the same way compat_input is -- both are rejected in combination with
-        # bilinear_fusion for the same reason (ModelConfig.validate). Width is
-        # DescriptorHead.output_dim, not a hardcoded hiddim -- see its own
-        # __init__ for when pool_type/--descriptor_flatten widen it.
-        #
-        # --descriptor_names alongside plain --descriptors (i.e. without
-        # --descriptors_head) swaps this ADDITIVE head for a NamedDescriptorHead over an
-        # arbitrary named token set too -- the same swap the head-only descriptors_head
-        # branch above already does, just here the result still runs alongside the
-        # normal protein/lipid towers instead of replacing them. See forward() below for
-        # the matching swap of which tensor gets read.
+        # --descriptor_heads without a sufficiency-test flag: the heads' vector is
+        # concatenated into common_out and rejected in combination with bilinear_fusion
+        # (ModelConfig.validate). Width is the heads' output_dim, not a hardcoded hiddim -- see _build_descriptor_heads for
+        # when pool_type widens it.
         self.descriptor_head = None
-        if self.config.descriptors:
-            if self.config.descriptor_names:
-                catalog_order = full_catalog_order(self.config)
-                self.descriptor_head = NamedDescriptorHead(
-                    self.config, parse_descriptor_list(self.config.descriptor_names),
-                    catalog_order, act_fn,
-                )
-            else:
-                self.descriptor_head = DescriptorHead(self.config, act_fn)
-            classifier_input_dim += self.descriptor_head.output_dim
-
-        # --lipid_head_descriptors: the head half of the two-branch lipid split. One
-        # extra channel, ForcedInteraction(head vector, pooled protein) -- product only,
-        # no skip -- so these columns cannot reach the classifier without the protein.
-        # See ModelConfig.lipid_head_descriptors for why this half is treated
-        # differently from --lipid_descriptors' ordinary broadcast.
-        self.lipid_head_tokens = parse_descriptor_list(
-            getattr(self.config, "lipid_head_descriptors", "")
-        )
-        self.lipid_head_interaction = None
-        if self.lipid_head_tokens:
-            catalog_index = {
-                name: position
-                for position, name in enumerate(full_catalog_order(self.config))
-            }
-            self.register_buffer(
-                "lipid_head_columns",
-                torch.tensor(
-                    [catalog_index[name] for name in self.lipid_head_tokens],
-                    dtype=torch.long,
-                ),
-                persistent=False,
+        if self.config.descriptor_heads:
+            classifier_input_dim += self._build_descriptor_heads(
+                parse_descriptor_heads(self.config.descriptor_heads),
+                full_catalog_order(self.config), act_fn,
             )
-            # Lifted to the protein's own width first: ForcedInteraction multiplies two
-            # projections elementwise and needs one shared dim.
-            self.lipid_head_lift = torch.nn.Linear(
-                len(self.lipid_head_tokens), prot_dim
-            )
-            self.lipid_head_interaction = ForcedInteraction(prot_dim, self.config, act_fn)
-            classifier_input_dim += prot_dim
 
         if self.config.attention_pooling:
             # Learned-query attention pooling replaces the fixed reduction; the protein
@@ -735,88 +571,73 @@ class Final_Layer(torch.nn.Module):
             else None,
         )
 
+    def _build_descriptor_heads(self, heads, catalog_order, act_fn):
+        """One NamedDescriptorHead per --descriptor_heads segment; returns the width of
+        the vector they reduce to.
+
+        The first head is `descriptor_head` and any others sit in
+        `descriptor_extra_heads` (empty for one head, which adds no state_dict key), so
+        a one-head checkpoint keeps the keys it was saved under. All heads are built
+        against the SAME catalog_order, so they agree on where their tokens live in the
+        one tensor they read. Several heads' vectors are reduced to one with
+        pool_descriptor_head_outputs: the same pool_type reduction each head already
+        uses internally on its own tokens, applied again over the head axis.
+        """
+        built = [
+            NamedDescriptorHead(self.config, head, catalog_order, act_fn) for head in heads
+        ]
+        self.descriptor_head = built[0]
+        self.descriptor_extra_heads = torch.nn.ModuleList(built[1:])
+        head_dim = built[0].output_dim
+        self.descriptor_combine_pool_type = getattr(self.config, "pool_type", "mean")
+        if len(built) == 1:
+            return head_dim
+        if self.descriptor_combine_pool_type == "gem":
+            self.descriptor_combine_gem_pool = GeMPool()
+        # add_max concatenates add-pool and max-pool over the head axis, so it doubles
+        # the width on TOP of whatever head_dim already is (itself doubled by add_max if
+        # that is how EACH head reduced its own tokens -- one doubling per pooling step).
+        return 2 * head_dim if self.descriptor_combine_pool_type == "add_max" else head_dim
+
+    def _descriptor_vector(self, descriptor_catalog_input):
+        """The descriptor heads' vector for a batch: [batch, width]."""
+        if descriptor_catalog_input is None:
+            raise ValueError(
+                "descriptor_heads is set but forward() got no descriptor_catalog_input "
+                "-- Dataloader and forward_args only attach it when the flag was set at "
+                "data-load time too; check the flags match."
+            )
+        flat = descriptor_catalog_input.view(descriptor_catalog_input.shape[0], -1)
+        vectors = [self.descriptor_head(flat)]
+        vectors += [head(flat) for head in self.descriptor_extra_heads]
+        if len(vectors) == 1:
+            return vectors[0]
+        return pool_descriptor_head_outputs(
+            vectors,
+            self.descriptor_combine_pool_type,
+            self.config.pool,
+            gem_pool=getattr(self, "descriptor_combine_gem_pool", None),
+        )
+
     def forward(
         self, lip, prot, lip_batch, prot_batch, pool, prot_pocket=None,
-        frozen_prior=None, compat_input=None, pocket_descriptor=None,
-        descriptor_input=None, descriptor_catalog_input=None,
+        frozen_prior=None, descriptor_catalog_input=None,
         node_bilinear_input=None,
     ):
         """Pool both modalities by sample and return binary logits."""
-        if self.config.descriptors_head:
-            if self.config.descriptor_names:
-                # NamedDescriptorHead reads the shared descriptor_catalog_input
-                # tensor by name, same as --two_descriptors_paths' two heads --
-                # not descriptor_input/pocket_descriptor, DescriptorHead's
-                # own fixed-token inputs.
-                if descriptor_catalog_input is None:
-                    raise ValueError(
-                        "descriptors_head is set with descriptor_names but forward() "
-                        "got no descriptor_catalog_input -- Dataloader and "
-                        "forward_args only attach it when --descriptor_names was set "
-                        "at data-load time too; check the flags match."
-                    )
-                batch_size = descriptor_catalog_input.shape[0]
-                vec = self.descriptor_head(
-                    descriptor_catalog_input.view(batch_size, -1)
-                )
-                return self.binar(vec)
-            if descriptor_input is None or pocket_descriptor is None:
-                raise ValueError(
-                    "descriptors_head is set but forward() got no "
-                    "descriptor_input/pocket_descriptor -- Dataloader and "
-                    "forward_args only attach these when --descriptors was set "
-                    "at data-load time too (needs_pocket_descriptor); check the "
-                    "flags match."
-                )
-            batch_size = pocket_descriptor.shape[0]
-            vec = self.descriptor_head(
-                descriptor_input.view(batch_size, -1), pocket_descriptor
-            )
-            return self.binar(vec)
-
-        if self.config.thematical_paths:
-            if descriptor_catalog_input is None:
-                raise ValueError(
-                    "thematical_paths is set but forward() got no "
-                    "descriptor_catalog_input -- Dataloader and forward_args only "
-                    "attach it when --geometric_descriptors/--chemical_descriptors "
-                    "were set at data-load time too; check the flags match."
-                )
-            batch_size = descriptor_catalog_input.shape[0]
-            vec = self.thematical_head(descriptor_catalog_input.view(batch_size, -1))
-            return self.binar(vec)
-
         if self.config.descriptor_mlp:
             if descriptor_catalog_input is None:
                 raise ValueError(
-                    "descriptor_mlp is set but forward() got no "
-                    "descriptor_catalog_input -- Dataloader and forward_args only "
-                    "attach it when --descriptor_names was set at data-load time "
-                    "too; check the flags match."
+                    "descriptor_mlp is set but forward() got no descriptor_catalog_input "
+                    "-- Dataloader and forward_args only attach it when "
+                    "--descriptor_heads was set at data-load time too; check the flags "
+                    "match."
                 )
-            batch_size = descriptor_catalog_input.shape[0]
-            vec = self.descriptor_mlp_head(descriptor_catalog_input.view(batch_size, -1))
-            return self.binar(vec)
+            flat = descriptor_catalog_input.view(descriptor_catalog_input.shape[0], -1)
+            return self.binar(self.descriptor_mlp_head(flat))
 
-        if self.config.two_descriptors_paths:
-            if descriptor_catalog_input is None:
-                raise ValueError(
-                    "two_descriptors_paths is set but forward() got no "
-                    "descriptor_catalog_input -- Dataloader and forward_args only "
-                    "attach it when --two_descriptors_paths was set at data-load "
-                    "time too; check the flags match."
-                )
-            batch_size = descriptor_catalog_input.shape[0]
-            descriptor_catalog_input = descriptor_catalog_input.view(batch_size, -1)
-            good_vec = self.good_descriptor_head(descriptor_catalog_input)
-            bad_vec = self.bad_descriptor_head(descriptor_catalog_input)
-            combined = pool_descriptor_head_outputs(
-                [good_vec, bad_vec],
-                self.descriptor_combine_pool_type,
-                self.config.pool,
-                gem_pool=getattr(self, "descriptor_combine_gem_pool", None),
-            )
-            return self.binar(combined)
+        if self.config.descriptors_head:
+            return self.binar(self._descriptor_vector(descriptor_catalog_input))
 
         lip_outs, prot_outs = self._pool_partners(lip, prot, lip_batch, prot_batch, pool, prot_pocket)
 
@@ -839,13 +660,6 @@ class Final_Layer(torch.nn.Module):
         elif getattr(self.config, "protein_only", False):
             # Mirror ablation: hide the lipid half instead.
             lip_outs = torch.zeros_like(lip_outs)
-        elif getattr(self.config, "descriptors_only", False):
-            # Mirrors lipid_only/protein_only, zeroing BOTH pooled partners so
-            # self.binar reads only the descriptor head's output below. Meant for
-            # eval on an already-trained checkpoint (see ModelConfig.descriptors
-            # docstring), not a training mode of its own.
-            lip_outs = torch.zeros_like(lip_outs)
-            prot_outs = torch.zeros_like(prot_outs)
 
         if self.config.bilinear_fusion:
             if self.config.bilinear_pooled_norm:
@@ -854,44 +668,6 @@ class Final_Layer(torch.nn.Module):
             common_out = self.bilinear(lip_outs, prot_outs)
         else:
             common_out = torch.cat([lip_outs, prot_outs], dim=1)
-
-        if self.lipid_head_interaction is not None:
-            if descriptor_catalog_input is None:
-                raise ValueError(
-                    "lipid_head_descriptors requires descriptor_catalog_input"
-                )
-            head_values = descriptor_catalog_input.view(
-                common_out.shape[0], -1
-            ).index_select(1, self.lipid_head_columns).to(common_out.dtype)
-            head_channel = self.lipid_head_interaction(
-                self.lipid_head_lift(head_values), prot_outs
-            )
-            common_out = torch.cat([common_out, head_channel], dim=1)
-
-        if self.compat_width:
-            # Variant B (files/reference/pocket_lipid_compatibility.md): the standardised,
-            # UNcalibrated pair quantities as actual inputs, not an addition to the
-            # logit -- self.binar's own first layer decides how much to trust them and
-            # can combine them nonlinearly with everything else. No guaranteed floor
-            # here, unlike frozen_prior below: this is the path without a proof it
-            # helps, only a reason to try it.
-            if compat_input is None:
-                raise ValueError(
-                    "compatibility_input/compatibility_split_input is set but forward() "
-                    "got no compat_input -- Dataloader only attaches it when the "
-                    "same flag was set at data-load time too; check the two match."
-                )
-            compat_input = compat_input.view(common_out.shape[0], -1)
-            if compat_input.shape[1] != self.compat_width:
-                # A width mismatch here means the loader and the model disagree about
-                # which variant is running, which would otherwise surface as a shape
-                # error inside binar with nothing pointing at the cause.
-                raise ValueError(
-                    f"compat_input has {compat_input.shape[1]} column(s) but this model "
-                    f"was built for {self.compat_width} -- the loader and the model "
-                    "were configured with different compatibility flags"
-                )
-            common_out = torch.cat([common_out, compat_input], dim=1)
 
         if self.node_bilinear_fusion:
             if node_bilinear_input is None:
@@ -904,33 +680,9 @@ class Final_Layer(torch.nn.Module):
             common_out = torch.cat([common_out, node_bilinear_input], dim=1)
 
         if self.descriptor_head is not None:
-            if self.config.descriptor_names:
-                # NamedDescriptorHead reads the shared descriptor_catalog_input tensor
-                # by name -- see __init__ above for why this head is a NamedDescriptorHead
-                # instead of DescriptorHead under --descriptor_names.
-                if descriptor_catalog_input is None:
-                    raise ValueError(
-                        "descriptors is set with descriptor_names but forward() "
-                        "got no descriptor_catalog_input -- Dataloader and forward_args "
-                        "only attach it when --descriptor_names was set at data-load "
-                        "time too; check the flags match."
-                    )
-                descriptor_vec = self.descriptor_head(
-                    descriptor_catalog_input.view(common_out.shape[0], -1)
-                )
-            else:
-                if descriptor_input is None or pocket_descriptor is None:
-                    raise ValueError(
-                        "descriptors is set but forward() got no "
-                        "descriptor_input/pocket_descriptor -- Dataloader and "
-                        "forward_args only attach these when --descriptors was "
-                        "set at data-load time too (needs_pocket_descriptor); check "
-                        "the flags match."
-                    )
-                descriptor_vec = self.descriptor_head(
-                    descriptor_input.view(common_out.shape[0], -1), pocket_descriptor
-                )
-            common_out = torch.cat([common_out, descriptor_vec], dim=1)
+            common_out = torch.cat(
+                [common_out, self._descriptor_vector(descriptor_catalog_input)], dim=1
+            )
 
         # Family DANN reads the FUSED vector -- the one place the per-partner adversary
         # cannot reach, and where cross-attention deposits the family-specific

@@ -288,7 +288,7 @@ def main():
             "the original null model. Otherwise a comma-separated descriptor-name "
             "list -- lipid-only, protein-only, pair, or any combination -- see "
             "null_model.py --features. analysis/full_label_report.py resolves this "
-            "automatically off a label's own --good_descriptors/--bad_descriptors "
+            "automatically off a label's own --descriptor_heads "
             "when called via --label instead of --scores."
         ),
     )

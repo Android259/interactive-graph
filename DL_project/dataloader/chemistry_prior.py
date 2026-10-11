@@ -116,31 +116,15 @@ def _lipid_descriptor_table(csv, data_dir=None):
     counts equally -- taking only the first would report an arbitrary member of the
     ambiguity as if it were the lipid's own property).
 
-    No longer self-persists ITS OWN output (the species-mean dict): averaging over a
-    species' candidates is now cheap arithmetic over values that are themselves already
-    cached on disk per candidate (data/lipid_descriptors.csv, see below) -- this is the
-    "caches are built from the values in the table" shape the species-mean dict used to
-    approximate with a second, redundant JSON file. `data_dir` is kept only for call-site
-    compatibility; it was never read for anything but that now-removed persistence (the
-    npr_cache lookup below always reads the project's own data/ regardless of it, exactly
-    as before).
+    Not persisted: the per-candidate values are already cached on disk
+    (data/lipid_descriptors.csv). `data_dir` is unused, kept for call-site compatibility.
     """
     from dataloader.pocket_lipid_compatibility import candidates_for_row
 
-    # npr1/npr2 are conformer-based (a 10-conformer ETKDG+MMFF embed per candidate,
-    # not microseconds like the other five) -- look them up in the project's on-disk
-    # per-candidate lipid table first (same table dataloader/descriptors.py's
-    # network path and training/pair_baseline_common.py's explicit_lipid_features
-    # read), and only fall back to a fresh embed on a miss, same fallback discipline as
-    # descriptor_values_by_row's own `cache` parameter.
+    # Per-candidate lookup in the on-disk descriptor table first, computing only on a miss.
     npr_cache = load_lipid_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
 
-    # data/lipid_descriptors.csv (built by data/build_descriptor_cache.py) already
-    # stores every one of these under the SAME name, except "heavy" (stored as
-    # "heavy_atoms" -- see that module's own build_pair_value_cache comment on the
-    # rename). A cache hit is a dict lookup instead of a live RDKit reparse (or, for
-    # experimental_lipid_volume, a pandas.read_csv of data/Lipid_Volumes.csv) --
-    # generalized from what previously only covered npr1/npr2.
+    # The table stores every name under the same key except "heavy" ("heavy_atoms").
     _CACHE_MEASURE_ALIAS = {"heavy": "heavy_atoms"}
 
     def _cached_measure(measure, compute, smiles):
@@ -176,9 +160,7 @@ def _lipid_descriptor_table(csv, data_dir=None):
         "tail_logp": compute_descriptors.tail_logp,
         "tail_molar_refractivity": compute_descriptors.tail_molar_refractivity,
         "tail_heavy_atoms": compute_descriptors.tail_heavy_atoms,
-        # data/Lipid_Volumes.csv lookup, not an RDKit formula -- see its own comment
-        # in dataloader/descriptors.py. A per-candidate miss is common (~70%);
-        # per-species below, every one of the 283 distinct FullIdentityOfLipid
+        # data/Lipid_Volumes.csv lookup: a per-candidate miss is common (~70%), but every
         # species resolves from at least one candidate.
         "experimental_lipid_volume": compute_descriptors.experimental_lipid_volume,
     }
@@ -203,8 +185,6 @@ def _lipid_descriptor_table(csv, data_dir=None):
             for name, vals in collected.items()
         }
     return per_species_values
-
-
 
 
 def _standardise_descriptor_table(table):
@@ -392,11 +372,8 @@ def feature_similarity(csv, data_dir, names, zscore=False):
                      buriedness_q50, depth_q10, apolar_sasa_share, aromatic_share,
                      hydropathy_core, hydropathy_rim), plus
                      PROTEIN_DERIVED_DESCRIPTOR_NAMES (polar_share = 1 -
-                     apolar_sasa_share, DescriptorHead's own token name for the
-                     plain pocket-shares pair; aromatic_share_coarse/
-                     polar_share_coarse, the same fixed-3-band --pair_descriptor_
-                     pocket_shares_coarse reads -- for an exact-token-set comparison
-                     against a --descriptors_head label trained with either).
+                     apolar_sasa_share; aromatic_share_coarse/polar_share_coarse,
+                     the fixed-3-band version of the two shares).
       pair         : PAIR_DESCRIPTOR_NAMES (occupancy, chain_extent_gap,
                      aromatic_contact, hbond_match, volume_fit -- see
                      dataloader.descriptors.pair_descriptor_value for what each

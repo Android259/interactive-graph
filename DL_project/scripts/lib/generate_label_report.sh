@@ -79,9 +79,9 @@ if (( do_summarize )); then
         # summary above.
         #
         # One run, on whatever --label's own args file trains with --
-        # --good_descriptors/--bad_descriptors resolved by analysis/
+        # --descriptor_heads resolved by analysis/
         # full_label_report.py's own --features default (falls back to the 4
-        # lipid-only pair_descriptor tokens for a label that sets neither flag).
+        # lipid-only pair_descriptor tokens for a label that sets none).
         # No separate tanimoto baseline run: the null model this label is judged
         # against is the one built from the SAME descriptor set the network
         # itself was trained to see, not a fixed, label-independent guess -- see

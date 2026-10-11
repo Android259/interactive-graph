@@ -1,40 +1,18 @@
-"""A whole split held as a few tensors on the device, batched by indexing.
+"""One split's samples preassembled into device tensors, batched by indexing.
 
-For --deepclip, and for --descriptors_head --descriptor_names (descriptors.
-descriptor_catalog_only), whose samples carry no lipid at all: an empty lipid Data,
-served as a lipid batch with x=None.
+Applies only under --deepclip or dh/mlp (descriptor_catalog_only): tiny models where
+PyG re-collating every sample, every batch, every epoch costs more than the model's
+own arithmetic. Not usable for a real protein/lipid graph -- raises on any node-level
+field (_NODE_LEVEL_KEYS) or a lipid with more than just `x`.
 
-A sample of such a run is fully determined by its row and, on the training split
-under lipid_random_choice (the default), by which candidate structure was drawn for
-it on that access. The DataLoader nevertheless rebuilt and
-re-collated those samples every batch of every epoch -- PyG's Python-level
-concatenation, key by key and sample by sample, then a transfer to the device -- for a
-model of ~2k parameters whose own arithmetic is a small part of that. Here every
-(row, candidate) sample is built and collated once, at startup, and a batch is one
-index into tensors that already sit on the device.
+Nothing here is re-implemented, only replayed, so batch order and candidate draws stay
+bit-identical to the DataLoader this replaces: the original batch sampler and its
+base-seed draw are reused, and lipid_random_choice's draw is replayed from the same
+process-wide generator in the same order -- which needs num_workers=0, since a worker's
+draw can't be observed from here (a drawn split with workers is not preassembled).
 
-What must NOT change is which rows land in which batch, in which order, and which
-candidate each one is drawn as, epoch after epoch -- that is what makes a run
-reproduce. So nothing is re-implemented, only replayed:
-
-* Batch order: the loader the run would have used is kept, and its OWN batch sampler
-  is driven (ClassBalancedBatchSampler, RotatingNegativeBatchSampler, or torch's
-  BatchSampler(RandomSampler)). Iterating a DataLoader also draws a 64-bit worker base
-  seed from the loader's generator (torch.utils.data.dataloader._BaseDataLoaderIter.
-  __init__) -- every epoch when workers are not persistent, once per run when they
-  are -- and for validation and test that generator is the one RandomSampler
-  shuffles with, so that draw is replayed too.
-* Candidate draws: Dataloader.get draws with `random.choice(range(n))` from Python's
-  process-wide generator. With num_workers=0 that is this process's, called here in
-  the same order (row by row, batch by batch, each batch right before it is yielded).
-  With workers the draws happen in the worker processes; those are not replayed, so a
-  drawn split with workers is not preassembled (preassembly_mode returns None).
-
-The batch it yields has the attributes the training loop reads off a PyG batch, with
-the values PyG's collation produces (graph-level fields concatenated along their first
-axis, a 0-dim field stacked), plus the lipid as the padded tensor architecture/
-deepclip.py would otherwise have built with to_dense_batch: `x` [graphs, longest, width]
-and `mask` on the device, `lengths` on the CPU, where packing needs them.
+Yields the same attributes a collated PyG batch would: graph-level fields concatenated,
+lipid as architecture/deepclip.py's own padded `x`/`mask` (+ `lengths` on the CPU).
 """
 
 import random

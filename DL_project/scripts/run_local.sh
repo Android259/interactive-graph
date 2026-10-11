@@ -60,8 +60,7 @@
 #   MAX_OMP_THREADS_PER_JOB Upper bound for one training process. Default: 4, the
 #                           measured optimum on the local 12-CPU machine -- 1 instead
 #                           when the args file has --descriptors_head,
-#                           --descriptors_only, --two_descriptors_paths or
-#                           --thematical_paths (measured too little compute per
+#                           or --descriptor_mlp (measured too little compute per
 #                           batch for multithreading to pay for itself; see the comment
 #                           at MAX_OMP_THREADS_PER_JOB's assignment below).
 #   RESERVED_MEM_GIB        RAM held back from the job-count cap, same idea as
@@ -740,7 +739,7 @@ if (( LOCAL_JOBS < 1 )); then LOCAL_JOBS=1; fi
 if (( LOCAL_JOBS > total_jobs )); then LOCAL_JOBS=${total_jobs}; fi
 OMP_THREADS_PER_JOB="${OMP_THREADS_PER_JOB:-$(( usable_cores / LOCAL_JOBS ))}"
 if (( OMP_THREADS_PER_JOB < 1 )); then OMP_THREADS_PER_JOB=1; fi
-# --descriptors_head/--descriptors_only build ~1000 parameters/~3% of a full run's
+# --descriptors_head builds ~1000 parameters/~3% of a full run's
 # (training/read_configuration.py's own docstrings for each) -- too little arithmetic
 # per batch for multithreading to earn back its own synchronisation cost. Measured on
 # this machine: a --descriptors_head grid stuck at 2 concurrent jobs under the default
@@ -750,21 +749,17 @@ if (( OMP_THREADS_PER_JOB < 1 )); then OMP_THREADS_PER_JOB=1; fi
 # explicit MAX_OMP_THREADS_PER_JOB still wins, same as every override on this page.
 # Thread count is fixed once for the whole combined pool (see the comment on
 # update_job_budget below), so with several labels sharing it, ANY of them
-# being descriptors_head/descriptors_only-sized tips the default to 1 --
+# being descriptors_head-sized tips the default to 1 --
 # too few threads for a heavier label in the same run costs it some intra-op
 # parallelism, which is safe; too many for a tiny one is the measured-9x
 # slowdown this default exists to avoid.
 default_max_omp_threads_per_job=4
 for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     if args_file_has_flag "${_label_args_file}" --descriptors_head \
-        || args_file_has_flag "${_label_args_file}" --descriptors_only \
-        || args_file_has_flag "${_label_args_file}" --two_descriptors_paths \
-        || args_file_has_flag "${_label_args_file}" --thematical_paths \
         || args_file_has_flag "${_label_args_file}" --descriptor_mlp; then
-        # --two_descriptors_paths/--thematical_paths/--descriptor_mlp are the
-        # same no-encoder-towers shape as --descriptors_head/--descriptors_only
-        # (architecture/final_layer.py builds only a tiny descriptor head +
-        # classifier under any of the five) -- same measured 9x slowdown risk from
+        # --descriptor_mlp is the same no-encoder-towers shape as --descriptors_head
+        # (architecture/final_layer.py builds only a tiny descriptor head + classifier
+        # under either) -- same measured 9x slowdown risk from
         # over-threading a too-small model applies. descriptor_mlp's own head
         # (architecture/descriptor_mlp_head.py) is smaller still, no per-token
         # self-attention at all.
@@ -881,7 +876,7 @@ for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
             "${_label_args_file}" >&2
     fi
 
-    # Same idea, for --descriptors' per-candidate/per-protein RDKit values
+    # Same idea, for the descriptor catalog's per-candidate/per-protein RDKit values
     # (dataloader/descriptor_cache_reader.py): built once here so the grid's N (group, seed) processes
     # share one cache instead of each re-running RDKit over the whole interaction table.
     # Never fatal: without it a job computes these values itself, exactly as before this

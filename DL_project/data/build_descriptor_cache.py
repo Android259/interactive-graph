@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the shared cache for --descriptors'/--two_descriptors_paths' shared
+"""Build the shared cache for the descriptor catalog's shared
 per-candidate/per-protein base values (chain/unsaturation/hbond/heavy/tail_count/extent --
 see needs_cache below).
 
@@ -20,12 +20,12 @@ Usage:
                                                  [--check_only]
 
     --args_file=PATH  Pick whether a cache is needed, and which isomeric variant, from
-                       that run's flags: neither --descriptors nor
-                       --two_descriptors_paths means no cache is read at all (see
-                       dataloader/Dataloader.py._compute_descriptors, which
-                       reads the cache under either flag), and --lipid_isomers selects
-                       the isomeric-SMILES variant. Without this, --descriptors is
-                       assumed and the deterministic (non-isomeric) variant is built.
+                       that run's flags: none of --descriptor_heads, --protein_descriptors,
+                       --lipid_descriptors or --deepclip_protein_gate means no cache is
+                       read at all (see dataloader/Dataloader.py._compute_descriptors),
+                       and --lipid_isomers selects the isomeric-SMILES variant. Without
+                       this, a cache is assumed needed and the deterministic
+                       (non-isomeric) variant is built.
     --force           Rebuild even when the cache is already current.
     --quiet           Print nothing when there was nothing to do.
     --check_only      Report whether a rebuild is needed (exit 0: nothing to do: not
@@ -68,50 +68,29 @@ def flags_in(args_file):
 def needs_cache(args_file):
     """(needed, isomeric), from that run's flags, or (True, False) with no args file.
 
-    Needed under --descriptors OR --two_descriptors_paths OR anything that
-    makes dataloader.descriptors.full_catalog_order(config) non-empty:
+    Needed exactly when dataloader.descriptors.full_catalog_order(config) is non-empty,
+    i.e. when any flag that feeds the descriptor catalog is present:
     Dataloader._compute_descriptors computes chain/unsaturation/hbond/heavy (and
-    conditionally tail_count) the moment ANY of descriptors_on/two_paths_on/
-    named_catalog_on is true (it returns early only when ALL THREE are false), so a
-    config using only --descriptor_names/--good_descriptors/--bad_descriptors/
-    --protein_descriptors/--lipid_descriptors/--geometric_descriptors/
-    --chemical_descriptors -- with neither --descriptors nor
-    --two_descriptors_paths itself -- still pays the ~12s-of-~13.6s RDKit/
-    pocket-parse cost this cache exists to remove, independently in every job sharing
-    a node, if this only checked the two bare flags. Checked here as raw flag presence
-    rather than by calling full_catalog_order itself (which needs a parsed ModelConfig,
-    not a flag list) -- --descriptor_names only counts when paired with --descriptors_head
-    or --descriptors, matching that function's own guard. --geometric_descriptors/
-    --chemical_descriptors (--thematical_paths, architecture/thematic_descriptor_head.py)
-    need no such pairing -- they are only ever read together with --thematical_paths
-    (ModelConfig.validate rejects them otherwise), and unlike --descriptor_names they
-    are never a bare, ambiguous name shared with an unrelated mode.
+    conditionally tail_count) the moment ANY of them is, and pays the ~12s-of-~13.6s
+    RDKit/pocket-parse cost this cache exists to remove, independently in every job
+    sharing a node, if the cache is missing. Checked here as raw flag presence rather
+    than by calling full_catalog_order itself (which needs a parsed ModelConfig, not a
+    flag list).
 
-    No lipid_shape distinction anymore: dataloader/descriptor_cache_reader.py's build
-    always computes every measure (see that module's docstring) regardless of whether
-    THIS run's own flags read radius_of_gyration/asphericity/molecular_volume, so the
-    next run that does never finds a cache silently missing them.
+    No lipid_shape distinction: dataloader/descriptor_cache_reader.py's build always
+    computes every measure (see that module's docstring), so the next run that reads
+    radius_of_gyration/asphericity/molecular_volume never finds a cache silently
+    missing them.
     """
     if args_file is None:
         return True, False
     flags = flags_in(args_file)
-    named_catalog_on = (
-        "--good_descriptors" in flags
-        or "--bad_descriptors" in flags
-        or "--protein_descriptors" in flags
-        or "--lipid_descriptors" in flags
-        or "--geometric_descriptors" in flags
-        or "--chemical_descriptors" in flags
-        or (
-            "--descriptor_names" in flags
-            and ("--descriptors_head" in flags or "--descriptors" in flags)
+    needed = any(
+        flag in flags
+        for flag in (
+            "--descriptor_heads", "--protein_descriptors", "--lipid_descriptors",
+            "--deepclip_protein_gate",
         )
-    )
-    needed = (
-        "--descriptors" in flags
-        or "--two_descriptors_paths" in flags
-        or "--thematical_paths" in flags
-        or named_catalog_on
     )
     return needed, "--lipid_isomers" in flags
 
@@ -140,7 +119,7 @@ def main(argv):
         if not quiet:
             print(
                 "pair descriptor cache: not needed "
-                "(neither --descriptors nor --two_descriptors_paths is on)"
+                "(no descriptor flag is on)"
             )
         return 0
 

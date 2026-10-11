@@ -1,4 +1,19 @@
 #!/usr/bin/env python3
+"""Embed every isomeric SMILES (preprocessing/embed_isomeric_smiles.py's output list)
+with the pretrained MoLFormer checkpoint and cache the resulting per-token embeddings.
+
+Loads IBM's MoLFormer (train_pubchem_light.LightningModule, bert_vocab.txt tokenizer)
+from the project-local checkpoint, runs it over the SMILES list in batches, and pickles
+{smiles: token_embedding_tensor} to data/lipid_SMILES_isomeric_embedding.pkl. This is
+the isomeric counterpart of the deterministic (non-isomeric) lipid SMILES embedding
+table dataloader/tensors_reading/lipid_embedding_tensors_reader.py reads for training;
+needed only when a run sets --lipid_isomers.
+
+Usage:
+    python3 preprocessing/embed_isomeric_smiles_molformer.py
+    python3 preprocessing/embed_isomeric_smiles_molformer.py --input preprocessing/isomeric_smiles_before_encoding.pkl \\
+        --output data/lipid_SMILES_isomeric_embedding.pkl
+"""
 
 import argparse
 import importlib.machinery

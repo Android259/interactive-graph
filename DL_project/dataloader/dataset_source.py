@@ -8,7 +8,7 @@ stereochemistry.
 The file is the stereo-corrected table with its candidate lists completed and its
 repeated measurements merged (`preprocessing/complete_lipid_candidate_sets.py`), so every
 row of a lipid lists the same isomer set and every (protein, lipid) cell appears exactly
-once: 10920 rows, the full 35 x 312 grid, 658 of them positive.
+once.
 
 Row order and row count are NOT those of the earlier table -- merging the 92 repeatedly
 measured cells removed 98 rows -- so pair IDs, which are original row positions, changed

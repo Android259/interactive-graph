@@ -8,7 +8,7 @@
 --pool_type=add
 
 --descriptors_head
---descriptor_names=unsaturation,hbond,heavy,occupancy,aromatic_share_coarse,polar_share_coarse
+--descriptor_heads=unsaturation,hbond,heavy,occupancy,aromatic_share_coarse,polar_share_coarse
 
 --save_model_in_dynamics
 

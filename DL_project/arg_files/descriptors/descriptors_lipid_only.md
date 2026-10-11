@@ -7,11 +7,8 @@
 --weight_decay=0.01
 --pool_type="add"
 
---descriptors
 --descriptors_head
---no_descriptor_extent
---no_descriptor_occupancy
---no_descriptor_pocket_shares
+--descriptor_heads=chain,unsaturation,hbond,heavy
 
 --save_model_in_dynamics
 

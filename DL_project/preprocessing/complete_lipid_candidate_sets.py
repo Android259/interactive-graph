@@ -2,6 +2,10 @@
 
 # Build the interaction table the loader reads, in four stages.
 #
+# Usage: python3 preprocessing/complete_lipid_candidate_sets.py [--input CSV] [--output CSV]
+#        [--report CSV] (see --help for the remaining flags, e.g. --keep-head-group-names,
+#        --keep-spelling-variants)
+#
 # Each stage answers a different question about a row, and they are ordered so that a
 # stage never has to guess at something a later one settles:
 #

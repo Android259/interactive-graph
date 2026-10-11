@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+"""Expand an interaction CSV to the full protein x lipid Cartesian product.
+
+For every distinct (LTPProtein, FullIdentityOfLipid) pair found in the positive
+(Interaction==1) rows of the input, writes exactly one output row: ProteinDomain
+and lipid metadata (SmileGlobal, SmileFragment, Lipid, ChainFragments) are
+deduplicated and merged from the input's own positive rows, Screen is the union of
+every screen the pair was seen in, and Interaction is 1 or 0 depending on whether
+the pair was ever recorded as positive. Used to turn a possibly incomplete/duplicated
+annotation table into one clean row per pair, with no copied/conflicting metadata.
+
+Usage:
+    python3 preprocessing/build_complete_interaction_dataset.py input.csv output.csv
+"""
 
 import argparse
 from itertools import product

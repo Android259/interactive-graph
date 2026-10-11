@@ -1,7 +1,21 @@
 #! /usr/bin/env python3
+"""Early, exploratory version of the negative-interaction generation step that became
+preprocessing/complete_lipid_candidate_sets.py / build_complete_interaction_dataset.py.
+
+Reads a semicolon-separated interaction CSV from sys.argv[1] (LTPProtein,
+FullIdentityOfLipid, ...), takes the full protein x lipid Cartesian product, and
+labels every pair not already present as a negative (Interaction=0), writing the
+result to Processed_Negative_int.csv. Has no `if __name__` guard and no CLI flags --
+every line runs top-to-bottom on import, and most of the body re-derives the same
+pairs/labels through a second, slower nested-loop path (kept as-is, not deduplicated,
+since this script is historical rather than actively maintained).
+
+Usage:
+    python3 generate_negative_interaction.py path/to/interactions.csv
+"""
 
 import pandas as pd
-from itertools import product 
+from itertools import product
 import sys
 
 df = pd.read_csv(sys.argv[1], sep=";")

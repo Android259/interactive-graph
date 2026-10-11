@@ -14,8 +14,8 @@ def lipid_class_series(csv):
     """Return the head-group class of every row, e.g. 'Phosphatidylcholine (34:1)' -> 'Phosphatidylcholine'.
 
     `FullIdentityOfLipid` spells the class out in full and puts the acyl composition in
-    a trailing parenthesis; stripping that leaves 34 chemical classes over the 312
-    distinct lipids. The class, not the individual species, is the level a binding
+    a trailing parenthesis; stripping that leaves the chemical classes.
+    The class, not the individual species, is the level a binding
     preference actually lives at (a protein that takes PC(32:1) takes PC(34:1) too).
 
     Two entries carry a stray ': ' prefix -- ': Phosphatidylcholine (32:2)' and

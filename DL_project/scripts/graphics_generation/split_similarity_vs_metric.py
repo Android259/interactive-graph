@@ -380,7 +380,7 @@ def held_lipid_classes(csv, spec):
 
 
 def working_set(csv, spec, held_classes, held_species=frozenset()):
-    """`PLIDataset.csvt`: every positive plus the sampled negatives, `pair_id` kept.
+    """`PLIDataset.sampled_split`: every positive plus the sampled negatives, `pair_id` kept.
 
     `pair_id` is the row's position in `csv` -- the loader's own definition (it reads
     `.index` off a frame that came straight from `pandas.read_csv`), and the key the
@@ -449,22 +449,22 @@ def halve_excluded_block(excluded, seed):
     return valid, test
 
 
-def split_working_set(csvt, spec, held_classes, held_species=frozenset()):
+def split_working_set(sampled_split, spec, held_classes, held_species=frozenset()):
     """train / valid / test frames, mirroring `Dataloader._split_interactions`."""
     if spec.excluded_groups:
         excluded_lower = {group.lower() for group in spec.excluded_groups}
-        train = csvt[~csvt["ProteinDomain"].str.lower().isin(excluded_lower)]
+        train = sampled_split[~sampled_split["ProteinDomain"].str.lower().isin(excluded_lower)]
     elif spec.excluded_subgroups or spec.lipid_coldsplit or spec.lipid_isolation:
-        train = csvt
+        train = sampled_split
     else:
-        train = csvt.sample(frac=0.85, random_state=spec.seed)
+        train = sampled_split.sample(frac=0.85, random_state=spec.seed)
 
     if spec.excluded_subgroups:
         train = train[~train["LTPProtein"].isin(set(spec.excluded_subgroups))]
     if held_classes or held_species:
         train = train[~cold_chemistry(train, held_classes, held_species)]
 
-    excluded = csvt.drop(train.index)
+    excluded = sampled_split.drop(train.index)
 
     if spec.double_coldsplit and (held_classes or held_species):
         in_cold_chemistry = cold_chemistry(excluded, held_classes, held_species)
@@ -505,8 +505,8 @@ def build_split(csv, spec):
 
     held_classes = held_lipid_classes(frame, spec)
     held_species = held_lipid_species(spec)
-    csvt = working_set(frame, spec, held_classes, held_species)
-    train, valid, test = split_working_set(csvt, spec, held_classes, held_species)
+    sampled_split = working_set(frame, spec, held_classes, held_species)
+    train, valid, test = split_working_set(sampled_split, spec, held_classes, held_species)
 
     def rows(part):
         ids = part["pair_id"].to_numpy(dtype=np.int64)

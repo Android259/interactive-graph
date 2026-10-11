@@ -21,11 +21,54 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dataloader.descriptors import parse_descriptor_list
+from dataloader.descriptors import parse_descriptor_heads, parse_descriptor_list
 from training.read_configuration import ModelConfig
 from training.run_metrics import RUN_METRIC_FIELDS
 from training.results_layout import in_family_layout, split_result_path
-MODEL_CONFIG_REPORT_FIELDS = tuple(field.name for field in fields(ModelConfig))
+# ModelConfig fields that no longer exist, kept as table columns: write_table rewrites
+# the whole table from CSV_FIELDS on every upsert, so a column dropped here would be
+# deleted -- history included -- by the next finished run. New rows leave them empty;
+# old reports still carry them, so parse_report keeps reading them too.
+LEGACY_CONFIG_FIELDS = (
+    "compat_extent_bins",
+    "descriptors",
+    "descriptor_pocket_shares",
+    "descriptor_pocket_shares_split",
+    "descriptor_pocket_shares_coarse",
+    "descriptor_lipid_shape",
+    "descriptor_extent",
+    "descriptor_occupancy",
+    "descriptor_flatten",
+    "descriptors_only",
+    "descriptor_names",
+    "two_descriptors_paths",
+    "good_descriptors",
+    "bad_descriptors",
+    "geometric_descriptors",
+    "chemical_descriptors",
+    "geometric_pair_priors",
+    "chemical_pair_priors",
+    "descriptors_in_protein_lipid",
+    "descriptors_in_protein",
+    "descriptors_in_lipid",
+    "no_embeddings",
+    "deepclip_lipid_descriptors",
+    "lipid_head_descriptors",
+    "pocket_descriptor_count",
+    "thematical_paths",
+    "thematical_orth_weight",
+    "thematical_single_norm",
+    "thematical_bn_scale",
+    "thematical_orthogonal_init",
+    "thematical_interaction_lr",
+    "compatibility_input",
+    "compatibility_split_input",
+    "compat_input_parts",
+)
+MODEL_CONFIG_REPORT_FIELDS = (
+    *(field.name for field in fields(ModelConfig)),
+    *LEGACY_CONFIG_FIELDS,
+)
 CONFIG_FIELDS = tuple(
     field_name for field_name in MODEL_CONFIG_REPORT_FIELDS
     if field_name != "label"
@@ -106,7 +149,7 @@ RUN_DERIVED_FIELDS = (
     "max_valid_epoch_gmean_recall",
     "collapse_fraction",
     # Not ModelConfig fields themselves (protein_descriptors/lipid_descriptors/
-    # descriptor_names ARE, and land in CONFIG_FIELDS by reflection already) -- these
+    # descriptor_heads ARE, and land in CONFIG_FIELDS by reflection already) -- these
     # three are the descriptor COUNT for each of the three named-catalog vectors a run
     # can build, recomputed from the saved name-list columns at table-build time rather
     # than cached anywhere, same reasoning as protein_node_feature_count's own comment
@@ -663,7 +706,7 @@ def metric_row(
     row["pocket_attention"] = row["prot_attention_pos_bias"]
     row["label_positive_fraction"] = _fraction(row["real_positive"], row["total"])
     row["prediction_positive_fraction"] = _fraction(row["predicted_positive"], row["total"])
-    # protein_descriptors/lipid_descriptors/descriptor_names are ModelConfig fields
+    # protein_descriptors/lipid_descriptors/descriptor_heads are ModelConfig fields
     # (CONFIG_FIELDS above) and land in the row by serialize_config's reflection
     # already -- these three are just their COUNT, recomputed from that same string at
     # table-build time so it does not need its own ModelConfig field.
@@ -673,10 +716,13 @@ def metric_row(
     row["lipid_descriptor_count"] = str(
         len(parse_descriptor_list(row.get("lipid_descriptors", "")))
     )
+    # Rows written before --descriptor_heads existed carry the same single head under
+    # the legacy descriptor_names column.
+    heads = row.get("descriptor_heads", "") or (
+        row.get("descriptor_names", "") if row.get("descriptors") == "1" else ""
+    )
     row["descriptor_head_count"] = (
-        str(len(parse_descriptor_list(row.get("descriptor_names", ""))))
-        if row.get("descriptors") == "1" and row.get("descriptor_names")
-        else ""
+        str(sum(len(head) for head in parse_descriptor_heads(heads))) if heads else ""
     )
 
     warnings = []

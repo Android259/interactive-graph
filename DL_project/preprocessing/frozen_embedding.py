@@ -1,4 +1,20 @@
 #! /usr/bin/env python3
+"""Legacy, notebook-style MoLFormer embedding script -- superseded by
+preprocessing/embed_isomeric_smiles_molformer.py.
+
+Loads the pretrained MoLFormer checkpoint (same hparams.yaml/checkpoint/vocab layout
+as embed_isomeric_smiles_molformer.py), reads a SMILES list from
+smiles_before_encoding_full.pkl (produced by an earlier, no-longer-present collection
+step), canonicalizes each entry with RDKit (dropping a few malformed-string artifacts
+by hand: stray ";", doubled "//"/"\\\\", stray "E"), embeds the canonical SMILES with
+MoLFormer, and pickles the per-token embeddings to full_embedding.pkl. Has no CLI and
+no `if __name__` guard: every line below runs top-to-bottom on import. Must be run
+from within preprocessing/ (paths are relative) with smiles_before_encoding_full.pkl
+present.
+
+Usage:
+    python3 frozen_embedding.py
+"""
 import numpy
 from argparse import Namespace
 import yaml

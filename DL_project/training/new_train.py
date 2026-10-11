@@ -92,10 +92,6 @@ def build_model(conf, train_dataset, device):
         model.set_rnabang_normalization(
             train_dataset.rnabang_normalization_stats()
         )
-    if conf.descriptor_pocket_shares_split:
-        model.set_descriptor_pocket_share_normalization(
-            train_dataset.pocket_descriptor_stats()
-        )
     model = model.to(device)
     return model
 
@@ -190,12 +186,12 @@ def build_loaders(conf, device, train_dataset, valid_dataset, test_dataset, trai
     return train_loader, valid_loader, test_loader, rotating_sampler
 
 
-def warm_caches(train_dataset, valid_dataset, test_dataset):
+def warm_all_caches(train_dataset, valid_dataset, test_dataset):
     """Fill every per-sample cache once, then drop the source artifacts they came from."""
     # Build every protein graph and lipid encoding once, here, so the DataLoader workers
     # fork with the caches already filled and share them copy-on-write instead of each
     # rebuilding its own during the first epoch.
-    cache_counts = train_dataset.warm_caches(train_dataset.csvt)
+    cache_counts = train_dataset.warm_caches(train_dataset.sampled_split)
     released_artifacts = set()
     for dataset in (train_dataset, valid_dataset, test_dataset):
         released_artifacts.update(dataset.release_source_artifacts())
@@ -344,7 +340,7 @@ def main():
     train_loader, valid_loader, test_loader, rotating_sampler = build_loaders(
         conf, device, train_dataset, valid_dataset, test_dataset, losses.train_labels
     )
-    warm_caches(train_dataset, valid_dataset, test_dataset)
+    warm_all_caches(train_dataset, valid_dataset, test_dataset)
     _return_freed_heap_to_kernel()
     train_batches_to_run = min(
         len(train_loader), (TRAIN_ROWS_PER_EPOCH_CAP + conf.batch - 1) // conf.batch

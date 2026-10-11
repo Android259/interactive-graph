@@ -575,8 +575,8 @@ def coldsplit_report(csv, entity_column, index, similarity, families, seeds,
     for family in families:
         held_classes = lipid_classes_for_holdout(csv, family, share)[0]
         for seed in seeds:
-            csvt = working_set(csv, seed, ratio, held_classes)
-            train, valid, test = split_func(csvt, family, seed, held_classes, double=True)
+            sampled_split = working_set(csv, seed, ratio, held_classes)
+            train, valid, test = split_func(sampled_split, family, seed, held_classes, double=True)
             evaluated = pandas.concat([valid, test])
 
             evaluated_entities = block_entities(entity_column, evaluated)

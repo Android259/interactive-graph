@@ -80,32 +80,7 @@ class DeepCLIP(torch.nn.Module):
         # gradients, forever. That is harmless at DeepCLIP's own NUM_FILTERS=1 (one
         # filter per width, nothing to be identical to) and fatal above it, so
         # validate() refuses filters > 1 unless the initialisation is changed.
-        # --deepclip_lipid_descriptors widens the per-character input: the named
-        # catalog quantities are broadcast onto every position beside the one-hot,
-        # so a window sees "these characters, in a molecule with this head group"
-        # rather than having to recover the head group from the characters alone.
-        descriptor_width = 0
-        lipid_descriptor_columns = None
-        lipid_descriptor_tokens = parse_descriptor_list(
-            getattr(config, "deepclip_lipid_descriptors", "")
-        )
-        if lipid_descriptor_tokens:
-            catalog_index = {
-                name: position
-                for position, name in enumerate(full_catalog_order(config))
-            }
-            lipid_descriptor_columns = torch.tensor(
-                [catalog_index[name] for name in lipid_descriptor_tokens],
-                dtype=torch.long,
-            )
-            descriptor_width = len(lipid_descriptor_tokens)
-        # register_buffer, not a plain attribute, so the column index follows the
-        # module to whatever device the model moves to -- and registered even when
-        # empty, because a buffer name cannot be assigned first and registered after.
-        self.register_buffer(
-            "lipid_descriptor_columns", lipid_descriptor_columns, persistent=False
-        )
-        conv_in = vocabulary + descriptor_width
+        conv_in = vocabulary
 
         self.convs = torch.nn.ModuleList([
             torch.nn.Conv1d(conv_in, filters, width, padding="same", bias=False)
@@ -288,18 +263,6 @@ class DeepCLIP(torch.nn.Module):
                 )
         else:
             dense, mask = to_dense_batch(lip, lip_batch)
-        if self.lipid_descriptor_columns is not None:
-            if descriptor_catalog_input is None:
-                raise ValueError(
-                    "deepclip_lipid_descriptors requires descriptor_catalog_input"
-                )
-            selected = descriptor_catalog_input.index_select(
-                1, self.lipid_descriptor_columns
-            ).to(dense.dtype)
-            # One row per graph, held constant along the character axis: these are
-            # properties of the molecule, not of a position in its spelling.
-            broadcast = selected.unsqueeze(1).expand(-1, dense.shape[1], -1)
-            dense = torch.cat((dense, broadcast * mask.unsqueeze(-1)), dim=-1)
         scanned = torch.cat(
             [conv(dense.transpose(1, 2)) for conv in self.convs], dim=1
         )
