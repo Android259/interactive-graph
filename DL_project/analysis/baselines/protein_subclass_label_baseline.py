@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import glob
 import os
 import sys
 
@@ -41,6 +40,7 @@ from reproducibility import seed_everything  # noqa: E402
 from dataloader.Dataloader import PLIDataset  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.splitting_on_blocks.lipid_subclass_blocks import article_subclass_species  # noqa: E402
+from analysis.checkpoint_scores import arg_lines  # noqa: E402
 
 DEFAULT_LABEL = "mlp_s15_nomb_hid64"
 # Lookup rules over the train rows of a (protein, subclass) cell. All three read train
@@ -50,24 +50,6 @@ DEFAULT_LABEL = "mlp_s15_nomb_hid64"
 #   c  predict 1 if the cell's train positive rate is >= 0.5
 RULES = ("a", "b", "c")
 DEFAULT_SEEDS = (0, 1, 2, 3, 4)
-
-
-def arg_lines(label):
-    # arg_files/<family>/<label>.md; "**" also matches a config left at the top level.
-    path = glob.glob(
-        os.path.join(PROJECT_ROOT, "arg_files", "**", f"{label}.md"), recursive=True
-    )[0]
-    lines = []
-    for raw in open(path):
-        stripped = raw.strip()
-        if not stripped.startswith("--"):
-            continue
-        if "=" in stripped:
-            key, value = stripped.split("=", 1)
-            lines.append(key + "=" + value.strip().strip('"').strip("'"))
-        else:
-            lines.append(stripped)
-    return lines
 
 
 def species_to_subclass_map():

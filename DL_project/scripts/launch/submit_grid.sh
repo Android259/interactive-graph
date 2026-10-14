@@ -5,87 +5,24 @@
 #   bash scripts/launch/submit_grid.sh arg_files/<config>.md
 #   bash scripts/launch/submit_grid.sh arg_files/a.md arg_files/b.md
 #
-# One file for both series. Which one runs is decided by each config itself: a
-# --cold_split flag in it selects separate held-out validation and test groups
-# (the table below), anything else excludes one group and uses it for both.
+# Each config picks its own series. Without --cold_split, one group is held out and
+# serves as both validation and test. With it, a job trains on 7 groups, selects the
+# checkpoint on one held-out group and tests on another:
 #
-# Several labels in one call is what makes packing cross labels possible: with
-# one label per call (the old contract here), each label's grid fills its own
-# pack(s) and each pack is its own OAR job -- on kraken-cpu, where PACK_SIZE is
-# sized to fit an entire descriptors_head grid already, that means one whole
-# 192-core node per label even when three tiny labels together would fit on
-# one. Passed several labels, this script builds ONE combined (label, group,
-# seed) stream and packs records into a job without caring which label they
-# came from, so packs -- and therefore nodes -- are filled to PACK_SIZE before
-# a new one opens, regardless of label boundaries.
+#   --excluded_groups=<TEST>,<VAL> --test_group=<TEST>
+#   -> csvtest = TEST | csvalidate = VAL | csvtrain = the other 7
 #
-# Called through scripts/run_bigfoot.sh / run_kraken.sh, which supply every
-# cluster-dependent setting as an environment variable -- never by patching this
-# file's text.
+# Either way TEST rotates over all 9 groups (9 x 5 seeds = 45 jobs); the VAL for each
+# is the val_for_test map below.
 #
-# =============================================================================
-# COLD SPLIT with SEPARATE validation and test protein groups.
+# Labels named in one call share their packs: their (label, group, seed) records go
+# into one stream, so a pack is filled to PACK_SIZE before the next one opens. One
+# label per call would mean one pack per label, and on kraken-cpu a whole 192-core
+# node per label.
 #
-# Each job trains on 7 groups, validates (checkpoint selection) on 1 held-out
-# group, and tests on a DIFFERENT held-out group. Test rotates over all 9
-# groups (complete cold coverage); validation is picked -- not by brute-force
-# permutation -- from a "safe" pool so that (a) removing it barely shrinks the
-# training set and (b) its class balance is a usable proxy for the val metric.
-#
-#   run:  python ./training/new_train.py \
-#             --excluded_groups=<TEST>,<VAL> --test_group=<TEST> ...
-#   -> csvtest    = TEST group   (reported, seen once at the end)
-#   -> csvalidate = VAL  group   (drives early-stopping / checkpoint choice)
-#   -> csvtrain   = the other 7 groups
-#
-# 9 test groups x 5 seeds = 45 jobs.
-#
-# -----------------------------------------------------------------------------
-# GROUP STATISTICS  (data/Processed_Negative_Interaction_Corrected_Domains.csv)
-#   overall positive fraction = 6.9%   |   total interactions = 11018
-#
-#   group          total    pos    neg    pos%   %of-all   role-as-VAL?
-#   -----------------------------------------------------------------------
-#   lipocalin       3123     90   3033    2.9%    28.3%    NO  (too large)
-#   CRAL-TRIO       2845    204   2641    7.2%    25.8%    NO  (too large)
-#   START            982    200    782   20.4%     8.9%    NO  (balance too skewed)
-#   IP_trans         943     65    878    6.9%     8.6%    YES (balance == global)
-#   scp2             936     43    893    4.6%     8.5%    YES (small, ~balanced)
-#   LBP_BPI_CETP     626     55    571    8.8%     5.7%    YES (small, ~balanced)
-#   OSBP             626      8    618    1.3%     5.7%    NO  (only 8 positives)
-#   GLTP             625     81    544   13.0%     5.7%    YES (small, enough pos)
-#   ML               312     10    302    3.2%     2.8%    NO  (tiny, 10 positives)
-#
-#   VAL pool = { IP_trans, scp2, LBP_BPI_CETP, GLTP } : each <=8.6% of the data
-#   (training barely suffers) and each has >=40 positives with a balance not far
-#   from the global 6.9% (val metric stays meaningful).
-#
-# -----------------------------------------------------------------------------
-# TEST -> VAL ASSIGNMENT
-#   VAL = the safe-pool group whose positive-fraction is closest to the TEST
-#   group's (a "not too different" proxy), excluding TEST itself.
-#
-#   TEST            pos%     ->  VAL             pos%   train-loss (test+val %of-all)
-#   ---------------------------------------------------------------------------
-#   lipocalin       2.9%     ->  scp2            4.6%    36.8%  (28.3 + 8.5)
-#   CRAL-TRIO       7.2%     ->  IP_trans        6.9%    34.4%  (25.8 + 8.6)
-#   START          20.4%     ->  LBP_BPI_CETP    8.8%    14.6%  ( 8.9 + 5.7)  [see note]
-#   IP_trans        6.9%     ->  LBP_BPI_CETP    8.8%    14.3%  ( 8.6 + 5.7)
-#   scp2            4.6%     ->  IP_trans        6.9%    17.1%  ( 8.5 + 8.6)
-#   LBP_BPI_CETP    8.8%     ->  IP_trans        6.9%    14.3%  ( 5.7 + 8.6)
-#   OSBP            1.3%     ->  scp2            4.6%    14.2%  ( 5.7 + 8.5)
-#   GLTP           13.0%     ->  LBP_BPI_CETP    8.8%    11.4%  ( 5.7 + 5.7)
-#   ML              3.2%     ->  scp2            4.6%    11.3%  ( 2.8 + 8.5)
-#
-#   VAL usage: scp2 x3, IP_trans x3, LBP_BPI_CETP x3, GLTP x0  (val != test always).
-#
-#   NOTE: balanced accuracy (the checkpoint-selection metric) is prevalence-
-#   invariant, so matching VAL's positive-fraction to TEST is not required; the
-#   VAL group must instead give a learnable, above-chance signal. GLTP collapses
-#   (BA~0.41) and cannot select a meaningful epoch, so START's VAL is the
-#   learnable LBP_BPI_CETP (BA~0.76) despite the balance mismatch, and GLTP is no
-#   longer used for validation anywhere.
-# =============================================================================
+# Called through scripts/run_bigfoot.sh / run_kraken.sh. They pass every
+# cluster-dependent setting as an environment variable. Do not patch this file to
+# retarget a cluster.
 
 set -euo pipefail
 
@@ -102,41 +39,37 @@ source "${PROJECT_DIR}/scripts/lib/args_file_lib.sh"
 source "${PROJECT_DIR}/scripts/lib/grid_lib.sh"
 
 # --- cluster-dependent settings ----------------------------------------------
-# Every default is a Bigfoot value, so an unset environment targets Bigfoot.
-# `-` rather than `:-` for PROJECT and
-# GPU_PROPERTY: an explicitly empty value must stay empty so the corresponding
-# oarsub flag is omitted (a cluster may need no project, or no gpumodel filter).
+# The real values come from scripts/lib/cluster_common.sh, keyed by CLUSTER_NAME.
+# The defaults here are Bigfoot's, so calling this file directly still works.
+# PROJECT and GPU_PROPERTY use `-`, not `:-`. An explicitly empty value then stays
+# empty and its oarsub flag is dropped; some clusters need neither flag.
 CONDA_SH="${CONDA_SH:-/home/kalinina/miniconda3/etc/profile.d/conda.sh}"
 CONDA_ENV="${CONDA_ENV:-Kalinin_project_LP}"
 PROJECT="${PROJECT-pr-molgen}"
 GPU_PROPERTY="${GPU_PROPERTY-(gpumodel='A100' OR gpumodel='V100')}"
-# Shell `case` pattern matched against `nvidia-smi --query-gpu=name` inside the
-# job, hence the character whitelist below. Empty on a CPU-only cluster
-# (CPU_ONLY=1, scripts/lib/cluster_common.sh's kraken-cpu profile), where there
-# is no GPU to name.
+# A shell `case` pattern the job matches against `nvidia-smi --query-gpu=name`,
+# hence the character whitelist below. Empty on a CPU cluster.
 GPU_MODEL_GLOB="${GPU_MODEL_GLOB:-*A100*|*V100*}"
 OAR_RESOURCES="${OAR_RESOURCES:-/nodes=1/gpu=1}"
-# 1 on kraken-cpu: no nvidia-smi, no GPU admission/lock/memory-wait in
-# run_one_experiment.sh / run_experiment_pack.sh, concurrency from cores alone.
+# 1 on kraken-cpu: the runners then skip nvidia-smi, the GPU lock and the memory
+# wait, and derive concurrency from cores alone.
 CPU_ONLY="${CPU_ONLY:-0}"
 MIN_FREE_GPU_MIB="${MIN_FREE_GPU_MIB:-16384}"
-# Distinguishes OAR output filenames between clusters, whose job-ID spaces
-# overlap (the progress table locates a running job's log by `*_${job_id}.out`).
+# Separates the clusters' OAR output filenames. Their job-ID spaces overlap, and
+# the progress table finds a running job's log by `*_${job_id}.out`.
 JOB_ID_TAG="${JOB_ID_TAG:-}"
 OARSUB_EXTRA="${OARSUB_EXTRA:-}"
-# Space-separated subsets, for a smoke test instead of the full 45. Applied to
-# EVERY label in this call, same as before -- there was never a per-label
-# override and this does not add one.
+# Space-separated subsets, for a smoke test instead of the full 45. They apply to
+# every label in this call. There is no per-label override.
 GROUPS_OVERRIDE="${GROUPS_OVERRIDE:-}"
 SEEDS_OVERRIDE="${SEEDS_OVERRIDE:-}"
 COMPLETE_ONLY="${COMPLETE_ONLY:-0}"
 COMPLETED_EXPERIMENTS="${COMPLETED_EXPERIMENTS:-}"
 
 # --- packing ------------------------------------------------------------------
-# PACK_SIZE experiments share one OAR job; PACK_PARALLEL of them may run at once
-# on the single allocated GPU (the effective number is decided inside the job
-# from the card actually handed out -- see run_experiment_pack.sh). PACK_SIZE=1
-# is one experiment per job, which run_one_experiment.sh handles directly.
+# PACK_SIZE experiments share one OAR job. PACK_PARALLEL of them run at once on the
+# card; the real number is chosen inside the job (run_experiment_pack.sh).
+# PACK_SIZE=1 means one experiment per job, which run_one_experiment.sh handles.
 PACK_SIZE="${PACK_SIZE:-1}"
 PACK_PARALLEL="${PACK_PARALLEL:-1}"
 GPU_MIB_PER_RUN="${GPU_MIB_PER_RUN:-0}"
@@ -145,9 +78,8 @@ PACK_CPU_PER_RUN="${PACK_CPU_PER_RUN:-5}"
 PACK_MIN_FREE_GPU_MIB="${PACK_MIN_FREE_GPU_MIB:-0}"
 PACK_HARDWARE_AUTO="${PACK_HARDWARE_AUTO:-0}"
 PACK_SKIP_DONE="${PACK_SKIP_DONE:-1}"
-# Concurrency ASSUMED when sizing the walltime request. Must describe the
-# weakest card GPU_PROPERTY admits, because the request is fixed at submit time
-# while the real concurrency is not.
+# The concurrency ASSUMED when sizing the walltime request. The request is fixed
+# at submit time, so it must describe the weakest card GPU_PROPERTY admits.
 PACK_WALLTIME_PARALLEL="${PACK_WALLTIME_PARALLEL:-1}"
 # Documented scheduler cap; empty = unknown, do not check.
 MAX_WALLTIME="${MAX_WALLTIME:-}"
@@ -179,68 +111,47 @@ if [[ $# -lt 1 ]]; then
     printf "Usage: %s arguments_file.md [arguments_file.md ...]\n" "$0" >&2
     exit 1
 fi
-# scripts/cluster/cluster_queue_remote.sh's capture_queue hands this script its
-# whole submit_args as ONE shell word (run_cluster.sh joins several requested
-# labels space-separated before making its single capture call, precisely so
-# they land in the SAME pack -- see the header comment above), so several
-# labels arrive here as one "$1", not as "$1 $2 $3". Word-splitting it is safe:
-# every label in this project is a bare identifier or a plain path, never one
-# containing whitespace.
+# capture_queue (scripts/cluster/cluster_queue_remote.sh) passes the whole
+# submit_args as ONE shell word, because run_cluster.sh joins several labels with
+# spaces so they land in the same pack. Hence the word-split. It is safe: a label is
+# always a bare identifier or a plain path.
 read -r -a REQUESTED_ARGS_FILES <<< "$*"
 
-# --lipid_coldsplit in the args file switches the grid to the other axis: whole chemical
-# families of lipids leave training while every protein stays, so there is no held-out
-# protein group and the grid iterates the four lipid sets instead. Keep the names in
-# step with LIPID_COLDSPLIT_SETS
-# (dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py); one absent from there is
+# --lipid_coldsplit: whole chemical families of lipids leave training and every
+# protein stays. No protein group is held out, so the grid iterates these four sets.
+# Keep the names in step with LIPID_COLDSPLIT_SETS
+# (dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py). An unknown name is
 # rejected at parse time.
 LIPID_COLDSPLIT_SETS_LIST=(sphingolipids phosphorus_free choline anionic)
 
-# --lipid_subclass is the same lipid axis cut by the SOURCE PAPER'S own subclass
-# (Titeca et al., the y axis of the LTP x lipid-subclass matrix) instead of by the four
-# hand-built sets above. Two forms, like --family_only: BARE expands into one job per
-# block below; --lipid_subclass=<spec> names one fixed block and runs it alone. Keep
-# this list in step with dataloader/splitting_on_blocks/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS --
-# a spec absent from data/lipid_article_classification.json is rejected at parse time.
+# --lipid_subclass: the same lipid axis, cut by the source paper's subclasses
+# (Titeca et al.) instead of the hand-built sets above. Bare gives one job per block
+# below. --lipid_subclass=<spec> gives that one block alone. Keep in step with
+# FIG3_SUBCLASS_BLOCKS (dataloader/splitting_on_blocks/lipid_subclass_blocks.py).
+# A spec absent from data/lipid_article_classification.json is rejected at parse time.
 LIPID_SUBCLASS_BLOCKS_LIST=(
     PC PG FA PE "Cer+CerP+HexCer+Hex2Cer+SHexCer+SM" PI "LPC+LPE+LPG" PA
 )
 
-# --family_only, bare (no value), in the args file switches the grid to a third axis:
-# one model per family, trained AND validated on that family's own rows only (a warm,
-# row-level random split inside the family -- dataloader/Dataloader.py:147-150,1461 --
-# NOT a held-out-family cold split: a different regime from --double_coldsplit/
-# --cold_split, not a variant of either). The grid still iterates PROTEIN_GROUPS (one
-# job per family x seed, --groups/--no_groups apply normally, same group spelling as
-# every other protein-side axis), but no protein is EXCLUDED from training -- the
-# family named by the group IS the entire training pool -- so --excluded_groups is
-# never appended; --family_only=<group> is appended instead. This grid path is now the
-# only way in: it was originally reachable only through a bespoke per-family bash loop
-# in a submitter that chained a fresh structural-pretrain run before each family's job
-# (deleted with that line). Nothing needs the chaining here -- each (family, seed) job
-# is an ordinary independent run, which is what this path assumes. Every
-# arg_files/deepclip/*.md config trains on this axis.
+# --family_only, bare: one model per family, trained and validated on that family's
+# own rows -- a warm row-level split inside the family
+# (dataloader/Dataloader.py:147-150,1461), not a cold split. The grid still iterates
+# PROTEIN_GROUPS, but nothing is excluded: the group is the whole training pool, so
+# --family_only=<group> is appended instead of --excluded_groups. Every
+# arg_files/deepclip/*.md config uses this axis.
 #
-# --random_split, bare (no value), in the args file switches the grid to a fourth axis:
-# nothing is held out at all. Every other axis above answers its question by APPENDING a
-# flag (--excluded_groups, --lipid_coldsplit, --family_only); this one is defined by
-# appending none, which is why it needs a marker of its own -- an args file cannot
-# suppress the --excluded_groups this script would otherwise add, since flags are
-# applied in argv order and the appended one comes last. With no split flag,
-# Dataloader._split_interactions takes its final branch: csvt.sample(frac=0.85) is
-# train, the remaining 15% is halved label-by-label into validation and test, and
-# new_train.py files the run under exclusion_set "random". There is no group axis to
-# rotate, so the grid runs one pseudo-group ("random") x the seeds, and --groups/
-# --no_groups are ignored for such a label exactly as they are for --lipid_coldsplit.
-# What the runs are FOR: the warm end of the similarity-to-train axis, the anchor the
-# cold-split numbers are read against (analysis/probes/split_similarity_vs_metric.py). They are
-# not a baseline to pick configurations on -- with every protein and every lipid in
-# training both label marginals are free.
+# --random_split, bare: nothing is held out at all. It needs a marker because every
+# other axis appends a flag and this one appends none; an args file cannot suppress
+# the --excluded_groups this script would otherwise add, since the appended flag wins.
+# With no split flag the loader takes its final branch (85% train, the rest halved
+# label-by-label into valid and test) and new_train.py files the run under
+# exclusion_set "random". One pseudo-group runs against the seeds. These runs are the
+# warm anchor the cold-split numbers are read against, not a baseline for picking
+# configurations: with every protein and lipid in training, both marginals are free.
 
 # --- per-label setup ----------------------------------------------------------
-# Parallel arrays, one entry per requested label (index order == command-line
-# order). experiment_record/job_name/submit_one below take a label index and
-# read these instead of the single-label globals this script used to have.
+# Parallel arrays, one entry per requested label, in command-line order.
+# experiment_record/job_name/submit_one below take a label index into them.
 LABEL_VARIANT=()
 LABEL_ARGS_TEMPLATE=()
 LABEL_COLD_SPLIT=()
@@ -253,11 +164,11 @@ LABEL_LIPID_SUBCLASS=()
 LABEL_LIPID_SPECIES=()
 LABEL_OUTPUT_ROOT=()
 LABEL_WALLTIME=()
-# 1 for a --deepclip label: on a CPU-only cluster its jobs ask for the cores their
+# 1 for a --deepclip label. On a CPU-only cluster its jobs ask for the cores their
 # runs use instead of a whole node (cpu_only_resources below).
 LABEL_CORE_SIZED=()
-# One line per (label_index, group, seed), across ALL labels -- the combined
-# stream the main loop below packs from, label boundaries included on purpose.
+# One line per (label_index, group, seed), across all labels. The main loop below
+# packs from this stream and crosses label boundaries on purpose.
 combined_pairs=""
 
 for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
@@ -271,33 +182,24 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_cold_split=1
     fi
 
-    # The shorter request only for configs that explicitly enable the fast path.
-    # Per label: two labels in one call can disagree, and the pack that ends up
-    # holding both takes the SLOWER of the two (see the max-walltime tracking in
-    # the main loop below), never the base WALLTIME blindly.
+    # Per label: a pack holding two labels that disagree takes the slower of them
+    # (max-walltime tracking in the main loop), never the base WALLTIME.
     this_walltime="${WALLTIME}"
     if args_file_has_flag "${args_file}" --descriptors_head; then
         this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
         printf "Detected --descriptors_head in %s; per-experiment walltime=%s.\n" \
             "${args_file}" "${this_walltime}"
     elif args_file_has_flag "${args_file}" --descriptor_mlp; then
-        # Same no-encoder-towers cost class as --descriptors_head (Final_Layer
-        # builds only DescriptorMLPHead + a small classifier, architecture/
-        # descriptor_mlp_head.py) -- smaller still than NamedDescriptorHead
-        # (no per-token self-attention), so DESCRIPTORS_HEAD_WALLTIME is not an
-        # underestimate here.
+        # The same no-encoder-towers cost class as --descriptors_head, and smaller
+        # still, so that budget is not short here.
         this_walltime="${DESCRIPTORS_HEAD_WALLTIME}"
         printf "Detected --descriptor_mlp in %s; per-experiment walltime=%s.\n" \
             "${args_file}" "${this_walltime}"
     elif args_file_has_flag "${args_file}" --deepclip; then
-        # Another sibling of the same no-towers shape, and the most extreme of them:
-        # under --deepclip, InteractionClassification builds architecture/deepclip.py
-        # and nothing else at all (1960 parameters at DeepCLIP's published settings,
-        # 8960 at the widest sweep arm). Checked ahead of --fast_attention below for
-        # the same reason --descriptors_head is: that branch's budget is sized for a
-        # real protein/lipid encoder this config never constructs. See
-        # DEEPCLIP_WALLTIME's own comment in settings.sh for why one number covers
-        # every arm of the sweep despite their 4.6x spread in parameter count.
+        # The most extreme case of the same shape: --deepclip builds
+        # architecture/deepclip.py and nothing else (1960-8960 parameters). Checked
+        # before --fast_attention, whose budget is sized for encoders this config
+        # never builds. Why one number covers every arm: DEEPCLIP_WALLTIME.
         this_walltime="${DEEPCLIP_WALLTIME}"
         printf "Detected --deepclip in %s; per-experiment walltime=%s.\n" \
             "${args_file}" "${this_walltime}"
@@ -322,9 +224,9 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
             | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
     fi
 
-    # --lipid_subclass, bare or valued (see LIPID_SUBCLASS_BLOCKS_LIST above). Bare is
-    # stripped from the template exactly like the bare --lipid_coldsplit marker just
-    # above -- the trainer's flag needs a value, and the grid appends it per block.
+    # Bare --lipid_subclass is stripped from the template, like the bare
+    # --lipid_coldsplit marker above. The trainer's flag needs a value, and the
+    # grid appends one per block.
     this_lipid_subclass=0
     this_lipid_subclass_fixed=""
     if args_file_has_flag "${args_file}" --lipid_subclass; then
@@ -342,16 +244,11 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         fi
     fi
 
-    # --family_only comes in two forms. BARE (no value) is the marker documented
-    # below: the grid expands it into one job per PROTEIN_GROUPS entry, appending
-    # --family_only=<group> itself. --family_only=<value>, spelled out in the file, is
-    # a FIXED family instead -- nothing to expand, the template already names it, and
-    # this is what a --lipid_isolation ladder scoped to one family (a "<family>__<key>"
-    # block in dataloader/splitting_on_blocks/lipid_isolation_blocks.py) has to use: a bare marker would
-    # let the grid iterate all nine groups and overwrite the fixed family with whichever
-    # one it is currently on, once appended after the template's own line (last flag
-    # wins). This grid still runs FIXED as one job x seed, not nine, and the flag stays
-    # in the template untouched either way.
+    # Two forms. Bare: one job per PROTEIN_GROUPS entry, with --family_only=<group>
+    # appended. --family_only=<value>: one fixed family, one job per seed, already
+    # named in the template. A --lipid_isolation ladder scoped to one family
+    # ("<family>__<key>" in lipid_isolation_blocks.py) needs the fixed form -- with a
+    # bare marker the grid would iterate all nine groups and overwrite the family.
     this_family_only=0
     this_family_only_fixed=""
     if args_file_has_flag "${args_file}" --family_only; then
@@ -369,11 +266,9 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         fi
     fi
 
-    # --lipid_isolation=<key> in the args file is the lipid axis addressed by distance
-    # (dataloader/splitting_on_blocks/lipid_isolation_blocks.py). Unlike the bare --lipid_coldsplit marker
-    # it already names its block, so there is nothing for the grid to expand: it runs
-    # one pseudo-group, named the way new_train.py files the run, against the seeds. The
-    # flag stays in the template -- the trainer takes it as written.
+    # --lipid_isolation=<key>: the lipid axis addressed by distance
+    # (dataloader/splitting_on_blocks/lipid_isolation_blocks.py). It names its own
+    # block, so nothing is expanded or appended: one pseudo-group against the seeds.
     this_lipid_isolation=""
     if args_file_has_flag "${args_file}" --lipid_isolation; then
         this_lipid_isolation="$(args_file_flag_lines "${args_file}" \
@@ -390,11 +285,10 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         fi
     fi
 
-    # --lipid_species_coldsplit=<share> is the lipid axis cut at the CONCRETE LIPID
-    # (dataloader/splitting_on_blocks/lipid_species_blocks.py). Like --lipid_isolation it names its own
-    # split, so there is nothing to expand: one pseudo-group against the seeds. Unlike
-    # it, the block is a per-seed draw, so the pseudo-group is the SHARE -- the same
-    # name new_train.py files the run under.
+    # --lipid_species_coldsplit=<share>: the lipid axis cut at the concrete lipid
+    # (dataloader/splitting_on_blocks/lipid_species_blocks.py). Names its own split,
+    # like --lipid_isolation, but the block is drawn per seed, so the pseudo-group is
+    # the share itself.
     this_lipid_species=""
     if args_file_has_flag "${args_file}" --lipid_species_coldsplit; then
         this_lipid_species="$(args_file_flag_lines "${args_file}" \
@@ -421,14 +315,13 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
 '--cold_split/--lipid_coldsplit/--family_only (%s).\n' "${args_file}" >&2
             exit 2
         fi
-        # Stripped like the other two markers: the trainer has no such flag, and must
-        # not be handed one.
+        # Stripped like the other markers: the trainer has no such flag.
         this_args_template="$(printf '%s' "${this_args_template}" \
             | sed -E 's/(^|[[:space:]])--random_split([[:space:]]|$)/\1/g')"
     fi
 
-    # script_logs/<family>/..., the same family directory the run/ and test_metrics/
-    # trees use (arg_files/<family>/<label>.md -> training/results_layout.py).
+    # script_logs/<family>/..., the family directory run/ and test_metrics/ use
+    # as well (arg_files/<family>/<label>.md -> training/results_layout.py).
     this_family="$(label_family "${this_variant}")"
     if (( this_cold_split )); then
         this_output_root="script_logs/${this_family}/${this_variant}_coldval_seeds01234"
@@ -452,9 +345,8 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         fi
     fi
     if (( this_random_split )); then
-        # One pseudo-group, named for the directory new_train.py will file the run
-        # under, so log path, run/ path and test_metrics/ path agree the way they do on
-        # every other axis.
+        # Named for the directory new_train.py files the run under, so the log,
+        # run/ and test_metrics/ paths agree.
         this_output_root="script_logs/${this_family}/${this_variant}_random"
         this_groups=("random")
     fi
@@ -473,63 +365,41 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
         this_groups=("iso${this_lipid_isolation}")
     fi
     if [[ -n "${this_lipid_species}" ]]; then
-        # Two digits of the share, exactly as new_train.py names the run directory, so
-        # log path, run/ path and test_metrics/ path agree the way they do on every
-        # other axis.
+        # Two digits of the share, as new_train.py names the run directory.
         this_species_tag="species$(printf '%02d' \
             "$(awk -v s="${this_lipid_species}" 'BEGIN{printf "%d", s*100 + 0.5}')")"
         this_output_root="script_logs/${this_family}/${this_variant}_${this_species_tag}"
         this_groups=("${this_species_tag}")
     fi
+    # GROUPS_OVERRIDE (run_cluster.sh's --groups/--no_groups) names protein families.
+    # A label on another axis ignores it instead of failing, so one command can queue
+    # protein-axis and lipid-axis labels together. Applying it would submit
+    # --lipid_coldsplit=<family>, which the trainer rejects on every job; failing
+    # would take the valid labels down too. Said on stderr, since the caller asked to
+    # narrow something and here nothing was narrowed.
     if (( this_random_split )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
-        # Same rule, same reason as the --lipid_coldsplit case just below: the override
-        # names protein families, which is not this label's axis. Ignored, not fatal, so
-        # one command can queue protein-axis and random-split labels together.
         printf -- '--random_split holds no group out; ignoring --groups/--no_groups '\
 'for %s -- the single random-split grid will run.\n' "${args_file}" >&2
     elif (( this_lipid_coldsplit )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
-        # Same rule as scripts/run_local.sh's --groups/--no_groups check: GROUPS_OVERRIDE
-        # (run_cluster.sh's --groups/--no_groups) names protein families, which is the
-        # OTHER axis for a --lipid_coldsplit label. It is IGNORED here rather than
-        # applied -- applying it would replace LIPID_COLDSPLIT_SETS_LIST with family
-        # names and submit --lipid_coldsplit=<family>, which read_lipid_coldsplit rejects
-        # at run time for every single job.
-        #
-        # Ignored rather than fatal so that one command can queue protein-axis and
-        # lipid-axis labels together: the flag narrows the protein-group labels and
-        # passes over the lipid-set ones, instead of the whole submission (the valid
-        # labels included) dying on the first --lipid_coldsplit label in the list. Said
-        # out loud on stderr, not silently, because the caller asked to narrow something
-        # and for this label nothing was narrowed.
         printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
 'ignoring --groups/--no_groups for %s -- all %d lipid sets will run.\n' \
             "${args_file}" "${#this_groups[@]}" >&2
     elif (( this_lipid_subclass )) && [[ -n "${GROUPS_OVERRIDE}" ]]; then
-        # Same rule as the --lipid_coldsplit case above: GROUPS_OVERRIDE names protein
-        # families, which is the OTHER axis for a --lipid_subclass label. Ignored (not
-        # fatal) so one command can queue protein-axis and subclass-axis labels
-        # together. To run a SUBSET of the blocks, name it in the args file itself as
-        # --lipid_subclass=<spec> -- that form already runs exactly one block.
+        # To run a subset of the blocks, write --lipid_subclass=<spec> in the args
+        # file. That form already runs exactly one block.
         printf -- '--lipid_subclass runs over lipid subclasses, not protein groups; '\
 'ignoring --groups/--no_groups for %s -- all %d blocks will run.\n' \
             "${args_file}" "${#this_groups[@]}" >&2
     elif [[ -n "${this_lipid_isolation}" ]] && [[ -n "${GROUPS_OVERRIDE}" ]]; then
-        # A --lipid_isolation label runs one fixed group already named by its key (and,
-        # when combined with a fixed --family_only=<value>, one fixed family too); a
-        # protein-family override has nothing to narrow here.
         printf -- '--lipid_isolation names its own block; ignoring --groups/--no_groups '\
 'for %s.\n' "${args_file}" >&2
     elif [[ -n "${this_lipid_species}" ]] && [[ -n "${GROUPS_OVERRIDE}" ]]; then
-        # Same as --lipid_isolation just above: the label's axis is individual lipids,
-        # and it runs one pseudo-group named by its share, so a protein-family override
-        # has nothing to narrow.
         printf -- '--lipid_species_coldsplit names its own block; ignoring '\
 '--groups/--no_groups for %s.\n' "${args_file}" >&2
     elif (( this_family_only )) && [[ -n "${this_family_only_fixed}" ]] \
         && [[ -n "${GROUPS_OVERRIDE}" ]]; then
-        # Same reason: the family is already fixed in the template, so overriding
-        # "groups" here would rename the output directory without changing what
-        # actually trains -- confusing, not narrowing.
+        # The family is fixed in the template. An override would rename the output
+        # directory without changing what trains.
         printf -- '--family_only=%s is already fixed in %s; ignoring --groups/--no_groups.\n' \
             "${this_family_only_fixed}" "${args_file}" >&2
     elif [[ -n "${GROUPS_OVERRIDE}" ]]; then
@@ -565,9 +435,8 @@ for args_file in "${REQUESTED_ARGS_FILES[@]}"; do
     done < <(grid_pairs "${this_groups[*]}" "${this_seeds[*]}")
 done
 
-# TEST -> VAL mapping (see the table at the top). Only read in cold-split mode;
-# shared across labels, since it is a property of the group rotation, not of
-# any one config.
+# TEST -> VAL mapping. Read only in cold-split mode. Shared across labels, because
+# it belongs to the group rotation, not to a config.
 declare -A val_for_test=(
     ["lipocalin"]="scp2"
     ["CRAL-TRIO"]="IP_trans"
@@ -590,10 +459,9 @@ resolve_val_group() {
 }
 
 # --- one experiment as a record ----------------------------------------------
-# The record layout is scripts/lib/pack_lib.sh's; both runners read it, so an
-# experiment is described the same way whether it is run alone or in a pack, and
-# both write the same tree. label_index selects which requested label this
-# (group, seed) belongs to -- see LABEL_* above.
+# The record layout is scripts/lib/pack_lib.sh's, and both runners read it, so an
+# experiment is described the same way alone or in a pack and writes the same tree.
+# label_index says which requested label this (group, seed) belongs to.
 experiment_record() {
     local label_index="$1" group="$2" seed="$3"
     local variant="${LABEL_VARIANT[label_index]}"
@@ -617,28 +485,26 @@ experiment_record() {
         extra=" --test_group=${group}"
         header="TEST: ${group} | VAL: ${val_group} | VARIANT: ${variant} | SEED: ${seed}"
     elif (( lipid_coldsplit )); then
-        # The "group" is the name of a lipid-class set, and it goes to its own flag;
-        # excluded stays empty so no protein leaves training.
+        # The "group" is the name of a lipid-class set and goes to its own flag.
+        # excluded stays empty, so no protein leaves training.
         excluded=""
         extra=" --lipid_coldsplit=${group}"
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="LIPID SET: ${group} | VARIANT: ${variant} | SEED: ${seed}"
     elif (( lipid_subclass )); then
-        # The "group" is one article lipid-subclass block spec. Appended even when the
-        # args file already names it: appending the same value the template carries is
-        # a no-op (last flag wins, and it is the same flag), and it keeps this branch
-        # identical for the bare and the fixed form.
+        # The "group" is one article lipid-subclass block spec. Appended even when
+        # the args file names it -- the same flag with the same value is a no-op, and
+        # the branch stays identical for both forms.
         excluded=""
         extra=" --lipid_subclass=${group}"
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="LIPID SUBCLASS: ${group} | VARIANT: ${variant} | SEED: ${seed}"
     elif (( family_only )) && [[ -n "${family_only_fixed}" ]]; then
-        # The family is already spelled out in the template (--family_only=<value>);
-        # nothing is appended, and if --lipid_isolation is ALSO set it stays in the
-        # template too -- this is the "one fixed family, one fixed cold-lipid block"
-        # combination a --lipid_isolation ladder scoped to that family needs.
+        # The family is spelled out in the template, so nothing is appended, and a
+        # --lipid_isolation there stays too: one fixed family with one fixed
+        # cold-lipid block, which is what a ladder scoped to a family needs.
         excluded=""
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
@@ -648,35 +514,30 @@ experiment_record() {
         fi
         header+=" | VARIANT: ${variant} | SEED: ${seed}"
     elif (( family_only )); then
-        # "group" is the one family the whole table is restricted to (warm split
-        # inside it, dataloader/Dataloader.py:147-150) -- nothing is EXCLUDED from
-        # training, so excluded stays empty and --family_only carries the group
-        # instead of --excluded_groups.
+        # "group" is the family the whole table is restricted to, with a warm split
+        # inside it. Nothing is excluded, so --family_only carries the group.
         excluded=""
         extra=" --family_only=${group}"
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="FAMILY_ONLY: ${group} | VARIANT: ${variant} | SEED: ${seed}"
     elif [[ -n "${lipid_isolation}" ]]; then
-        # The block is named by the flag already in the template, so nothing is
-        # appended; "group" is the directory name new_train.py will use.
+        # The flag in the template already names the block, so nothing is appended.
+        # "group" is the directory name new_train.py will use.
         excluded=""
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="LIPID ISOLATION: ${lipid_isolation} | VARIANT: ${variant} | SEED: ${seed}"
     elif [[ -n "${lipid_species}" ]]; then
-        # Same shape as --lipid_isolation just above: the share is already in the
-        # template, nothing is appended, and "group" is the directory name
-        # new_train.py will use. The block itself is drawn per seed inside the loader,
-        # so two seeds of this label hold out different lipids on purpose.
+        # Same shape as --lipid_isolation above. The loader draws the block per
+        # seed, so two seeds hold out different lipids on purpose.
         excluded=""
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
         header="LIPID SPECIES: ${lipid_species} | VARIANT: ${variant} | SEED: ${seed}"
     elif (( random_split )); then
-        # The axis defined by appending nothing: no --excluded_groups, no split flag of
-        # any kind, so the loader's own last branch does the 85/7.5/7.5 random split and
-        # new_train.py names the run "random" -- which is what "group" already is here.
+        # The axis defined by appending nothing: the loader's last branch splits
+        # 85/7.5/7.5 and new_train.py names the run "random", which "group" is.
         excluded=""
         output_dir="${output_root}/${group}"
         stem="${variant}_seed${seed}"
@@ -697,9 +558,9 @@ experiment_record() {
 }
 
 # --- oarsub -------------------------------------------------------------------
-# Built as an array so an empty GPU_PROPERTY/PROJECT omits the flag entirely.
-# `if` blocks rather than `[[ ]] &&`: a false test as the last command would
-# return 1 and `set -e` would abort the whole submitter.
+# An array, so an empty GPU_PROPERTY or PROJECT drops its flag entirely. `if`
+# blocks rather than `[[ ]] &&`: a false test as the last command returns 1, and
+# `set -e` would abort the whole submitter.
 oarsub_submit() {
     local job_name="$1" walltime="$2" out_prefix="$3" job_command="$4"
     local resources="${5:-${OAR_RESOURCES}}"
@@ -726,17 +587,14 @@ oarsub_submit() {
     oarsub "${oarsub_args[@]}"
 }
 
-# What a CPU-only job asks OAR for. kraken-cpu's default is one whole node
-# (OAR_RESOURCES=/nodes=1: 192 cores and all of its memory), which suits a pack big
-# enough to fill it. A --deepclip job runs each experiment on ONE core (1 OMP thread,
-# no DataLoader workers -- run_experiment_pack.sh / run_one_experiment.sh), and a
-# typical deepclip grid is 5 to 45 experiments, so a whole node left 150-190 cores
-# and their memory reserved and idle for the job's whole walltime. Such a job asks
-# for exactly the cores its runs use instead, on one node, so nproc inside the job
-# -- which sets the runner's slot count -- equals the number of runs and every run
-# still starts at once (depth 1, the walltime the pack already requests). Memory is
-# not requested separately anywhere in these scripts; on OAR it comes with the cores.
-# Anything else, or a GPU cluster, keeps OAR_RESOURCES unchanged.
+# What a CPU-only job asks OAR for. The kraken-cpu default is a whole node
+# (/nodes=1: 192 cores), which suits a pack big enough to fill it. A --deepclip
+# experiment runs on one core, and such a grid holds 5 to 45 of them, so a whole node
+# would leave 150-190 cores idle for the full walltime. These jobs ask for exactly
+# the cores their runs use. nproc inside the job then equals the run count, and nproc
+# sets the runner's slot count, so every run still starts at once. Memory comes with
+# the cores on OAR, so it is never requested separately. Any other label, and every
+# GPU cluster, keeps OAR_RESOURCES.
 cpu_only_resources() {
     local core_sized="$1" runs="$2"
     local cores=$(( runs * (PACK_CPU_PER_RUN > 0 ? PACK_CPU_PER_RUN : 1) ))
@@ -747,9 +605,8 @@ cpu_only_resources() {
     fi
 }
 
-# The OAR job name. It is what the progress table falls back to for a job whose
-# output path OAR does not report, so a cold-split job has to keep naming its
-# validation group here.
+# The OAR job name. The progress table falls back to it when OAR does not report a
+# job's output path, so a cold-split job must keep naming its validation group.
 job_name() {
     local label_index="$1" group="$2" seed="$3"
     local variant="${LABEL_VARIANT[label_index]}"
@@ -787,10 +644,10 @@ submit_pack() {
     job_walltime="$(pack_job_walltime "${pack_count}" "${pack_walltime_str}" "${PACK_WALLTIME_PARALLEL}")"
     pack_check_walltime "${job_walltime}" "${MAX_WALLTIME}" || exit 2
 
-    # The job's own stdout must NOT land on a "*_<tag><jobid>.out" path: that
-    # pattern belongs to the per-experiment files the runner writes, and the
-    # progress table turns every match into a row. Shared across labels rather
-    # than one label's own output_root/_packs, since a pack can span several.
+    # The job's own stdout must not land on a "*_<tag><jobid>.out" path: that
+    # pattern belongs to the runner's per-experiment files, and the progress table
+    # turns every match into a row. One directory for all labels, since a pack can
+    # span several.
     pack_dir="script_logs/_cross_label_packs"
     mkdir -p "${pack_dir}"
 
@@ -801,12 +658,10 @@ submit_pack() {
         "${PACK_CPU_PER_RUN}" "${PACK_MIN_FREE_GPU_MIB}" \
         "${PACK_HARDWARE_AUTO}" "${PACK_SKIP_DONE}"
 
-    # Written to a file rather than base64-spliced onto the oarsub command
-    # line: a full-size pack (PACK_SIZE=180 on kraken-cpu, several labels
-    # sharing one pack) encodes past Linux's ~128 KiB single-argument limit,
-    # which fails oarsub's execve with "Argument list too long" -- see
-    # pack_spec_write_file's comment in pack_lib.sh. mktemp keeps concurrent
-    # submitters (pack_index resets to 0 in each) from colliding on the name.
+    # A file, not a base64 blob on the oarsub line: a full-size pack encodes past
+    # Linux's ~128 KiB single-argument limit and fails oarsub's execve with "Argument
+    # list too long" (pack_spec_write_file in pack_lib.sh). mktemp keeps two
+    # concurrent submitters, whose pack_index both start at 0, apart.
     spec_file="$(mktemp "${pack_dir}/pack${pack_index}_spec.XXXXXX")"
     pack_spec_write_file "${spec}" "${spec_file}"
 
@@ -817,20 +672,13 @@ submit_pack() {
 
     printf "Pack %d: %d experiment(s) [%s], walltime=%s.\n" \
         "${pack_index}" "${pack_count}" "${pack_tag}" "${job_walltime}"
-    # OAR rejects any job name (-n) with characters outside a-z A-Z 0-9 _.- --
-    # "+" (used above only for the human-readable pack_tag, to list every label
-    # in a cross-label pack) is not in that set, so the job name uses "-" as
-    # the label separator instead.
-    #
-    # OAR's jobs.job_name column is `character varying(100)` (hit in production:
-    # 5 long descriptor labels packed together built a 139-char name and oarsub
-    # died with a Postgres StringDataRightTruncation error, past the point of no
-    # return -- the job was never created). A truncated name would collide
-    # across different label combinations that happen to share a long common
-    # prefix, so an over-length tag is cut and given an 8-hex-char digest of the
-    # FULL tag instead -- short, unique per label combination, and stable
-    # across re-submissions of the same combination (so the oarsub-command dedup
-    # in cluster_queue_remote.sh's capture_queue still recognises it).
+    # Two OAR limits on a job name. Characters: only a-z A-Z 0-9 _.- , so the "+"
+    # of the readable pack_tag becomes "-". Length: jobs.job_name is varying(100),
+    # and five long descriptor labels in one pack built a 139-char name that killed
+    # oarsub with a Postgres truncation error. Plain truncation would collide between
+    # label combinations sharing a long prefix, so an over-length tag is cut and
+    # given an 8-hex digest of the full tag: unique per combination and stable across
+    # re-submissions, which the oarsub-command dedup in capture_queue needs.
     local suffix="_pack${pack_index}"
     local oar_job_name="${job_tag}${suffix}"
     if (( ${#oar_job_name} > 100 )); then
@@ -848,25 +696,21 @@ submit_pack() {
 }
 
 # --- the grid -----------------------------------------------------------------
-# The seed loop stays innermost per label (grid_pairs), so a pack of 5 is
-# exactly one group's seeds and a pack of 9 spans groups at a fixed seed within
-# one label -- both natural units to resubmit or cancel as a whole. Labels are
-# concatenated after that, in command-line order, in combined_pairs above, so a
-# pack only spans a label boundary once the label ahead of it in the stream has
-# been exhausted -- filling PACK_SIZE takes priority over keeping one pack to
-# one label.
+# The seed loop stays innermost per label (grid_pairs), so a pack of 5 is one group's
+# seeds and a pack of 9 spans groups at a fixed seed -- both natural units to
+# resubmit or cancel whole. Labels follow in command-line order, so a pack crosses a
+# label boundary only once the label ahead of it is exhausted.
 submitted=0
 experiments=0
 pack_index=0
 pack_count=0
 pack_spec=""
-# Empty means "no record added yet"; set to the first record's own label
-# walltime and only ever raised after that -- see the comparison below. Never
-# initialised to the base WALLTIME: a pack built entirely from --fast_attention
-# labels must not inherit the slower default just because it once existed.
+# Empty means no record yet. Set from the first record's label walltime and only
+# raised after that. It never starts at the base WALLTIME: a pack built entirely
+# from --fast_attention labels must not inherit the slower default.
 pack_walltime_str=""
-# Stays 1 only while every experiment in the pack is core-sized (LABEL_CORE_SIZED);
-# one other label in a cross-label pack keeps the whole-node request.
+# Stays 1 only while every experiment in the pack is core-sized. One other label in
+# a cross-label pack keeps the whole-node request.
 pack_core_sized=1
 declare -A pack_labels_seen=()
 pack_labels_list=()

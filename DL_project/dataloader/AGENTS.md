@@ -111,22 +111,57 @@ is decided in `PLIDataset.__init__`, most specific first:
 - `hard_negative_mining` / `dissimilar_negative_mining` only reweight the draw inside a
   **balanced** sampler (so they require one of `balanced_proteins`,
   `balance_negatives_by_family` or `balanced_lipid_classes`, and are mutually exclusive
-  with each other). Both read one `species_similarity` pool and steer
-  `*_negative_share` of the mass by a group's own positives: toward chemically close
-  candidates, or away from them. The quota per group is untouched, so the pool stays
-  balanced exactly as it was -- only which negatives fill it changes. Measured on the
-  table, seed 42, ratio 2, share 1.0: the mean best Tanimoto from a drawn negative to
-  its protein's own positives moves 0.657 (uniform) -> 0.714 (hard) / 0.534
-  (dissimilar). Groups whose `ProteinDomain` is in `excluded_groups` are exempt from
-  either direction.
+  with each other). Both steer `*_negative_share` of the mass toward candidates close to
+  what the group already binds, or away from them. The quota per group is untouched, so
+  the pool stays balanced exactly as it was -- only which negatives fill it changes.
+  Groups whose `ProteinDomain` is in `excluded_groups` are exempt from either direction.
+- **Which** similarity does the steering is `--negative_similarity`
+  (`dataloader/similarity_pool.py`, one `SimilarityPool`): `tanimoto` (the default,
+  so every earlier run reproduces), `molformer`, `lipid_descriptors`,
+  `protein_descriptors`, `protein_identity`, `protein_blosum62`, `protein_tmscore`. The
+  last four put a row's identity on the **protein**, the first three on the lipid
+  species; `--negative_similarity_descriptors` overrides a `*_descriptors` source's name
+  list and, if it names both sides, moves the pool to the **pair** axis. The blending
+  arithmetic (`_hard_negative_weights`/`_dissimilar_negative_weights`) is axis-blind --
+  it is handed one similarity per candidate and never asks what a key named.
+- The **reference set** a candidate is compared against is per axis, and this is not
+  cosmetic:
+  - lipid/pair axis -> the sampling group's own positives (`_shared_similarities`), the
+    original behaviour, which already reads as "a lipid like the ones this protein
+    binds" because the group is a protein or a family of them;
+  - protein axis -> the proteins that bind the candidate's **own lipid**
+    (`conditioned_reference`), across every training family. Against the group's
+    positives instead, all three protein metrics measured 1.000 steered either way: a
+    candidate's own protein is one of the group's positive proteins and a protein is
+    identical to itself. Conditioning on the lipid is the mirror of the lipid-axis
+    question and excludes the candidate's own protein for free, since a row is a
+    candidate exactly when its protein does not bind its lipid. `excluded_groups`
+    families are dropped from that reference -- they become validation/test, and letting
+    them pick train negatives would leak the held-out block.
+- Because that reference is cross-family, a protein-axis source works under **every**
+  balanced sampler, `balanced_proteins` included -- the grouping does not bound it.
+  Measured on the table at seed 42, ratio 2, share 1.0, the mean steered similarity moves
+  roughly twofold between the two directions for `protein_identity` and
+  `protein_blosum62` and by about a third for `protein_tmscore` (which starts higher,
+  since folds repeat across this panel where sequences do not).
+  `protein_descriptors` is the one to avoid: it moves ~0.003 either way, because the
+  pocket descriptor vectors are nearly equidistant across these 35 proteins, so there is
+  nothing for either direction to pick. Prefer the three sequence/structure metrics on
+  the protein axis.
+- `analysis/probes/negative_chemistry_proximity.py --negative_mining hard|dissimilar
+  --negative_similarity <source>` is what measures the side effect: it reports how close
+  the drawn train negatives sit to the held-out chemistry, always in Tanimoto, whichever
+  pool selected them (its flags are named after the training ones on purpose). That is
+  the only way to see what a protein-axis pool -- which knows nothing about chemistry --
+  does to the chemistry anyway.
 - The two steering directions are orthogonal to **which** marginal a sampler flattens,
   not an alternative to it. The per-protein and per-family samplers steer per group
   (`_sample_group_balanced_negatives`); `balanced_lipid_classes` steers per
   (`ProteinDomain`, lipid class) **cell**, in `sample_lipid_class_balanced_negatives`'s
-  own loop. Inside a cell every candidate already shares the head group, so what the
-  Tanimoto reduction separates there is acyl composition -- a narrower span of chemistry
-  than the same flag reaches under `balanced_proteins`, and the per-class matching the
-  cell exists for is untouched.
+  own loop. Inside a cell every candidate already shares the head group, so a lipid-axis
+  pool has almost no room left there (Tanimoto already averages 0.978 before any
+  steering) while a protein-axis one is not restricted by the class at all. The per-class
+  matching the cell exists for is untouched either way.
 
 ## Tanimoto Files
 

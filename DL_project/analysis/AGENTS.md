@@ -46,9 +46,16 @@ a label.
 Graph-generating scripts live under `scripts/graphics_generation/`, not here —
 `plot_group_learning_curve.py` (whole-group learning curves averaged over matched
 seeds, reads TensorBoard runs), `plot_metric_by_subgroup.py` (per-protein-subgroup
-metrics from test reports), `plot_cron_group_metric_vs_tanimoto.py`, and
-`split_similarity_vs_metric.py`. The first two are invoked by
+metrics from test reports) and `split_similarity_vs_metric.py` (metric against the
+held-out block's distance from training). The first two are invoked by
 `scripts/generate_config_graphics.sh`; figures land in `graphics/`.
+
+`split_similarity_vs_metric.py` is the one entry point for that figure whatever
+produced the numbers: network runs come from `metrics_summary.csv`, Kron-RLS runs
+from `--cron_report results/tables/cron_test_metrics/cron_<label>.txt` (they never
+reach the table). `--x test_headgroup_isolation` is the head-group reading, which
+only a cron report carries. The separate `plot_cron_group_metric_vs_tanimoto.py`
+that used to draw the Kron-RLS version was deleted when that flag was added.
 
 ## Not Here
 

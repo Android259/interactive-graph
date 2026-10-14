@@ -70,6 +70,40 @@ Do not hide cross-file inconsistencies by coercing an unknown identifier to a
 valid index. Report and correct the generating artifact only when explicitly
 requested.
 
+## Protein Similarity (`data/protein_similarity/`)
+
+Pairwise protein-protein similarity, three metrics, in the compact-Tanimoto format with
+the lipid axis replaced by the protein one: `matrix[protein_index[i], protein_index[j]]`
+is the similarity of two interaction-table rows' proteins, uint8 (`round(x * 255)`,
+diagonal 255), 35 x 35.
+
+| artifact set | metric | built by |
+|---|---|---|
+| `Protein_identity_*` | sequence identity after global pairwise alignment | `preprocessing/build_protein_sequence_similarity.py` |
+| `Protein_blosum62_*` | the same alignment's positive-scoring (conservative) columns | the same script, same alignment pass |
+| `Protein_tmscore_*` | TM-align structural TM-score (`tmtools` bindings) | `preprocessing/build_protein_tmscore.py` |
+
+- Read by `--negative_similarity=protein_identity|protein_blosum62|protein_tmscore`,
+  which steers `--hard_negative_mining`/`--dissimilar_negative_mining` by protein
+  relatedness instead of lipid chemistry (`dataloader/similarity_pool.py`, and see
+  `dataloader/AGENTS.md`'s negative-sampling section for the per-axis reference rule that
+  makes a protein pool non-degenerate). The reader is
+  `preprocessing/protein_similarity_common.load_similarity`; a missing or stale set
+  raises at dataset construction naming its builder, rather than quietly drawing
+  uniformly.
+- All three divide by the LONGER sequence/chain, which is a measured choice, not a
+  convention: dividing by the shorter one lets a 127-residue FABP1 score 0.205 identity
+  and 0.448 TM-score against a 456-residue BPI it is unrelated to, which erases the
+  margin against real distant homologs. The builders' headers carry the numbers.
+- Residues come from `esm3_input/<LTPProtein>.pdb`, not `fasta/`, so all three metrics
+  and the protein graphs describe the same residues in the same order.
+- Each manifest records `names` (the protein per matrix row -- consumers key by
+  `LTPProtein`, unlike the positionally-addressed lipid artifacts) plus the interaction
+  table's and every structure's size and nanosecond mtime. `load_similarity` returns
+  None rather than serving a matrix whose table or structures have moved.
+- There is no `row_ids` file: a table row names exactly one protein, so the lipid side's
+  candidate-instance axis has no analogue here.
+
 ## Lipid Graph Generator
 
 - `build_lipid_isomer_graphs.py` is the active generator.

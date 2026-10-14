@@ -28,12 +28,32 @@
 `split_and_sample_protein_balanced_interactions` -- вторая стоит на линии без флага,
 поскольку `--balanced_proteins` включён и там, и там.
 
+Отбор отрицательных (`--negative_mining`)
+----------------------------------------
+Те же два сэмплера можно вызвать так, как их вызывает обучение с
+`--hard_negative_mining` или `--dissimilar_negative_mining`: отрицательные тогда берутся
+не равновероятно, а с перевесом в сторону похожих на связываемое (`hard`) или, наоборот,
+непохожих (`dissimilar`). Флаги здесь названы как настоящие, чтобы не заводить второго
+словаря: `--negative_mining`, `--negative_similarity`,
+`--negative_similarity_descriptors`, `--negative_share`.
+
+Чем считается похожесть, задаёт `--negative_similarity` -- Tanimoto, молформер,
+дескрипторы или одна из трёх белковых матриц. Вопрос файла от этого не меняется, а
+становится шире: тянет ли такой отбор обучающую химию К вынесенному набору или ОТ него.
+
+Мерится при этом всегда Tanimoto, даже когда отбор шёл по белковой матрице. Иначе и
+нельзя: вынесенный набор задан видами липидов, а в матрице, индексированной по белкам, у
+них нет столбцов. Зато так все источники сравнимы в одной валюте -- и это единственный
+способ увидеть, что делает с химией белковая ось, которая про химию ничего не знает.
+
 Reads only: читает таблицу взаимодействий и матрицу Tanimoto, ничего не пишет и не учит.
 
 Примеры
 -------
     python analysis/probes/negative_chemistry_proximity.py
     python analysis/probes/negative_chemistry_proximity.py --sets choline --seeds 0,1,2,3,4
+    python analysis/probes/negative_chemistry_proximity.py --sets choline --seeds 0 \\
+        --negative_mining hard --negative_similarity protein_tmscore
 """
 
 import argparse
@@ -46,6 +66,8 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, PROJECT_ROOT)
 
 from dataloader.chemistry_prior import species_similarity  # noqa: E402
+from dataloader.descriptors import parse_descriptor_list  # noqa: E402
+from dataloader.similarity_pool import resolve_similarity_pool  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS  # noqa: E402
 from dataloader.sampler import (  # noqa: E402
@@ -55,15 +77,16 @@ from dataloader.sampler import (  # noqa: E402
 from preprocessing.lipid_marginal_baseline import lipid_class_series, lipid_split  # noqa: E402
 
 
-def sampled_frame(csv, sampler, seed, ratio):
+def sampled_frame(csv, sampler, seed, ratio, pool=None, share=1.0, mode="hard"):
     import pandas as pd
     if sampler == "lipid_class_balanced":
         true_rows, false_rows = split_and_sample_lipid_class_balanced_interactions(
-            csv, seed, ratio=ratio
+            csv, seed, ratio=ratio, hard_negative_pool=pool,
+            hard_negative_share=share, negative_mode=mode,
         )
     else:
         true_rows, false_rows = split_and_sample_protein_balanced_interactions(
-            csv, seed, ratio=ratio
+            csv, seed, ratio, None, pool, None, share, mode,
         )
     return pd.concat([true_rows, false_rows])
 
@@ -77,18 +100,60 @@ def main():
     parser.add_argument("--ratio", type=int, default=2,
                         help="negatives_per_positive, как в конфигах линии (по умолчанию 2)")
     parser.add_argument("--thresholds", default="0.4,0.5,0.6,0.7")
+    parser.add_argument(
+        "--negative_mining", choices=("none", "hard", "dissimilar"), default="none",
+        help="брать отрицательные с перевесом к похожим (hard, как "
+             "--hard_negative_mining) или к непохожим (dissimilar, как "
+             "--dissimilar_negative_mining); по умолчанию равновероятно",
+    )
+    parser.add_argument(
+        "--negative_similarity", default="tanimoto",
+        help="чем считается похожесть при --negative_mining: то же, что у одноимённого "
+             "флага обучения (tanimoto / molformer / lipid_descriptors / "
+             "protein_descriptors / protein_identity / protein_blosum62 / "
+             "protein_tmscore)",
+    )
+    parser.add_argument(
+        "--negative_similarity_descriptors", default="",
+        help="имена дескрипторов для *_descriptors, как у одноимённого флага обучения",
+    )
+    parser.add_argument("--negative_share", type=float, default=1.0,
+                        help="какая доля выбора идёт по похожести, остальное "
+                             "равновероятно (--hard_negative_share)")
     args = parser.parse_args()
 
     import pandas as pd
     data_dir = os.path.join(PROJECT_ROOT, "data")
     csv = pd.read_csv(interaction_csv_path(data_dir + "/"))
     similarity, index = species_similarity(csv, data_dir)
+    # Рулить можно любой осью, мерить -- нет: held_species задан видами липидов, и в
+    # матрице, индексированной по белкам, у них нет столбцов. Поэтому измерение всегда
+    # остаётся в Tanimoto, что заодно делает источники сравнимыми между собой в одной
+    # валюте: видно, куда каждый из них сдвигает ХИМИЮ обучающих отрицательных.
+    pool = None
+    if args.negative_mining != "none":
+        pool = resolve_similarity_pool(
+            args.negative_similarity,
+            csv,
+            data_dir,
+            parse_descriptor_list(args.negative_similarity_descriptors)
+            if args.negative_similarity_descriptors
+            else (),
+        )
     classes = lipid_class_series(csv).str.lower()
     species_all = csv["FullIdentityOfLipid"]
     thresholds = [float(t) for t in args.thresholds.split(",")]
     seeds = [int(s) for s in args.seeds.split(",")]
 
-    print(f"ratio={args.ratio} | сидов {len(seeds)} | порог(и) {thresholds}\n")
+    selection = (
+        "отрицательные равновероятно"
+        if pool is None
+        else (f"отрицательные с перевесом {args.negative_mining} по "
+              f"{pool.source} (ось {pool.column}), доля {args.negative_share}")
+    )
+    print(
+        f"ratio={args.ratio} | сидов {len(seeds)} | порог(и) {thresholds} | {selection}\n"
+    )
     header = (f"{'набор':16}{'сэмплер':22}{'отриц.':>8}{'ср. max Tanimoto':>18}"
               + "".join(f"{'>=' + str(t):>9}" for t in thresholds))
     print(header)
@@ -104,7 +169,10 @@ def main():
         for sampler in ("protein_balanced", "lipid_class_balanced"):
             means, shares, counts = [], {t: [] for t in thresholds}, []
             for seed in seeds:
-                frame = sampled_frame(csv, sampler, seed, args.ratio)
+                frame = sampled_frame(
+                    csv, sampler, seed, args.ratio, pool, args.negative_share,
+                    "dissimilar" if args.negative_mining == "dissimilar" else "hard",
+                )
                 train = lipid_split(frame, LIPID_COLDSPLIT_SETS[set_name], seed)[0]
                 negatives = train[train["Interaction"] != 1]
                 values = []

@@ -104,7 +104,6 @@ builds a PLIDataset (and so pays for torch); `blocks` and `within` do not.
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import os
 import sys
@@ -464,28 +463,6 @@ def run_within(args) -> int:
 # ---------------------------------------------------------------- mode `species`
 
 
-def arg_lines(label):
-    """Same convention analysis/checkpoint_scores.py::arg_lines uses: parse
-    arg_files/<label>.md into read_configuration-ready tokens, stripping the
-    quotes the shell would otherwise strip around e.g. --pool_type="add".
-    """
-    # arg_files/<family>/<label>.md; "**" also matches a config left at the top level.
-    path = glob.glob(
-        os.path.join(PROJECT_ROOT, "arg_files", "**", f"{label}.md"), recursive=True
-    )[0]
-    lines = []
-    for raw in open(path):
-        stripped = raw.strip()
-        if not stripped.startswith("--"):
-            continue
-        if "=" in stripped:
-            key, value = stripped.split("=", 1)
-            lines.append(key + "=" + value.strip().strip('"').strip("'"))
-        else:
-            lines.append(stripped)
-    return lines
-
-
 def subclasses_for(frame, subclass_of):
     """(subclass -> (rows, positives) Counter pair) over one split frame's species."""
     rows = Counter()
@@ -578,6 +555,7 @@ def report_seed(seed, label, base_lines, full_csv, subclass_of):
 
 
 def run_species(args) -> int:
+    from analysis.checkpoint_scores import arg_lines
     from dataloader.dataset_source import interaction_csv_path
 
     seeds = [int(s) for s in args.seeds.split(",")]

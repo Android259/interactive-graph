@@ -1,0 +1,200 @@
+{
+  "format_version": 1,
+  "metric": "blosum62",
+  "proteins": 35,
+  "rows": 9905,
+  "parameters": {
+    "normalization": "max(len_a, len_b)",
+    "alignment": "global",
+    "substitution_matrix": "BLOSUM62",
+    "gap_open": -11.0,
+    "gap_extend": -1.0,
+    "end_gaps": "free",
+    "sequence_source": "data/esm3_input/<protein>.pdb CA residues",
+    "numerator": "aligned columns with a positive BLOSUM62 score"
+  },
+  "names": [
+    "ATCAY",
+    "BNIPL",
+    "BPI",
+    "BPIFB2",
+    "GLTP",
+    "GLTPD1",
+    "GM2A",
+    "LCN1",
+    "PITPNA",
+    "PITPNB",
+    "RBP1",
+    "RBP4",
+    "SEC14L2",
+    "SEC14L6",
+    "STARD2",
+    "STARD10",
+    "STARD11",
+    "CRABP2",
+    "FABP1",
+    "FABP5",
+    "FABP7",
+    "HSDL2",
+    "LCN15",
+    "OSBPL5",
+    "PITPNC1",
+    "PMP2",
+    "RBP5",
+    "RLBP1",
+    "SCP2",
+    "SCP2D1",
+    "SEC14L4",
+    "SEC14L5",
+    "TTPA",
+    "TTPAL",
+    "OSBPL9"
+  ],
+  "source": {
+    "path": "Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed_CandidatesCompleted_Deduplicated.csv",
+    "size": 6330853,
+    "mtime_ns": 1787599681549918786
+  },
+  "structures": {
+    "ATCAY": {
+      "size": 105138,
+      "mtime_ns": 1785789381117369714
+    },
+    "BNIPL": {
+      "size": 108945,
+      "mtime_ns": 1785789381125527507
+    },
+    "BPI": {
+      "size": 285201,
+      "mtime_ns": 1785789381141713492
+    },
+    "BPIFB2": {
+      "size": 280827,
+      "mtime_ns": 1785789381159691458
+    },
+    "GLTP": {
+      "size": 133245,
+      "mtime_ns": 1785789381203515468
+    },
+    "GLTPD1": {
+      "size": 133326,
+      "mtime_ns": 1785789381212869054
+    },
+    "GM2A": {
+      "size": 99792,
+      "mtime_ns": 1785789381221437641
+    },
+    "LCN1": {
+      "size": 89586,
+      "mtime_ns": 1785789381239888058
+    },
+    "PITPNA": {
+      "size": 174150,
+      "mtime_ns": 1785789381291518908
+    },
+    "PITPNB": {
+      "size": 179982,
+      "mtime_ns": 1785789381303346479
+    },
+    "RBP1": {
+      "size": 93312,
+      "mtime_ns": 1785789381333014803
+    },
+    "RBP4": {
+      "size": 113967,
+      "mtime_ns": 1785789381341070927
+    },
+    "SEC14L2": {
+      "size": 179577,
+      "mtime_ns": 1785789381389310681
+    },
+    "SEC14L6": {
+      "size": 124902,
+      "mtime_ns": 1785789381425869292
+    },
+    "STARD2": {
+      "size": 135027,
+      "mtime_ns": 1785789381459074303
+    },
+    "STARD10": {
+      "size": 161109,
+      "mtime_ns": 1785789381436474673
+    },
+    "STARD11": {
+      "size": 146610,
+      "mtime_ns": 1785789381446514663
+    },
+    "CRABP2": {
+      "size": 88128,
+      "mtime_ns": 1785789381171571189
+    },
+    "FABP1": {
+      "size": 80595,
+      "mtime_ns": 1785789381178809635
+    },
+    "FABP5": {
+      "size": 84807,
+      "mtime_ns": 1785789381185888943
+    },
+    "FABP7": {
+      "size": 84321,
+      "mtime_ns": 1785789381193467238
+    },
+    "HSDL2": {
+      "size": 164916,
+      "mtime_ns": 1785789381231770417
+    },
+    "LCN15": {
+      "size": 94527,
+      "mtime_ns": 1785789381247722131
+    },
+    "OSBPL5": {
+      "size": 273375,
+      "mtime_ns": 1785789381262242734
+    },
+    "PITPNC1": {
+      "size": 171153,
+      "mtime_ns": 1785789381314780153
+    },
+    "PMP2": {
+      "size": 84888,
+      "mtime_ns": 1785789381324491395
+    },
+    "RBP5": {
+      "size": 89424,
+      "mtime_ns": 1785789381350153653
+    },
+    "RLBP1": {
+      "size": 187677,
+      "mtime_ns": 1785789381361857210
+    },
+    "SCP2": {
+      "size": 75087,
+      "mtime_ns": 1785789381370888962
+    },
+    "SCP2D1": {
+      "size": 73467,
+      "mtime_ns": 1785789381376731768
+    },
+    "SEC14L4": {
+      "size": 254907,
+      "mtime_ns": 1785789381406548127
+    },
+    "SEC14L5": {
+      "size": 114129,
+      "mtime_ns": 1785789381417474714
+    },
+    "TTPA": {
+      "size": 153981,
+      "mtime_ns": 1785789381471374675
+    },
+    "TTPAL": {
+      "size": 177066,
+      "mtime_ns": 1785789381482718341
+    },
+    "OSBPL9": {
+      "size": 244701,
+      "mtime_ns": 1785789381278447922
+    }
+  }
+}

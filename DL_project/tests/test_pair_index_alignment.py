@@ -6,6 +6,7 @@ import pytest
 import torch
 from torch_geometric.loader import DataLoader
 
+from dataloader.similarity_pool import SimilarityPool
 from dataloader.Dataloader import (
     PLIDataset,
     ProteinGraphData,
@@ -379,7 +380,9 @@ def _chemistry_pool():
         ],
         dtype=np.float32,
     )
-    return similarity, {name: position for position, name in enumerate(names)}
+    return SimilarityPool(
+        similarity, {name: position for position, name in enumerate(names)}
+    )
 
 
 def test_dissimilar_negatives_draw_the_chemistry_farthest_from_the_positives():
@@ -414,7 +417,7 @@ def test_dissimilar_negatives_keep_the_per_protein_class_balance():
         FullIdentityOfLipid=lambda frame: "L" + frame["pair"]
     )
     names = sorted(table["FullIdentityOfLipid"].unique())
-    pool = (
+    pool = SimilarityPool(
         np.eye(len(names), dtype=np.float32),
         {name: position for position, name in enumerate(names)},
     )
@@ -472,7 +475,9 @@ def _lipid_class_chemistry_pool():
         ],
         dtype=np.float32,
     )
-    return similarity, {name: position for position, name in enumerate(names)}
+    return SimilarityPool(
+        similarity, {name: position for position, name in enumerate(names)}
+    )
 
 
 @pytest.mark.parametrize(
@@ -531,7 +536,7 @@ def _identical_chemistry_pool():
     # candidate 1 - 1.0 = 0, which is what numpy's without-replacement draw refuses.
     table = _lipid_class_chemistry_table()
     names = list(table["FullIdentityOfLipid"])
-    return (
+    return SimilarityPool(
         np.ones((len(names), len(names)), dtype=np.float32),
         {name: position for position, name in enumerate(names)},
     )
@@ -544,7 +549,9 @@ def _one_distant_candidate_pool():
     names = list(table["FullIdentityOfLipid"])
     similarity = np.ones((len(names), len(names)), dtype=np.float32)
     similarity[0, 3] = similarity[3, 0] = 0.1
-    return similarity, {name: position for position, name in enumerate(names)}
+    return SimilarityPool(
+        similarity, {name: position for position, name in enumerate(names)}
+    )
 
 
 @pytest.mark.parametrize("negative_mode", ["dissimilar", "hard"])
@@ -590,15 +597,15 @@ def test_the_surviving_candidate_is_still_preferred_when_the_quota_overflows():
 
 def test_the_protein_sampler_also_fills_a_quota_the_steering_zeroes():
     table = _chemistry_table()
-    similarity, index = _chemistry_pool()
+    pool = _chemistry_pool()
     # Every candidate identical to the positive: all distances 0 under "dissimilar".
-    similarity = np.ones_like(similarity)
+    similarity = np.ones_like(pool.similarity)
 
     negatives = sample_protein_balanced_negatives(
         table,
         seed=3,
         ratio=2,
-        hard_negative_pool=(similarity, index),
+        hard_negative_pool=SimilarityPool(similarity, pool.index),
         hard_negative_share=1.0,
         negative_mode="dissimilar",
     )

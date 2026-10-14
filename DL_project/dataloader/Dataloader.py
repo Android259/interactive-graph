@@ -39,7 +39,15 @@ from dataloader.pocket_lipid_compatibility import (
     coarsen_to_levels,
     pocket_extent_by_protein,
 )
-from dataloader.descriptors import descriptor_catalog_only, full_catalog_order
+from dataloader.descriptors import (
+    descriptor_catalog_only,
+    full_catalog_order,
+    parse_descriptor_list,
+)
+from dataloader.similarity_pool import (
+    resolve_similarity_pool,
+    pool_report,
+)
 from preprocessing.compute_descriptors import (
     as_arrays,
     descriptor_values_by_row,
@@ -153,6 +161,18 @@ class PLIDataset(
 
         self.csvtrain, self.csvalidate, self.csvtest = self._split_interactions(seed)
         self.train_orig_indexes = torch.as_tensor(self.csvtrain["pair_id"].values, dtype=torch.long)
+
+        # Диагностика обучающего пула, не гиперпараметр: доля его отрицательных строк,
+        # стоящих в ячейке (белок, подкласс статьи), где у ТОГО ЖЕ белка уже есть
+        # положительная строка. Такая пара отличается от известного связывания только
+        # конкретным липидом внутри одного подкласса, то есть почти не отличается на
+        # входе -- разделить её нечем, и отбор, который такие пары накапливает, портит
+        # результат: по семи конфигурациям на --lipid_species_coldsplit=0.15 эта доля
+        # коррелирует с test BA на -0.96 (0.110 -> 0.923 против 0.736 -> 0.769), а
+        # обучающая ошибка растёт вчетверо. Считается по тому, что видит прогон: и
+        # ячейки, и отрицательные берутся из csvtrain, поэтому отложенный блок в число
+        # не подмешивается.
+        self.suspect_negative_share = self._suspect_negative_share()
 
         # Only --tanimoto_weight reads Tanimoto similarities (compact artifacts). Every other
         # run builds id2pos by ranking the train row ids; the weights use it only as cell
@@ -285,10 +305,14 @@ class PLIDataset(
         self.negatives_per_positive = config.negatives_per_positive
         self.hard_negative_mining = config.hard_negative_mining
         self.hard_negative_share = config.hard_negative_share
-        # Same draw steered toward Tanimoto-DISTANT negatives; exclusive with
+        # Same draw steered toward DISTANT negatives; exclusive with
         # hard_negative_mining (validate refuses the pair).
         self.dissimilar_negative_mining = config.dissimilar_negative_mining
         self.dissimilar_negative_share = config.dissimilar_negative_share
+        # Which similarity either direction steers by, and the descriptor names a
+        # *_descriptors source is built from. See dataloader/similarity_pool.py.
+        self.negative_similarity = config.negative_similarity
+        self.negative_similarity_descriptors = config.negative_similarity_descriptors
         # Lipid axis of the cold split: head-group classes held out of training. The classes
         # are derived in _derive_lipid_class_holdout, which needs the full table.
         self.double_coldsplit = config.double_coldsplit
@@ -854,6 +878,46 @@ class PLIDataset(
             print(f"  {', '.join(classes)}")
         self.excluded_lipid_classes = set(chosen)
 
+    def _suspect_negative_share(self):
+        """Share of train negatives sharing a (protein, article subclass) cell with a
+        train positive, or None when the subclass classification is not built.
+
+        None rather than an exception: this is a diagnostic every run reports, not an
+        input any run depends on, so a missing classification file must not stop
+        training the way it stops --lipid_subclass (which cannot even define its split
+        without it).
+        """
+        try:
+            from dataloader.splitting_on_blocks.lipid_subclass_blocks import (
+                article_subclass_species,
+            )
+
+            subclasses = article_subclass_species(self.ROOT_DIR)
+        except (FileNotFoundError, ValueError):
+            return None
+        if self.csvtrain.empty:
+            return None
+
+        subclass_of = {
+            name: subclass
+            for subclass, species in subclasses.items()
+            for name in species
+        }
+        # "?unclassified" for a species the article does not place, exactly as
+        # analysis/baselines/protein_subclass_label_baseline.protein_subclass_key does,
+        # so the two agree on what a cell is.
+        cells = (
+            self.csvtrain["LTPProtein"].astype(str)
+            + "|"
+            + self.csvtrain["FullIdentityOfLipid"].map(subclass_of).fillna("?unclassified")
+        )
+        is_positive = self.csvtrain["Interaction"] == 1
+        positive_cells = set(cells[is_positive])
+        negatives = cells[~is_positive]
+        if negatives.empty:
+            return None
+        return float(negatives.isin(positive_cells).mean())
+
     ##################################################################################
     #                               SAMPLING & SPLITTING
     ##################################################################################
@@ -867,12 +931,22 @@ class PLIDataset(
             strata = self._cold_chemistry(csv)
 
         # --hard_negative_mining / --dissimilar_negative_mining: one similarity pool for
-        # the whole dataset, accepted by all three balanced samplers.
+        # the whole dataset, accepted by all three balanced samplers. --negative_similarity
+        # picks which similarity it holds and therefore which axis a row is identified on.
         hard_negative_pool = None
         negative_mode = "hard"
         negative_share = self.hard_negative_share
         if self.hard_negative_mining or self.dissimilar_negative_mining:
-            hard_negative_pool = species_similarity(csv, self.ROOT_DIR)
+            hard_negative_pool = resolve_similarity_pool(
+                self.negative_similarity,
+                csv,
+                self.ROOT_DIR,
+                parse_descriptor_list(self.negative_similarity_descriptors)
+                if self.negative_similarity_descriptors
+                else (),
+                self.config,
+            )
+            print(pool_report(hard_negative_pool), flush=True)
             if self.dissimilar_negative_mining:
                 negative_mode = "dissimilar"
                 negative_share = self.dissimilar_negative_share

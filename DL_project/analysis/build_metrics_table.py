@@ -173,6 +173,10 @@ CSV_FIELDS = (
     "total",
     "real_positive",
     "real_negative",
+    # Share of the run's TRAIN negatives sharing a (protein, article subclass) cell
+    # with one of its own positives -- pool contamination, not a hyperparameter.
+    # Blank for runs written before it was reported. Lower is better.
+    "suspect_negative_share",
     "label_positive_fraction",
     "predicted_positive",
     "predicted_negative",

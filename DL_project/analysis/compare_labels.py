@@ -63,6 +63,13 @@ METRICS = (
     ("max_valid_balanced_accuracy", "max valid BA", True),
     ("best_valid_F1", "best valid F1", True),
     ("balanced_accuracy", "test BA", True),
+    # Pool contamination, LOWER is better: the share of this run's train negatives
+    # standing in a (protein, article subclass) cell that already holds one of its
+    # positives. Read it next to test BA -- on --lipid_species_coldsplit=0.15 the two
+    # move together at r = -0.96 across seven negative-selection configurations, and a
+    # selection that raises this also raises train loss, so a run can be bad here for
+    # a reason that has nothing to do with the architecture.
+    ("suspect_negative_share", "suspect negatives", False),
     # Threshold-free companion to test BA: on the cold splits sensitivity runs at
     # 0.2-0.35 against specificity 0.77, where BA at the fixed 0.5 threshold cannot
     # tell "learned nothing" from "learned something, threshold in the wrong place".

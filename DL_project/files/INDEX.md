@@ -92,9 +92,11 @@
 |---|---|---|
 | [data_proposals.md](proposals/data_proposals.md) | 2026-08-03 | Предложения по нормализации данных (бывший `data/data_proposals.md`) |
 | [deepclip_proposals.md](proposals/deepclip_proposals.md) | 2026-10-06 | DeepCLIP: открытые предложения |
+| [geometric_descriptors_for_mlp.md](proposals/geometric_descriptors_for_mlp.md) | 2026-10-14 | Геометрия графа GE как плоские дескрипторы для `mlp`: что переносить и в каком размере |
 | [interaction_embedding_design.md](proposals/interaction_embedding_design.md) | 2026-09-11 | Эмбеддинг взаимодействия вместо попарной классификации: постановка и условия валидности |
 | [species15_information_above_protein_subclass.md](proposals/species15_information_above_protein_subclass.md) | 2026-10-06 | Какую информацию добавить, чтобы подняться выше угадывания по «белок × подкласс» |
 | [species15_where_to_go_next.md](proposals/species15_where_to_go_next.md) | 2026-10-09 | Куда двигать проект: диагноз по измерениям 2026-10-01 |
+| [usability_audit_and_universal_run.md](proposals/usability_audit_and_universal_run.md) | 2026-10-14 | Аудит кода по критериям удобства: новый дескриптор, новые пары, клон на новой машине, единый `run.sh`, централизация графиков |
 
 ## literature/
 

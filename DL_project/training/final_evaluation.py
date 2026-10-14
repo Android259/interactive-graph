@@ -353,6 +353,16 @@ def run_test(run, run_summary, surviving_structure, discovered_dropout_report):
         # and a report has to be readable years after the registry moved on. Taken from
         # the dataset rather than re-read from the registry: this is what the run held
         # out, not what a lookup says it should have.
+        # Contamination of the training pool this run actually trained on: the share of
+        # its negatives standing in a (protein, article subclass) cell that already holds
+        # one of its positives. Taken from the dataset, not recomputed here, so the
+        # report records what the run saw. Blank when the article classification is not
+        # built -- see PLIDataset._suspect_negative_share.
+        suspect_share = getattr(run.train_dataset, "suspect_negative_share", None)
+        f.write(
+            "suspect_negative_share: "
+            f"{'' if suspect_share is None else format_metric(suspect_share)}\n"
+        )
         held_species = sorted(getattr(run.train_dataset, "excluded_lipid_species", set()) or [])
         if held_species:
             f.write(f"lipid_isolation_species_count: {len(held_species)}\n")

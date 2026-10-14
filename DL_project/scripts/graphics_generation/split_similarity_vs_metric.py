@@ -65,14 +65,26 @@ One pass rather than one call per label is not only convenience: the expensive s
 rebuilding the splits, and that work is cached per SPLIT, not per label, so two
 configurations that ran the same blocks on the same seeds pay for it once.
 
-Reads metrics_summary.csv and the compact Tanimoto artifacts. Trains nothing, touches no
-shared table, and writes only inside the labels' own graphics directories.
+Kron-RLS runs (scripts/run_cron.py) are read from their own report instead. They never
+reach metrics_summary.csv -- the runner writes one text file per label under
+results/tables/cron_test_metrics/ -- and that file already carries, per held-out block,
+the metrics, the four confusion cells and the same isolation statistic this script puts
+on x, in both readings: whole molecule and head group only. --cron_report takes such a
+file; --x test_headgroup_isolation is the head-group reading, which exists only for
+these points. A cron label named in --curve joins a network label's curve, so the
+baseline and the model can be read on one axis.
+
+Reads metrics_summary.csv and the compact Tanimoto artifacts. With --cron_report and no
+--labels it reads neither, so a cron figure needs no data/ and no table. Trains nothing,
+touches no shared table, and writes only inside the labels' own graphics directories.
 
     python3 scripts/graphics_generation/split_similarity_vs_metric.py
     python3 scripts/graphics_generation/split_similarity_vs_metric.py --labels label_a,label_b,label_c
     python3 scripts/graphics_generation/split_similarity_vs_metric.py --metrics balanced_accuracy,F1,AUC_within_protein
     python3 scripts/graphics_generation/split_similarity_vs_metric.py --labels <protein-coldsplit label> \
         --x test_protein_isolation
+    python3 scripts/graphics_generation/split_similarity_vs_metric.py \
+        --cron_report results/tables/cron_test_metrics/cron_sub8_keep5_kronrls.txt
 """
 
 from __future__ import annotations
@@ -120,9 +132,11 @@ from analysis.coldsplit_geometry import (  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.lipid_classes import lipid_class_series  # noqa: E402
 from dataloader.splitting_on_blocks.lipid_isolation_blocks import LIPID_ISOLATION_BLOCKS  # noqa: E402
-from dataloader.sampler import (  # noqa: E402
+from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import (  # noqa: E402
     LIPID_COLDSPLIT_SETS,
     lipid_classes_for_holdout,
+)
+from dataloader.sampler import (  # noqa: E402
     rebalance_excluded_group_negatives,
     split_and_sample_family_balanced_interactions,
     split_and_sample_interactions,
@@ -175,6 +189,16 @@ DEFAULT_PROTEIN_DESCRIPTORS = (
 # test_spec 0.0000 with TN=0 on all ten seeds (everything positive), while deepclip's
 # iso70 rung is sensitivity 0.091 against specificity 0.914 (everything negative). On
 # these panels those two are opposite corners, not the same point.
+# Every column a point can put on x. The last one exists only for Kron-RLS points
+# (read_cron_report): the metrics table carries no head-group reading.
+X_COLUMNS = (
+    "test_isolation",
+    "test_cross_mean",
+    "test_seen_lipid_share",
+    "test_protein_isolation",
+    "test_protein_cross_mean",
+    "test_headgroup_isolation",
+)
 CONFUSION_SHARE_METRICS = ("TP_share", "FP_share", "TN_share", "FN_share")
 CONFUSION_COUNTS = ("TP", "FP", "TN", "FN")
 DEFAULT_METRICS = ("balanced_accuracy", "F1") + CONFUSION_SHARE_METRICS
@@ -786,6 +810,176 @@ def latest_rows(table_path, labels, metrics):
     return keep
 
 
+# A Kron-RLS report's own names for what the metrics table calls these columns. The
+# summary table of the report carries the first two, its per-block detail block the rest
+# (scripts/run_cron.py's build_general_report_text).
+CRON_SUMMARY_METRICS = {"balanced_accuracy": "test_BA", "F1": "test_F1"}
+CRON_DETAIL_METRICS = {
+    "AUC": "test_AUC",
+    "AUC_within_protein": "AUC_in_protein",
+    "AUC_within_protein_proteins": "n_proteins",
+    "sensitivity": "test_sens",
+    "specificity": "test_spec",
+    "precision": "precision",
+    "accuracy": "accuracy",
+    "IoU": "IoU",
+    "FAR": "FAR",
+}
+_CRON_SUMMARY_ROW = re.compile(
+    r"^(?P<group>\S+)\s+(?P<seeds>\d+)\s+"
+    r"(?P<ba>[\d.]+)±(?P<ba_std>[\d.]+)\s+"
+    r"(?P<f1>[\d.]+)±(?P<f1_std>[\d.]+)\s+"
+    r"(?P<whole>[\d.]+)±[\d.]+\s+"
+    r"(?P<head>[\d.]+)±[\d.]+\s*$"
+)
+_CRON_DETAIL_HEAD = re.compile(r"^--- group=(?P<group>.+?) ---\s*$")
+_CRON_DETAIL_ROW = re.compile(
+    r"^(?P<key>[A-Za-z_0-9]+):\s*(?P<mean>[-\d.]+)±(?P<std>[-\d.]+)\s*$"
+)
+
+
+def read_cron_report(path):
+    """One Kron-RLS report as (label, axis, {block: {key: value}}).
+
+    The report is text, not a table row: scripts/run_cron.py writes one file per label
+    and never touches metrics_summary.csv. Its summary table gives, per held-out block,
+    the seed count, BA, F1 and both isolation readings; its detail block gives the rest
+    of the metrics and the four confusion cells. Both carry "mean±std across seeds", so
+    the numbers arrive already aggregated -- which is why these points skip aggregate()
+    below and are built as its output directly.
+    """
+    label = os.path.basename(path)
+    if label.startswith("cron_"):
+        label = label[len("cron_"):]
+    label = os.path.splitext(label)[0]
+    axis = "cron"
+    blocks = {}
+    current = None
+    in_summary = False
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            line = line.rstrip("\n")
+            if line.startswith("label:"):
+                label = line.split(":", 1)[1].strip() or label
+            elif line.startswith("split_mode:"):
+                axis = f"cron {line.split(':', 1)[1].strip()}"
+            if line.startswith("=== by group"):
+                in_summary = True
+                continue
+            if in_summary:
+                if line.startswith("==="):
+                    in_summary = False
+                else:
+                    match = _CRON_SUMMARY_ROW.match(line)
+                    # ALL is the report's own total over the blocks, not a block.
+                    if match and match.group("group") != "ALL":
+                        blocks[match.group("group")] = {
+                            "seeds": int(match.group("seeds")),
+                            "balanced_accuracy": float(match.group("ba")),
+                            "balanced_accuracy_std": float(match.group("ba_std")),
+                            "F1": float(match.group("f1")),
+                            "F1_std": float(match.group("f1_std")),
+                            "test_isolation": float(match.group("whole")),
+                            "test_headgroup_isolation": float(match.group("head")),
+                        }
+                    continue
+            head = _CRON_DETAIL_HEAD.match(line)
+            if head:
+                current = head.group("group")
+                continue
+            row = _CRON_DETAIL_ROW.match(line) if current in blocks else None
+            if row:
+                blocks[current][row.group("key")] = float(row.group("mean"))
+                blocks[current][f"{row.group('key')}_std"] = float(row.group("std"))
+    return label, axis, blocks
+
+
+def cron_aggregated(path, metrics, curve_of_label):
+    """aggregate()-shaped entries for every block of one Kron-RLS report.
+
+    Everything the table path measures by rebuilding the split is read off the report
+    instead: `test_isolation` is the same statistic (mean over the block's structures of
+    the best Tanimoto similarity to a training one -- analysis/coldsplit_geometry's
+    formula, reached through training/pair_baseline_common.block_tanimoto_similarity),
+    and the block's row count, positive rate and protein count come from its detail
+    block. The axes this report does not measure stay NaN, so asking for one of them
+    simply draws nothing rather than drawing a wrong number.
+    """
+    label, axis, blocks = read_cron_report(path)
+    entries = []
+    for block, values in sorted(blocks.items()):
+        total = values.get("total")
+        positives = values.get("real_pos")
+        entry = {
+            "curve": curve_of_label.get(label, label),
+            "label": label,
+            "exclusion_set": block,
+            "axis": axis,
+            "seeds": int(values.get("seeds", 0)),
+            "test_rows": total if total is not None else float("nan"),
+            "test_positive_rate": (
+                positives / total if total and positives is not None else float("nan")
+            ),
+            "test_proteins": values.get("n_proteins", float("nan")),
+        }
+        for column in X_COLUMNS:
+            value = values.get(column, float("nan"))
+            entry[column] = value
+            # One number per block, not one per seed: the block is fixed and only the
+            # negatives are redrawn, so the report prints a zero spread for both
+            # isolation readings. Carried as NaN rather than 0.0 to keep "not measured"
+            # distinct from "measured as zero".
+            entry[f"{column}_std"] = float("nan")
+            entry[f"{column}_sem"] = float("nan")
+        for metric in metrics:
+            if metric in CONFUSION_SHARE_METRICS:
+                cell = values.get(metric.removesuffix("_share"))
+                cell_std = values.get(f"{metric.removesuffix('_share')}_std")
+                mean = cell / total if total and cell is not None else float("nan")
+                std = cell_std / total if total and cell_std is not None else float("nan")
+            else:
+                source = CRON_SUMMARY_METRICS.get(metric, CRON_DETAIL_METRICS.get(metric))
+                if source is None:
+                    mean = std = float("nan")
+                elif metric in CRON_SUMMARY_METRICS:
+                    mean = values.get(metric, float("nan"))
+                    std = values.get(f"{metric}_std", float("nan"))
+                else:
+                    mean = values.get(source, float("nan"))
+                    std = values.get(f"{source}_std", float("nan"))
+            entry[metric] = mean
+            entry[f"{metric}_std"] = std
+            # The report prints the deviation across seeds; the standard error is that
+            # over sqrt(n), the same relation the table path computes.
+            entry[f"{metric}_sem"] = (
+                std / math.sqrt(entry["seeds"])
+                if entry["seeds"] > 1 and not math.isnan(std)
+                else float("nan")
+            )
+        for cell in CONFUSION_COUNTS:
+            entry[cell] = values.get(cell)
+        entries.append(entry)
+    return entries
+
+
+def write_aggregated(path, entries, metrics):
+    """The per-block CSV beside a cron figure: what the table path's points CSV is, for
+    a source whose numbers are already means over seeds."""
+    columns = [
+        "label", "exclusion_set", "axis", "seeds",
+        *X_COLUMNS,
+        "test_rows", "test_positive_rate", "test_proteins",
+        *CONFUSION_COUNTS,
+    ]
+    for metric in metrics:
+        columns += [metric, f"{metric}_std", f"{metric}_sem"]
+    with open(path, "w", newline="") as handle:
+        writer = csv_module.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        for entry in sorted(entries, key=lambda item: item["test_isolation"]):
+            writer.writerow(entry)
+
+
 def aggregate(points, metrics):
     """Mean and deviation over the seeds of one (curve, exclusion set).
 
@@ -818,14 +1012,11 @@ def aggregate(points, metrics):
                 f"block {exclusion_set} of curve {curve} was measured by more than one "
                 "label; the curve would average two configurations into one point"
             )
-        for column in (
-            "test_isolation",
-            "test_cross_mean",
-            "test_seen_lipid_share",
-            "test_protein_isolation",
-            "test_protein_cross_mean",
-        ):
-            values = [row[column] for row in rows if not math.isnan(row[column])]
+        for column in X_COLUMNS:
+            values = [
+                row[column] for row in rows
+                if not math.isnan(row.get(column, float("nan")))
+            ]
             entry[column] = statistics.fmean(values) if values else float("nan")
             entry[f"{column}_std"] = deviation(values)
             entry[f"{column}_sem"] = standard_error(values)
@@ -915,6 +1106,10 @@ X_AXIS_LABELS = {
     "test_protein_cross_mean": (
         "pocket similarity of the test block's proteins to train\n"
         "(plain mean over all block x train protein pairs)"
+    ),
+    "test_headgroup_isolation": (
+        "Tanimoto similarity of the test block to train, head groups only\n"
+        "(the same statistic over head-group units; Kron-RLS reports only)"
     ),
 }
 
@@ -1146,6 +1341,20 @@ def main():
         ),
     )
     parser.add_argument(
+        "--cron_report",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help=(
+            "a Kron-RLS report (results/tables/cron_test_metrics/cron_<label>.txt, "
+            "written by scripts/run_cron.py). Those runs never reach "
+            "metrics_summary.csv, so their points are read from the report itself, "
+            "which already carries both isolation readings and the metrics per "
+            "held-out block. Repeatable, and combines with --labels; with no --labels "
+            "the metrics table is not read at all"
+        ),
+    )
+    parser.add_argument(
         "--metrics",
         default=",".join(DEFAULT_METRICS),
         help="test metric columns of metrics_summary.csv, one panel each",
@@ -1153,13 +1362,7 @@ def main():
     parser.add_argument(
         "--x",
         default="test_isolation",
-        choices=(
-            "test_isolation",
-            "test_cross_mean",
-            "test_seen_lipid_share",
-            "test_protein_isolation",
-            "test_protein_cross_mean",
-        ),
+        choices=X_COLUMNS,
         help=(
             "which similarity reading goes on the x axis. The first three are the LIPID "
             "axis (Tanimoto of the evaluated block's chemistry to training chemistry); "
@@ -1207,19 +1410,32 @@ def main():
             curve_of_label[member] = members[0]
         labels.update(members)
 
-    data_dir = arguments.data_dir.rstrip(os.sep) + os.sep
-    csv = pandas.read_csv(interaction_csv_path(data_dir))
-    compact = load_compact_checked(
-        arguments.data_dir, csv, interaction_csv_path(data_dir)
-    )
+    # A cron-only call reads neither the table nor data/: its x and its metrics are
+    # both in the report. Naming --labels as well brings the table back in, so a
+    # baseline and a network configuration can share one curve.
+    cron_entries = []
+    for report in arguments.cron_report:
+        cron_entries.extend(cron_aggregated(report, metrics, curve_of_label))
+    if arguments.cron_report and not cron_entries:
+        raise SystemExit("no per-block rows parsed from the cron report(s)")
+    read_table = bool(labels) or not arguments.cron_report
 
-    rows = latest_rows(arguments.table, labels, metrics)
-    if not rows:
-        raise SystemExit("no rows in the metrics table match those labels and metrics")
-
-    cache = {}
+    rows = {}
     points = []
     skipped = defaultdict(int)
+    if read_table:
+        data_dir = arguments.data_dir.rstrip(os.sep) + os.sep
+        csv = pandas.read_csv(interaction_csv_path(data_dir))
+        compact = load_compact_checked(
+            arguments.data_dir, csv, interaction_csv_path(data_dir)
+        )
+        rows = latest_rows(arguments.table, labels, metrics)
+        if not rows:
+            raise SystemExit(
+                "no rows in the metrics table match those labels and metrics"
+            )
+
+    cache = {}
     for (label, exclusion_set, seed), row in sorted(rows.items()):
         spec = spec_from_row(row)
         try:
@@ -1258,7 +1474,7 @@ def main():
             continue
         points.append(point)
 
-    if not points:
+    if not points and not cron_entries:
         raise SystemExit("no run could be matched to a reconstructed split")
 
     # One curve, one directory per label that measured it -- the project's graphics
@@ -1273,12 +1489,19 @@ def main():
     by_curve = defaultdict(list)
     for point in points:
         by_curve[point["curve"]].append(point)
+    cron_by_curve = defaultdict(list)
+    for entry in cron_entries:
+        cron_by_curve[entry["curve"]].append(entry)
 
     written = []
-    for curve, curve_points in sorted(by_curve.items()):
-        aggregated = aggregate(curve_points, metrics)
+    for curve in sorted(set(by_curve) | set(cron_by_curve)):
+        curve_points = by_curve.get(curve, [])
+        aggregated = aggregate(curve_points, metrics) + cron_by_curve.get(curve, [])
         axis_names = ", ".join(sorted({entry["axis"] for entry in aggregated}))
-        members = sorted({point["label"] for point in curve_points})
+        members = sorted(
+            {point["label"] for point in curve_points}
+            | {entry["label"] for entry in cron_by_curve.get(curve, [])}
+        )
         stem = safe_path_part(curve)
         paths = []
         for member in members:
@@ -1286,10 +1509,18 @@ def main():
                 arguments.graphics_root, safe_path_part(member), "split_similarity"
             )
             os.makedirs(directory, exist_ok=True)
-            points_path = os.path.join(
-                directory, f"{stem}_split_similarity_points.csv"
-            )
-            write_points(points_path, curve_points, metrics)
+            # Per-seed points where the table supplied them, per-block means where a
+            # cron report did -- one of the two, named for what it holds.
+            if curve_points:
+                points_path = os.path.join(
+                    directory, f"{stem}_split_similarity_points.csv"
+                )
+                write_points(points_path, curve_points, metrics)
+            else:
+                points_path = os.path.join(
+                    directory, f"{stem}_split_similarity_blocks.csv"
+                )
+                write_aggregated(points_path, aggregated, metrics)
             # One file per metric (--one_file_per_metric) or one file with a panel per
             # metric. Same curve either way; only how it is packaged differs.
             if arguments.one_file_per_metric:

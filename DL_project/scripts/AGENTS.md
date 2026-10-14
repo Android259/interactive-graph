@@ -29,8 +29,9 @@ scripts/
                 preflight, env install
   tools/        one-off commands: sync_project, test_run, parameters, ...
   graphics_generation/  the plot_*.py / split_similarity_vs_metric.py scripts that
-                draw figures from metrics_summary.csv, test reports, or TensorBoard
-                runs; the rest of analysis/ stays plot-free (analysis/AGENTS.md)
+                draw figures from metrics_summary.csv, test reports, TensorBoard runs
+                or a Kron-RLS report (split_similarity_vs_metric.py --cron_report);
+                the rest of analysis/ stays plot-free (analysis/AGENTS.md)
 ```
 
 `scripts/settings.sh` is the one file to edit for the group list, the
