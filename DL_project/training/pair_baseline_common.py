@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import weakref
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,7 @@ from preprocessing.compute_descriptors import hbond_capacity as _hbond_capacity
 from preprocessing.compute_descriptors import heavy_atom_count as _heavy_atom_count
 from preprocessing.compute_descriptors import longest_acyl_chain as _longest_acyl_chain
 from preprocessing.compute_descriptors import unsaturation_count as _unsaturation_count
+from preprocessing.compute_descriptors import KYTE_DOOLITTLE, RESIDUE_LETTERS
 from dataloader.descriptors import LIPID_DESCRIPTOR_NAMES
 from dataloader.descriptors import PROTEIN_DERIVED_DESCRIPTOR_NAMES
 from dataloader.descriptors import PROTEIN_DESCRIPTOR_NAMES
@@ -101,31 +103,7 @@ POCKET_EXTRA_NAMES = ("ev28_q10", "aromatic_share_rim", "hydropathy_mean", "ev14
 POCKET_CAVITY_NAMES = ("pocket_free_volume", "pocket_packing_density")
 POCKET_ALL_NAMES = POCKET23_NAMES + POCKET_EXTRA_NAMES + POCKET_CAVITY_NAMES
 
-RESIDUE_ORDER = "A R N D C Q E G H I L K M F P S T W Y V".split()
-KYTE_DOOLITTLE = np.array(
-    [
-        1.8,
-        -4.5,
-        -3.5,
-        -3.5,
-        2.5,
-        -3.5,
-        -3.5,
-        -0.4,
-        -3.2,
-        4.5,
-        3.8,
-        -3.9,
-        1.9,
-        2.8,
-        -1.6,
-        -0.8,
-        -0.7,
-        -0.9,
-        -1.3,
-        4.2,
-    ]
-)
+_KYTE_DOOLITTLE = np.asarray(KYTE_DOOLITTLE)
 AROMATIC = {"F", "W", "Y"}
 BASIC = {"R", "K", "H"}
 ACIDIC = {"D", "E"}
@@ -241,7 +219,7 @@ def resolve_family_excluded_lipids(args, family: str) -> tuple[str, ...] | None:
 
 def _headgroup_isolation_units(table: pd.DataFrame, context: str):
     """analysis.lipid_block_search.Units at species granularity, built on the HEAD-
-    GROUP-restricted Tanimoto artifacts (preprocessing/build_tanimoto_headgroup.py's
+    GROUP-restricted Tanimoto artifacts (preprocessing/similarity/build_tanimoto_headgroup.py's
     Tanimoto_headgroup_compact_* -- acyl tails cut off, see species_headgroup_
     tanimoto_similarity's own docstring above) instead of _lipid_isolation_units'
     whole-molecule ones. For a --excluded_lipid_groups block defined BY head-group
@@ -253,14 +231,14 @@ def _headgroup_isolation_units(table: pd.DataFrame, context: str):
     from analysis.lipid_block_search import Units
     from dataloader.tensors_reading.tanimoto_compact_tensors_reader import CompactTanimoto
 
-    cache_dir = PROJECT_ROOT / "data" / "cache"
+    cache_dir = PROJECT_ROOT / "data" / "cache" / "tanimoto_headgroup"
     matrix_path = cache_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy"
     index_path = cache_dir / "Tanimoto_headgroup_compact_structure_index.npy"
     row_path = cache_dir / "Tanimoto_headgroup_compact_row_ids.npy"
     if not (matrix_path.exists() and index_path.exists() and row_path.exists()):
         raise ValueError(
             f"{context}: the headgroup-restricted Tanimoto artifacts are missing -- "
-            "rebuild with preprocessing/build_tanimoto_headgroup.py"
+            "rebuild with preprocessing/similarity/build_tanimoto_headgroup.py"
         )
     compact = CompactTanimoto(
         np.load(matrix_path, mmap_mode="r"), np.load(index_path), np.load(row_path)
@@ -268,7 +246,7 @@ def _headgroup_isolation_units(table: pd.DataFrame, context: str):
     if len(np.unique(compact.row_ids)) != len(table):
         raise ValueError(
             f"{context}: the headgroup-restricted Tanimoto artifacts are stale for "
-            "this table -- rebuild with preprocessing/build_tanimoto_headgroup.py"
+            "this table -- rebuild with preprocessing/similarity/build_tanimoto_headgroup.py"
         )
     return Units(table, compact, "species", family=None)
 
@@ -447,7 +425,7 @@ def _lipid_isolation_units(table: pd.DataFrame, context: str):
         raise ValueError(
             f"{context}: the compact Tanimoto artifacts needed to generate an "
             "isolation block are missing or stale -- rebuild with "
-            "preprocessing/build_tanimoto_compact.py"
+            "preprocessing/similarity/build_tanimoto_compact.py"
         )
     return Units(table, compact, "species", family=None)
 
@@ -778,7 +756,7 @@ def best_threshold_for_metric(
     on a lipid_coldsplit test pool they were observed at roughly -0.11..0.22, nowhere
     near a fixed 0.5. Thresholding at 0.5 (the network's convention, since its output
     IS a calibrated sigmoid) would call every row negative here, exactly the
-    "threshold placement" pitfall analysis/baselines/null_model.py's docstring warns about for
+    "threshold placement" pitfall analysis/baselines/knn_model.py's docstring warns about for
     fixed-cut BA on an uncalibrated score. So the cut is fit like protein_lambda/
     lipid_lambda are: on the validation pool only, then applied unchanged to test --
     never fit on the pool it will be reported on.
@@ -994,8 +972,8 @@ def protein_pocket_features(
         mask = _pocket_mask(nodes, pocket_path)
         site = nodes.loc[mask]
         residue_types = site["residue_type"].to_numpy(dtype=int)
-        residue_letters = np.asarray([RESIDUE_ORDER[index] for index in residue_types])
-        hydropathy = KYTE_DOOLITTLE[residue_types]
+        residue_letters = np.asarray([RESIDUE_LETTERS[index] for index in residue_types])
+        hydropathy = _KYTE_DOOLITTLE[residue_types]
         aromatic = np.isin(residue_letters, list(AROMATIC))
         sasa = site["residue_sas_area"].to_numpy(dtype=float)
         pocket_sasa = float(sasa.sum())
@@ -1256,7 +1234,9 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
     }
 
 
-_EXPLICIT_LIPID_FEATURES_CACHE: dict[tuple[int, int], pd.DataFrame] = {}
+_EXPLICIT_LIPID_FEATURES_CACHE: dict[
+    tuple[int, int], tuple[pd.DataFrame, object, weakref.ref]
+] = {}
 
 
 def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) -> pd.DataFrame:
@@ -1289,7 +1269,7 @@ def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) 
     cache_key = (id(table), id(npr_cache))
     cached = _EXPLICIT_LIPID_FEATURES_CACHE.get(cache_key)
     if cached is not None:
-        return cached
+        return cached[0]
     if npr_cache is None:
         npr_cache = load_lipid_descriptor_cache(PROJECT_ROOT / "data", isomeric=False)
     records = []
@@ -1350,7 +1330,14 @@ def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) 
             values[f"headgroup::{name}"] = float(lipid_class == name)
         records.append(values)
     result = pd.DataFrame(records).set_index("FullIdentityOfLipid").sort_index()
-    _EXPLICIT_LIPID_FEATURES_CACHE[cache_key] = result
+    _EXPLICIT_LIPID_FEATURES_CACHE[cache_key] = (
+        result,
+        npr_cache,
+        weakref.ref(
+            table,
+            lambda _ref, key=cache_key: _EXPLICIT_LIPID_FEATURES_CACHE.pop(key, None),
+        ),
+    )
     return result
 
 
@@ -1578,7 +1565,7 @@ def build_lipid_kernel(
       `species_tanimoto_similarity` -- it is positionally aligned to the compact
       Tanimoto artefacts, not to any subset).
     - "tanimoto_headgroup": the same, but on the head group only, acyl tails cut off
-      first (species_headgroup_tanimoto_similarity, preprocessing/build_tanimoto_
+      first (species_headgroup_tanimoto_similarity, preprocessing/similarity/build_tanimoto_
       headgroup.py's artefacts) -- same positional-alignment requirement on `table`.
     - "molformer": the network's own lipid input -- raw 768-dim MolFormer embedding
       per species (molformer_lipid_features), turned into a kernel via kernel_type,
@@ -1657,7 +1644,7 @@ def build_lipid_kernel(
 
 def species_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarray, dict[str, int]]:
     """Species Tanimoto, max-reduced over the same candidate structures as the loader."""
-    cache_dir = PROJECT_ROOT / "data" / "cache"
+    cache_dir = PROJECT_ROOT / "data" / "cache" / "tanimoto"
     matrix = np.load(cache_dir / "Tanimoto_compact_isomeric_matrix_uint8.npy").astype(np.float32) / 255.0
     structure_index = np.load(cache_dir / "Tanimoto_compact_isomeric_structure_index.npy")
     row_ids = np.load(cache_dir / "Tanimoto_compact_isomeric_row_ids.npy")
@@ -1687,17 +1674,19 @@ def molformer_lipid_features(table: pd.DataFrame) -> pd.DataFrame:
     `torch.nn.Linear(768, hiddim)` consumes directly (see any `..._liphid32.md` arg
     file's own header: "ONE torch.nn.Linear(768, hiddim) over a MolFormer
     embedding"). Mean-pooled over MolFormer's token dimension, then over a species'
-    candidate isomer structures (preprocessing.lipid_embedding_identity_check.
+    candidate isomer structures (dataloader.chemistry_prior.
     species_embeddings, reading data/lipid_SMILES_embedding_deterministic.pkl or its
     mmap store) -- the RAW embedding, not preprocessing/build_molformer_similarity_
     matrix.py's derived species x species similarity (that one is for analysis/
-    null_model.py's --features=molformer null model, a different, already-reduced
+    knn_model.py's --features=molformer null model, a different, already-reduced
     artefact). --lipid_kernel=molformer turns THIS into a kernel via
     --lipid_kernel_type, matching how "explicit" turns hand-built descriptors into
     one -- a network's own embedding is what the fit sees, not a lookup similarity.
     """
     from dataloader.tensors_reading.lipid_embedding_tensors_reader import load_lipid_embedding_store
-    from preprocessing.lipid_embedding_identity_check import EMBEDDING_FILE, species_embeddings
+    from dataloader.chemistry_prior import (
+        MOLFORMER_EMBEDDING_FILE as EMBEDDING_FILE, species_embeddings,
+    )
 
     data_dir = PROJECT_ROOT / "data"
     smiles_encoding = load_lipid_embedding_store(data_dir, EMBEDDING_FILE)
@@ -1726,7 +1715,7 @@ def _protein_catalog_features(proteins: list[str], names: list[str]) -> pd.DataF
     descriptors.PROTEIN_DESCRIPTOR_NAMES/PROTEIN_DERIVED_DESCRIPTOR_NAMES), read
     straight from dataloader.chemistry_prior.protein_descriptor_table -- the
     network's own cached, self-persisting per-protein table for the FULL descriptor
-    catalog (data/protein_descriptor_table.json) -- rather than reimplementing each
+    catalog (data/protein_descriptors.csv) -- rather than reimplementing each
     one by hand the way protein_pocket_features does for its own (partial) column
     set (POCKET_ALL_NAMES: pocket23 plus the four family_neutral promotions, not the
     three lambda_sqrt shape variants or anything newer). Mirrors
@@ -1772,7 +1761,7 @@ def resolve_protein_feature_subset(
     return features.loc[:, list(names)]
 
 
-_LIPID_DESCRIPTOR_TABLE_CACHE: dict[int, dict] = {}
+_LIPID_DESCRIPTOR_TABLE_CACHE: dict[int, tuple[dict, weakref.ref]] = {}
 
 
 def _lipid_catalog_features(table: pd.DataFrame, names: list[str]) -> pd.DataFrame:
@@ -1791,12 +1780,19 @@ def _lipid_catalog_features(table: pd.DataFrame, names: list[str]) -> pd.DataFra
     it on every call; this avoids paying that repeatedly across a run's (family,
     seed) blocks the same way explicit_lipid_features' own cache does.
     """
-    table_by_species = _LIPID_DESCRIPTOR_TABLE_CACHE.get(id(table))
+    cached = _LIPID_DESCRIPTOR_TABLE_CACHE.get(id(table))
+    table_by_species = None if cached is None else cached[0]
     if table_by_species is None:
         from dataloader.chemistry_prior import _lipid_descriptor_table
 
         table_by_species = _lipid_descriptor_table(table, PROJECT_ROOT / "data")
-        _LIPID_DESCRIPTOR_TABLE_CACHE[id(table)] = table_by_species
+        _LIPID_DESCRIPTOR_TABLE_CACHE[id(table)] = (
+            table_by_species,
+            weakref.ref(
+                table,
+                lambda _ref, key=id(table): _LIPID_DESCRIPTOR_TABLE_CACHE.pop(key, None),
+            ),
+        )
     return pd.DataFrame.from_dict(table_by_species, orient="index").loc[:, names]
 
 
@@ -1850,7 +1846,7 @@ def species_headgroup_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarr
     """Species Tanimoto restricted to the head group -- acyl tails cut off first.
 
     Same max-reduction-over-candidate-structures scheme as species_tanimoto_
-    similarity, over preprocessing/build_tanimoto_headgroup.py's artefacts instead
+    similarity, over preprocessing/similarity/build_tanimoto_headgroup.py's artefacts instead
     of build_tanimoto_compact.py's: every candidate SMILES has its qualifying acyl
     tails removed (dataloader.descriptors._qualifying_tails' rule) before the
     Tanimoto matrix is built, so two species differing only in chain length/
@@ -1865,7 +1861,7 @@ def species_headgroup_tanimoto_similarity(table: pd.DataFrame) -> tuple[np.ndarr
     parity, since head-group fingerprints normally do not depend on tail
     stereochemistry.
     """
-    cache_dir = PROJECT_ROOT / "data" / "cache"
+    cache_dir = PROJECT_ROOT / "data" / "cache" / "tanimoto_headgroup"
     matrix = (
         np.load(cache_dir / "Tanimoto_headgroup_compact_matrix_uint8.npy").astype(np.float32)
         / 255.0

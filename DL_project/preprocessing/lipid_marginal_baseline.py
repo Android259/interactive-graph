@@ -1,22 +1,9 @@
-"""How much of a lipid-side model's cold-family score is just the lipid's own label prior.
+"""Measure label-prior baselines on protein-family and lipid-class splits.
 
-The cold split is cold in the protein only: `Dataloader._split_interactions` holds
-out whole protein families, and every lipid of the held-out family's rows has already
-been seen -- paired with other proteins -- in train. So a model that reads the lipid and
-nothing else can score above chance on a held-out family without any pair reasoning at
-all, purely by replaying "this lipid (or this head-group class) is usually positive".
-
-This script measures that floor. It rebuilds the exact working set the loader builds
-(same sampler, same seed, same 50/50 valid/test cut of the excluded family) and scores
-three label-only predictors on it:
-
-  lipid identity   -- train positive rate of FullIdentityOfLipid, thresholded at 0.5
-  lipid class      -- the same for the head-group class (the parenthesis stripped)
-  global prior     -- the train majority class, which is 0.5 BA by construction
-
-Anything the network's lipid half earns above these numbers is what it learned from the
-lipid's structure. Anything below them means the lipid branch is a worse replay of a
-lookup table than the lookup table.
+Reproduce sampling and validation/test splitting with the selected seed. Compare
+three predictors: training positive rate per lipid species, positive rate per lipid
+class, and the global majority label. Threshold positive rates at 0.5.
+These baselines measure how much prediction is possible from lipid labels alone.
 """
 
 import argparse
@@ -27,9 +14,7 @@ import pandas
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# dataloader.sampler imports torch for its batch sampler; the pool samplers below are
-# pure pandas. Analysis machines have no GPU stack, so stand a placeholder in when torch
-# is missing rather than making a label-counting script depend on the training runtime.
+# Provide the sampler base-class placeholder when torch is unavailable.
 try:  # pragma: no cover - depends on the machine, not on the code path
     import torch  # noqa: F401
 except ModuleNotFoundError:
@@ -69,11 +54,9 @@ SAMPLERS = {
 
 
 def working_set(csv, seed, sampler, ratio=1, lipid_classes=()):
-    """The loader's `sampled_split`: positives plus sampled negatives, renumbered 0..N-1.
+    """Combine positives and sampled negatives, with row indices 0..N-1.
 
-    `lipid_classes` reproduces the loader's stratified draw: negatives are matched to
-    positives inside each side of the coming class cut, so no protein arrives in train
-    with a single label.
+    Use lipid-class strata when requested to match the loader's sampling.
     """
     strata = None
     if lipid_classes and sampler != "balanced_lipid_classes":
@@ -85,23 +68,14 @@ def working_set(csv, seed, sampler, ratio=1, lipid_classes=()):
 
 
 def split(sampled_split, family, seed, lipid_classes=(), double=False):
-    """The loader's cold split, valid/test halves included.
-
-    With `lipid_classes` non-empty this is the two-axis split: the classes leave train
-    for every protein, exactly as `_split_interactions` does it, and everything the two
-    filters remove lands in the same excluded pool that is halved into valid and test.
-    """
+    """Split by protein family and optional lipid classes, then divide the excluded block."""
     train = sampled_split[sampled_split["ProteinDomain"].str.lower() != family.lower()]
     if lipid_classes:
         held = {name.lower() for name in lipid_classes}
         train = train[~lipid_class_series(train).str.lower().isin(held)]
     excluded = sampled_split.drop(train.index)
     if double and lipid_classes:
-        # --double_coldsplit: the family's rows in classes that stayed in train are
-        # dropped rather than evaluated, so no evaluated lipid has been seen in train,
-        # and so are every other protein's rows in the removed classes -- their lipid is
-        # unseen but their family sits in train, which is the one-axis question, not
-        # this one. Mirrors the same restriction in `_split_interactions`.
+        # For double-cold evaluation, keep only held-out-family rows in held-out lipid classes.
         held = {name.lower() for name in lipid_classes}
         excluded = excluded[
             lipid_class_series(excluded).str.lower().isin(held)
@@ -111,26 +85,7 @@ def split(sampled_split, family, seed, lipid_classes=(), double=False):
 
 
 def halve_excluded_block(excluded, seed, merge_valid_test=False):
-    """(valid, test) from one excluded block, exactly as `_split_interactions` halves it.
-
-    Stratified by label: an undivided draw fixes only the total, so the positives fall
-    where the seed puts them (measured there: 23 of scp2's 36 positives in test, 13 in
-    valid), and valid/test then measure different quantities. Splitting each label in
-    half separately keeps the same positive rate in both, which is what makes them agree
-    row for row with the loader's own split.
-
-    Shared by `split` (protein-family axis) and `lipid_split` (lipid-class axis) so the
-    one piece both axes have in common cannot drift between them.
-
-    `merge_valid_test=True` skips the halving and returns the WHOLE excluded block as
-    both valid and test -- for a run with no real --lambda_grid to select on, valid's
-    only remaining job is fitting a decision threshold that a threshold-free metric
-    (AUC_within_protein) never reads, so halving it away just shrinks the sample a
-    small excluded block (a rare Figure-3 lipid subclass, for instance) can't spare.
-    Not the default: a caller that DOES select lambda on valid, or reads a threshold-
-    based metric (BA/F1/sensitivity/specificity), needs the honest split -- fitting
-    the threshold on the same rows it is then scored on would leak.
-    """
+    """Split the excluded block into validation/test sets, stratified by label."""
     if merge_valid_test:
         return excluded, excluded
     positive_validate = excluded[excluded["Interaction"] == 1].sample(frac=0.5, random_state=seed)
@@ -141,23 +96,10 @@ def halve_excluded_block(excluded, seed, merge_valid_test=False):
 
 
 def lipid_split(sampled_split, lipid_classes, seed, merge_valid_test=False):
-    """The loader's `--lipid_coldsplit`, valid/test halves included.
+    """Hold out a fixed set of lipid classes across all proteins.
 
-    The OTHER axis from `split` above, and the reason it needs its own function rather
-    than a `family=None` branch there: that one starts by removing a protein family from
-    train unconditionally, and here no family is removed at all. Every protein stays in
-    training; whole head-group classes leave it, for all of them
-    (dataloader/Dataloader.py's `_split_interactions`, the
-    `excluded_subgroups or lipid_coldsplit` branch). What the two axes share -- the
-    halving of the excluded block -- is `halve_excluded_block`.
-
-    `lipid_classes` is a fixed set of class names (one entry of
-    dataloader.splitting_on_blocks.lipid_coldsplit_blocks.LIPID_COLDSPLIT_SETS), NOT derived from a family the way
-    `lipid_classes_for_holdout` derives them for the two-axis split: under this split
-    there is no held-out family to derive anything from.
-
-    There is deliberately no `double` equivalent. --double_coldsplit's extra restriction
-    keeps only rows whose PROTEIN is also held out, and here none is.
+    Keep other classes in training. Split the excluded rows with halve_excluded_block().
+    No protein family is held out in this mode.
     """
     held = {name.lower() for name in lipid_classes}
     if not held:
@@ -168,17 +110,9 @@ def lipid_split(sampled_split, lipid_classes, seed, merge_valid_test=False):
 
 
 def lipid_isolation_split(sampled_split, species, seed, merge_valid_test=False):
-    """The loader's `--lipid_isolation`, valid/test halves included.
+    """Hold out fixed FullIdentityOfLipid species across all proteins.
 
-    `lipid_split`'s counterpart keyed by SPECIES (FullIdentityOfLipid) instead of
-    head-group class -- dataloader/Dataloader.py's `_cold_chemistry` treats the two
-    the same way (`held |= frame["FullIdentityOfLipid"].isin(self.excluded_lipid_
-    species)` there, vs. `lipid_class_series(...).isin(...)` for `--lipid_coldsplit`),
-    so this mirrors `lipid_split` exactly with that one substitution. `species` is a
-    fixed set of FullIdentityOfLipid values (one entry of dataloader.
-    lipid_isolation_blocks.LIPID_ISOLATION_BLOCKS, chosen by analysis/
-    lipid_block_search.py to land at a REQUESTED Tanimoto isolation from training),
-    not derived from a family the way the two-axis split derives its classes.
+    Use the same split as lipid_split(), with species names instead of lipid classes.
     """
     held = set(species)
     if not held:

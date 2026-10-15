@@ -13,8 +13,8 @@
 
 ```text
 Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed_CandidatesCompleted_Deduplicated.csv
-cache/Tanimoto_compact_*            (only under --tanimoto_weight; preprocessing/build_tanimoto_compact.py)
-cache/Tanimoto_compact_isomeric_*    (same, under --tanimoto_weight --lipid_isomers)
+cache/tanimoto/Tanimoto_compact_*          (only under --tanimoto_weight; preprocessing/similarity/build_tanimoto_compact.py)
+cache/tanimoto/Tanimoto_compact_isomeric_* (same, under --tanimoto_weight --lipid_isomers)
 lipid_SMILES_embedding_deterministic.pkl / lipid_SMILES_isomeric_embedding.pkl
 embedding_ESM3/*
 graphs/*
@@ -35,8 +35,9 @@ in the matching top-level `dataloader/*.py` module (see `dataloader/AGENTS.md`).
 
 | cache file(s) under `data/cache/` | built by | read by |
 |---|---|---|
-| `Tanimoto_compact_*`, `Tanimoto_compact_isomeric_*` | `preprocessing/build_tanimoto_compact.py` | `dataloader/tensors_reading/tanimoto_compact_tensors_reader.py` |
-| `Tanimoto_headgroup_compact_*` | `preprocessing/build_tanimoto_headgroup.py` | `training/pair_baseline_common.py`, `analysis/coldsplit_geometry.py --blocks --tanimoto headgroup` |
+| `tanimoto/Tanimoto_compact_*`, `tanimoto/Tanimoto_compact_isomeric_*` | `preprocessing/similarity/build_tanimoto_compact.py` | `dataloader/tensors_reading/tanimoto_compact_tensors_reader.py` |
+| `tanimoto_headgroup/Tanimoto_headgroup_compact_*` | `preprocessing/similarity/build_tanimoto_headgroup.py` | `training/pair_baseline_common.py`, `analysis/coldsplit_geometry.py --blocks --tanimoto headgroup` |
+| `protein_similarity/Protein_{identity,blosum62,tmscore}_*` | `preprocessing/similarity/build_protein_sequence_similarity.py`, `build_protein_tmscore.py` | `dataloader/similarity_pool.py` under `--negative_similarity=protein_*` |
 | `lipid_SMILES_embedding_deterministic.tensors.pt` + manifest | `data/build_lipid_embedding_store.py` | `dataloader/tensors_reading/lipid_embedding_tensors_reader.py` |
 | `lipid_graph_tensors.pt` + manifest | `data/build_lipid_graph_tensor_cache.py` | `dataloader/tensors_reading/lipid_graph_tensors_reader.py` |
 | `protein_graph_tensors.pt` (+ `.no_geometry.pt`) + manifests | `data/build_protein_graph_tensor_cache.py` | `dataloader/tensors_reading/protein_graph_tensors_reader.py` |
@@ -59,7 +60,7 @@ The following cross-file relationships are part of the data contract:
 
 - every pair ID used by the sampled train split must occur in the compact
   Tanimoto artifacts' `row_ids` array;
-- `cache/Tanimoto_compact_*`'s `structure_index` must align with its own `row_ids`
+- `cache/tanimoto/Tanimoto_compact_*`'s `structure_index` must align with its own `row_ids`
   (one entry per candidate instance) and its manifest's recorded source size/mtime
   must match the interaction table on disk, or the loader refuses it;
 - protein graph edge residue IDs must exist in the matching node table;
@@ -70,7 +71,7 @@ Do not hide cross-file inconsistencies by coercing an unknown identifier to a
 valid index. Report and correct the generating artifact only when explicitly
 requested.
 
-## Protein Similarity (`data/protein_similarity/`)
+## Protein Similarity (`data/cache/protein_similarity/`)
 
 Pairwise protein-protein similarity, three metrics, in the compact-Tanimoto format with
 the lipid axis replaced by the protein one: `matrix[protein_index[i], protein_index[j]]`
@@ -79,16 +80,16 @@ diagonal 255), 35 x 35.
 
 | artifact set | metric | built by |
 |---|---|---|
-| `Protein_identity_*` | sequence identity after global pairwise alignment | `preprocessing/build_protein_sequence_similarity.py` |
+| `Protein_identity_*` | sequence identity after global pairwise alignment | `preprocessing/similarity/build_protein_sequence_similarity.py` |
 | `Protein_blosum62_*` | the same alignment's positive-scoring (conservative) columns | the same script, same alignment pass |
-| `Protein_tmscore_*` | TM-align structural TM-score (`tmtools` bindings) | `preprocessing/build_protein_tmscore.py` |
+| `Protein_tmscore_*` | TM-align structural TM-score (`tmtools` bindings) | `preprocessing/similarity/build_protein_tmscore.py` |
 
 - Read by `--negative_similarity=protein_identity|protein_blosum62|protein_tmscore`,
   which steers `--hard_negative_mining`/`--dissimilar_negative_mining` by protein
   relatedness instead of lipid chemistry (`dataloader/similarity_pool.py`, and see
   `dataloader/AGENTS.md`'s negative-sampling section for the per-axis reference rule that
   makes a protein pool non-degenerate). The reader is
-  `preprocessing/protein_similarity_common.load_similarity`; a missing or stale set
+  `preprocessing/similarity/protein_similarity_common.load_similarity`; a missing or stale set
   raises at dataset construction naming its builder, rather than quietly drawing
   uniformly.
 - All three divide by the LONGER sequence/chain, which is a measured choice, not a

@@ -1,40 +1,17 @@
 #!/usr/bin/env python3
-"""Shape descriptors of each protein's binding cavity, from files already on disk.
+"""Compute and report pocket shape and chemistry descriptors.
 
-Why this exists
----------------
-The descriptor the model can already use (POCKET_DESCRIPTOR_NAMES in
-dataloader/graphs_builders/protein_graph_builder.py) is 13 sums or means over the pocket residues and
-one maximum. An average has no shape: a long narrow channel and a round bowl with the
-same total surface and the same mean burial produce the same numbers. What decides
-which lipid fits is exactly the shape the averaging removes -- how far the cavity
-extends, how narrow it is, and how the enclosure is distributed between its mouth and
-its depth.
+Read pocketness.pdb and coarse_graph_nodes.csv under data/graphs/<protein>/.
+Use flagged side-chain atoms for geometry and pocket residues for summary statistics.
+Shared geometry functions come from preprocessing.compute_descriptors.
+See files/reference/pocket_shape_descriptors.md for descriptor definitions.
 
-Everything here is computed from `data/graphs/<protein>/pocketness.pdb` (atom
-coordinates, with the pocket flag in the B-factor column) and the Voronota residue
-table beside it. No new tool, no new data.
+Print grouped tables by default. --full prints one table; --out writes all columns
+at full precision. Other modules import read_pocket_atoms() and descriptors_for().
 
-The pocket is defined exactly as the dataloader defines it, so these descriptors
-describe the same site the model sees: side-chain atoms only (backbone C, CA, CB, O, N
-excluded), a residue counts as pocket if any of its side-chain atoms is flagged.
-
-Documented in files/reference/pocket_shape_descriptors.md, which also carries the measurement
-against acyl chain length. Change the descriptor set here and that file changes in the
-same commit -- a description that has fallen behind the code is worse than none, since
-conclusions get drawn from it without rereading this.
-
-Lives in preprocessing/, not analysis/, because it IS a descriptor calculation path
-(this project's own rule: the whole descriptor-computation path lives here, analysis/
-only reads and reports) -- it was moved from analysis/pocket_shape_descriptors.py.
-
-Usage:
     scripts/env.sh python3 preprocessing/pocket_shape_descriptors.py
     scripts/env.sh python3 preprocessing/pocket_shape_descriptors.py --full
     scripts/env.sh python3 preprocessing/pocket_shape_descriptors.py --out pocket_shape.csv
-
-The default printout is grouped by section 3 of the note above; --full is the single
-wide frame; --out writes every column at full precision either way.
 """
 
 import argparse
@@ -59,21 +36,15 @@ from preprocessing.compute_descriptors import (  # noqa: E402
     pocket_shape_full,
 )
 
-# numpy array for direct fancy indexing (KYTE_DOOLITTLE[residue_types]); preprocessing's
-# own tuple is the one source of the 20 values, this is just the local access form.
+# Convert shared hydropathy values to an array for residue_type indexing.
 _KYTE_DOOLITTLE = np.asarray(KYTE_DOOLITTLE)
 
 
 def read_pocket_atoms(pocketness_pdb):
-    """Coordinates of the side-chain atoms flagged as pocket (preprocessing's own
-    pocket_atom_coordinates -- identical line format and flag column, read once, not
-    duplicated here), plus which residues carry at least one such atom and which
-    residues exist at all (both needed to mask coarse_graph_nodes.csv, which
-    pocket_atom_coordinates alone does not track since it only returns coordinates).
+    """Return pocket side-chain coordinates, pocket residue keys and all residue keys.
 
-    Column offsets are the PDB standard ones and the flag is read exactly where the
-    dataloader reads it (line[62], the integer digit of the B-factor field), so a
-    residue is in the pocket here if and only if it is in the pocket there.
+    Use pocket_atom_coordinates() for coordinates. Read residue keys and pocket flags
+    from PDB records to mask coarse_graph_nodes.csv.
     """
     coordinates = pocket_atom_coordinates(pocketness_pdb)
     pocket_residues = set()
@@ -101,8 +72,7 @@ def descriptors_for(protein_dir):
     if not pocket_residues:
         return None
 
-    # The residue table and the PDB are the same residues in the same order, which is
-    # what lets a mask built from residue keys index the table.
+    # Build the node mask from PDB residue keys.
     key = [str(int(value)) if float(value).is_integer() else str(value)
            for value in nodes["ID_resSeq"]]
     mask = np.array([residue in pocket_residues for residue in key])
@@ -119,13 +89,10 @@ def descriptors_for(protein_dir):
 
     sasa = float(site["residue_sas_area"].sum())
     volume = float(site["residue_volume"].sum())
-    # Hydraulic radius: shape without scale in the crudest possible form. A wide open
-    # bowl and a narrow channel of the same volume differ here and nowhere in the
-    # existing descriptor.
+    # Pocket residue volume divided by solvent-accessible surface area.
     row["pocket_volume_per_sasa"] = volume / max(sasa, 1e-9)
 
-    # Distributions where the current descriptor keeps only a mean. The deep end of the
-    # cavity is what holds a chain; the mean mixes it with the rim.
+    # Report quantiles of the pocket residue distributions.
     for column, name in (
         ("residue_mean_ev14", "ev14"),
         ("residue_mean_ev28", "ev28"),
@@ -139,9 +106,7 @@ def descriptors_for(protein_dir):
         for quantile in (10, 50, 90):
             row[f"{name}_q{quantile}"] = float(np.percentile(values, quantile))
 
-    # Mouth and depth answer different questions -- head-group recognition happens at
-    # the entrance, chain packing inside -- so their chemistry is reported apart
-    # instead of averaged together. The split is the pocket's own median burial.
+    # Report core/rim chemistry separately, split at median burial.
     hydropathy = _KYTE_DOOLITTLE[site["residue_type"].to_numpy(dtype=int)]
     aromatic = np.isin(site["residue_type"].to_numpy(dtype=int), AROMATIC_RESIDUE_TYPES)
     if "residue_mean_buriedness" in site:
@@ -151,17 +116,13 @@ def descriptors_for(protein_dir):
         row["hydropathy_rim"] = float(hydropathy[~core].mean()) if (~core).any() else float("nan")
         row["aromatic_share_core"] = float(aromatic[core].mean())
         row["aromatic_share_rim"] = float(aromatic[~core].mean()) if (~core).any() else float("nan")
-    # Aromatic cages are characteristic of lipid cavities and the Kyte-Doolittle scale
-    # cannot express them: it scores Phe with the aliphatics and Trp near zero.
+    # Report aromatic residue share separately from mean hydropathy.
     row["aromatic_share"] = float(aromatic.mean())
     row["hydropathy_mean"] = float(hydropathy.mean())
     return row
 
 
-# The printed table is grouped the way files/reference/pocket_shape_descriptors.md section 3
-# groups it, because the two get read side by side: 31 columns on one 444-character
-# line is a table nobody looks at twice. Header text only -- the CSV keeps every
-# column, in one wide frame, so nothing downstream has to know about this.
+# Group console columns by descriptor type; keep the CSV as one table.
 COLUMN_BLOCKS = (
     ("size (residues)", ["pocket_residues", "protein_residues"]),
     ("shape: cavity axes (3.1)", [
@@ -184,23 +145,14 @@ COLUMN_BLOCKS = (
     ]),
 )
 
-# Angstroms, so the reader is not left guessing which numbers carry a scale. The ratios
-# and shares are dimensionless and get nothing.
+# Show units for lengths; ratios and shares are dimensionless.
 UNITS = {name: "A" for name in (
     "pocket_extent", "pocket_width", "pocket_thickness", "pocket_gyration",
 )}
 
 
 def saturated_columns(table, tolerance=0.9):
-    """Columns pinned at one value for nearly every protein, and by what share.
-
-    Section 3.5 names ev56 and the upper ev28 quantiles as saturated at 2.0, which makes
-    them incapable of correlating with anything. Detected rather than hard-coded: the
-    point is to catch the NEXT column that goes flat, not to restate a known list.
-
-    0.9 is not a knob to tune. The measured shares fall 1.00, 1.00, 0.94, then 0.20 --
-    a gap wide enough that any threshold in between names the same three columns.
-    """
+    """Return columns whose most frequent finite value has a share of at least tolerance."""
     flat = {}
     for name in table.columns:
         values = table[name].to_numpy(dtype=float)
@@ -222,23 +174,20 @@ def print_blocks(table):
         if not present:
             continue
         shown.update(present)
-        # Rendered to strings rather than rounded in place: appending the median row to a
-        # numeric frame turns a residue count into "37.0", which is exactly the noise
-        # this grouping is meant to remove. Counts print as counts.
+        # Format values before adding the median row so integer counts keep integer formatting.
         block = pd.DataFrame(index=list(table.index) + ["-- median --"])
         for name in present:
             values = table[name]
             whole = bool(values.dropna().apply(lambda v: float(v).is_integer()).all())
             column = pd.concat([values, pd.Series({"-- median --": values.median()})])
             block[
-                # A saturated column is marked where it is read, not in a footnote
-                # further away than the number it warns about.
+                # Mark near-constant columns in the printed table.
                 f"{name}{' [A]' if name in UNITS else ''}{' !flat' if name in flat else ''}"
             ] = column.map(lambda v: "" if pd.isna(v) else (f"{v:.0f}" if whole else f"{v:.3f}"))
         print(f"\n{title}")
         print(block.to_string())
 
-    # Anything a later commit adds lands here instead of disappearing from the printout.
+    # Print any columns not assigned to a group.
     missing = [name for name in table.columns if name not in shown]
     if missing:
         print("\nnot in any block (add it to COLUMN_BLOCKS)")

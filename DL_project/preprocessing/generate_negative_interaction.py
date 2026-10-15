@@ -1,17 +1,12 @@
 #! /usr/bin/env python3
-"""Early, exploratory version of the negative-interaction generation step that became
-preprocessing/complete_lipid_candidate_sets.py / build_complete_interaction_dataset.py.
+"""Legacy generator of negative protein-lipid pairs.
 
-Reads a semicolon-separated interaction CSV from sys.argv[1] (LTPProtein,
-FullIdentityOfLipid, ...), takes the full protein x lipid Cartesian product, and
-labels every pair not already present as a negative (Interaction=0), writing the
-result to Processed_Negative_int.csv. Has no `if __name__` guard and no CLI flags --
-every line runs top-to-bottom on import, and most of the body re-derives the same
-pairs/labels through a second, slower nested-loop path (kept as-is, not deduplicated,
-since this script is historical rather than actively maintained).
+Read a semicolon-separated interaction CSV from sys.argv[1]. Build the protein-lipid
+Cartesian product and label absent pairs as Interaction=0. Write Processed_Negative_int.csv.
+The script runs at import time and contains two implementations of the pair expansion.
+The maintained pipeline lives in preprocessing/pairs_csv_pipeline/.
 
-Usage:
-    python3 generate_negative_interaction.py path/to/interactions.csv
+    python3 preprocessing/generate_negative_interaction.py input.csv
 """
 
 import pandas as pd

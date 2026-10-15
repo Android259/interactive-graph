@@ -2,54 +2,22 @@
 
 # Build the structural protein-similarity matrix: TM-align's TM-score over every pair.
 #
-# TM-score asks the question the two sequence metrics cannot: how much of one protein's
-# FOLD the other reproduces. It is computed from a sequence-INDEPENDENT structural
-# alignment -- TM-align searches for the residue correspondence and the superposition
-# together -- so two proteins that no longer look alike in sequence still score high if
-# they share a fold, which on an LTP panel is most of the interesting signal.
+# TM-score: Zhang & Skolnick (2004).
+# https://aideepmed.com/TM-score/TM-score.pdf
+# TM-align: Zhang & Skolnick (2005).
+# https://pmc.ncbi.nlm.nih.gov/articles/PMC1084323/
 #
-# The computation is the original Zhang-lab TM-align C++ code, through its `tmtools`
-# bindings, rather than a reimplementation: the published algorithm is a heuristic search
-# (gapless threading and secondary-structure seeds, then alternating dynamic programming
-# and Kabsch superposition), so a reimplementation would not merely be slower but would
-# return a slightly different number than everything else that reports a TM-score.
+# Align CA coordinates with tmtools.tm_align and select the TM-score normalized
+# by the longer chain. Each unordered pair is aligned once and copied to both
+# matrix triangles; the search itself need not be symmetric.
 #
-# Normalization. TM-score is asymmetric: the sum over aligned residues is divided by a
-# reference length, and d0 -- the distance at which a residue pair stops counting -- is
-# itself a function of that length. TM-align therefore reports two values per pair. A
-# similarity matrix needs one symmetric number, and this takes the one normalized by the
-# LONGER chain, the same divisor
-# preprocessing/build_protein_sequence_similarity.py uses, so the three matrices answer
-# one question three ways instead of three questions.
-#
-# The longer chain for the same reason it wins there, measured on the same 9 related
-# against 7 unrelated pairs:
-#
-#   / longer chain     related 0.677-0.975   unrelated 0.161-0.309   margin +0.368
-#   / shorter chain    related 0.726-0.982   unrelated 0.304-0.448   margin +0.278
-#
-# A small protein superposed onto part of a large one scores well against the small one's
-# length whatever the rest of the large one does -- FABP1's 127 residues reach 0.448
-# against BPI's 456, which is most of the way to a real fold match. The same comparison
-# normalized by BPI is 0.161.
-#
-# Those margins are also the reason this matrix is worth building next to the sequence
-# ones rather than instead of them: +0.368 against sequence identity's +0.130 on the same
-# pairs. Structure separates these folds roughly three times as cleanly, and the pairs it
-# rescues are the distant homologs identity leaves in the noise.
-#
-# Symmetry is a property of the file, not of the search: each unordered pair is aligned
-# once and written to both triangles. TM-align's heuristic is not guaranteed to return
-# the same correspondence with its arguments swapped, so aligning both directions could
-# hand back two slightly different numbers for one pair.
-#
-# Output (format and rationale: preprocessing/protein_similarity_common.py):
-#   data/protein_similarity/Protein_tmscore_matrix_uint8.pt   proteins x proteins
-#   data/protein_similarity/Protein_tmscore_protein_index.pt  table row -> matrix row
-#   data/protein_similarity/Protein_tmscore.manifest.json     names, parameters, sources
+# Output (format and rationale: preprocessing/similarity/protein_similarity_common.py):
+#   data/cache/protein_similarity/Protein_tmscore_matrix_uint8.pt   proteins x proteins
+#   data/cache/protein_similarity/Protein_tmscore_protein_index.pt  table row -> matrix row
+#   data/cache/protein_similarity/Protein_tmscore.manifest.json     names, parameters, sources
 #
 # Usage:
-#     python3 preprocessing/build_protein_tmscore.py [--data-dir DIR] [--input CSV]
+#     python3 preprocessing/similarity/build_protein_tmscore.py [--data-dir DIR] [--input CSV]
 #         [--proteins A,B,C --dry-run]
 
 import argparse
@@ -60,9 +28,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataloader.dataset_source import INTERACTION_CSV  # noqa: E402
-from preprocessing.protein_similarity_common import (  # noqa: E402
+from preprocessing.similarity.protein_similarity_common import (  # noqa: E402
     encode_uint8,
     load_structures,
     protein_order,
@@ -84,8 +52,8 @@ NORMALIZATION = "longer chain"
 def pair_tmscore(structure_a, structure_b):
     """(TM-score normalized by the longer chain, RMSD, aligned length) of two folds."""
     result = tm_align(
-        np.ascontiguousarray(structure_a.coords),
-        np.ascontiguousarray(structure_b.coords),
+        structure_a.coords,
+        structure_b.coords,
         structure_a.sequence,
         structure_b.sequence,
     )
@@ -167,10 +135,11 @@ def main():
     scores, rmsds, aligned_lengths = tmscore_matrix(structures, names)
     print()
     print("[tmscore]")
-    print(
-        f"structural alignment: {aligned_lengths.min()}-{aligned_lengths.max()} "
-        f"residues aligned, RMSD {rmsds.min():.2f}-{rmsds.max():.2f} A"
-    )
+    if aligned_lengths.size:
+        print(
+            f"structural alignment: {aligned_lengths.min()}-{aligned_lengths.max()} "
+            f"residues aligned, RMSD {rmsds.min():.2f}-{rmsds.max():.2f} A"
+        )
     report_matrix(scores, names)
 
     if args.dry_run:

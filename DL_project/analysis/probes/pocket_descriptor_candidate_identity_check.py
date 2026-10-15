@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """eta^2 against family for the pocket descriptors NOT in production.
 
-pocket_descriptor_identity_check.py (same directory) measured how much of each of the
+analysis/feature_identity_check.py (same directory) measured how much of each of the
 13 POCKET_DESCRIPTOR_NAMES entries is family identity in disguise, and that measurement
 is what selected POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES (dataloader/protein_graph_
 builder.py) -- the 7 entries scoring at or near the no-structure floor.
@@ -22,7 +22,7 @@ answered for the production set; a candidate that clears eta^2 here still wants 
 before it goes anywhere near the model, same as section 5's own caveat.
 
 Usage:
-    python3 preprocessing/pocket_descriptor_candidate_identity_check.py
+    python3 analysis/probes/pocket_descriptor_candidate_identity_check.py
 """
 
 import sys
@@ -30,12 +30,12 @@ from pathlib import Path
 
 import numpy
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from pocket_shape_descriptors import descriptors_for  # noqa: E402
+from preprocessing.pocket_shape_descriptors import descriptors_for  # noqa: E402
 from dataloader.graphs_builders.protein_graph_builder import POCKET_DESCRIPTOR_NAMES  # noqa: E402
-from pocket_descriptor_identity_check import (  # noqa: E402
+from analysis.feature_identity_check import (  # noqa: E402
     eta_squared,
     mean_plm_embedding,
     protein_families,

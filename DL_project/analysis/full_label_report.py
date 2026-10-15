@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """One sweep label, every number files/reference/marginals_and_cold_split.md section 8 and
 files/history/geometric_edge.md report about it -- in one run instead of the
-three separate commands (checkpoint_scores.py, then null_model.py, then
+three separate commands (checkpoint_scores.py, then knn_model.py, then
 interaction_increment.py, hand-copying the CSV path between them) that produced them.
 
 What it runs, in order, in one process (no CSV round-trip unless --out is given):
 
 1. checkpoint_scores.score_checkpoints -- per-row probability of class 1 for every
    saved checkpoint of --label, every family x seed x epoch.
-2. null_model.null_model_table -- the chemical propensity null model on the
+2. knn_model.knn_model_table -- the chemical propensity null model on the
    same rows, pooled AND inside-protein AUC for both the network and the null model
    side by side (section 8.3/8.5 of the marginals note).
 3. interaction_increment.increment_table -- does the network add anything ON TOP OF
@@ -48,11 +48,11 @@ from checkpoint_scores import (  # noqa: E402
     split_argv,
 )
 from read_configuration import read_configuration  # noqa: E402
-from analysis.baselines.null_model import (  # noqa: E402
+from analysis.baselines.knn_model import (  # noqa: E402
     DEFAULT_FAMILIES,
     TANIMOTO,
-    null_model_table,
-    print_null_model_report,
+    knn_model_table,
+    print_knn_model_report,
     resolve_similarity,
 )
 from interaction_increment import increment_table, print_increment_report  # noqa: E402
@@ -69,8 +69,8 @@ def label_coldsplit_params(label, families):
     read_configuration.py's defaults for whatever it leaves unset) actually trained
     with -- not a hardcoded guess.
 
-    Both null_model_table's split reconstruction and checkpoint_scores' rebuilt split
-    have to agree row for row (null_model.py asserts this), and they only do
+    Both knn_model_table's split reconstruction and checkpoint_scores' rebuilt split
+    have to agree row for row (knn_model.py asserts this), and they only do
     when both use the same share/ratio. checkpoint_scores.py already reads these off
     the label; this makes full_label_report.py's defaults do the same instead of
     drifting from read_configuration.py's ModelConfig defaults over time.
@@ -91,7 +91,7 @@ def label_coldsplit_params(label, families):
 def label_balanced_lipid_classes(label, families):
     """Whether `label`'s own args file trains with --balanced_lipid_classes.
 
-    null_model_table/increment_table's working_set reproduction has to use the SAME
+    knn_model_table/increment_table's working_set reproduction has to use the SAME
     sampler the training run used or it silently scores a null model built on
     different rows than the checkpoint actually saw (working_set's own docstring) --
     same "read it off the label, don't guess" reasoning as label_coldsplit_params.
@@ -111,14 +111,14 @@ def run_report(label, epochs, seeds, families, batch, neighbours, share, ratio, 
     `scores`, if given, is a pre-scored DataFrame (checkpoint_scores.score_checkpoints'
     return value, or a CSV already read with pandas.read_csv) -- skips the expensive
     scoring pass, for iterating on the null-model/increment side alone. Returns
-    (scores, {split: null_model_table}, {split: increment_table}) so a caller can
+    (scores, {split: knn_model_table}, {split: increment_table}) so a caller can
     inspect the numbers programmatically instead of only reading the printout.
 
-    `features`/`features_label`/`zscore`: passed straight to null_model.
+    `features`/`features_label`/`zscore`: passed straight to knn_model.
     resolve_similarity -- TANIMOTO (default, the original whole-structure null model)
     or a comma-separated descriptor-name list covering lipid-only, protein-only, pair,
     or any combination (see resolve_similarity/feature_similarity). `cache=True` lets
-    null_model_table reuse a previous run's null-model numbers for the same
+    knn_model_table reuse a previous run's null-model numbers for the same
     features_label/family/seed/share/ratio/split -- the common case when this is
     called once per label by scripts/lib/generate_label_report.sh, which recomputes
     the SAME chemistry null model (it depends on none of that label's own weights)
@@ -142,18 +142,18 @@ def run_report(label, epochs, seeds, families, batch, neighbours, share, ratio, 
         print(f"\n{'#' * 10} split = {split} {'#' * 10}")
 
         print(
-            f"\n--- null model (null_model.py), features = {resolved_label} "
+            f"\n--- null model (knn_model.py), features = {resolved_label} "
             f"({','.join(feature_list)}), epoch {last_epoch} ---"
         )
-        null_table = null_model_table(
+        knn_table = knn_model_table(
             csv, similarity, index, families=families, seeds=seeds,
             neighbour_counts=[neighbours], share=share, ratio=ratio, split=split,
             network=scores, epoch=last_epoch, entity_column=entity_column,
             label=(resolved_label if cache else None), features=feature_list,
             balanced_lipid_classes=balanced_lipid_classes,
         )
-        print_null_model_report(null_table, split, last_epoch, entity_column=entity_column)
-        null_tables[split] = null_table
+        print_knn_model_report(knn_table, split, last_epoch, entity_column=entity_column)
+        null_tables[split] = knn_table
 
         print(f"\n--- increment over chemistry (interaction_increment.py) ---")
         increment = increment_table(
@@ -204,12 +204,12 @@ def main():
             f"back to \"{LIPID_ONLY_FALLBACK}\" when the label sets none. "
             f'Pass "{TANIMOTO}" for full-structure Morgan-fingerprint similarity (the '
             "original null model), or any comma-separated descriptor-name list -- "
-            "lipid-only, protein-only, pair, or any combination -- see null_model.py "
+            "lipid-only, protein-only, pair, or any combination -- see knn_model.py "
             "--features/dataloader.chemistry_prior.feature_similarity."
         ),
     )
     parser.add_argument(
-        "--features-label", help="short name for --features, see null_model.py --label",
+        "--features-label", help="short name for --features, see knn_model.py --label",
     )
     parser.add_argument(
         "--no-cache", dest="cache", action="store_false",
@@ -217,7 +217,7 @@ def main():
     )
     parser.add_argument(
         "--zscore", action="store_true",
-        help="See null_model.py --zscore -- standardises the six multiplicative pair descriptors.",
+        help="See knn_model.py --zscore -- standardises the six multiplicative pair descriptors.",
     )
     args = parser.parse_args()
 

@@ -2,7 +2,7 @@
 """A row-based gradient-boosting baseline over protein x lipid descriptor pairs.
 
 The other two non-neural baselines are matrix-completion methods (analysis/
-kronrls_baseline.py's closed-form Kron-RLS) or pure lookups (analysis/baselines/null_model.py):
+kronrls_baseline.py's closed-form Kron-RLS) or pure lookups (analysis/baselines/knn_model.py):
 both need the training rectangle complete or a class prior, and neither can weight
 positive cells against negative ones (kronrls_baseline.py's own docstring works
 through why Kron-RLS's closed form structurally cannot -- Y enters its objective only
@@ -58,13 +58,13 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dataloader.chemistry_prior import null_scores, null_scores_leave_one_row_out  # noqa: E402
+from dataloader.chemistry_prior import knn_scores, knn_scores_leave_one_row_out  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.descriptors import PAIR_DESCRIPTOR_NAMES  # noqa: E402
 from preprocessing.compute_descriptors import pair_descriptor_value  # noqa: E402
 from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS  # noqa: E402
 from dataloader.sampler import lipid_class_series  # noqa: E402
-from analysis.baselines.null_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
+from analysis.baselines.knn_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
 from training.pair_baseline_common import (  # noqa: E402
     auc_p_vs_u,
     balance_pool_negatives,
@@ -200,16 +200,16 @@ def similarity_feature_column(
 
     `is_train` selects the leak-safe variant: every train row's own species IS in
     the train reference set with similarity 1.0 to itself
-    (null_scores_leave_one_row_out's own docstring), so scoring train against plain
-    `null_scores(train_pool, train_pool[...], ...)` would partly score each row
+    (knn_scores_leave_one_row_out's own docstring), so scoring train against plain
+    `knn_scores(train_pool, train_pool[...], ...)` would partly score each row
     against its own label. valid/test rows are never in `train_pool`, so the plain
-    `null_scores(train_pool, pool[...], ...)` is exact for them.
+    `knn_scores(train_pool, pool[...], ...)` is exact for them.
     """
     matrix, index = similarity
     if is_train:
-        scores = null_scores_leave_one_row_out(train_pool, matrix, index, neighbours)
+        scores = knn_scores_leave_one_row_out(train_pool, matrix, index, neighbours)
     else:
-        scores = null_scores(train_pool, pool["FullIdentityOfLipid"], matrix, index, neighbours)
+        scores = knn_scores(train_pool, pool["FullIdentityOfLipid"], matrix, index, neighbours)
     return pd.DataFrame({"lipid__similarity_score": scores})
 
 
@@ -503,10 +503,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("none", "tanimoto", "tanimoto_headgroup"),
         help=(
             "add one feature column: the k-NN Tanimoto-weighted train positive rate "
-            "of this row's lipid (dataloader.chemistry_prior.null_scores) -- 'tanimoto' "
+            "of this row's lipid (dataloader.chemistry_prior.knn_scores) -- 'tanimoto' "
             "whole-molecule, 'tanimoto_headgroup' with acyl tails cut off first "
             "(training.pair_baseline_common.species_headgroup_tanimoto_similarity). "
-            "Leak-safe on train via null_scores_leave_one_row_out. 'none' (default) "
+            "Leak-safe on train via knn_scores_leave_one_row_out. 'none' (default) "
             "omits it -- the model then has only the structural descriptors."
         ),
     )

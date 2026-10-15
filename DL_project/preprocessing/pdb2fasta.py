@@ -1,15 +1,10 @@
 #!/usr/bin/env python
-"""Extract a FASTA sequence from a PDB file's CA ATOM/HETATM records, per chain.
+"""Extract per-chain FASTA sequences from CA ATOM/HETATM records.
 
-Scans every ATOM/HETATM "CA" line (treating selenomethionine HETATM MSE as ordinary
-methionine 'M', like preprocessing/convert_mse_to_met.py's rewrite), stopping at the
-first ENDMDL, and writes one ">stem:chain" FASTA record per chain found, in
-first-seen order. Used to derive structure-based FASTA input (e.g. for the v1 ESM3
-embedding pipeline, preprocessing/EmbedProtein.py) directly from a PDB file rather
-than from an independently sourced UniProt sequence.
+Read the first PDB model. Treat MSE as methionine. Preserve residue and chain order.
+Write one >stem:chain record per chain to stdout.
 
-Usage:
-    python3 pdb2fasta.py pdb.pdb > seq.fasta
+    python3 preprocessing/pdb2fasta.py input.pdb > output.fasta
 """
 import sys,os
 import re

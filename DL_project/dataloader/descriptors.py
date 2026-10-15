@@ -28,7 +28,7 @@ from rdkit.Chem import AllChem, Descriptors, rdMolDescriptors
 # PROTEIN_DESCRIPTOR_NAMES from THIS module (see the bottom of protein_graph_builder.py)
 # -- an eager import here would complete the triangle into a circular import.
 
-# The full descriptor catalog analysis/baselines/null_model.py's --features and every
+# The full descriptor catalog analysis/baselines/knn_model.py's --features and every
 # --descriptor_heads token draw on, named together in one place.
 LIPID_DESCRIPTOR_NAMES = (
     "chain", "unsaturation", "hbond", "heavy", "tail_count", "npr1", "npr2",
@@ -69,7 +69,7 @@ PAIR_DESCRIPTOR_NAMES = (
 # (both sides converted to angstrom, chain via chain_length_angstrom) -- standardising
 # their inputs would replace that physical "does the cavity reach as far as the
 # chain" comparison with an abstract standard-deviations-apart one, so --zscore
-# (analysis/baselines/null_model.py) never touches them. The other six multiply two
+# (analysis/baselines/knn_model.py) never touches them. The other six multiply two
 # DIFFERENT-UNIT quantities together (a share/ratio/burial statistic against a lipid
 # count) -- their relative contribution to the product is whatever their raw scales
 # happen to be, not a principled 50/50 split, which --zscore fixes by standardising
@@ -186,6 +186,22 @@ PROTEIN_DESCRIPTOR_NAMES = (
     "pocket_extent_lambda_sqrt",
     "pocket_elongation_lambda_sqrt",
     "pocket_flatness_lambda_sqrt",
+    # Fifth batch, promoted out of the research catalog once pocket_descriptor stopped
+    # being a positional tuple: the deep end of every enclosure/depth distribution
+    # whose shallow decile or median was already in production, the ev56 column that
+    # had neither, and the core half of the aromatic share whose rim half was promoted
+    # alone in the second batch.
+    "ev14_q90",
+    "ev28_q50",
+    "ev28_q90",
+    "ev56_q10",
+    "ev56_q50",
+    "ev56_q90",
+    "buriedness_q10",
+    "buriedness_q90",
+    "depth_q50",
+    "depth_q90",
+    "aromatic_share_core",
 )
 
 # Not raw pocket_descriptor() output, so not in PROTEIN_DESCRIPTOR_NAMES itself:
@@ -193,7 +209,7 @@ PROTEIN_DESCRIPTOR_NAMES = (
 #   aromatic_share_coarse,
 #   polar_share_coarse     : aromatic_share/polar_share banded into one of 3 fixed
 #                             (not train-fit) thirds. Kept for analysis/baselines/
-#                             null_model.py's own --features catalog; --descriptor_heads
+#                             knn_model.py's own --features catalog; --descriptor_heads
 #                             tokens use the <name>_coarse=<spec> syntax below instead.
 PROTEIN_DERIVED_DESCRIPTOR_NAMES = ("polar_share", "aromatic_share_coarse", "polar_share_coarse")
 
@@ -232,7 +248,7 @@ POCKET_CHEMISTRY_DESCRIPTOR_NAMES = (
 # (inside PROTEIN_DESCRIPTOR_NAMES) is the SAME cavity size "extent" coarsens,
 # deliberately left nameable raw too (an explicit, opt-in leak probe, not a
 # vetted-safe default). Distinct from
-# PROTEIN_DERIVED_DESCRIPTOR_NAMES (still used by analysis/baselines/null_model.py's own,
+# PROTEIN_DERIVED_DESCRIPTOR_NAMES (still used by analysis/baselines/knn_model.py's own,
 # unrelated --features catalog): "aromatic_share_coarse"/"polar_share_coarse" are
 # NOT in this catalog, only "polar_share" is -- the new <name>_coarse=<spec> syntax
 # replaces that fixed-3-band scheme for this system (see its own docstring for why:
@@ -256,7 +272,7 @@ DESCRIPTOR_CATALOG = (
 # [min, max] instead -- see parse_descriptor_token/_fit_coarse_edges.
 BOUNDED_SHARE_DESCRIPTOR_NAMES = (
     "pocket_residue_share", "pocket_sasa_share", "apolar_sasa_share", "aromatic_share",
-    "polar_share",
+    "polar_share", "aromatic_share_core",
     # The ten residue-class shares are fractions of the pocket's core (or rim)
     # residues, and pocket_packing_density is a fraction of the cavity's own hull:
     # [0, 1] is their whole possible domain by construction. pocket_free_volume is
@@ -332,6 +348,16 @@ DEFAULT_COARSE_SPECS = {
 }
 
 
+class UnknownDescriptorName(ValueError):
+    """A descriptor token naming a base name the catalog does not have."""
+
+
+# Names an arg file asked for that the catalog no longer has. A removed descriptor
+# must not kill a grid of runs that still name it, so parse_descriptor_list drops the
+# token and records it here; the run log and the test_metrics report name it.
+UNKNOWN_DESCRIPTOR_NAMES: list[str] = []
+
+
 def parse_descriptor_token(token):
     """One comma-separated --descriptor_heads entry ->
     (base_name, coarse_spec_or_None), validated against DESCRIPTOR_CATALOG.
@@ -368,13 +394,13 @@ def parse_descriptor_token(token):
             base = token[: -len("_coarse")]
             return base, DEFAULT_COARSE_SPECS[token]
         if token not in DESCRIPTOR_CATALOG:
-            raise ValueError(
+            raise UnknownDescriptorName(
                 f"Unknown descriptor name(s): ['{token}']. Known: {DESCRIPTOR_CATALOG} "
                 f"(plus {tuple(DEFAULT_COARSE_SPECS)} bare)"
             )
         return token, None
     if name not in DESCRIPTOR_CATALOG:
-        raise ValueError(
+        raise UnknownDescriptorName(
             f"Unknown descriptor name(s): ['{name}']. Known: {DESCRIPTOR_CATALOG}"
         )
     if spec == "quantiles":
@@ -411,14 +437,19 @@ def canonical_descriptor_token(name, spec):
 def parse_descriptor_list(value):
     """Comma-separated string -> tuple of CANONICAL descriptor tokens (see
     canonical_descriptor_token), same convention --features (analysis/baselines/
-    null_model.py) and --excluded_groups use.
+    knn_model.py) and --excluded_groups use.
     """
     tokens = []
     for raw in value.split(","):
         raw = raw.strip()
         if not raw:
             continue
-        name, spec = parse_descriptor_token(raw)
+        try:
+            name, spec = parse_descriptor_token(raw)
+        except UnknownDescriptorName:
+            if raw not in UNKNOWN_DESCRIPTOR_NAMES:
+                UNKNOWN_DESCRIPTOR_NAMES.append(raw)
+            continue
         tokens.append(canonical_descriptor_token(name, spec))
     return tuple(tokens)
 
@@ -499,7 +530,7 @@ def resolve_similarity_feature_names(*raw_lists):
     A different projection of the same raw strings resolve_requested_tokens reads:
     that one keeps the coarse spec (canonical_descriptor_token) because it names the
     column NamedDescriptorHead indexes into. This one exists for analysis/
-    null_model.py's --features / dataloader.chemistry_prior.feature_similarity,
+    knn_model.py's --features / dataloader.chemistry_prior.feature_similarity,
     which knows only DESCRIPTOR_CATALOG's plain names -- the kNN null model has no
     notion of the head's own bucketing -- so a config's trained descriptor set can be
     handed to the null model as its --features without translating the coarse suffix

@@ -1,14 +1,11 @@
 #! /usr/bin/env python3
-"""Collect every distinct SMILES (non-isomeric candidate list) that needs embedding.
+"""Legacy SMILES collector, superseded by embed_smiles_isomeric_and_nonisomeric.py.
 
-Legacy predecessor of preprocessing/embed_isomeric_smiles.py: reads
-../data/Processed_dataset.csv, takes whichever of SmileGlobal/SmileFragment is
-populated per row (falling back to the other when one is "0"), splits ";"-joined
-candidates, deduplicates, and pickles the resulting list to primary_embedding.pkl
-for a downstream embedding script (e.g. frozen_embedding.py) to consume. Must be run
-from within preprocessing/ (paths are relative).
+Read ../data/Processed_dataset.csv. Select SmileGlobal/SmileFragment, split candidate
+lists and remove duplicates. Write primary_embedding.pkl for an embedding script.
+Paths are relative to the working directory.
 
-Usage:
+    cd preprocessing
     python3 embed_smiles.py
 """
 

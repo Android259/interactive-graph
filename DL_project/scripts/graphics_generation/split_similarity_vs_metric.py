@@ -705,7 +705,7 @@ def load_compact_checked(data_dir, csv, source_csv):
         past the table -- a table that gained, lost or reordered rows fails here;
       * the structure index is as long as the row ids and indexes the matrix exactly;
       * and, when rdkit is importable, the candidate list is re-derived from the table
-        with the builder's OWN function (preprocessing/build_tanimoto_compact.collect,
+        with the builder's OWN function (preprocessing/similarity/build_tanimoto_compact.collect,
         the same one that wrote the files) and required to be identical, row id for row
         id and structure for structure. That is a stronger statement than the mtime
         ever made.
@@ -722,7 +722,7 @@ def load_compact_checked(data_dir, csv, source_csv):
     if compact is None:
         raise SystemExit(
             "compact Tanimoto artifacts are missing or unreadable; rebuild them with "
-            "preprocessing/build_tanimoto_compact.py"
+            "preprocessing/similarity/build_tanimoto_compact.py"
         )
 
     covered = np.unique(compact.row_ids)
@@ -737,7 +737,7 @@ def load_compact_checked(data_dir, csv, source_csv):
         raise SystemExit(
             "the compact Tanimoto artifacts were built for a different table "
             f"({len(covered)} rows covered against {len(csv)} in the table); rebuild "
-            "them with preprocessing/build_tanimoto_compact.py"
+            "them with preprocessing/similarity/build_tanimoto_compact.py"
         )
 
     print(
@@ -745,7 +745,7 @@ def load_compact_checked(data_dir, csv, source_csv):
         "content instead"
     )
     try:
-        from preprocessing.build_tanimoto_compact import collect
+        from preprocessing.similarity.build_tanimoto_compact import collect
     except Exception as error:  # rdkit is absent on analysis machines
         print(
             f"  rdkit unavailable ({error.__class__.__name__}), so the check is "
@@ -771,7 +771,7 @@ def load_compact_checked(data_dir, csv, source_csv):
         raise SystemExit(
             "the compact Tanimoto artifacts describe a different candidate list than "
             "this table produces; rebuild them with "
-            "preprocessing/build_tanimoto_compact.py"
+            "preprocessing/similarity/build_tanimoto_compact.py"
         )
     print(
         f"  candidate list re-derived with the builder's own rule and identical: "

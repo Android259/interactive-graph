@@ -40,17 +40,12 @@ def make_config(
 
 def synthetic_forward_args(config):
     prot = torch.randn(4, 3)
-    if getattr(config, "rnabang_residue_type_embedding", False):
-        prot[:, 0] = torch.tensor([0, 1, 18, 19], dtype=prot.dtype)
     plm_dim = 1536
     if (
         config.rnabang_replace_esm3
         or config.rnabang_full_protein_encoder
-        or config.rnabang_frozen_node_adapter
     ):
         plm_dim = config.rnabang_embedding_dim
-    elif config.rnabang_with_esm3 or config.rnabang_residual_with_esm3:
-        plm_dim += config.rnabang_embedding_dim
     plm = torch.randn(4, plm_dim)
     bury = torch.randn(4)
     prot_batch = torch.tensor([0, 0, 1, 1], dtype=torch.long)
@@ -82,21 +77,8 @@ def synthetic_forward_args(config):
     ):
         args["prot_frame_rotation"] = torch.eye(3).repeat(4, 1, 1)
         args["prot_frame_translation"] = torch.randn(4, 3)
-    if (
-        getattr(config, "geometric_transformer", False)
-        or getattr(config, "rnabang_frozen_node_adapter", False)
-    ):
-        edge_feature_dim = (
-            43 if config.rnabang_edge_topk_by_area
-            else 13 if config.rnabang_edge_pna
-            else 18 if config.rnabang_edge_quantiles
-            else 2
-        )
-        args["prot_geometric_node_attr"] = torch.randn(4, edge_feature_dim)
-    if config.rnabang_frozen_node_adapter:
-        args["prot_edge_node_degree"] = torch.tensor([3, 2, 4, 1])
-    if config.rnabang_edge_deepsets or config.rnabang_edge_set_transformer:
-        args["prot_edge_node_pairs"] = torch.randn(4, 21, 2)
+    if getattr(config, "geometric_transformer", False):
+        args["prot_geometric_node_attr"] = torch.randn(4, 2)
 
     if getattr(config, "lipid_graph_isomers", False):
         args["lip"] = torch.randn(4, 11)
@@ -332,27 +314,6 @@ def test_smiles_token_lipid_branch_completes_one_cpu_training_step():
             rnabang_full_protein_encoder=True,
             protein_self_attention=True,
         ),
-        ModelConfig(
-            hiddim=8,
-            HEADS=2,
-            m=2,
-            pool_type="mean",
-            rnabang_with_esm3=True,
-        ),
-        ModelConfig(
-            hiddim=8,
-            HEADS=2,
-            m=2,
-            pool_type="mean",
-            rnabang_residual_with_esm3=True,
-        ),
-        ModelConfig(
-            hiddim=8,
-            HEADS=2,
-            m=2,
-            pool_type="mean",
-            rnabang_frozen_node_adapter=True,
-        ),
     ],
 )
 def test_rnabang_modes_complete_one_cpu_training_step(config):
@@ -364,9 +325,6 @@ def test_rnabang_modes_complete_one_cpu_training_step(config):
     [
         "rnabang_replace_esm3",
         "rnabang_full_protein_encoder",
-        "rnabang_with_esm3",
-        "rnabang_residual_with_esm3",
-        "rnabang_frozen_node_adapter",
     ],
 )
 def test_rnabang_modes_have_no_unreachable_trainable_parameters(mode):
@@ -386,85 +344,12 @@ def test_rnabang_modes_have_no_unreachable_trainable_parameters(mode):
     assert unused == []
 
 
-def test_rnabang_residual_mode_replaces_gatv2_and_uses_all_protein_inputs():
-    config = ModelConfig(
-        hiddim=8,
-        HEADS=2,
-        m=2,
-        pool_type="mean",
-        rnabang_residual_with_esm3=True,
-        protein_self_attention=False,
-        double_attention=True,
-        dropout=0.0,
-    )
-    model = InteractionClassification(config).eval()
-    assert not any(
-        isinstance(module, torch_geometric.nn.GATv2Conv)
-        for module in model.protein1.modules()
-    )
-    assert not any(
-        isinstance(module, torch_geometric.nn.GATv2Conv)
-        for module in model.protein2.modules()
-    )
-    assert model.protein1.encodin1 is None
-    assert model.protein1.encodin2 is None
-    assert model.protein2.encodin1 is None
-    assert model.protein2.encodin2 is None
-
-    args = synthetic_forward_args(config)
-    with torch.no_grad():
-        model.protein1.rnabang_residual_alpha.fill_(1.0)
-        reference = model(**args)
-        for field in ("plm", "prot", "bury", "prot_e_attr"):
-            changed = dict(args)
-            changed[field] = args[field] + 1.0
-            assert not torch.allclose(reference, model(**changed))
 
 
-def test_rnabang_frozen_node_adapter_has_no_graph_or_ipa_layer():
-    config = make_config()
-    config.rnabang_frozen_node_adapter = True
-    model = InteractionClassification(config)
-
-    assert not any(
-        isinstance(module, torch_geometric.nn.GATv2Conv)
-        for module in model.protein1.modules()
-    )
-    assert not hasattr(model.protein1, "geometric_block")
-    output = model(**synthetic_forward_args(config))
-    F.cross_entropy(output, torch.tensor([0, 1])).backward()
-    assert all(
-        parameter.grad is not None
-        for parameter in model.protein1.rnabang_node_adapter.parameters()
-    )
 
 
-@pytest.mark.parametrize(
-    "mode",
-    [
-        "rnabang_edge_current",
-        "rnabang_edge_topk_by_area",
-        "rnabang_edge_deepsets",
-        "rnabang_edge_pna",
-        "rnabang_edge_quantiles",
-        "rnabang_edge_set_transformer",
-    ],
-)
-def test_rnabang_edge_to_node_modes_train(mode):
-    config = make_config()
-    config.rnabang_frozen_node_adapter = True
-    setattr(config, mode, True)
-    one_training_step(config)
 
 
-def test_rnabang_residue_type_embedding_trains_only_when_enabled():
-    config = make_config()
-    config.rnabang_frozen_node_adapter = True
-    config.rnabang_residue_type_embedding = True
-    one_training_step(config)
-    model = InteractionClassification(config)
-    assert model.protein1.residue_type_embedding.num_embeddings == 20
-    assert model.protein1.residue_type_embedding.embedding_dim == 8
 
 
 def test_double_attention_isomer_graph_training_step():
@@ -1111,11 +996,13 @@ def test_node_broadcast_and_descriptor_heads_share_one_catalog_order_and_coexist
     assert loss == loss  # not NaN
 
 
-def test_protein_descriptors_rejects_unknown_descriptor_name():
+def test_protein_descriptors_skips_unknown_descriptor_name():
+    from dataloader.descriptors import UNKNOWN_DESCRIPTOR_NAMES
+
     config = make_config()
     config.protein_descriptors = "not_a_real_descriptor"
-    with pytest.raises(ValueError, match="Unknown descriptor name"):
-        config.validate()
+    config.validate()
+    assert "not_a_real_descriptor" in UNKNOWN_DESCRIPTOR_NAMES
 
 
 def test_no_protein_geometry_requires_protein_descriptors():
@@ -1199,11 +1086,14 @@ def test_two_heads_train_under_every_pool_type(pool_type, head_mode):
     assert_every_parameter_gets_a_gradient(InteractionClassification(config))
 
 
-def test_descriptor_heads_reject_unknown_descriptor_name():
+def test_descriptor_heads_skip_unknown_descriptor_name():
+    from dataloader.descriptors import UNKNOWN_DESCRIPTOR_NAMES, parse_descriptor_heads
+
     config = make_config()
     config.descriptor_heads = "chain/not_a_real_descriptor"
-    with pytest.raises(ValueError, match="Unknown descriptor"):
-        config.validate()
+    config.validate()
+    assert parse_descriptor_heads(config.descriptor_heads) == (("chain",),)
+    assert "not_a_real_descriptor" in UNKNOWN_DESCRIPTOR_NAMES
 
 
 @pytest.mark.parametrize("pool_type", ["add", "max", "mean", "gem"])

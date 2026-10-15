@@ -1,19 +1,4 @@
-"""The keyword arguments InteractionClassification.forward takes for one batch.
-
-Which tensors the model wants depends on the configuration -- geometric frames only under
-``geometric_transformer``, incident-edge features only under
-``rnabang_frozen_node_adapter``, and so on -- so assembling them is a dozen conditional
-lines. Those lines used to be written out three times: the training loop, the validation
-loop, and ``scripts/profile_training.py``, whose copy carried the comment "mirrors
-new_train.py".
-
-It stopped mirroring. The profiler's copy never grew the geometric / frozen-adapter
-branches, so profiling any run that used them died in the encoder with
-"rnabang_frozen_node_adapter requires precomputed node features" -- a failure that looks
-like a broken config and is really a stale duplicate. Hence one function, called from all
-three places: a config option added here reaches training, validation and profiling at
-once, or fails in all three at once, which is the honest outcome.
-"""
+"""Build model keyword arguments shared by training, validation and profiling."""
 
 from dataloader.descriptors import descriptor_catalog_only, full_catalog_order
 
@@ -102,16 +87,8 @@ def build_forward_args(config, prot, lipid):
     ):
         forward_args["prot_frame_rotation"] = prot.frame_rotation
         forward_args["prot_frame_translation"] = prot.frame_translation
-    if (
-        getattr(config, "geometric_transformer", False)
-        or getattr(config, "rnabang_frozen_node_adapter", False)
-    ):
+    if getattr(config, "geometric_transformer", False):
         forward_args["prot_geometric_node_attr"] = prot.geometric_node_attr
-    if getattr(config, "rnabang_frozen_node_adapter", False):
-        forward_args["prot_edge_node_pairs"] = getattr(
-            prot, "edge_node_pairs", None
-        )
-        forward_args["prot_edge_node_degree"] = prot.edge_node_degree
     if getattr(config, "chem_prior", False) or getattr(config, "pocket_compat_prior", False):
         forward_args["frozen_prior"] = prot.frozen_prior
     if full_catalog_order(config):

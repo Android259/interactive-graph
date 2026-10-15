@@ -107,11 +107,11 @@ python3 preprocessing/compute_descriptors.py <name> --isomeric    # изомер
 
 | артефакт | чем собирается | когда обязателен |
 |---|---|---|
-| компактный Tanimoto | `preprocessing/build_tanimoto_compact.py` (+`--isomeric`) | только при `--tanimoto_weight`, но манифест сверяет время и размер таблицы и **отказывается** работать со старым |
+| компактный Tanimoto | `preprocessing/similarity/build_tanimoto_compact.py` (+`--isomeric`) | только при `--tanimoto_weight`, но манифест сверяет время и размер таблицы и **отказывается** работать со старым |
 | эмбеддинги липидов | `preprocessing/embed_isomeric_smiles_molformer.py` → `data/build_lipid_embedding_store.py` | при любом новом SMILES |
 | атомные графы липидов | `data/build_lipid_isomer_graphs.py` | при `--lipid_graph_isomers` и новом SMILES |
 | графы и эмбеддинги белка | `preprocessing/build_geometric_protein_graphs.py`, `embed_protein_esm3_v2.py`, затем `data/build_protein_graph_tensor_cache.py` | при новом белке |
-| схожесть белков (3 метрики) | `preprocessing/build_protein_sequence_similarity.py`, `build_protein_tmscore.py` | при `--negative_similarity=protein_*` |
+| схожесть белков (3 метрики) | `preprocessing/similarity/build_protein_sequence_similarity.py`, `build_protein_tmscore.py` | при `--negative_similarity=protein_*` |
 | дескрипторные таблицы и кэш | `preprocessing/compute_descriptors.py`, `data/build_descriptor_cache.py` | при дескрипторных конфигурациях |
 
 Сильная сторона: почти все читатели **сами проверяют свежесть** (манифест с размером и
@@ -391,7 +391,7 @@ bash scripts/run.sh [--device=cpu|gpu|auto] [--jobs=N] [--dry_run] [--complete]
 | уровень | скрипты | флагов | как читается |
 |---|---|---|---|
 | ежедневный | `summarize_label.py` (5), `compare_labels.py` (7), `find_best_epoch_by_all_seeds_and_groups.py` (5), `seed_variability_summary.py` (3) | 3–7 | нормально: «метка → числа» |
-| исследовательский | `feature_identity_check.py` (20), `input_ablation.py` (25), `baselines/kronrls_baseline.py` (28), `baselines/gbm_baseline.py` (22), `baselines/null_model.py` (19) | 19–28 | это уже инструменты под конкретный вопрос, по 600–1600 строк |
+| исследовательский | `feature_identity_check.py` (20), `input_ablation.py` (25), `baselines/kronrls_baseline.py` (28), `baselines/gbm_baseline.py` (22), `baselines/knn_model.py` (19) | 19–28 | это уже инструменты под конкретный вопрос, по 600–1600 строк |
 
 Сильные стороны: контракт `analysis/AGENTS.md` явно описывает конвейер таблицы и
 правило совпадающих ключей `(label, exclusion_set, seed)`; побочные эффекты (кто

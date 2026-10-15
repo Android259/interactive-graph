@@ -1,26 +1,14 @@
 #!/usr/bin/env python3
-"""Generate frozen per-residue RNA-BAnG protein representations.
+"""Generate per-residue embeddings from RNA-BAnG's protein branch.
 
-The official repository and ICML checkpoint are kept in external/RNA-BAnG.
-Run this script from the RNA-BAnG conda environment:
+Load the repository and checkpoint from external/RNA-BAnG. No RNA input is supplied.
+EXTRACTION_BLOCK selects the protein block output; None selects forward_aa's output.
+Check the residue count against coarse_graph_nodes.csv.
+
+Read data/esm3_input/*.pdb. Write data/embedding_RNABANG/<stem>_RNABANG.pkl.
 
     conda env create -f external/RNA-BAnG/environment.yml
     conda run -n rnabang python preprocessing/embed_protein_rnabang.py
-
-By default every PDB in data/esm3_input is encoded and written as
-data/embedding_RNABANG/<stem>_RNABANG.pkl. These PDBs were already normalized
-against coarse_graph_nodes.csv, which is the alignment required by the loader.
-No RNA is supplied: the protein branch never reads the nucleic-acid branch, so
-every block used here is a function of the protein alone.
-
-The representation is taken after the FIRST protein block, not after all ten.
-Depth in this tower costs independent directions monotonically: measured over 8
-project proteins, the centered spectrum of the 128-wide output has an effective
-rank of 15.3 at the embedder, 23.0 after block 1, 6.5 after block 5 and 4.5
-after block 10, with PC1 rising from 0.13 to 0.60. The last block -- what
-MainNetwork.forward_aa() returns -- is the most collapsed point in the tower,
-because the later blocks specialize toward RNA/DNA binding, which is not the
-task here. Set EXTRACTION_BLOCK to compare depths; None restores forward_aa().
 """
 
 import argparse
@@ -39,19 +27,15 @@ RNABANG_ROOT = PROJECT_ROOT / "external" / "RNA-BAnG"
 DEFAULT_INPUT_DIR = PROJECT_ROOT / "data" / "esm3_input"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "embedding_RNABANG"
 DEFAULT_CHECKPOINT = RNABANG_ROOT / "ckpt" / "icml.pth"
-# Index of the protein block whose output is written out. 0 is the first block;
-# None runs the whole tower, reproducing the previous rank-4.5 representation.
+# Protein block to capture (0-based). None selects the final tower output.
 EXTRACTION_BLOCK = 0
 
 
 def encode_protein(model, features):
-    """Run the protein tower and return the output of EXTRACTION_BLOCK.
+    """Run the protein tower and capture EXTRACTION_BLOCK with a forward hook.
 
-    A forward hook is used rather than calling the block directly: RNA-BAnG's
-    trunk takes its positional and frame arguments in an order that differs from
-    MainNetwork.forward_aa's own signature, and reproducing that call here would
-    silently break if the vendored checkout changes. The whole tower still runs;
-    the discarded blocks cost nothing at this scale.
+    The full tower still runs. None returns forward_aa's final output. Remove the hook
+    after the call, including on failure.
     """
     if EXTRACTION_BLOCK is None:
         return model.forward_aa(features)
@@ -111,11 +95,7 @@ def graph_node_count(stem):
 
 
 def embed_one(pdb_path, output_dir, model, processor, embedding_dim, device):
-    # The project PDBs have already had alternate conformations resolved, but some
-    # experimental structures retain the selected conformer's fractional occupancy.
-    # RNA-BAnG rejects any backbone/CB occupancy below 1 even when no altloc remains.
-    # Normalize occupancy only in a disposable inference copy; coordinates, residue
-    # order and the source PDB stay unchanged.
+    # Use a temporary PDB with occupancy 1 for RNA-BAnG; preserve source coordinates and order.
     structure = gemmi.read_structure(str(pdb_path))
     structure.remove_alternative_conformations()
     first_model = structure[0]

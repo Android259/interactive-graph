@@ -1,48 +1,15 @@
-"""Shared format and inputs for the pairwise protein-similarity matrices.
+"""Shared storage and PDB inputs for identity, blosum62 and tmscore matrices.
 
-Three metrics, one on-disk format, one directory (`data/protein_similarity/`):
+Artifacts live under data/cache/protein_similarity/: a uint8 matrix over distinct
+proteins, a table-row -> protein index, and a manifest with names and provenance.
+Row-pair similarity is matrix[protein_index[i], protein_index[j]].
+Encoding is round(clip(score, 0, 1) * 255), with diagonal 255.
 
-    identity    sequence identity after global pairwise alignment (BLOSUM62, affine gaps)
-    blosum62    the same alignment scored for conservative substitutions ("positives")
-    tmscore     TM-align's structural TM-score
-
-They are written by `preprocessing/build_protein_sequence_similarity.py` (the first two,
-which share one alignment pass) and `preprocessing/build_protein_tmscore.py` (the third).
-
-The format is the compact-Tanimoto format of
-`dataloader/tensors_reading/tanimoto_compact_tensors_reader.py`, with the lipid axis
-replaced by the protein one. One row per DISTINCT protein plus the index that expands it
-back to one entry per interaction-table row, so a pair of rows' protein similarity is
-
-    similarity[protein_index[i], protein_index[j]]
-
-exactly as the lipid side reads `compact[structure_index[i], structure_index[j]]`. The
-same uint8 encoding (`round(x * 255)`, diagonal forced to 255) and the same manifest
-discipline (the artifacts are refused rather than served when their sources have moved).
-
-Two differences from the lipid side, both forced by what a protein is here:
-
-- There is no `row_ids` file. A row of the interaction table names exactly one protein,
-  so the lipid side's candidate-instance axis has no analogue: the instance axis IS the
-  table's rows, and a `row_ids` vector would be `arange(len(table))`.
-- The manifest carries `names`, the protein per matrix row. The lipid artifacts are
-  addressed positionally by the loader and need no such list; every consumer of these
-  matrices instead reaches for them by `LTPProtein` (that is what a sampler steering its
-  draw by protein relatedness has in hand), so the name -> row map has to survive the
-  write.
-
-Residues come from `data/esm3_input/<LTPProtein>.pdb`, not from `data/fasta/`, and all
-three metrics read that one source. Those are the Voronota-normalized structures the
-protein graphs and the ESM3 embeddings are built from (see
-`dataloader/graphs_builders/protein_graph_builder.py` and
-`preprocessing/build_consistent_esm3_pdb.py`), so a similarity computed over them is
-computed over exactly the residues the model is shown -- one node per residue, same
-order. The FASTA files hold the full deposited sequence instead, including residues that
-are absent from the structure, which would make the sequence metrics disagree with the
-structural one about what the protein is and both of them disagree with the model.
+All metrics use CA residues from data/esm3_input/<LTPProtein>.pdb in file order.
 """
 
 import json
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -57,11 +24,10 @@ except ModuleNotFoundError:  # pragma: no cover - reported by the builders' main
 
 
 FORMAT_VERSION = 1
-SIMILARITY_SUBDIR = "protein_similarity"
+SIMILARITY_SUBDIR = Path("cache") / "protein_similarity"
 STRUCTURE_SUBDIR = "esm3_input"
 
-# One prefix per metric, so the three sets sit side by side exactly as the isomeric and
-# non-isomeric Tanimoto sets do, and a consumer names the metric it wants.
+# Artifact prefixes by metric.
 METRIC_PREFIX = {
     "identity": "Protein_identity",
     "blosum62": "Protein_blosum62",
@@ -114,14 +80,7 @@ def similarity_paths(root_dir, metric):
 
 
 def encode_uint8(matrix):
-    """Similarities in [0, 1] as the uint8 the compact format stores.
-
-    `round(x * 255)` and a forced 255 diagonal, both exactly as
-    `preprocessing/build_tanimoto_compact.py` encodes Tanimoto, so a consumer that
-    already divides a compact matrix by 255 needs no second convention. Values are
-    clipped first: TM-score is bounded by construction, but a normalization that divides
-    by the shorter chain can carry a rounding excess past 1.0.
-    """
+    """Clip to [0, 1], encode as round(score * 255), and set the diagonal to 255."""
     encoded = np.round(np.clip(matrix, 0.0, 1.0) * 255).astype(np.uint8)
     np.fill_diagonal(encoded, 255)
     return encoded
@@ -157,10 +116,7 @@ def write_similarity(
                     "size": stat.st_size,
                     "mtime_ns": stat.st_mtime_ns,
                 },
-                # The matrix is a function of the structures as much as of the table, and
-                # the table's own mtime says nothing about a re-run of the PDB
-                # normalization. Recorded per protein so a single replaced structure is
-                # enough to make the artifact stale.
+                # Track PDB changes independently of the interaction table.
                 "structures": structures,
             },
             indent=2,
@@ -171,62 +127,76 @@ def write_similarity(
 
 
 def load_similarity(root_dir, metric, source_csv=None, data_dir=None):
-    """Load one metric's artifacts, or None when they are absent or stale.
-
-    `source_csv` is checked against the manifest by size and nanosecond mtime, as the
-    compact Tanimoto loader checks its own; `data_dir`, when given, additionally checks
-    every structure the matrix was built from, so a re-normalized PDB is caught too.
-    Returning None rather than raising keeps the decision with the caller: a sampler can
-    fall back to an unsteered draw, while a builder can report the rebuild command.
-    """
+    """Return None for absent/stale artifacts; raise with the path on read errors."""
     matrix_path, index_path, manifest_path = similarity_paths(root_dir, metric)
     if not all(path.exists() for path in (matrix_path, index_path, manifest_path)):
         return None
     try:
         manifest = json.loads(manifest_path.read_text())
-        if manifest.get("format_version") != FORMAT_VERSION:
+        version = manifest["format_version"]
+        recorded_metric = manifest["metric"]
+        if version != FORMAT_VERSION or recorded_metric != metric:
             return None
-        if manifest.get("metric") != metric:
+        names = manifest["names"]
+        normalization = manifest["parameters"].get("normalization")
+        source = manifest["source"]
+        structures = manifest["structures"]
+        if not isinstance(names, list) or not isinstance(structures, dict):
+            raise ValueError("invalid names or structures")
+        source["size"], source["mtime_ns"]
+        for recorded in structures.values():
+            recorded["size"], recorded["mtime_ns"]
+    except (OSError, UnicodeError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise ValueError(f"Cannot read similarity manifest {manifest_path}: {exc}") from exc
+
+    if source_csv is not None:
+        path = Path(source_csv)
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
             return None
-        if source_csv is not None:
-            stat = Path(source_csv).stat()
-            source = manifest["source"]
-            if (
-                stat.st_size != source["size"]
-                or stat.st_mtime_ns != source["mtime_ns"]
-            ):
-                return None
-        if data_dir is not None:
-            for name, recorded in manifest["structures"].items():
-                path = structure_path(data_dir, name)
-                if not path.exists():
-                    return None
+        except OSError as exc:
+            raise OSError(f"Cannot inspect similarity source {path}: {exc}") from exc
+        if stat.st_size != source["size"] or stat.st_mtime_ns != source["mtime_ns"]:
+            return None
+    if data_dir is not None:
+        for name, recorded in structures.items():
+            path = structure_path(data_dir, name)
+            try:
                 stat = path.stat()
-                if (
-                    stat.st_size != recorded["size"]
-                    or stat.st_mtime_ns != recorded["mtime_ns"]
-                ):
-                    return None
-        return ProteinSimilarity(
-            torch.load(
-                matrix_path, map_location="cpu", weights_only=True
-            ).numpy(),
-            torch.load(index_path, map_location="cpu", weights_only=True).numpy(),
-            manifest["names"],
-            manifest["metric"],
-            manifest["parameters"].get("normalization"),
-        )
-    except (OSError, KeyError, ValueError, RuntimeError, json.JSONDecodeError):
-        return None
+            except FileNotFoundError:
+                return None
+            except OSError as exc:
+                raise OSError(f"Cannot inspect similarity source {path}: {exc}") from exc
+            if stat.st_size != recorded["size"] or stat.st_mtime_ns != recorded["mtime_ns"]:
+                return None
+
+    arrays = []
+    for path in (matrix_path, index_path):
+        try:
+            array = torch.load(path, map_location="cpu", weights_only=True).numpy()
+            if path == matrix_path:
+                if array.shape != (len(names), len(names)) or array.dtype != np.uint8:
+                    raise ValueError("expected a square uint8 matrix matching protein names")
+            elif (
+                array.ndim != 1
+                or not np.issubdtype(array.dtype, np.integer)
+                or np.any(array < 0)
+                or np.any(array >= len(names))
+            ):
+                raise ValueError("expected a vector of valid protein indices")
+            arrays.append(array)
+        except (
+            OSError, EOFError, pickle.UnpicklingError, RuntimeError,
+            ValueError, TypeError, AttributeError, IndexError,
+        ) as exc:
+            raise ValueError(f"Cannot read similarity tensor {path}: {exc}") from exc
+    matrix, protein_index = arrays
+    return ProteinSimilarity(matrix, protein_index, names, recorded_metric, normalization)
 
 
 def protein_order(table):
-    """The table's proteins in first-appearance order, and each row's matrix position.
-
-    First-appearance order rather than sorted, for the reason
-    `build_tanimoto_compact.distinct_structures` gives: it is stable for a fixed table
-    and keeps the matrix's row order traceable to the table it came from.
-    """
+    """Proteins in first-appearance order, and each table row's matrix position."""
     order = {}
     for name in table["LTPProtein"]:
         if name not in order:
@@ -256,19 +226,10 @@ class Structure:
 
 
 def read_structure(path, name):
-    """The CA trace of a single-chain PDB as a `Structure`.
+    """Read CA residues from the first PDB model in file order.
 
-    One entry per residue that has a CA atom, first model only, in file order. A residue
-    whose three-letter code is not a standard amino acid becomes 'X' and is counted:
-    these structures have already had MSE converted to MET
-    (`preprocessing/convert_mse_to_met.py`), so an 'X' here is something the
-    normalization did not cover and the builders report it rather than hiding it in the
-    sequence.
-
-    Raises on more than one chain instead of silently taking the first: a second chain
-    would change both the sequence the alignment sees and the point cloud TM-align
-    superposes, and every structure in `data/esm3_input/` is single-chain, so a second
-    one means the input, not this reader, needs attention.
+    Require one chain and at least one CA atom. Map unknown residue names to X
+    and count them for reporting.
     """
     parser = PDBParser(QUIET=True)
     model = next(iter(parser.get_structure(name, str(path))))
@@ -324,6 +285,9 @@ def report_matrix(matrix, names, top=5):
     """Print the off-diagonal spread and the most similar pairs of one metric."""
     off_diagonal = ~np.eye(len(names), dtype=bool)
     values = matrix[off_diagonal]
+    if values.size == 0:
+        print("off-diagonal: no protein pairs")
+        return
     print(
         f"off-diagonal: min {values.min():.3f}  mean {values.mean():.3f}  "
         f"max {values.max():.3f}"

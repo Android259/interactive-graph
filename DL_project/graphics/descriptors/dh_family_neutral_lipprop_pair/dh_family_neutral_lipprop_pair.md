@@ -180,7 +180,7 @@ groups_scp2 (n=5):
 ```
 ########## split = valid ##########
 
---- null model (null_model.py), features = label_descriptors (apolar_sasa_share,aromatic_contact,aromatic_contact_min,aromatic_share,buriedness_match,buriedness_q50,chain,elongation_shape_match,flatness_shape_match,hbond,hbond_match,hbond_match_min,heavy,hydropathy_rim,hydropathy_rim_match,pocket_elongation,pocket_flatness,pocket_volume_per_sasa,tail_elongation_fit,unsaturation,volume_fit), epoch 120 ---
+--- null model (knn_model.py), features = label_descriptors (apolar_sasa_share,aromatic_contact,aromatic_contact_min,aromatic_share,buriedness_match,buriedness_q50,chain,elongation_shape_match,flatness_shape_match,hbond,hbond_match,hbond_match_min,heavy,hydropathy_rim,hydropathy_rim_match,pocket_elongation,pocket_flatness,pocket_volume_per_sasa,tail_elongation_fit,unsaturation,volume_fit), epoch 120 ---
 === mean over seeds ===
               sim_to_train_pos  null_AUC_k15  net_AUC  null_AUC_pair_k15  net_AUC_pair
 fam                                                                                   

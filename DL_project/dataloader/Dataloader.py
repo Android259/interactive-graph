@@ -31,7 +31,7 @@ from torch_geometric.data import Data, Dataset
 
 from dataloader.dataset_source import interaction_csv_path
 from dataloader.chemistry_prior import (
-    null_scores_leave_one_row_out,
+    knn_scores_leave_one_row_out,
     species_similarity,
 )
 from dataloader.pocket_lipid_compatibility import (
@@ -196,7 +196,7 @@ class PLIDataset(
                     "--tanimoto_weight needs current compact Tanimoto artifacts "
                     f"(Tanimoto_compact{'_isomeric' if self.config.lipid_isomers else ''}_* "
                     f"in {root_dir}/cache); they are missing or older than the interaction table. "
-                    "Rebuild: python3 preprocessing/build_tanimoto_compact.py"
+                    "Rebuild: python3 preprocessing/similarity/build_tanimoto_compact.py"
                     + (" --isomeric" if self.config.lipid_isomers else "")
                 )
             selected = np.flatnonzero(np.isin(compact.row_ids, train_idx))
@@ -456,7 +456,7 @@ class PLIDataset(
         positive:negative balance set at sampling is untouched.
         """
         similarity, index = species_similarity(csv, self.ROOT_DIR)
-        s_chem = null_scores_leave_one_row_out(
+        s_chem = knn_scores_leave_one_row_out(
             self.csvtrain, similarity, index, self.config.chem_neighbours
         )
         labels = self.csvtrain["Interaction"].to_numpy(dtype=float)
@@ -549,7 +549,7 @@ class PLIDataset(
         --protein_descriptors, --lipid_descriptors, --deepclip_protein_gate): bare names
         or `<name>_coarse=<spec>` (N equal-width or N train-fit quantile bins, see
         parse_descriptor_token). Pair-formula names use pair_descriptor_value, the same
-        function as analysis/baselines/null_model.py.
+        function as analysis/baselines/knn_model.py.
 
         "extent" is always rounded to EXTENT_BINS train-fit quantile levels, so a held-out
         protein's raw cavity size cannot identify it.

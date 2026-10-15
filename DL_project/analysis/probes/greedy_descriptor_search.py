@@ -6,7 +6,7 @@ protein-lipid pair neither side of which training has seen, not memorise which
 specific protein or lipid a row names. Three existing, already-vetted numbers this
 project computes, combined into one search objective:
 
-  AUC       analysis/baselines/null_model.py's own null_AUC_pair_k{k} -- rows ranked jointly
+  AUC       analysis/baselines/knn_model.py's own null_AUC_pair_k{k} -- rows ranked jointly
             inside each protein AND inside each lipid class (per_pair_auc), not the
             family-marginal null_AUC_k{k} -- on the --double_coldsplit block, mean
             over --families x --seeds. The project's existing, most direct
@@ -41,7 +41,7 @@ project computes, combined into one search objective:
 Search: start from the empty set, repeatedly add whichever untried descriptor raises
 `score` the most, stop when no remaining descriptor improves it (or --max is hit).
 Forward, not exhaustive (14 pair descriptors -> 2**14 subsets is not needed): O(n^2)
-evaluations, each one an actual analysis/baselines/null_model.py run, printed as it goes so a
+evaluations, each one an actual analysis/baselines/knn_model.py run, printed as it goes so a
 long search is legible while it runs rather than only at the end.
 
     python3 analysis/probes/greedy_descriptor_search.py
@@ -64,8 +64,8 @@ sys.path.insert(0, PROJECT_ROOT)
 from analysis.feature_identity_check import (  # noqa: E402
     build_axis_labels, eta_squared_joint, protein_family_map, species_class_map,
 )
-from analysis.baselines.null_model import (  # noqa: E402
-    DEFAULT_FAMILIES, null_model_table, resolve_similarity,
+from analysis.baselines.knn_model import (  # noqa: E402
+    DEFAULT_FAMILIES, knn_model_table, resolve_similarity,
 )
 from dataloader.chemistry_prior import raw_feature_matrix  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
@@ -74,14 +74,14 @@ from dataloader.descriptors import PAIR_DESCRIPTOR_NAMES  # noqa: E402
 
 def auc_for(csv, data_dir, feature_list, families, seeds, k, share, ratio):
     """Mean and cross-family std of null_AUC_pair_k{k} over --families x --seeds for
-    this exact feature_list -- analysis/baselines/null_model.py's own per_pair_auc measurement
+    this exact feature_list -- analysis/baselines/knn_model.py's own per_pair_auc measurement
     (rows ranked jointly inside each protein AND inside each lipid class), not the
     family-marginal null_AUC_k{k}; `label` is the sorted feature list itself, so
-    null_model.py's own on-disk cache (CACHE_PATH) is reused automatically across
+    knn_model.py's own on-disk cache (CACHE_PATH) is reused automatically across
     repeated runs of this script, not just within one.
 
     The std is taken BETWEEN families (mean over seeds within each family first,
-    then std of those 7 family means), matching null_model.py's own "(std families)"
+    then std of those 7 family means), matching knn_model.py's own "(std families)"
     column -- not the within-family std across seeds, which is a different question
     (measurement noise for one family, not generalisation spread across families).
     """
@@ -89,7 +89,7 @@ def auc_for(csv, data_dir, feature_list, families, seeds, k, share, ratio):
     similarity, index, entity_column, resolved_label, resolved_features = resolve_similarity(
         csv, data_dir, ",".join(sorted(feature_list)), label=label, zscore=False
     )
-    table = null_model_table(
+    table = knn_model_table(
         csv, similarity, index, families=families, seeds=seeds,
         neighbour_counts=(k,), share=share, ratio=ratio, split="valid",
         entity_column=entity_column, label=label, features=resolved_features,
@@ -149,13 +149,13 @@ def main():
     parser.add_argument("--families", default=",".join(DEFAULT_FAMILIES))
     parser.add_argument(
         "--seeds", default="0,1,2",
-        help="Fewer than analysis/baselines/null_model.py's own default (0,1,2,3,4) -- each "
-             "round of this search is several full null_model.py runs, and the search "
+        help="Fewer than analysis/baselines/knn_model.py's own default (0,1,2,3,4) -- each "
+             "round of this search is several full knn_model.py runs, and the search "
              "only needs enough seeds to rank candidates against each other reliably, "
              "not the tightest possible single AUC estimate. Widen for a final check "
              "on the winning set.",
     )
-    parser.add_argument("--k", type=int, default=15, help="Neighbour count for null_model.py's own AUC.")
+    parser.add_argument("--k", type=int, default=15, help="Neighbour count for knn_model.py's own AUC.")
     parser.add_argument("--share", type=float, default=0.7, help="--coldsplit_share of the run")
     parser.add_argument("--ratio", type=int, default=2, help="--negatives_per_positive of the run")
     args = parser.parse_args()
@@ -204,7 +204,7 @@ def main():
     if len(seeds) < 5:
         print(
             f"\n(searched with --seeds {args.seeds} for speed -- re-check the winning "
-            f"set with more seeds: python3 analysis/baselines/null_model.py --features "
+            f"set with more seeds: python3 analysis/baselines/knn_model.py --features "
             f"{','.join(chosen)} --seeds 0,1,2,3,4)"
         )
 

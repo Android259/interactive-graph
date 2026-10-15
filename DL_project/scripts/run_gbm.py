@@ -218,7 +218,7 @@ def write_report(
 # resolve_lipid_feature_subset, which would reject it (a pairwise similarity matrix
 # has no per-entity columns to select) -- GBM's own way of consuming a whole-species
 # similarity is a dedicated feature COLUMN (training.pair_baseline_common.
-# species_tanimoto_similarity/species_headgroup_tanimoto_similarity via null_scores),
+# species_tanimoto_similarity/species_headgroup_tanimoto_similarity via knn_scores),
 # not a kernel swap the way Kron-RLS's --lipid_kernel is. "molformer" is deliberately
 # NOT here: it IS a genuine per-entity raw feature table, so resolve_lipid_feature_
 # subset already mixes it in alongside named descriptors.

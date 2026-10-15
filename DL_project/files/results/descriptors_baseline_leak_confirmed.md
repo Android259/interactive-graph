@@ -85,7 +85,7 @@ hydropathy_core 0.77, pocket_residue_share 0.71, pocket_extent 0.62, ev14_q50 0.
 depth_q10 0.55).
 
 **Null-модели для контекста:**
-- Lipid-only null (kNN по 4 липидным дескрипторам, `analysis/null_model.py`): AUC 0.545
+- Lipid-only null (kNN по 4 липидным дескрипторам, `analysis/knn_model.py`): AUC 0.545
 - Protein-only null (kNN по 7 protein family-neutral дескрипторам, блайнд к липиду):
   AUC 0.507 (на уровне случайности)
 - Family-идентификационная точность по этому protein-набору: 51.4% (старый,
@@ -152,7 +152,7 @@ lipid_descriptor_class_identity.py` покрывает только 13 ручн�
 ключа на всех 283 липидных видах датасета — полное покрытие подтверждено, поэтому
 это чистый анализ существующих данных, без forward pass через MolFormer.
 
-Построен `preprocessing/lipid_embedding_identity_check.py` (зеркалит методологию
+Построен `analysis/feature_identity_check.py --features molformer` (зеркалит методологию
 `pocket_descriptor_identity_check.py`, ось идентичности — липидный класс через
 `analysis/feature_identity_check.species_class_map`). **Представление**: усреднение
 768-мерного MolFormer per-token эмбеддинга по токенам (аналог усреднения ESM3 по
@@ -226,10 +226,10 @@ elongation_shape_match (product) он падает ниже арифметиче
 
 ### чем посчитано
 
-- MolFormer identity check: `preprocessing/lipid_embedding_identity_check.py`
+- MolFormer identity check: `analysis/feature_identity_check.py --features molformer`
   (новый), читает `data/lipid_SMILES_embedding_deterministic.pkl`/`.tensors.pt`,
   `data/interactions...csv`. Запуск: `scripts/env.sh python3 preprocessing/
-  lipid_embedding_identity_check.py`.
+  analysis/feature_identity_check.py --features molformer`.
 - Pair-descriptor η²: `analysis/probes/pair_descriptor_family_eta2.py` (новый), читает
   `dataloader.chemistry_prior.raw_feature_matrix` с `--zscore=True` (соответствует
   `arg_files/descriptors/descriptors_pair_clean.md`). Запуск: `scripts/env.sh python3
@@ -244,7 +244,7 @@ elongation_shape_match (product) он падает ниже арифметиче
 
 **Что построено.** `preprocessing/build_molformer_similarity_matrix.py` (новый) —
 переиспользует загрузку эмбеддинга и per-species pooling из
-`lipid_embedding_identity_check.py` (тот же 768-мерный вектор на вид, что и в
+`analysis/feature_identity_check.py --features molformer` (тот же 768-мерный вектор на вид, что и в
 identity-check выше, среднее по токенам, затем по кандидатным структурам, полное
 покрытие — 283 вида без пропусков), затем прогоняет через
 `dataloader.chemistry_prior._standardised_similarity` (тот же 1/(1+euclidean)
@@ -252,13 +252,13 @@ identity-check выше, среднее по токенам, затем по к�
 именованному дескрипторному набору) и пишет `data/molformer_species_similarity_
 matrix.npy` + `data/molformer_species_index.json`. `dataloader/chemistry_prior.py`
 получил `molformer_species_similarity(data_dir)` (тот же контракт `(similarity,
-index)`, что и `species_similarity` для Tanimoto), `analysis/null_model.py` —
+index)`, что и `species_similarity` для Tanimoto), `analysis/knn_model.py` —
 новую ветку `--features=molformer` в `resolve_similarity` рядом с `tanimoto`.
 Библиотека Tanimoto-совместимого компактного per-structure формата (uint8/255,
 structure_index) НЕ переиспользована — MolFormer уже даёт один вектор на вид, там
 нечего компактифицировать.
 
-**Прогон.** Один и тот же протокол для всех трёх — `analysis/null_model.py
+**Прогон.** Один и тот же протокол для всех трёх — `analysis/knn_model.py
 --split valid` (дефолт: 7 канонических семейств, seeds 0-4, `--share 0.8`,
 `--ratio 2`, `--neighbours 5,15,40`), меняется только `--features`. Никакая сеть
 не запускалась (`--scores` не передан) — это сравнение null-моделей самих с собой.
@@ -310,7 +310,7 @@ MolFormer местами слабее именно на семействе, гд
   build_molformer_similarity_matrix.py` (283 вида, similarity range [0.011, 1.000]).
 - `dataloader/chemistry_prior.py`'s `molformer_species_similarity` (новое) —
   читает написанные .npy/.json.
-- `analysis/null_model.py --features=molformer|tanimoto|chain,unsaturation,hbond,heavy --split valid`
+- `analysis/knn_model.py --features=molformer|tanimoto|chain,unsaturation,hbond,heavy --split valid`
   (дефолтные `--share 0.8 --ratio 2 --neighbours 5,15,40`, k15 — колонка
   `null_AUC_k15` из блока "mean AUC"), три отдельных запуска, никакой сети
   (`--scores` не передавался). Read-only, ничего не обучает.

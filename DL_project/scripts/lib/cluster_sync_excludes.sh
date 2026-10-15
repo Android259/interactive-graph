@@ -113,7 +113,8 @@ SYNC_EXCLUDES=(
     --include='/data/'
     --include='/data/Processed_*.csv'
     --include='/data/cache/'
-    --include='/data/cache/Tanimoto_compact*'
+    --include='/data/cache/tanimoto/'
+    --include='/data/cache/tanimoto/**'
     --include='/data/*.py'
     # Small, external-source lookup tables the running model reads directly rather
     # than deriving on the fly -- neither is reproducible from something else already

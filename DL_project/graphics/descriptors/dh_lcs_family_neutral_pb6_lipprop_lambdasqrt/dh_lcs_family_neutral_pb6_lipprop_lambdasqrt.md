@@ -122,7 +122,7 @@ groups_sphingolipids (n=5):
 ```
 ########## split = valid ##########
 
---- null model (null_model.py), features = label_descriptors (apolar_sasa_share,aromatic_share,aromatic_share_rim,buriedness_q50,chain,depth_q10,ev14_q10,ev28_q10,hbond,heavy,hydropathy_core,hydropathy_mean,hydropathy_rim,pocket_elongation_lambda_sqrt,pocket_flatness_lambda_sqrt,pocket_volume_per_sasa,unsaturation), epoch 120 ---
+--- null model (knn_model.py), features = label_descriptors (apolar_sasa_share,aromatic_share,aromatic_share_rim,buriedness_q50,chain,depth_q10,ev14_q10,ev28_q10,hbond,heavy,hydropathy_core,hydropathy_mean,hydropathy_rim,pocket_elongation_lambda_sqrt,pocket_flatness_lambda_sqrt,pocket_volume_per_sasa,unsaturation), epoch 120 ---
 === mean over seeds ===
                  sim_to_train_pos  null_AUC_k15  net_AUC  null_AUC_pair_k15  net_AUC_pair
 fam                                                                                      

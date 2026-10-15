@@ -49,7 +49,7 @@ coldsplit_primary` в памяти проекта), но именно на не�
 
 `arg_files/descriptors/descriptors_pair_clean.md` и `arg_files/descriptors/dh_family_neutral_lipprop_pair.md`
 оба содержат строку `--zscore`. Она реально существует — но только как флаг
-`argparse` в `analysis/null_model.py`, `analysis/full_label_report.py`,
+`argparse` в `analysis/knn_model.py`, `analysis/full_label_report.py`,
 `analysis/feature_identity_check.py`, `analysis/interaction_increment.py`,
 `analysis/probes/rank_descriptors.py`, `analysis/baselines/lipid_coldsplit_null_model.py`,
 `analysis/probes/pair_descriptor_family_eta2.py` — все read-only анализные скрипты,

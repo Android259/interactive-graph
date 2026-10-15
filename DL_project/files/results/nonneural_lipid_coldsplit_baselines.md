@@ -3,7 +3,7 @@
 Снимок на 2026-09-17. Задача: известный белок (никогда не исключается) × новый липид
 (head-group класс исключён из train) — то, что `--lipid_coldsplit` реально проверяет.
 Источники: `analysis/baselines/kronrls_baseline.py`, `analysis/baselines/gbm_baseline.py`,
-`training/pair_baseline_common.py`, `preprocessing/build_tanimoto_headgroup.py`.
+`training/pair_baseline_common.py`, `preprocessing/similarity/build_tanimoto_headgroup.py`.
 
 ## TL;DR
 
@@ -60,14 +60,14 @@ AUC=0.512, все depth=2/3 конфиги хуже (BA 0.51-0.54). Прорез
 
 ## Headgroup-only Tanimoto: новый лайвер, но только для Kron-RLS
 
-`preprocessing/build_tanimoto_headgroup.py` уже строил артефакт
+`preprocessing/similarity/build_tanimoto_headgroup.py` уже строил артефакт
 (`data/Tanimoto_headgroup_compact_*`, acyl-хвосты отрезаны, оставлен только head
 group). Добавлена `species_headgroup_tanimoto_similarity` +
 `--lipid_kernel tanimoto_headgroup` в `training/pair_baseline_common.py` /
 `analysis/baselines/kronrls_baseline.py`. Для Kron-RLS это явный выигрыш (+0.012 BA, +0.021
 F1, +0.026 pair AUC против whole-molecule tanimoto). Как ДОБАВОЧНАЯ фича в GBM
 (`--lipid_similarity_feature tanimoto_headgroup`, leak-safe leave-one-out на train
-через `dataloader.chemistry_prior.null_scores_leave_one_row_out`) — не помогает и
+через `dataloader.chemistry_prior.knn_scores_leave_one_row_out`) — не помогает и
 даже роняет F1/AUC: структурные дескрипторы GBM уже неявно кодируют то же самое.
 
 ## `--positive_weight` (Kron-RLS): доказанный no-op, не просто слабый рычаг

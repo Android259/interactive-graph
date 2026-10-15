@@ -24,7 +24,7 @@ import torch
 # one showing up means the sample is not what this module was written for.
 _NODE_LEVEL_KEYS = frozenset({
     "x", "edge_index", "edge_attr", "bury", "plm", "pocket", "geometric_node_attr",
-    "edge_node_pairs", "edge_node_degree", "frame_rotation", "frame_translation",
+    "frame_rotation", "frame_translation",
     "node_confidence",
 })
 

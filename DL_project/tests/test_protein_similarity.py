@@ -3,10 +3,11 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
-from preprocessing.build_protein_sequence_similarity import build_aligner, pair_scores
-from preprocessing.build_protein_tmscore import pair_tmscore
-from preprocessing.protein_similarity_common import (
+from preprocessing.similarity.build_protein_sequence_similarity import build_aligner, pair_scores
+from preprocessing.similarity.build_protein_tmscore import pair_tmscore
+from preprocessing.similarity.protein_similarity_common import (
     Structure,
     encode_uint8,
     load_similarity,
@@ -109,7 +110,7 @@ def make_artifacts(tmp_path, names=("GLTP", "BPI")):
         write_pdb(tmp_path, name, ["MET", "LYS"])
     matrix = encode_uint8(np.array([[1.0, 0.25], [0.25, 1.0]]))
     protein_index = np.arange(len(names), dtype=np.int32)
-    from preprocessing.protein_similarity_common import structure_provenance
+    from preprocessing.similarity.protein_similarity_common import structure_provenance
 
     write_similarity(
         tmp_path,
@@ -143,6 +144,84 @@ def test_load_refuses_artifacts_whose_interaction_table_moved(tmp_path):
     pd.DataFrame({"LTPProtein": ["GLTP", "BPI", "FABP1"]}).to_csv(source, index=False)
 
     assert load_similarity(tmp_path, "identity", source) is None
+
+
+def test_load_returns_none_for_missing_artifacts(tmp_path):
+    assert load_similarity(tmp_path, "identity") is None
+
+
+@pytest.mark.parametrize("contents", ["{broken json", "{}"])
+def test_load_reports_corrupt_manifest_with_path_and_cause(tmp_path, contents):
+    source = make_artifacts(tmp_path)
+    _, _, path = similarity_paths(tmp_path, "identity")
+    path.write_text(contents)
+
+    with pytest.raises(ValueError) as error:
+        load_similarity(tmp_path, "identity", source)
+
+    assert str(path) in str(error.value)
+    assert error.value.__cause__ is not None
+
+
+@pytest.mark.parametrize("file_index", [0, 1])
+def test_load_reports_corrupt_tensor_with_path_and_cause(tmp_path, file_index):
+    source = make_artifacts(tmp_path)
+    path = similarity_paths(tmp_path, "identity")[file_index]
+    path.write_bytes(b"broken tensor")
+
+    with pytest.raises(ValueError) as error:
+        load_similarity(tmp_path, "identity", source)
+
+    assert str(path) in str(error.value)
+    assert error.value.__cause__ is not None
+
+
+@pytest.mark.parametrize("file_index,tensor", [
+    (0, torch.tensor([255], dtype=torch.uint8)),
+    (0, torch.eye(2)),
+    (1, torch.tensor([0, 2])),
+    (1, torch.tensor([0, -1])),
+    (1, torch.tensor([[0, 1]])),
+])
+def test_load_rejects_invalid_tensor_layout(tmp_path, file_index, tensor):
+    source = make_artifacts(tmp_path)
+    path = similarity_paths(tmp_path, "identity")[file_index]
+    torch.save(tensor, path)
+
+    with pytest.raises(ValueError) as error:
+        load_similarity(tmp_path, "identity", source)
+
+    assert str(path) in str(error.value)
+    assert error.value.__cause__ is not None
+
+
+def test_load_returns_none_for_an_older_manifest_schema(tmp_path):
+    make_artifacts(tmp_path)
+    path = similarity_paths(tmp_path, "identity")[2]
+    path.write_text(json.dumps({"format_version": 0, "metric": "identity"}))
+
+    assert load_similarity(tmp_path, "identity") is None
+
+
+@pytest.mark.parametrize("builder_name", [
+    "build_protein_sequence_similarity", "build_protein_tmscore",
+])
+def test_single_protein_dry_run_reports_no_pairs(monkeypatch, capsys, builder_name):
+    import importlib
+
+    builder = importlib.import_module(f"preprocessing.similarity.{builder_name}")
+    monkeypatch.setattr("sys.argv", [builder_name, "--proteins", "P1", "--dry-run"])
+    monkeypatch.setattr(builder.pd, "read_csv", lambda _: pd.DataFrame({"LTPProtein": ["P1"]}))
+    monkeypatch.setattr(builder, "load_structures", lambda *_: {"P1": sequence_structure("P1", "MKV")})
+    monkeypatch.setattr(builder, "structure_provenance", lambda *_: {})
+
+    def unexpected_write(*args, **kwargs):
+        pytest.fail("dry run attempted to write artifacts")
+
+    monkeypatch.setattr(builder, "write_similarity", unexpected_write)
+    builder.main()
+
+    assert "no protein pairs" in capsys.readouterr().out
 
 
 def test_load_refuses_artifacts_whose_structures_moved(tmp_path):

@@ -105,7 +105,7 @@ GLTP ([Malinina et al., PLOS Biology 2006](https://journals.plos.org/plosbiology
 
 Что именно считается: Morgan-фингерпринт радиуса 2 на 1024 бита, бинарный,
 по канонической неизомерной SMILES; `BulkTanimotoSimilarity`; результат квантуется в
-uint8 ([preprocessing/build_tanimoto_compact.py, `tanimoto_matrix`](../../preprocessing/build_tanimoto_compact.py)).
+uint8 ([preprocessing/similarity/build_tanimoto_compact.py, `tanimoto_matrix`](../../preprocessing/similarity/build_tanimoto_compact.py)).
 1226 различных структур над 48 620 кандидатами.
 
 **(а) Липиды — известный провальный класс для ECFP.** В работе про MAP4
@@ -226,8 +226,8 @@ Tversky с сильным смещением в сторону признако�
 - §1.3, §3 (собственные числа) — [files/results/lipid_coldsplit_architecture_direction.md](../results/lipid_coldsplit_architecture_direction.md)
   §7f–7h, §7j, §7p; изолированности — `analysis/lipid_coldsplit_isolation.py` (прогон
   2026-09-15, таблица `..._Deduplicated.csv`, 9905 строк, 634 положительных).
-- §3 (что именно считается) — чтение `preprocessing/build_tanimoto_compact.py`,
-  `preprocessing/build_tanimoto_compact.py`, `dataloader/tensors_reading/tanimoto_compact_tensors_reader.py`.
+- §3 (что именно считается) — чтение `preprocessing/similarity/build_tanimoto_compact.py`,
+  `preprocessing/similarity/build_tanimoto_compact.py`, `dataloader/tensors_reading/tanimoto_compact_tensors_reader.py`.
 - §2, §6 (точки входа) — чтение `analysis/coldsplit_geometry.py`,
   `analysis/baselines/lipid_coldsplit_null_model.py`, `dataloader/chemistry_prior.py`,
   `analysis/baselines/kronrls_baseline.py`, `dataloader/Dataloader.py`.

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """How much a chemistry-only feature set already *is* identity, in a few cheap numbers.
 
-Generalises preprocessing/pocket_descriptor_identity_check.py's method (eta^2 +
+Generalises analysis/feature_identity_check.py's method (eta^2 +
 leave-one-out nearest-neighbour identity rate, each read against its own chance floor,
 plus a permutation significance test) from "protein pocket descriptors vs protein
-family" to any --features set analysis/baselines/null_model.py accepts, against every identity
+family" to any --features set analysis/baselines/knn_model.py accepts, against every identity
 axis that granularity can see: which lipid SPECIES, which lipid CLASS (head group),
 which PROTEIN, and which protein FAMILY (ProteinDomain).
 
@@ -46,7 +46,7 @@ GLOBAL -- whole dataset, every entity against every other entity of the same kin
      labels -- so each reshuffle costs one O(entities) pass, not a matrix rebuild).
 
 TRAIN vs VALID+TEST (--families/--seeds/--share/--ratio, exactly
-analysis/baselines/null_model.py's own --double_coldsplit machinery, VALID and TEST pooled
+analysis/baselines/knn_model.py's own --double_coldsplit machinery, VALID and TEST pooled
 together) -- NOT an identity-match test. preprocessing/lipid_marginal_baseline.split
 removes a held-out family's protein rows, and that family's held-out classes' lipid
 rows, from TRAIN UNCONDITIONALLY (every protein, not just the held family's own) --
@@ -71,7 +71,7 @@ check.py's mean-ESM3 embedding plays for protein identity.
 --features molformer: the learned per-species MolFormer SMILES embedding
 architecture/lipid_encoder.py's non-graph path actually feeds the model (one 768-dim
 vector per lipid species, mean-pooled over tokens then over candidate isomers --
-preprocessing/lipid_embedding_identity_check.py's own species_embeddings, reused
+analysis/feature_identity_check.py --features molformer's own species_embeddings, reused
 unchanged) -- the lipid-side analogue of --features ESM3/ESMIF1/PROTEINMPNN on the
 protein side.
 
@@ -113,7 +113,7 @@ is now one implementation here):
                            analysis/probes/lipid_descriptor_class_identity.py.
   --family_separation FAM  which PROTEIN descriptor singles out one family against all
                            the others (Mann-Whitney outrank + eta^2 + permutation p),
-                           over every descriptor in data/protein_descriptor_table.json
+                           over every descriptor in data/protein_descriptors.csv
                            rather than only the model-facing ones -- was
                            analysis/probes/lbp_family_descriptor_separation.py.
   --pair_vs_family         eta^2 of each PAIR descriptor's actual COMPUTED value against
@@ -154,14 +154,14 @@ from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.descriptors import MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES  # noqa: E402
 from dataloader.sampler import lipid_class_series  # noqa: E402
 
-# The same coldsplit machinery analysis/baselines/null_model.py itself uses for its (family,
+# The same coldsplit machinery analysis/baselines/knn_model.py itself uses for its (family,
 # seed) held-out blocks, reused rather than reimplemented so a block reproduced here
 # is provably the same rows a null-model/network run would see -- working_set/
 # split_func/lipid_classes_for_holdout/DEFAULT_FAMILIES are plain re-exports on
-# null_model's own module namespace (see its own imports), not analysis specific to
+# knn_model's own module namespace (see its own imports), not analysis specific to
 # the null model itself, so importing them here does not pull in anything about
 # scoring the network.
-from analysis.baselines.null_model import (  # noqa: E402
+from analysis.baselines.knn_model import (  # noqa: E402
     DEFAULT_FAMILIES, lipid_classes_for_holdout, split_func, working_set,
 )
 # REPRESENTATIONS (directory/suffix/trim per learned protein representation) and
@@ -169,19 +169,13 @@ from analysis.baselines.null_model import (  # noqa: E402
 # representation_identity_check.py's own -- reused rather than reimplemented so
 # "one vector per protein" here is exactly the vector that script already measured
 # ESM3 collapsing to one point on, not a second, possibly-diverging recipe.
-from protein_representation_identity_check import (  # noqa: E402
-    REPRESENTATIONS, mean_pooled,
-)
-# standardise: mantel_test's own column-standardisation of the one-hot label matrix,
-# reused rather than reimplemented so it matches preprocessing/pocket_descriptor_
-# identity_check.py's own mantel/standardise exactly.
-from pocket_descriptor_identity_check import standardise  # noqa: E402
 
-# Same reserved value as analysis/baselines/null_model.py's own TANIMOTO -- kept as a separate
+
+# Same reserved value as analysis/baselines/knn_model.py's own TANIMOTO -- kept as a separate
 # literal rather than an import so the --features default here needs nothing beyond
 # dataloader.chemistry_prior itself.
 TANIMOTO = "tanimoto"
-# --features molformer: preprocessing/lipid_embedding_identity_check.py's own learned
+# --features molformer: analysis/feature_identity_check.py --features molformer's own learned
 # per-species embedding, folded in here as a third --features option alongside
 # tanimoto and the protein-embedding aliases below.
 MOLFORMER = "molformer"
@@ -189,9 +183,63 @@ MOLFORMER = "molformer"
 # --features ESM3 / ESMIF1 / PROTEINMPNN: the user's own spelling (no hyphen, no
 # case-sensitivity to remember) mapped onto REPRESENTATIONS' actual keys ("ESM-IF1",
 # "ProteinMPNN" carry punctuation/casing that would be an awkward CLI token).
+REPRESENTATIONS = {
+    "ESM3": ("embedding_ESM3", "_*", True),
+    "ESM-IF1": ("embedding_ESMIF1", "_ESMIF1.pkl", False),
+    "ProteinMPNN": ("embedding_PROTEINMPNN", "_PROTEINMPNN.pkl", False),
+}
+
+
 PROTEIN_EMBEDDING_ALIASES = {
     name.upper().replace("-", ""): name for name in REPRESENTATIONS
 }
+
+
+
+def mean_pooled(directory, suffix, trim, proteins):
+    """One vector per protein: the stored rows averaged over residues."""
+    import glob
+    import pickle
+
+    import torch
+
+    vectors = {}
+    for protein in proteins:
+        matches = glob.glob(os.path.join(PROJECT_ROOT, "data", directory, f"{protein}{suffix}"))
+        if len(matches) != 1:
+            continue
+        with open(matches[0], "rb") as handle:
+            rows = torch.as_tensor(pickle.load(handle))
+        if rows.ndim == 3:
+            rows = rows[0]
+        vectors[protein] = (
+            rows[1:-1].mean(dim=0).float().numpy().astype(float) if trim
+            else rows.mean(dim=0).float().numpy().astype(float)
+        )
+    return vectors
+
+
+def mean_plm_embedding(protein):
+    """One vector per protein: the ESM3 rows averaged over residues, BOS/EOS trimmed
+    exactly as the dataloader trims them."""
+    directory, suffix, trim = REPRESENTATIONS["ESM3"]
+    return mean_pooled(directory, suffix, trim, [protein]).get(protein)
+
+
+def protein_families():
+    """Family of each protein, as the majority ProteinDomain of its interaction rows."""
+    table = pandas.read_csv(interaction_csv_path(os.path.join(PROJECT_ROOT, "data") + os.sep))
+    return table.groupby("LTPProtein")["ProteinDomain"].agg(
+        lambda values: values.value_counts().index[0]
+    )
+
+
+def standardise(matrix):
+    """Zero mean, unit spread per column, so no entry dominates a distance by its units."""
+    centred = matrix - matrix.mean(axis=0)
+    spread = centred.std(axis=0)
+    spread[spread < 1e-9] = 1.0
+    return centred / spread
 
 
 def eta_squared(values, labels):
@@ -300,7 +348,7 @@ def group_floor(labels):
 
 def nearest_neighbour_identity_rate(similarity, labels, permutations=999, seed=0):
     """How often an entity's nearest OTHER entity (by `similarity`, already built the
-    same way analysis/baselines/null_model.py's null model ranks by) shares its `labels` value;
+    same way analysis/baselines/knn_model.py's null model ranks by) shares its `labels` value;
     the rate a same-sized random draw would give by chance; and a label-permutation
     p-value.
 
@@ -368,7 +416,7 @@ def mantel_test(similarity, labels, permutations=999, seed=0):
 
     one-hot(labels), standardised per column exactly like any other descriptor
     matrix here, stands in for a continuous "pure identity" reference the way it does
-    in preprocessing/lipid_embedding_identity_check.py's own Mantel test (there is no
+    in analysis/feature_identity_check.py --features molformer's own Mantel test (there is no
     separate embedding to play mean-ESM3's role for an arbitrary label axis) --
     unchanged from that precedent.
 
@@ -413,7 +461,7 @@ def species_class_map(csv):
 
 def protein_family_map(csv):
     """{protein: family}, majority ProteinDomain of its interaction rows -- same
-    recipe preprocessing/pocket_descriptor_identity_check.py's protein_families uses
+    recipe analysis/feature_identity_check.py's protein_families uses
     (in practice a protein's ProteinDomain is constant across its own rows; the
     majority vote is just insurance against the rare exception silently biasing this
     script's own labels rather than raising).
@@ -427,7 +475,7 @@ def block_entities(entity_column, frame):
     """The distinct null-model entities a row-level `frame` (a train/held split) touches.
 
     entity_column == "pair_id": every row IS its own entity (`pair_id`, the original
-    csv index -- see analysis/baselines/null_model.py's working_set). Otherwise several rows
+    csv index -- see analysis/baselines/knn_model.py's working_set). Otherwise several rows
     share one entity (a species or a protein), so only the distinct values matter.
     """
     if entity_column == "pair_id":
@@ -554,7 +602,7 @@ def rank_descriptors(csv, data_dir, descriptor_names, zscore):
 def coldsplit_report(csv, entity_column, index, similarity, families, seeds,
                       share, ratio):
     """VALID and TEST pooled into one set before comparing against TRAIN --
-    analysis/baselines/null_model.py's own --split keeps them apart because it is scoring one
+    analysis/baselines/knn_model.py's own --split keeps them apart because it is scoring one
     particular network's checkpoint against one particular half, but the two halves
     are the same random 50/50 draw from the same excluded rows (see
     preprocessing/lipid_marginal_baseline.split), not two different populations, and
@@ -642,7 +690,7 @@ def parse_feature_tokens(features_arg):
 
     A token "<name>_neutral" means: subtract that descriptor's own per-protein mean
     and per-lipid_class mean (two-way de-meaning, the same residual analysis/
-    null_model.py's per_pair_auc already computes post-hoc for a score) so what is
+    knn_model.py's per_pair_auc already computes post-hoc for a score) so what is
     left is only what depends on BOTH the protein and the lipid, not "this protein"
     or "this lipid class" alone -- see resolve_pair_broadcast_features/
     neutralize_row_values.
@@ -747,7 +795,7 @@ def resolve_row_values(csv, data_dir, base, zscore):
 def neutralize_row_values(protein_col, lipid_class_col, values):
     """Two-way de-meaned residual: values - mean(values | protein) -
     mean(values | lipid_class) + mean(values | everything) -- the same formula
-    analysis/baselines/null_model.py's per_pair_auc uses on a SCORE, applied here to an input
+    analysis/baselines/knn_model.py's per_pair_auc uses on a SCORE, applied here to an input
     FEATURE instead, so what a network is given no longer carries "this protein" or
     "this lipid class" alone, only what depends on both together.
     """
@@ -1119,7 +1167,7 @@ def family_separation_report(family, values_by_name, families, proteins, permuta
 def run_family_separation(args):
     """Every protein-side descriptor the table holds, against one family vs the rest.
 
-    Reads data/protein_descriptor_table.json (preprocessing.compute_descriptors'
+    Reads data/protein_descriptors.csv (preprocessing.compute_descriptors'
     protein_descriptor_table) rather than raw_feature_matrix, so descriptors that were
     never wired into POCKET_DESCRIPTOR_NAMES are measured too -- the search does not
     proceed one suspect per session.
@@ -1159,7 +1207,7 @@ def run_family_separation(args):
 # analysis/probes/pair_descriptor_family_eta2.py. `descriptors_pair_clean`
 # (arg_files/descriptors/descriptors_pair_clean.md) was assembled from entries INFERRED
 # safe because their protein-side component alone is family-neutral-safe (eta^2
-# 0.28-0.48, preprocessing/pocket_descriptor_identity_check.py) and their lipid-side
+# 0.28-0.48, analysis/feature_identity_check.py) and their lipid-side
 # component is family-independent by construction. That inference was never checked
 # against the descriptor's own computed VALUE, which multiplies (or takes min/ratio of)
 # the two sides together -- a combination CAN reintroduce family structure the protein
@@ -1351,7 +1399,7 @@ def main():
             f"descriptor names, any mix of lipid-only ({','.join(LIPID_DESCRIPTOR_NAMES)}), "
             "protein-only (dataloader.graphs_builders.protein_graph_builder.POCKET_DESCRIPTOR_NAMES, "
             "e.g. pocket_extent,aromatic_share), and pair "
-            f"({','.join(PAIR_DESCRIPTOR_NAMES)}) -- exactly analysis/baselines/null_model.py's "
+            f"({','.join(PAIR_DESCRIPTOR_NAMES)}) -- exactly analysis/baselines/knn_model.py's "
             "own --features. Any token may instead be '<name>_coarse=<K>' -- quantile-"
             "bin that descriptor's raw values into K groups (pandas.qcut, data-driven "
             "edges) instead of using it raw, for ANY name here regardless of whether "
@@ -1359,7 +1407,7 @@ def main():
             "polar_share_coarse). E.g. depth_bulk_match_coarse=3. Any token may "
             "instead (or also, on a different token) be '<name>_neutral' -- subtract "
             "that descriptor's own per-protein mean and per-lipid_class mean "
-            "(analysis/baselines/null_model.py's per_pair_auc residual, applied to an input "
+            "(analysis/baselines/knn_model.py's per_pair_auc residual, applied to an input "
             "feature instead of a score) so what is left depends on neither the "
             "protein nor the lipid class alone, any --features name, forcing pair "
             "(row) granularity for the whole set. Or '<name>_zscore' -- standardise "
@@ -1372,11 +1420,11 @@ def main():
             "run the same eta^2/nn_rate analysis on that LEARNED protein "
             "representation instead of a hand-built descriptor -- one entity per "
             "protein (LTPProtein granularity), the mean-pooled vector "
-            "preprocessing/protein_representation_identity_check.py already uses, "
+            "analysis/feature_identity_check.py --features ESM3 already uses, "
             f"read straight from data/embedding_{{ESM3,ESMIF1,PROTEINMPNN}}/. Or '{MOLFORMER}' "
             "to run it on the learned per-species MolFormer SMILES embedding "
             "instead -- one entity per lipid species (FullIdentityOfLipid "
-            "granularity), preprocessing/lipid_embedding_identity_check.py's own "
+            "granularity), analysis/feature_identity_check.py --features molformer's own "
             "mean-pooled-over-tokens-then-candidates vector."
         ),
     )
@@ -1394,7 +1442,7 @@ def main():
     )
     parser.add_argument(
         "--zscore", action="store_true",
-        help="See analysis/baselines/null_model.py --zscore; forwarded unchanged to feature_similarity.",
+        help="See analysis/baselines/knn_model.py --zscore; forwarded unchanged to feature_similarity.",
     )
     parser.add_argument(
         "--top", type=int, default=20,
@@ -1437,7 +1485,7 @@ def main():
         "--family_separation", action="append", default=None, metavar="FAMILY",
         help="Which PROTEIN descriptor singles out FAMILY against all the others "
              "(Mann-Whitney outrank plus eta^2 with a permutation p), over every "
-             "descriptor in data/protein_descriptor_table.json. Repeatable; bare "
+             "descriptor in data/protein_descriptors.csv. Repeatable; bare "
              "--family_separation with no value is not valid, pass a family name "
              "(LBP_BPI_CETP and lipocalin are the usual pair).",
     )
@@ -1516,13 +1564,12 @@ def main():
         index = {entity: position for position, entity in enumerate(entities)}
         label = args.label or rep_key
     elif args.features.lower() == MOLFORMER:
-        # Deferred import: lipid_embedding_identity_check imports eta_squared_joint/
-        # group_floor/nearest_neighbour_identity_rate/species_class_map FROM this
-        # module, so importing it at module load time here would be circular --
-        # by the time main() actually runs, this module is already fully defined,
-        # so the cycle resolves fine deferred to call time.
+        # Deferred import: dataloader.chemistry_prior reaches back into this module's
+        # own helpers, so importing it at module load time would be circular.
         from dataloader.tensors_reading.lipid_embedding_tensors_reader import load_lipid_embedding_store
-        from lipid_embedding_identity_check import EMBEDDING_FILE, species_embeddings
+        from dataloader.chemistry_prior import (
+            MOLFORMER_EMBEDDING_FILE as EMBEDDING_FILE, species_embeddings,
+        )
 
         smiles_encoding = load_lipid_embedding_store(data_dir, EMBEDDING_FILE)
         if smiles_encoding is None:

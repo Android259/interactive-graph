@@ -246,7 +246,7 @@ def default_groups_for_label(label):
 
 def label_descriptor_features(label, families):
     """--descriptor_heads resolved off `label`'s own args file, as a sorted
-    comma-separated base-name list for null_model.py's --features (see
+    comma-separated base-name list for knn_model.py's --features (see
     dataloader.descriptors.resolve_similarity_feature_names) -- the chemistry null
     model then runs on exactly the descriptor set the network itself was trained to
     see, instead of a fixed guess (analysis/full_label_report.py,

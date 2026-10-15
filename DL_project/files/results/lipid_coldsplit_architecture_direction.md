@@ -293,7 +293,7 @@ conv_out_dim = hiddim if use_edge_mlp else gat_out
 для трёх уже прошедших липидных прогонов доступны** и AUC для них считается.
 
 **Дописано 2026-09-07** — см. §6.4. Причина, по которой это не было однострочным:
-`analysis/null_model.py` реконструирует **двухосевой** сплит из белкового семейства —
+`analysis/knn_model.py` реконструирует **двухосевой** сплит из белкового семейства —
 `lipid_classes_for_holdout(csv, family, share)` выводит отложенные классы ИЗ семьи, а
 `split_func(..., double=True)` (`preprocessing/lipid_marginal_baseline.py`) всегда
 убирает семью из train строкой
@@ -325,10 +325,10 @@ conv_out_dim = hiddim if use_edge_mlp else gat_out
 
 - **`lipid_only`** — для отложенной пары (P, L): как часто брали те обучающие липиды, что
   химически ближе всего к L, **кем угодно**. Белка не видит вовсе.
-  `dataloader/chemistry_prior.null_scores`.
+  `dataloader/chemistry_prior.knn_scores`.
 - **`within_protein`** — то же, но по обучающим строкам **этого самого белка**: брал ли P
   липиды, похожие на L. Сильнее первого и честнее как планка, потому что сеть тоже видит
-  обе стороны. `dataloader/chemistry_prior.null_scores_within_protein` (новая).
+  обе стороны. `dataloader/chemistry_prior.knn_scores_within_protein` (новая).
 
 Похожесть строится из `--features` и **не обязана быть химической**: литерал `tanimoto`
 (Morgan-фингерпринты по всей структуре) или любой список имён из `LIPID_DESCRIPTOR_NAMES`
@@ -1508,7 +1508,7 @@ SulfoHexCer).
 - Нуль-модель липидной оси (§6.4) —
   [analysis/baselines/lipid_coldsplit_null_model.py](../../analysis/baselines/lipid_coldsplit_null_model.py),
   реконструкция сплита — `preprocessing/lipid_marginal_baseline.lipid_split`,
-  второй соперник — `dataloader/chemistry_prior.null_scores_within_protein`.
+  второй соперник — `dataloader/chemistry_prior.knn_scores_within_protein`.
   Ничего не обучается, чекпойнты не читаются (пока не передан `--scores`).
 - η²-аудит 13 липидных дескрипторов (§7f) —
   [analysis/probes/lipid_descriptor_class_identity.py](../../analysis/probes/lipid_descriptor_class_identity.py),

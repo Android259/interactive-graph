@@ -140,7 +140,7 @@ groups_scp2 (n=5):
 ```
 ########## split = valid ##########
 
---- null model (null_model.py), features = tanimoto (tanimoto), epoch 120 ---
+--- null model (knn_model.py), features = tanimoto (tanimoto), epoch 120 ---
 === mean over seeds ===
               sim_to_train_pos  null_AUC_k15  net_AUC  proteins  null_AUC_prot_k15  net_AUC_prot  lipids  net_AUC_lipid
 fam                                                                                                                    
@@ -218,7 +218,7 @@ wrote : /tmp/tmp.m3nhFAKSUk
 ```
 ########## split = valid ##########
 
---- null model (null_model.py), features = lipid4 (chain,hbond,heavy,unsaturation), epoch 120 ---
+--- null model (knn_model.py), features = lipid4 (chain,hbond,heavy,unsaturation), epoch 120 ---
 === mean over seeds ===
               sim_to_train_pos  null_AUC_k15  net_AUC  proteins  null_AUC_prot_k15  net_AUC_prot  lipids  net_AUC_lipid
 fam                                                                                                                    

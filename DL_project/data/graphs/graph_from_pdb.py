@@ -4,7 +4,7 @@ import pandas as pd
 import os
 
 
-df=pd.read_csv("../../preprocessing/voronota_parameter_per_ltp.csv")
+df=pd.read_csv("../unpreprocessed_files/voronota_parameter_per_ltp.csv")
 
 burico=list(df["buriedness_core"])
 buriri=list(df["buriedness_rim"])

@@ -1,30 +1,11 @@
-"""Show which lipid classes the cold split will hold out, and what each costs.
+"""Report lipid classes selected for a cold split.
 
-Reporting only: the rule itself lives in `dataloader.splitting_on_blocks.lipid_coldsplit_blocks.lipid_classes_for_holdout`
-and the loader applies it on its own, so nothing here is passed to a run. Use it to see
-what --double_coldsplit is about to do, and to compare values of --coldsplit_share.
-
-The second axis of the cold split needs a class set per family, not one shared set: a
-family's positives sit in its own classes -- START's in phosphatidylcholines, GLTP's in
-sphingolipids -- so any set fixed in advance is arbitrary for whichever family is being
-held out. This scores every class by concentration,
-
-    score(class) = family positives in class / (everyone else's positives in class + 1)
-
-and takes classes by descending score until the family's covered positives reach
-`share` of its total. The numerator is what the test block gains, the denominator what
-training loses elsewhere, so the classes chosen are the ones the family owns.
-
-`share` is not cosmetic. Stopping early leaves the cheap classes only, and for a family
-whose cheap classes are thin on rows the test block ends up almost entirely familiar
-lipids -- the split looks two-axis while the per-lipid label prior still carries it. At
-share 0.3 the lipocalin lookup baseline stays at 0.618; 0.7 is the smallest value in
-{0.3 ... 0.8} at which no family sits further than one standard error from 0.5, which is
-why it is the default here. Verify with preprocessing/lipid_marginal_baseline.py after
-changing anything: that check, not this rule, is what says the split is honest.
-
-Families whose whole positive count is too small for a test block (ML, OSBP: 10 and 8)
-are reported and skipped, exactly as they already are under the one-axis split.
+Use lipid_classes_for_holdout() from dataloader.splitting_on_blocks.lipid_coldsplit_blocks.
+For each family, rank classes by:
+    family positives / (other-family positives + 1)
+Select classes until they cover the requested share of family positives.
+Report the held-out rows and the rows removed from other families.
+This script reports the split; it does not configure training runs.
 """
 
 import argparse
@@ -35,8 +16,7 @@ import pandas
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# See the note in preprocessing/lipid_marginal_baseline.py: the pool samplers are pure
-# pandas, torch is only there for the batch sampler, and analysis machines have neither.
+# Allow pandas-only reporting when torch is unavailable; see lipid_marginal_baseline.py.
 try:  # pragma: no cover - depends on the machine, not on the code path
     import torch  # noqa: F401
 except ModuleNotFoundError:

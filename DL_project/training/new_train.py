@@ -84,14 +84,8 @@ EARLY_STOPPING_PATIENCE = 60
 
 
 def build_model(conf, train_dataset, device):
-    """The classifier, normalised on train statistics."""
-    # Model construction stays after the split so frozen normalization cannot see
-    # validation/test proteins.
+    """Build the classifier on the selected device."""
     model = InteractionClassification(conf)
-    if conf.rnabang_frozen_node_adapter:
-        model.set_rnabang_normalization(
-            train_dataset.rnabang_normalization_stats()
-        )
     model = model.to(device)
     return model
 

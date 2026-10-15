@@ -5,7 +5,7 @@
 Снимок на 2026-09-12. Числа взяты из `metrics_summary.csv` (через новый скрипт
 `analysis/probes/lcs_geometric_edge_candidate_ranking.py`, read-only), из уже
 сгенерированных `graphics/<label>/<label>.md` (null-model секции, часть которых
-почищена сегодня фиксом `analysis/null_model.py`/`analysis/interaction_increment.py`
+почищена сегодня фиксом `analysis/knn_model.py`/`analysis/interaction_increment.py`
 для `--lipid_coldsplit`), и из `training/run_metrics.py` (точные определения
 `collapse_fraction`/`converged`). Ничего не обучалось, ни один чекпойнт не
 загружался и не пересчитывался; `generate_label_report.sh`/`full_label_report.py`
@@ -148,7 +148,7 @@ overfitting не трогают вообще и остаются на уровн
 
 ## 5. Ось (c): increment над химической нуль-моделью, epoch 120, in-sample
 
-Раздел "AUC vs chemistry null model" сегодня почищен фиксом `null_model.py`/
+Раздел "AUC vs chemistry null model" сегодня почищен фиксом `knn_model.py`/
 `interaction_increment.py`, но реально непустой РОВНО для 5 из ~22 сравнимых
 лейблов: `advprot_protfull` (esm3 и no-esm3), `advprot_protgeom8` (esm3 и no-esm3),
 `rankprot`. **Для `advprot` и `liphid32` САМИХ, а также для `rankprot_advprot`,

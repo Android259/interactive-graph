@@ -1,34 +1,17 @@
 #!/usr/bin/env python3
-"""Build a species x species similarity matrix from the cached MolFormer lipid
-embedding, for use as a third `--features` option in analysis/baselines/null_model.py
-(alongside `tanimoto` and named hand-built descriptors).
+"""Build a lipid-species similarity matrix from cached MoLFormer embeddings.
 
-Reuses preprocessing/lipid_embedding_identity_check.py's own embedding-loading and
-per-species mean-pooling (`species_embeddings`: mean over MolFormer's token dimension,
-then over a species' candidate isomer structures) so this is the SAME 768-dim
-per-species vector that session already measured to be ~75% lipid-class variance
-(files/results/descriptors_baseline_leak_confirmed.md) -- this script only turns that vector
-into a pairwise similarity matrix, it does not recompute or re-derive the embedding.
+Use dataloader.chemistry_prior.species_embeddings to pool token embeddings and
+candidate structures per species. Standardise the feature columns and compute
+similarity as 1 / (1 + Euclidean distance). Embeddings are not recomputed.
 
-Similarity transform: dataloader.chemistry_prior._standardised_similarity (standardise
-each of the 768 columns, then 1/(1+euclidean distance)) -- the same transform
-feature_similarity() already applies to every named hand-built descriptor set, so a
-molformer null model is directly comparable in kind (not just in AUC) to a lipid4 null
-model: same k-NN scoring code (dataloader.chemistry_prior.null_scores), same [0, 1]-ish
-range, different input vector. This is deliberately NOT the Tanimoto matrix's own
-format (uint8/255, per-STRUCTURE not per-species, needs a separate structure_index) --
-species_similarity()'s compact-structure format exists to save space for Morgan
-fingerprints computed per isomer candidate; MolFormer's embedding is already reduced to
-one vector per species by species_embeddings(), so there is nothing to compact.
+Read the interaction table and data/lipid_SMILES_embedding_deterministic.pkl
+(or its tensor store). Write:
+    data/molformer_species_similarity_matrix.npy
+    data/molformer_species_index.json
 
-Output (consumed by dataloader.chemistry_prior.molformer_species_similarity, which
-analysis/baselines/null_model.py's --features=molformer branch calls):
-    data/molformer_species_similarity_matrix.npy  -- float32 (n_species, n_species)
-    data/molformer_species_index.json             -- [species name, ...] giving the
-                                                       row/column order of the matrix
-
-Reads only from data/lipid_SMILES_embedding_deterministic.pkl (or its mmap .tensors.pt
-store) and the interaction CSV; writes only the two files above.
+The index lists species in matrix order. chemistry_prior and the k-NN baseline
+read these files.
 
     scripts/env.sh python3 preprocessing/build_molformer_similarity_matrix.py
 """
@@ -45,8 +28,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from dataloader.chemistry_prior import _standardised_similarity  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.tensors_reading.lipid_embedding_tensors_reader import load_lipid_embedding_store  # noqa: E402
-from preprocessing.lipid_embedding_identity_check import (  # noqa: E402
-    EMBEDDING_FILE, species_embeddings,
+from dataloader.chemistry_prior import (  # noqa: E402
+    MOLFORMER_EMBEDDING_FILE as EMBEDDING_FILE, species_embeddings,
 )
 
 SIMILARITY_PATH = "molformer_species_similarity_matrix.npy"

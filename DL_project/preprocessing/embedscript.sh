@@ -1,10 +1,6 @@
-# Legacy driver for the UniProt-to-PDB alignment step at the bottom of EmbedProtein.py
-# (section 3 of its header docstring): for every per-protein directory under the current
-# working directory, picks that protein's UniProt FASTA, its PDB-derived FASTA, and its
-# ESM2 embedding pickle, then calls EmbedProtein.py <uniprot.fasta> <pdb.fasta>
-# <embedding.pkl> to remap the embedding onto the PDB numbering.
-#
-# Usage: cd <directory containing one subfolder per protein>; bash ../embedscript.sh
+# Legacy driver for EmbedProtein.py's UniProt-to-PDB alignment step.
+# Read FASTA and embedding inputs from each per-protein subdirectory.
+# Run from the directory containing those subdirectories.
 for i in [0-9A-Z]*/
 do
 a=$(ls ${i}*.fasta | awk 'NR==1')

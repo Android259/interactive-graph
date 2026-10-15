@@ -2,47 +2,28 @@
 
 # Build the sequence-based protein-similarity matrices from one global alignment pass.
 #
-# Two metrics come out of the same pairwise alignment, which is why one script writes
-# both: aligning twice to score the same columns two ways would only invite the two
-# matrices to disagree about which columns those are.
+# identity counts identical residue pairs; blosum62 counts pairs with a positive
+# BLOSUM62 score. Both counts are divided by the longer sequence's length.
+# Each unordered pair is aligned once and copied to both matrix triangles.
 #
-#   identity   fraction of aligned columns holding the SAME residue
-#   blosum62   fraction of aligned columns holding a POSITIVE BLOSUM62 pair -- identical
-#              or a conservative substitution (I/L, K/R, D/E, ...)
+# Global alignment: Needleman & Wunsch (1970).
+# https://web.stanford.edu/class/sbio228/public/readings/Bioinformatics_I_Lecture6/Needleman_Wunsch_JMB_70_Global_alignment.pdf
+# Algorithm used here: Gotoh (1982).
+# https://jaligner.sourceforge.net/references/gotoh1982.pdf
+# BLOSUM62: Henikoff & Henikoff (1992).
+# https://web.stanford.edu/class/sbio228/public/readings/Bioinformatics_I_Lecture6/Henikoff_PNAS_92_Substitution_matrices.pdf
 #
-# Both are divided by the LONGER sequence's length, so each is in [0, 1], is symmetric,
-# and is 1.0 only for two identical sequences.
+# Alignment: global, BLOSUM62, affine gaps (open -11, extend -1), free end gaps.
 #
-# Why the longer one, measured on this panel -- 9 pairs from one protein family against 7
-# pairs from different folds, identity on the same alignments:
-#
-#   / longer sequence    related 0.200-0.777   unrelated 0.004-0.070   margin +0.130
-#   / shorter sequence   related 0.210-0.777   unrelated 0.007-0.205   margin +0.005
-#   / aligned columns    related 0.222-0.777   unrelated 0.091-0.600   margin -0.378
-#
-# The shorter sequence is the reading one would reach for first ("how much of the smaller
-# protein the larger reproduces") and it is the one that fails: a 127-residue FABP1 placed
-# anywhere inside a 456-residue BPI collects 20% identity on noise alone, which is the
-# whole margin against genuinely related pairs like FABP1/FABP5 at 0.244. Dividing by the
-# longer sequence charges that length difference once and drops the same pair to 0.057.
-# The aligned-column count is worse than either: it rewards one short well-matching window
-# between otherwise unrelated proteins, and ranks RBP4/SEC14L2 at 0.600.
-#
-# Alignment: global (Needleman-Wunsch), BLOSUM62, affine gaps, open -11 / extend -1 (the
-# BLAST protein defaults), end gaps free. Free end gaps because the panel mixes a
-# 127-residue FABP1 with a 456-residue BPI: charged for, the aligner spreads the short
-# sequence across the long one instead of hanging its tails off the end, and the
-# unrelated pairs rise to 0.323 -- past every distant homolog in the panel.
-#
-# Output (format and rationale: preprocessing/protein_similarity_common.py):
-#   data/protein_similarity/Protein_identity_matrix_uint8.pt   proteins x proteins
-#   data/protein_similarity/Protein_identity_protein_index.pt  table row -> matrix row
-#   data/protein_similarity/Protein_identity.manifest.json     names, parameters, sources
-#   data/protein_similarity/Protein_blosum62_*                 the same three
+# Output:
+#   data/cache/protein_similarity/Protein_identity_matrix_uint8.pt   proteins x proteins
+#   data/cache/protein_similarity/Protein_identity_protein_index.pt  table row -> matrix row
+#   data/cache/protein_similarity/Protein_identity.manifest.json     names, parameters, sources
+#   data/cache/protein_similarity/Protein_blosum62_*                 the same three
 #
 # Usage:
-#     python3 preprocessing/build_protein_sequence_similarity.py [--data-dir DIR]
-#         [--input CSV] [--metrics identity blosum62] [--gap-open -11] [--gap-extend -1]
+#     python3 preprocessing/similarity/build_protein_sequence_similarity.py [--data-dir DIR]
+#         [--input CSV] [--gap-open -11] [--gap-extend -1]
 #         [--proteins A,B,C --dry-run]
 
 import argparse
@@ -53,9 +34,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataloader.dataset_source import INTERACTION_CSV  # noqa: E402
-from preprocessing.protein_similarity_common import (  # noqa: E402
+from preprocessing.similarity.protein_similarity_common import (  # noqa: E402
     encode_uint8,
     load_structures,
     protein_order,
@@ -91,14 +72,7 @@ def build_aligner(gap_open, gap_extend):
 
 
 def pair_scores(aligner, matrix, structure_a, structure_b):
-    """(identity, blosum62 similarity) of two sequences, both in [0, 1].
-
-    `counts` reads the two numerators off the alignment itself: `identities` is the
-    columns whose residues match, `positives` the columns whose BLOSUM62 entry is above
-    zero, which is the classic "percent similar" of a pairwise alignment and the reason
-    this metric exists next to identity -- it counts a conservative substitution as
-    partial agreement instead of as a mismatch.
-    """
+    """Identical and positive-scoring residue counts divided by the longer length."""
     alignment = aligner.align(structure_a.sequence, structure_b.sequence)[0]
     counts = alignment.counts(matrix)
     longer = max(len(structure_a), len(structure_b))
@@ -106,13 +80,7 @@ def pair_scores(aligner, matrix, structure_a, structure_b):
 
 
 def similarity_matrices(aligner, matrix, structures, names, progress_every=50):
-    """The two symmetric matrices, one alignment per unordered pair.
-
-    Each pair is aligned once and written to both triangles. A global alignment is
-    symmetric in principle, but computing both directions would still be two calls to
-    hand the same number back, and a single call makes the symmetry a property of the
-    file rather than of the aligner.
-    """
+    """Build both symmetric matrices with one alignment per unordered pair."""
     size = len(names)
     identity = np.eye(size, dtype=np.float64)
     blosum = np.eye(size, dtype=np.float64)
@@ -132,14 +100,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--input", type=Path, default=None)
-    parser.add_argument(
-        "--metrics",
-        nargs="+",
-        choices=("identity", "blosum62"),
-        default=("identity", "blosum62"),
-        help="Which of the two matrices to write. Both are computed either way: they "
-        "come from one alignment, so writing one alone saves nothing.",
-    )
     parser.add_argument("--gap-open", type=float, default=DEFAULT_GAP_OPEN)
     parser.add_argument("--gap-extend", type=float, default=DEFAULT_GAP_EXTEND)
     parser.add_argument(
@@ -184,7 +144,7 @@ def main():
     if unknown_residues:
         print(
             f"non-standard residues read as 'X': {unknown_residues} "
-            "(they count as neither identical nor positive)"
+            "(X/X counts as identical; X pairs have no positive BLOSUM62 score)"
         )
     print(
         f"alignment: global BLOSUM62, gap open {args.gap_open:g} / extend "
@@ -210,7 +170,7 @@ def main():
     }
 
     provenance = structure_provenance(args.data_dir, names)
-    for metric in args.metrics:
+    for metric in computed:
         print()
         print(f"[{metric}]")
         report_matrix(computed[metric], names)

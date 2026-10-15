@@ -408,7 +408,7 @@ def main():
     if compact is None or len(np.unique(compact.row_ids)) != len(csv):
         raise SystemExit(
             "the compact Tanimoto artifacts are missing or cover a different table; "
-            "rebuild them with preprocessing/build_tanimoto_compact.py"
+            "rebuild them with preprocessing/similarity/build_tanimoto_compact.py"
         )
 
     started = time.time()

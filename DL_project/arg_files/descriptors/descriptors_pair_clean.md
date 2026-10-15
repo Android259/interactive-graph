@@ -1,7 +1,7 @@
 # 2026-09-12: removed --zscore, which was here from the first version of this file and
 # never trained -- every seed/family failed at config parsing with
 # `ValueError: Unknown parameter: --zscore` (training/read_configuration.py). --zscore
-# is a real flag, but only on analysis/*.py null-model scripts (null_model.py,
+# is a real flag, but only on analysis/*.py null-model scripts (knn_model.py,
 # full_label_report.py, pair_descriptor_family_eta2.py, etc.), which standardise the
 # multiplicative pair descriptors before multiplying via dataloader.chemistry_prior.
 # raw_feature_matrix/feature_similarity. Training's own pair-descriptor path

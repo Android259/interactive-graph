@@ -44,7 +44,7 @@ tef −0.031, −0.017, 8/22, ΔF1 −0.127; pair3 +0.005, 0.000, 17/17, −0.04
 
 Метод. Те же 8 блоков × 5 seed'ов, сплит и оценка из `training/pair_baseline_common.py` (`cold_split_pools` с `excluded_lipids` = виды блока, valid и test объединены; `balance_pool_negatives` 1:2), то есть инфраструктура прежних прогонов Kron-RLS (`scripts/run_cron.py`, [fig3_lipid_subclass_coldsplit_results.md](fig3_lipid_subclass_coldsplit_results.md)). Строки оценки не совпадают с негативами сети (она использует семплер `PLIDataset`), поэтому это сопоставимая по блокам, но не построчно та же выборка.
 
-- **kNN:** `dataloader/chemistry_prior.py` (`feature_similarity` + `null_scores`, `null_scores_within_protein`), k = 5, 15, 40, признаки стандартизованы внутри `feature_similarity`. Прогон одноразовым скриптом в scratchpad (в проект не добавлен). Гранулярность определяют сами признаки: keep5 (только белковые) → одна сущность на белок (35); all6 (есть парные) → одна сущность на пару белок–липид (9905).
+- **kNN:** `dataloader/chemistry_prior.py` (`feature_similarity` + `knn_scores`, `knn_scores_within_protein`), k = 5, 15, 40, признаки стандартизованы внутри `feature_similarity`. Прогон одноразовым скриптом в scratchpad (в проект не добавлен). Гранулярность определяют сами признаки: keep5 (только белковые) → одна сущность на белок (35); all6 (есть парные) → одна сущность на пару белок–липид (9905).
 - **Kron-RLS:** `scripts/run_cron.py --excluded_lipid_groups <8 блоков> --protein_features=<имена>`, ядро белка `pocket_subset` (RBF), ядро липида — Tanimoto по всей молекуле (по умолчанию), λ = 1/1, без сетки. Метки отчётов: `cron_test_metrics/cron_sub8_keep5_kronrls.txt`, `cron_test_metrics/cron_sub8_all6protein8_kronrls.txt`.
 - **Ограничение Kron-RLS:** парные признаки не поддерживаются (ядро должно разделяться на белок × липид), поэтому «all6» для Kron-RLS = только 8 белковых из 11 (keep5 + `basic_share_rim, pocket_packing_density, pocket_elongation`); три парных не входят.
 - **BA и F1 у этих двух методов считаются на пороге, подобранном на том же пуле** (valid=test объединены) — «лучший порог постфактум», не сопоставим с BA сети при 0.5. Основные метрики здесь — AUC и AUC внутри белка.
@@ -89,7 +89,7 @@ tef −0.031, −0.017, 8/22, ΔF1 −0.127; pair3 +0.005, 0.000, 17/17, −0.04
 
 ## 4. Не сделано / оговорки
 
-- kNN на `lipid_subclass` в проекте нет готовым скриптом (`analysis/null_model.py` принимает только семейства и наборы `lipid_coldsplit`); здесь он посчитан одноразовым кодом по тем же функциям `chemistry_prior`, без сохранения скрипта.
+- kNN на `lipid_subclass` в проекте нет готовым скриптом (`analysis/knn_model.py` принимает только семейства и наборы `lipid_coldsplit`); здесь он посчитан одноразовым кодом по тем же функциям `chemistry_prior`, без сохранения скрипта.
 - Для Kron-RLS и kNN строки оценки взяты из `pair_baseline_common` (1:2 негатива на позитив), а не из `PLIDataset`; значения AUC сети и baseline'ов — по одним и тем же блокам, но не по одним и тем же строкам.
 - Блок PS+PGP+DAG+TAG и 9-блочные таблицы сюда не входят.
 - Kron-RLS: λ = 1 без сетки; с подбором λ по valid результаты могут отличаться.

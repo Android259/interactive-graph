@@ -90,7 +90,6 @@ def test_read_configuration_parses_new_boolean_flags():
         "--protein_output_graph_norm",
         "--lipid_gat_graph_norm",
         "--lipid_output_graph_norm",
-        "--rnabang_with_esm3",
     ])
 
     assert config.lipid_isomers is True
@@ -105,7 +104,6 @@ def test_read_configuration_parses_new_boolean_flags():
     assert config.protein_output_graph_norm is True
     assert config.lipid_gat_graph_norm is True
     assert config.lipid_output_graph_norm is True
-    assert config.rnabang_with_esm3 is True
 
 
 def test_read_configuration_parses_protein_and_lipid_descriptors():
@@ -134,52 +132,12 @@ def test_geometric_ipa_chunk_size_rejects_negative_value():
         ModelConfig(geometric_ipa_chunk_size=-1).validate()
 
 
-def test_rnabang_frozen_node_adapter_rejects_double_attention():
-    with pytest.raises(ValueError, match="cannot be combined with double_attention"):
-        ModelConfig(
-            rnabang_frozen_node_adapter=True,
-            double_attention=True,
-        ).validate()
 
 
-def test_rnabang_residue_type_embedding_flag_and_dependency():
-    config = read_named_configuration([
-        "train.py",
-        "--rnabang_frozen_node_adapter",
-        "--rnabang_residue_type_embedding",
-    ])
-    assert config.rnabang_residue_type_embedding is True
-    with pytest.raises(ValueError, match="requires rnabang_frozen_node_adapter"):
-        ModelConfig(rnabang_residue_type_embedding=True).validate()
 
 
-@pytest.mark.parametrize(
-    "flag,field",
-    [
-        ("--rnabang_edge_current", "rnabang_edge_current"),
-        ("--rnabang_edge_topk_by_area", "rnabang_edge_topk_by_area"),
-        ("--rnabang_edge_deepsets", "rnabang_edge_deepsets"),
-        ("--rnabang_edge_pna", "rnabang_edge_pna"),
-        ("--rnabang_edge_quantiles", "rnabang_edge_quantiles"),
-        ("--rnabang_edge_set_transformer", "rnabang_edge_set_transformer"),
-    ],
-)
-def test_read_configuration_parses_rnabang_edge_mode(flag, field):
-    config = read_named_configuration([
-        "train.py",
-        "--rnabang_frozen_node_adapter",
-        flag,
-    ])
-    assert getattr(config, field) is True
 
 
-def test_rnabang_edge_modes_are_mutually_exclusive():
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        ModelConfig(
-            rnabang_frozen_node_adapter=True,
-            rnabang_edge_topk_by_area=True,
-            rnabang_edge_pna=True,
-        ).validate()
 
 
 @pytest.mark.parametrize(
@@ -187,9 +145,6 @@ def test_rnabang_edge_modes_are_mutually_exclusive():
     [
         ("--rnabang_replace_esm3", "rnabang_replace_esm3"),
         ("--rnabang_full_protein_encoder", "rnabang_full_protein_encoder"),
-        ("--rnabang_with_esm3", "rnabang_with_esm3"),
-        ("--rnabang_residual_with_esm3", "rnabang_residual_with_esm3"),
-        ("--rnabang_frozen_node_adapter", "rnabang_frozen_node_adapter"),
     ],
 )
 def test_read_configuration_parses_each_rnabang_mode(flag, field):
@@ -203,7 +158,7 @@ def test_rnabang_modes_are_mutually_exclusive():
     with pytest.raises(ValueError, match="mutually exclusive"):
         ModelConfig(
             rnabang_replace_esm3=True,
-            rnabang_with_esm3=True,
+            rnabang_full_protein_encoder=True,
         ).validate()
 
 
@@ -212,21 +167,21 @@ def test_rnabang_modes_require_plm_input():
         ModelConfig(rnabang_replace_esm3=True, plmon=False).validate()
 
 
-def test_esm3_v2_is_allowed_only_for_combined_rnabang_mode():
-    with pytest.raises(ValueError, match="only meaningful"):
-        ModelConfig(
-            rnabang_full_protein_encoder=True,
-            use_esm3_v2_embeddings=True,
-        ).validate()
+@pytest.mark.parametrize("flag", [
+    "rnabang_with_esm3", "rnabang_residual_with_esm3", "rnabang_frozen_node_adapter",
+    "rnabang_residue_type_embedding", "rnabang_edge_current", "rnabang_edge_topk_by_area",
+    "rnabang_edge_deepsets", "rnabang_edge_pna", "rnabang_edge_quantiles",
+    "rnabang_edge_set_transformer",
+])
+def test_removed_rnabang_modes_are_rejected(flag):
+    with pytest.raises(ValueError, match="Unknown parameter"):
+        read_named_configuration(["train.py", f"--{flag}"])
 
-    ModelConfig(
-        rnabang_with_esm3=True,
-        use_esm3_v2_embeddings=True,
-    ).validate()
-    ModelConfig(
-        rnabang_residual_with_esm3=True,
-        use_esm3_v2_embeddings=True,
-    ).validate()
+
+@pytest.mark.parametrize("mode", ["rnabang_replace_esm3", "rnabang_full_protein_encoder"])
+def test_esm3_v2_rejects_rnabang_only_modes(mode):
+    with pytest.raises(ValueError, match="not meaningful"):
+        ModelConfig(**{mode: True}, use_esm3_v2_embeddings=True).validate()
 
 
 def test_read_configuration_parses_protein_disable_pre_sa_mlp_with_gine_conv():

@@ -1,67 +1,16 @@
 #!/usr/bin/env python3
-"""Generate one ESM3 embedding from real structure + real confidence (v2 pipeline).
+"""Generate ESM3 embeddings from structure, sequence, SASA and confidence.
 
-WHY A SEPARATE SCRIPT (does not touch or replace preprocessing/EmbedProtein.py or
-its output in data/embedding_ESM3/):
+Read data/esm3_input/<stem>.pdb from build_consistent_esm3_pdb.py. Read Voronota
+SASA from coarse_graph_nodes.csv and the structure type from
+is_predicted_manifest.csv. Secondary-structure and function tracks are not supplied.
+Write data/embedding_ESM3_v2/<stem>_ESM3v2.pkl.
 
-The original pipeline (EmbedProtein.py) calls `ESMProtein(sequence=seq)` with ONLY a
-sequence string read from an independently-generated FASTA file. ESM3 is a multi-track
-model (sequence, structure/coordinates, SASA, secondary structure, function); with
-only the sequence track populated, it runs in exactly the information regime of a
-plain sequence-only model (no better than ESM2 for this input) despite the extra
-architecture. See files/history/geometric_edge.md for the full analysis.
+Use checkpoint esm3-sm-open-v1. Check CHECKPOINT_DIR before downloading it.
+HF_TOKEN or HF_API_TOKEN is used when set. Set the default HF_HOME before importing
+esm; an existing HF_HOME value is preserved.
 
-This script instead builds the ESMProtein from data/esm3_input/<stem>.pdb, the
-consistent PDB produced by preprocessing/build_consistent_esm3_pdb.py, which carries:
-  - sequence + coordinates, both derived from the SAME structure (no separate-FASTA
-    alignment risk -- see plm_alignment risk that motivated preprocessing/plm_alignment.py)
-  - a real per-residue B-factor/pLDDT in the B-factor column (pocketness.pdb's own
-    B-factor column is a binary pocket flag, not usable as confidence -- see the
-    header of build_consistent_esm3_pdb.py for how this was verified)
-  - is_predicted correctly set per protein via is_predicted_manifest.csv, so
-    experimental vs AlphaFold confidence semantics are not conflated
-
-SASA track: uses Voronota's `residue_sas_area` from coarse_graph_nodes.csv (already
-feeding the GNN branch) rather than recomputing it independently, so the PLM and GNN
-branches see the same solvent-accessibility signal. This is a deliberate choice, not
-the only valid one: Voronota's tangent-sphere SASA and freesasa's Shrake-Rupley SASA
-were checked (analysis/probes/check_sasa_correspondence.py) and agree almost perfectly
-(Pearson r=0.9997 across 7794 residues from 35 proteins, linear fit
-voronota=1.006*freesasa-0.73), so recomputing via freesasa/ProteinChain.sasa() instead
-would give essentially the same values after that rescaling -- prefer Voronota's here
-for GNN-branch consistency; switch to freesasa if matching ESM3's own SASA-tokenizer
-calibration turns out to matter more in practice.
-
-NOT ADDED (see files/history/geometric_edge.md for why): secondary_structure (would need an mkdssp
-run, not present in this repo's data) and function_annotations (would need real
-InterPro/GO annotations; the family label used elsewhere in this project, e.g.
-CRAL-TRIO, is not that vocabulary and would misuse the track).
-
-CHECKPOINT: the exact checkpoint this project has always used is "esm3-sm-open-v1"
-(confirmed in preprocessing/EmbedProtein.py, and in this project's own dossier
-dossier_GENCI_LTP-learning.md). The `esm` package resolves this name internally
-(esm.utils.constants.esm3.data_root, read from the installed package source) to the
-gated Hugging Face repo `EvolutionaryScale/esm3-sm-open-v1` and downloads it with
-`huggingface_hub.snapshot_download(repo_id=...)` -- with NO explicit cache_dir, so it
-uses whatever huggingface_hub's default cache is (governed by the HF_HOME env var).
-This script sets HF_HOME to a project-local folder (CHECKPOINT_DIR below) BEFORE
-importing esm, so both this script's own download check and ESM3's internal
-data_root() call resolve to the same place, and re-running this script never
-re-downloads an already-present checkpoint. Requires a Hugging Face token that has
-accepted the esm3-sm-open-v1 license, via the HF_TOKEN or HF_API_TOKEN env var (the
-`#HF_API_TOKEN=...` left as a comment in EmbedProtein.py was NOT reused here --
-treat any token found in source as potentially compromised/stale and rotate it
-rather than relying on it).
-
-USAGE: takes ONE input .pdb path as a CLI argument (a file produced by
-build_consistent_esm3_pdb.py, i.e. data/esm3_input/<stem>.pdb) and writes
-data/embedding_ESM3_v2/<stem>_ESM3v2.pkl. Run once per protein, or loop the shell
-over data/esm3_input/*.pdb to do all of them:
-
-    python preprocessing/embed_protein_esm3_v2.py data/esm3_input/ATCAY.pdb
-    for f in data/esm3_input/*.pdb; do
-        python preprocessing/embed_protein_esm3_v2.py "$f"
-    done
+    python3 preprocessing/embed_protein_esm3_v2.py data/esm3_input/ATCAY.pdb
 """
 from __future__ import annotations
 
@@ -76,10 +25,7 @@ OUT_DIR = DATA_ROOT / "embedding_ESM3_v2"
 CHECKPOINT_DIR = DATA_ROOT / "esm3_checkpoint"
 CHECKPOINT_REPO = "EvolutionaryScale/esm3-sm-open-v1"
 
-# Must be set before `esm` (and therefore huggingface_hub's default cache
-# resolution) is imported, so ESM3.from_pretrained's internal, cache_dir-less
-# snapshot_download() call agrees with the explicit check in
-# ensure_checkpoint_downloaded() below on where the checkpoint lives.
+# Set the default Hugging Face cache location before importing esm.
 os.environ.setdefault("HF_HOME", str(CHECKPOINT_DIR))
 
 import pickle as pkl  # noqa: E402

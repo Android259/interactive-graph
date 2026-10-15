@@ -1,25 +1,13 @@
 #!/usr/bin/env python3
-"""Generate frozen per-residue ESM-IF1 encoder representations.
+"""Generate per-residue ESM-IF1 encoder embeddings from backbone coordinates.
 
-ESM-IF1 (esm_if1_gvp4_t16_142M_UR50, ~142M parameters) is an inverse-folding model:
-it reads backbone coordinates and predicts which residue belongs at each position. The
-encoder output taken here is therefore a description of the local geometry -- "what
-kind of site is this" -- with no sequence-family component, which is the property the
-cold-family split rewards and ESM3 lacks.
+Use esm_if1_gvp4_t16_142M_UR50. Check the residue count against coarse_graph_nodes.csv.
+Write data/embedding_ESMIF1/<stem>_ESMIF1.pkl for --esmif1_replace_esm3.
 
-Needs its own environment: fair-esm requires biotite < 1.0 (``filter_backbone`` was
-removed in 1.0) and torch_scatter, and biotite < 1.0 pins numpy < 2, which in turn
-needs scipy < 1.14. A venv with --system-site-packages plus
-``fair-esm 'biotite<1.0' 'scipy<1.14' torch_scatter`` satisfies all of it; the system
-interpreter is left alone.
+The environment needs fair-esm, biotite < 1.0 and torch_scatter. The project setup
+also pins scipy < 1.14. See the environment configuration before installing.
 
     <venv>/bin/python preprocessing/embed_protein_esmif1.py
-
-Writes data/embedding_ESMIF1/<stem>_ESMIF1.pkl, consumed by --esmif1_replace_esm3.
-
-Alignment is 1:1 here, unlike ProteinMPNN: biotite's load_coords keeps only residues
-that exist, so no gap padding has to be undone. It is still checked against
-coarse_graph_nodes.csv, because a silent shift would be invisible downstream.
 """
 
 import argparse

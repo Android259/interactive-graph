@@ -63,7 +63,7 @@ not answer (it was analysis/lipid_coldsplit_isolation.py):
     whether the mean describes the block or a handful of twins.
 
 --tanimoto headgroup runs --blocks against head-group-only fingerprints
-(data/cache/Tanimoto_headgroup_compact_*, preprocessing/build_tanimoto_headgroup.py)
+(data/cache/tanimoto_headgroup/Tanimoto_headgroup_compact_*, preprocessing/similarity/build_tanimoto_headgroup.py)
 instead of whole structures (it was analysis/probes/lipid_coldsplit_isolation_
 headgroup.py). The whole-structure artifact is dominated by the two acyl chains, which
 data_section.tex already notes: the anionic set isolates at only 0.766 there precisely
@@ -223,12 +223,12 @@ def load_headgroup_compact(data_dir, source_csv, isomeric=False):
     """The head-group compact artifact, or None if missing/stale.
 
     Mirrors dataloader.tensors_reading.tanimoto_compact_tensors_reader.load_compact's staleness check (source table
-    size + mtime against the manifest) but reads preprocessing/build_tanimoto_
+    size + mtime against the manifest) but reads preprocessing/similarity/build_tanimoto_
     headgroup.py's own files and format, which load_compact does not know about.
     """
     import json
 
-    from preprocessing.build_tanimoto_headgroup import compact_paths
+    from preprocessing.similarity.build_tanimoto_headgroup import compact_paths
 
     matrix_path, index_path, row_path, manifest_path = compact_paths(data_dir, isomeric=isomeric)
     if not all(p.exists() for p in (matrix_path, index_path, row_path, manifest_path)):
@@ -585,7 +585,7 @@ def main():
     parser.add_argument(
         "--tanimoto", choices=("whole", "headgroup"), default="whole",
         help="which fingerprints --blocks measures against: whole structures "
-             "(default) or head groups only (preprocessing/build_tanimoto_headgroup.py).",
+             "(default) or head groups only (preprocessing/similarity/build_tanimoto_headgroup.py).",
     )
     selector = parser.add_mutually_exclusive_group()
     selector.add_argument("--species", help="comma-separated FullIdentityOfLipid values to hold out")
@@ -611,7 +611,7 @@ def main():
         if compact is None:
             raise SystemExit(
                 "head-group compact Tanimoto artifacts are missing or stale; build them "
-                "with preprocessing/build_tanimoto_headgroup.py"
+                "with preprocessing/similarity/build_tanimoto_headgroup.py"
             )
         print(
             f"head-group compact Tanimoto: {compact.structures} distinct head groups "
@@ -631,7 +631,7 @@ def main():
         if compact is None:
             raise SystemExit(
                 "compact Tanimoto artifacts are missing or stale for this table; "
-                "rebuild them with preprocessing/build_tanimoto_compact.py"
+                "rebuild them with preprocessing/similarity/build_tanimoto_compact.py"
             )
     if int(compact.row_ids.max()) + 1 != len(csv) or len(
         np.unique(compact.row_ids)

@@ -1,28 +1,12 @@
 #!/usr/bin/env python3
-"""Classify this project's lipid species into Titeca et al. 2023's own LTP-lipid
-subclass scheme (Cer, PC, PE, PIPs, ...), Figure 3a of
+"""Map lipid species to the article's subclass scheme.
 
-    Titeca et al., "A system-wide analysis of lipid transfer proteins delineates
-    lipid mobility in human cells", bioRxiv 2023, doi:10.1101/2023.12.21.572821
+Use data/fig3a_subclass_correspondence.csv to map project classes to subclasses
+from Titeca et al., Figure 3a, doi:10.1101/2023.12.21.572821.
+See files/reference/data_source.md for the mapping rationale.
 
--- the paper this project's own interaction table (data/LTP-lipid_interaction.csv)
-comes from (files/reference/data_source.md). The project-class -> article-subclass
-mapping is read from data/fig3a_subclass_correspondence.csv ("project_classes", a
-";"-joined list of this project's class names per article subclass; empty for the two
-subclasses -- PIPs, Sterol -- this project's data has no species in), not hand-copied
-here, so the two cannot drift apart. files/reference/data_source.md documents the
-reasoning for each row (why PC-O/PE-O fold into PC/PE, the PG/BMP merge, ...), not
-repeated here.
-
-Reads csv_classes(table) (training.pair_baseline_common, the same head-group class
-every --lipid_coldsplit/--excluded_lipids path already uses) per species, not per
-row -- ambiguous semicolon-joined FullIdentityOfLipid entries (multiple candidate
-head groups for one recorded species) are already collapsed to one canonical class
-by that function, so this script does not re-decide ambiguity itself.
-
-Writes data/lipid_article_classification.json: {FullIdentityOfLipid: article
-subclass}, one entry per distinct species in the table (positive and negative rows
-alike -- classification is a property of the lipid, not of the label).
+Read species classes with csv_classes(). Write data/lipid_article_classification.json
+as {FullIdentityOfLipid: article subclass} for the interaction table's species.
 
     python3 preprocessing/classify_lipids_by_article.py
 """
@@ -40,15 +24,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from training.pair_baseline_common import csv_classes  # noqa: E402
 
-CORRESPONDENCE_CSV = "fig3a_subclass_correspondence.csv"
+CORRESPONDENCE_CSV = "unpreprocessed_files/fig3a_subclass_correspondence.csv"
 
 
 def load_project_class_to_article_subclass(data_dir: str) -> dict[str, str]:
-    """{this project's class name: article subclass}, from the correspondence CSV.
-
-    Raises on a project class claimed by two subclasses -- the CSV is meant to
-    partition classes, not share them.
-    """
+    """Read the correspondence CSV; reject project classes assigned to multiple subclasses."""
     path = os.path.join(data_dir, CORRESPONDENCE_CSV)
     mapping: dict[str, str] = {}
     with open(path, newline="", encoding="utf-8") as handle:

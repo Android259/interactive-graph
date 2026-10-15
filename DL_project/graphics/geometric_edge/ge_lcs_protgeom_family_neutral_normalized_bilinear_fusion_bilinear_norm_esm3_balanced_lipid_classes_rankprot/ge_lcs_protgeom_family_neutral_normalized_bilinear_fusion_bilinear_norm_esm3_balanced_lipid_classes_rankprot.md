@@ -114,7 +114,7 @@ groups_sphingolipids (n=5):
 ```
 ########## split = valid ##########
 
---- null model (null_model.py), features = lipid4 (chain,hbond,heavy,unsaturation), epoch 120 ---
+--- null model (knn_model.py), features = lipid4 (chain,hbond,heavy,unsaturation), epoch 120 ---
 === mean over seeds ===
                  sim_to_train_pos  null_AUC_k15  net_AUC  proteins  null_AUC_prot_k15  net_AUC_prot  lipids  null_AUC_lipid_k15  net_AUC_lipid  null_AUC_pair_k15  net_AUC_pair
 fam                                                                                                                                                                            

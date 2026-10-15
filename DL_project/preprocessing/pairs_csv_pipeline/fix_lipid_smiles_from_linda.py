@@ -31,12 +31,13 @@ with a stray doubled slash ("/C=C//C=C/") where valid SMILES has a single slash
 bond of the diene) and is a pure syntax bug -- confirmed to occur nowhere else in the file --
 so it is normalized (collapse "//" -> "/") globally before any matching happens.
 """
+import argparse
 from pathlib import Path
 
 import pandas as pd
 
-DATA_DIR = Path(__file__).resolve().parent
-LINDA_CSV_PATH = DATA_DIR / "lipid_data_iso_correct_FROM_LINDA.csv"
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+LINDA_CSV_PATH = DATA_DIR / "unpreprocessed_files" / "lipid_data_iso_correct_FROM_LINDA.csv"
 CSV_PATH = DATA_DIR / "Processed_Negative_Interaction_Corrected_Domains.csv"
 OUT_PATH = DATA_DIR / "Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed.csv"
 
@@ -148,12 +149,29 @@ def apply_corrections(df, corrections):
     return n_rows_touched, n_replacements, unmatched
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=(
+            "Apply Linda's OLD -> NEW lipid SMILES corrections to an interaction "
+            "table. Without arguments it runs on the hardcoded paths of the older "
+            "full-table chain."
+        )
+    )
+    parser.add_argument("--input", type=Path, default=CSV_PATH)
+    parser.add_argument("--output", type=Path, default=OUT_PATH)
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+    if args.input.resolve() == args.output.resolve():
+        raise ValueError("Input and output paths must be different")
+
     corrections, changed = load_corrections()
 
-    if not CSV_PATH.exists():
-        raise FileNotFoundError(CSV_PATH)
-    df = pd.read_csv(CSV_PATH)
+    if not args.input.exists():
+        raise FileNotFoundError(args.input)
+    df = pd.read_csv(args.input)
 
     required_cols = {"Lipid", "ChainFragments", "Interaction", *SMILES_COLUMNS}
     missing = required_cols - set(df.columns)
@@ -174,8 +192,9 @@ def main():
         for lipid, chain_suffix, old, new in unmatched:
             print(f"    {lipid} / {chain_suffix}: {old!r} -> {new!r}")
 
-    df.to_csv(OUT_PATH, index=False)
-    print(f"Wrote {OUT_PATH}")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(args.output, index=False)
+    print(f"Wrote {args.output}")
 
 
 if __name__ == "__main__":

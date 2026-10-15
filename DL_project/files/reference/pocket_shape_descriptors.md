@@ -230,7 +230,7 @@ FA (48), SM (31), HexCer (26).
 Дескриптор постоянен для белка, а значит достаточно широкий набор чисел просто
 опознаёт белок — и на холодном сплите это ровно тот короткий путь, который сплит
 прячет. Проверка:
-[`preprocessing/pocket_descriptor_identity_check.py`](../../preprocessing/pocket_descriptor_identity_check.py),
+[`analysis/feature_identity_check.py`](../../analysis/feature_identity_check.py),
 три измерения на 35 белках и 9 семействах, старый набор и новый рядом.
 
 **Мантель против среднего ESM3-эмбеддинга** (эмбеддинг здесь — идентичность в чистом
@@ -298,7 +298,7 @@ FA (48), SM (31), HexCer (26).
 и `depth_q50/q90` (в проде только `buriedness_q50`/`depth_q10`), `hydropathy_mean`,
 `aromatic_share_core`/`aromatic_share_rim`.
 
-Скрипт: [`preprocessing/pocket_descriptor_candidate_identity_check.py`](../../preprocessing/pocket_descriptor_candidate_identity_check.py)
+Скрипт: [`analysis/probes/pocket_descriptor_candidate_identity_check.py`](../../analysis/probes/pocket_descriptor_candidate_identity_check.py)
 — тот же метод и тот же протеиновый/семейный набор (35 белков, 9 семейств, пол
 0.235), что и в разделе 5, только на этих 18 записях вместо продакшенных 13.
 

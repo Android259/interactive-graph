@@ -307,13 +307,13 @@ def main():
     if compact is None:
         raise SystemExit(
             "compact Tanimoto artifacts are missing; build them with "
-            "preprocessing/build_tanimoto_compact.py"
+            "preprocessing/similarity/build_tanimoto_compact.py"
         )
     if len(np.unique(compact.row_ids)) != len(csv):
         raise SystemExit(
             "the compact Tanimoto artifacts cover "
             f"{len(np.unique(compact.row_ids))} rows against {len(csv)} in the table; "
-            "rebuild them with preprocessing/build_tanimoto_compact.py"
+            "rebuild them with preprocessing/similarity/build_tanimoto_compact.py"
         )
 
     classes = lipid_class_series(csv).str.lower()

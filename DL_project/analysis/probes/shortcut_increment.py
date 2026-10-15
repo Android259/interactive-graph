@@ -62,11 +62,11 @@ sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
-from analysis.baselines.null_model import (  # noqa: E402
+from analysis.baselines.knn_model import (  # noqa: E402
     DEFAULT_FAMILIES,
     WORKING,
     auc,
-    null_scores,
+    knn_scores,
     per_protein_auc,
     species_similarity,
     working_set,
@@ -122,7 +122,7 @@ def shortcut_columns(names, train, held, similarity, index, neighbours,
                 pandas.Series(classes.loc[held["pair_id"]].to_numpy(), index=held.index),
             )
         elif name == "chem":
-            built[name] = null_scores(
+            built[name] = knn_scores(
                 train, held["FullIdentityOfLipid"], similarity, index, neighbours
             )
         elif name == "chain":

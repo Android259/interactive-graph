@@ -204,7 +204,7 @@ class LipidGraphBuilder:
         encoding = self.smiles_encoding.get(key)
         if encoding is None:
             # A cross-file mismatch, not a sample to skip: the embedding table was
-            # built from these same columns (preprocessing/embed_isomeric_smiles.py
+            # built from these same columns (preprocessing/embed_smiles_isomeric_and_nonisomeric.py
             # feeds preprocessing/embed_isomeric_smiles_molformer.py), so a missing
             # key means the two are out of sync. Report it instead of substituting
             # another fragment.

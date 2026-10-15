@@ -140,7 +140,7 @@ groups_scp2 (n=5):
 ```
 ########## split = valid ##########
 
---- null model (null_model.py), features = tanimoto (tanimoto), epoch 120 ---
+--- null model (knn_model.py), features = tanimoto (tanimoto), epoch 120 ---
 === valid block, epoch 120 ===
 
 === mean over seeds ===
@@ -215,7 +215,7 @@ wrote : /tmp/tmp.JgQ3QLFCPD
 ```
 ########## split = valid ##########
 
---- null model (null_model.py), features = lipid4 (chain,hbond,heavy,unsaturation), epoch 120 ---
+--- null model (knn_model.py), features = lipid4 (chain,hbond,heavy,unsaturation), epoch 120 ---
 === valid block, epoch 120 ===
 
 === mean over seeds ===

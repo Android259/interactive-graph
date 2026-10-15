@@ -11,7 +11,7 @@ version silently produces different numbers for the same input.
 | engine | `preprocessing/voronota-js` (committed, 14 MB, `--version` prints `Voronota-JS version 1.29`) |
 | release | **v1.29.4412** (upstream tag, 2025-06-15) |
 | wrapper script | `preprocessing/voronota-js-receptor-data-graph` (shipped with the release, unmodified) |
-| per-protein parameters | `preprocessing/voronota_parameter_per_ltp.csv` |
+| per-protein parameters | `data/unpreprocessed_files/voronota_parameter_per_ltp.csv` |
 | driver | `data/graphs/graph_from_pdb.py` (positional pairing of structures to parameter rows -- verify before reusing) |
 | outputs | `data/graphs/<stem>/{coarse_graph_nodes,coarse_graph_links,graph_nodes,graph_links}.csv`, `pocketness.pdb`, `buriedness.pdb`, `coarse_mean_buriedness.pdb` |
 

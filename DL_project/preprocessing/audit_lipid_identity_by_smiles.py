@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
-"""Check that every lipid's recorded head-group name agrees with its SMILES structure.
+"""Compare recorded lipid head-group names with their SMILES structures.
 
-For each row of the interaction table, the expected head-group class is read from
-FullIdentityOfLipid (via NAME_TO_CLASS / FATTY_ACYL_NAMES) and compared against what
-RDKit SMARTS rules (see preprocessing/lipid_identity_smiles_rules.md) actually see in
-SmileGlobal/SmileFragment. Used to find rows whose name and structure disagree, before
-such rows feed preprocessing/build_complete_interaction_dataset.py or the Tanimoto
-builders.
+Read expected classes from FullIdentityOfLipid. Use RDKit SMARTS rules to classify
+SmileGlobal/SmileFragment. See preprocessing/lipid_identity_smiles_rules.md.
+Write a full audit and a separate report of mismatches.
 
-Writes two reports: a full per-row audit, and a mismatches-only subset.
-
-Usage:
-    python3 preprocessing/audit_lipid_identity_by_smiles.py
-    python3 preprocessing/audit_lipid_identity_by_smiles.py --input data/Processed_dataset.csv \\
-        --output data/Processed_dataset_smiles_identity_audit.csv \\
-        --mismatch-output data/Processed_dataset_smiles_identity_mismatches.csv
+    python3 preprocessing/audit_lipid_identity_by_smiles.py --input INPUT.csv \
+        --output AUDIT.csv --mismatch-output MISMATCHES.csv
 """
 
 import argparse

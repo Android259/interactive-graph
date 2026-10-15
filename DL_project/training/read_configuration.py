@@ -506,16 +506,6 @@ class ModelConfig:
     use_esm3_v2_embeddings: bool = False
     rnabang_replace_esm3: bool = False
     rnabang_full_protein_encoder: bool = False
-    rnabang_with_esm3: bool = False
-    rnabang_residual_with_esm3: bool = False
-    rnabang_frozen_node_adapter: bool = False
-    rnabang_residue_type_embedding: bool = False
-    rnabang_edge_current: bool = False
-    rnabang_edge_topk_by_area: bool = False
-    rnabang_edge_deepsets: bool = False
-    rnabang_edge_pna: bool = False
-    rnabang_edge_quantiles: bool = False
-    rnabang_edge_set_transformer: bool = False
     rnabang_embedding_dim: int = 128
     act_fn: str = "leakyrelu"
     HEADS: int = 8
@@ -909,7 +899,6 @@ class ModelConfig:
                 "adversarial_grl", "bilinear_fusion",
                 "double_attention", "attention_pooling", "swe_pooling",
                 "dann_family", "chem_adversary", "lipid_path_handicap",
-                "rnabang_frozen_node_adapter",
             ):
                 if getattr(self, name, False):
                     raise ValueError(
@@ -1001,9 +990,6 @@ class ModelConfig:
         rnabang_modes = (
             self.rnabang_replace_esm3,
             self.rnabang_full_protein_encoder,
-            self.rnabang_with_esm3,
-            self.rnabang_residual_with_esm3,
-            self.rnabang_frozen_node_adapter,
         )
         frozen_modes = [
             flag for flag, _, _ in FROZEN_PROTEIN_EMBEDDINGS
@@ -1014,24 +1000,17 @@ class ModelConfig:
                 "these frozen protein embeddings each replace ESM3 and are mutually "
                 f"exclusive: {', '.join(frozen_modes)}"
             )
-        # ESM3 replacements work with concatenating RNA-BAnG modes, e.g.
-        # cat(ProteinMPNN, RNA-BAnG) gives two structure-conditioned inputs.
-        # Whole-vector modes (replace_esm3, full_protein_encoder, frozen_node_adapter)
-        # allow only one source; the frozen adapter also checks RNA-BAnG width.
         exclusive_rnabang = [
             name for name in (
                 "rnabang_replace_esm3",
                 "rnabang_full_protein_encoder",
-                "rnabang_frozen_node_adapter",
             )
             if getattr(self, name, False)
         ]
         if frozen_modes and exclusive_rnabang:
             raise ValueError(
                 f"{frozen_modes[0]} and {exclusive_rnabang[0]} both want to be the "
-                "whole protein vector; combine the replacement with "
-                "rnabang_with_esm3 or rnabang_residual_with_esm3 instead, which "
-                "concatenate"
+                "whole protein vector and cannot be combined"
             )
         if frozen_modes and not self.plmon:
             raise ValueError(f"{frozen_modes[0]} requires plmon")
@@ -1040,9 +1019,7 @@ class ModelConfig:
                 raise ValueError(f"{dim_attr} must be greater than zero")
         if sum(rnabang_modes) > 1:
             raise ValueError(
-                "rnabang_replace_esm3, rnabang_full_protein_encoder and "
-                "rnabang_with_esm3, rnabang_residual_with_esm3 and "
-                "rnabang_frozen_node_adapter are mutually exclusive"
+                "rnabang_replace_esm3 and rnabang_full_protein_encoder are mutually exclusive"
             )
         if any(rnabang_modes) and not self.plmon:
             raise ValueError("RNA-BAnG protein modes require plmon")
@@ -1051,13 +1028,10 @@ class ModelConfig:
             and (
                 self.rnabang_replace_esm3
                 or self.rnabang_full_protein_encoder
-                or self.rnabang_frozen_node_adapter
             )
         ):
             raise ValueError(
-                "use_esm3_v2_embeddings is only meaningful with "
-                "rnabang_with_esm3 or rnabang_residual_with_esm3, not "
-                "RNA-BAnG-only modes"
+                "use_esm3_v2_embeddings is not meaningful with RNA-BAnG-only modes"
             )
         self.mlp_widths = {site: int(width) for site, width in self.mlp_widths.items()}
         if any(width <= 0 for width in self.mlp_widths.values()):
@@ -1174,43 +1148,10 @@ class ModelConfig:
             )
         if self.protein_edge_rbf_count <= 0:
             raise ValueError("protein_edge_rbf_count must be positive")
-        if self.rnabang_frozen_node_adapter and self.double_attention:
-            raise ValueError(
-                "rnabang_frozen_node_adapter cannot be combined with double_attention"
-            )
         if self.cross_attention_chain_bias and not self.lipid_graph_isomers:
             raise ValueError(
                 "cross_attention_chain_bias needs per-atom chain_rank, which only "
                 "exists under lipid_graph_isomers"
-            )
-        edge_node_modes = (
-            self.rnabang_edge_current,
-            self.rnabang_edge_topk_by_area,
-            self.rnabang_edge_deepsets,
-            self.rnabang_edge_pna,
-            self.rnabang_edge_quantiles,
-            self.rnabang_edge_set_transformer,
-        )
-        if sum(edge_node_modes) > 1:
-            raise ValueError("RNA-BAnG edge-to-node modes are mutually exclusive")
-        if any(edge_node_modes) and not self.rnabang_frozen_node_adapter:
-            raise ValueError(
-                "RNA-BAnG edge-to-node modes require rnabang_frozen_node_adapter"
-            )
-        if (
-            self.rnabang_residue_type_embedding
-            and not self.rnabang_frozen_node_adapter
-        ):
-            raise ValueError(
-                "rnabang_residue_type_embedding requires "
-                "rnabang_frozen_node_adapter"
-            )
-        if self.rnabang_residual_with_esm3 and (
-            self.transformer_conv or self.gine_conv
-        ):
-            raise ValueError(
-                "rnabang_residual_with_esm3 replaces the protein graph convolution "
-                "and cannot be combined with transformer_conv or gine_conv"
             )
         self.pool_type = str(self.pool_type).lower()
         if self.pool_type not in POOL_TYPES:
@@ -1223,11 +1164,6 @@ class ModelConfig:
             raise ValueError("protein_gine_residual requires gine_conv")
         if self.protein_gat_residual and self.gine_conv:
             raise ValueError("protein_gat_residual requires gine_conv to be disabled")
-        if self.protein_gat_residual and self.rnabang_residual_with_esm3:
-            raise ValueError(
-                "protein_gat_residual is unavailable with "
-                "rnabang_residual_with_esm3 because that mode does not use GATv2"
-            )
         if self.structured_sparsity:
             self.sparsity_mode = str(self.sparsity_mode).lower()
             if self.sparsity_mode not in ("l0", "l1"):
@@ -1259,8 +1195,6 @@ class ModelConfig:
             and self.protein_disable_pre_sa_mlp
             and not self.gine_conv
             and not self.rnabang_full_protein_encoder
-            and not self.rnabang_residual_with_esm3
-            and not self.rnabang_frozen_node_adapter
         ):
             raise ValueError(
                 "protein_disable_pre_sa_mlp requires gine_conv when "
@@ -1519,6 +1453,10 @@ class ModelConfig:
                 "attention_by_pockets is on but restricts no site; check "
                 "pocket_attention_sites and cross_attention"
             )
+        from dataloader.descriptors import UNKNOWN_DESCRIPTOR_NAMES
+
+        for name in UNKNOWN_DESCRIPTOR_NAMES:
+            print(f"WARNING: unknown descriptor name {name!r} requested, skipped")
 
     def effective_pu_rho(self, positive_count, unlabeled_count):
         """Return manual or train-derived PU rho."""
@@ -1717,7 +1655,7 @@ BOOL_FLAG_NAMES = (
     "protein_only",  # protein-side version of lipid_only; same exclusions
 
     # --- 2. Protein graph encoder (conv architecture + edge features) ---
-    "transformer_conv",  # PyG TransformerConv instead of GATv2Conv for the protein graph; excl. other protein conv modes, rnabang_residual_with_esm3
+    "transformer_conv",  # PyG TransformerConv instead of GATv2Conv for the protein graph; excl. other protein conv modes
     "gine_conv",  # GINEConv (with optional residual) instead of GATv2Conv; also the lipid graph's default conv under lipid_graph_isomers; excl. other protein conv modes
     # Literal Ingraham (attention) / Dauparas (MLP message-passing) conv layers over
     # the 25-dim structured edge features (architecture/protein_edge_geometry.py),
@@ -1730,7 +1668,7 @@ BOOL_FLAG_NAMES = (
     "protein_edge_mlp",  # Dauparas-style edge-MLP conv over the same structured edge features; excl. other protein conv modes, bidirectional_edges
     "geometric_transformer",  # RoPE/IPA transformer block over SE(3) residue frames instead of the GAT conv; excl. transformer_conv/gine_conv/protein_edge_attention/_mlp, RNA-BAnG embeddings
     "single_gat_layer",  # one GATv2 layer for the protein graph instead of two; default on
-    "protein_gat_residual",  # residual connection around the single GAT conv output; requires gine_conv to be off; excl. rnabang_residual_with_esm3
+    "protein_gat_residual",  # residual connection around the single GAT conv output; requires gine_conv to be off
     "protein_gine_residual",  # gated residual around the GINEConv message; requires gine_conv
     "bidirectional_edges",  # mirrors each protein edge onto its reverse direction for the plain GATv2/TransformerConv/GINEConv path; excl. protein_edge_attention/_mlp (already natively bidirectional)
     # Replace the 4-dim relative-orientation quaternion with 1 scalar (cosine
@@ -1814,52 +1752,15 @@ BOOL_FLAG_NAMES = (
     # AttentionPool uses the real per-node pLDDT/B-factor-derived confidence in
     # data/esm3_input/<stem>_node_confidence.csv instead of the binary pocket flag
     # from pocketness.pdb, which marks Voronota pocket membership, not confidence.
-    # requires rnabang_with_esm3/rnabang_residual_with_esm3.
     "use_esm3_v2_embeddings",
     # RNA-BAnG protein representations are generated offline by
     # preprocessing/embed_protein_rnabang.py and have one 128-dimensional row per
-    # graph residue. The five ways of consuming them below are mutually exclusive.
+    # graph residue. The two ways of consuming them below are mutually exclusive.
     # Feed RNA-BAnG rows instead of ESM3 into the existing protein GNN.
     "rnabang_replace_esm3",
     # Treat RNA-BAnG as the complete first protein encoder (projection, optional
     # self-attention, post-SA MLP), so no graph convolution runs on it .
     "rnabang_full_protein_encoder",
-    # Concatenate the ESM3 and RNA-BAnG rows before the existing protein GNN.
-    "rnabang_with_esm3",
-    # Replace GATv2 with an edge-aware residual path over ESM3/node(SASA+volume)/
-    # buriedness and add the frozen RNA-BAnG geometric-transformer output through a
-    # zero-initialized gate.
-    # excl. transformer_conv/gine_conv/protein_gat_residual.
-    "rnabang_residual_with_esm3",
-    # Drop every graph and attention layer and encode each residue independently with
-    # an MLP adapter over frozen RNA-BAnG + residue type + SASA/volume/buriedness +
-    # the edge-to-node summary picked by the rnabang_edge_* flags.
-    # excl. double_attention, deepclip.
-    "rnabang_frozen_node_adapter",
-    # In the frozen-adapter path, encode residue type with a learned 20x8 embedding
-    # instead of passing the raw integer residue index as one feature.
-    # requires rnabang_frozen_node_adapter.
-    "rnabang_residue_type_embedding",
-    # Edge-to-node summaries for the frozen adapter, mutually exclusive; this default
-    # keeps the two aggregate columns log1p(sum of incident contact areas) and
-    # boundary/area exposure ratio.
-    # requires rnabang_frozen_node_adapter.
-    "rnabang_edge_current",
-    # Keep the top-21 incident edges ranked by contact area as (area, boundary) pairs
-    # plus normalized degree (43 features), zeroing the ranks past the true degree.
-    "rnabang_edge_topk_by_area",
-    # Encode the padded incident-edge set with a learned permutation-invariant DeepSets
-    # encoder instead of using precomputed statistics.
-    "rnabang_edge_deepsets",
-    # Use PNA-style statistics of the incident edges: sum/mean/std/min/max of area and
-    # boundary plus degree, exposed fraction and boundary/area ratio (13 features).
-    "rnabang_edge_pna",
-    # Use the 0/10/25/50/75/90/100 quantiles of incident-edge area and boundary plus
-    # their log totals, degree and boundary/area ratio (18 features).
-    "rnabang_edge_quantiles",
-    # Encode the padded incident-edge set with a learned set transformer (one
-    # self-attention block plus PMA-style pooling).
-    "rnabang_edge_set_transformer",
     # Append three more Voronota per-residue columns to the protein node vector, which
     # otherwise carries only residue_type, residue_sas_area and residue_volume:
     # residue_mean_ev28, residue_mean_ev56 -- exposure/burial at two probe radii,
@@ -1915,7 +1816,7 @@ BOOL_FLAG_NAMES = (
     # ForcedInteraction(own_content, attention_output). No skip path remains
     # when attention becomes uniform or near-zero. Requires --cross_attention.
     "cross_attention_forced_interaction",
-    "double_attention",  # two full cross-attention rounds with a second pair of encoders; implies cross_attention; excl. lipid_only/protein_only, rnabang_frozen_node_adapter
+    "double_attention",  # two full cross-attention rounds with a second pair of encoders; implies cross_attention; excl. lipid_only/protein_only
     # Fuse pooled partners with lip^T W prot (torch.nn.Bilinear), not concat.
     # The classifier then uses both partners multiplicatively, blocking a
     # single-partner lipid-identity shortcut. See Final_Layer.
@@ -2063,7 +1964,7 @@ BOOL_FLAG_NAMES = (
     # options are rejected under --descriptors_head (validate()).
     # Uses common_weights_parts (dataloader/Dataloader.py) and training/new_train.py:
     # weight = |label - s_chem| / mean(|label - s_chem| for the same label).
-    # s_chem is chem_prior's leave-one-row-out score (null_scores_leave_one_row_out,
+    # s_chem is chem_prior's leave-one-row-out score (knn_scores_leave_one_row_out,
     # dataloader/chemistry_prior.py). Each class keeps mean weight 1.0, preserving
     # --balanced_batches/--balanced_proteins class balance. Lipid-predictable
     # rows weigh less; contradictory rows weigh more, emphasizing protein signal.
@@ -2601,8 +2502,8 @@ VALUE_HANDLERS = {
     # protein_blosum62 PROTEIN, the same alignment's conservative substitutions
     # protein_tmscore PROTEIN, TM-align structural TM-score
     #
-    # The last three read data/protein_similarity/ (preprocessing/build_protein_sequence_
-    # similarity.py, preprocessing/build_protein_tmscore.py); see
+    # The last three read data/cache/protein_similarity/ (preprocessing/similarity/build_protein_sequence_
+    # similarity.py, preprocessing/similarity/build_protein_tmscore.py); see
     # dataloader/similarity_pool.py for the axis each source puts a row on.
     #
     # A protein-axis source asks "is this candidate's protein like the proteins this

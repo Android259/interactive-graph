@@ -28,7 +28,7 @@
 | `--protein_edge_mlp` / `--protein_edge_attention` | геометрия рёбер белкового графа (раздел 5 ниже) | `architecture/protein_edge_geometry.py` — ортогонально всем четырём выше (рёбра, не ноды) |
 | `--thematical_paths` (+`--geometric_descriptors=`/`--chemical_descriptors=`) | два именованных набора, каждый расщеплён на липидную/протеиновую сторону и принудительно перемножен (без skip-пути для сырых сторон) в один вектор группы, затем группы — друг с другом | `architecture/thematic_descriptor_head.py::ThematicDescriptorHead`/`ForcedInteraction` — третья sufficiency-test ветка, sibling `--descriptors_head`/`--two_descriptors_paths`; полный разбор в [files/results/thematical_paths_summary.md](../results/thematical_paths_summary.md) |
 
-`analysis/null_model.py --features` читает тот же `DESCRIPTOR_CATALOG` независимо от
+`analysis/knn_model.py --features` читает тот же `DESCRIPTOR_CATALOG` независимо от
 того, что подано в саму сеть — это отдельный, безобучаемый бейзлайн для сравнения.
 
 ## 1. Липидные дескрипторы (`LIPID_DESCRIPTOR_NAMES`, 13, `descriptors.py:51`)
@@ -169,7 +169,7 @@ buriedness_q50, apolar_sasa_share, aromatic_share, hydropathy_rim` — испо�
 
 Комбинируют одно липидное и одно протеиновое значение в одно число — «безобучаемая»
 версия того, что self-attention `DescriptorHead` должен бы находить сам. Используются
-и как признаки `analysis/null_model.py --features`, и как входы `NamedDescriptorHead`
+и как признаки `analysis/knn_model.py --features`, и как входы `NamedDescriptorHead`
 (`--good_descriptors`/`--bad_descriptors`).
 
 | имя | формула | что означает |
@@ -310,7 +310,7 @@ ordinal-float, не как embedding/one-hot — архитектурный де
 `DESCRIPTOR_CATALOG = LIPID_DESCRIPTOR_NAMES(13) + ("extent",) +
 PROTEIN_DESCRIPTOR_NAMES(15) + ("polar_share",) + PAIR_DESCRIPTOR_NAMES(14)` — 44
 именованных токена всего, читаемых `--protein_descriptors`/`--lipid_descriptors`/
-`--good_descriptors`/`--bad_descriptors`/`analysis/null_model.py --features` одним и тем
+`--good_descriptors`/`--bad_descriptors`/`analysis/knn_model.py --features` одним и тем
 же `parse_descriptor_list`/`full_catalog_order` (`descriptors.py`). Плюс 18
 исследовательских протеиновых (раздел 3, не в каталоге, только `analysis/`-скрипты) и
 геометрия рёбер (раздел 6, отдельный код-путь, не имена).

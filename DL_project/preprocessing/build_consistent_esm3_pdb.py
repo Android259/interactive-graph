@@ -1,76 +1,23 @@
 #!/usr/bin/env python3
-"""Build a per-protein PDB with a real per-residue confidence column, for ESM3 input.
+"""Build ESM3 input structures with per-residue confidence values.
 
-WHAT THIS FIXES (found while auditing how ESM3 embeddings are produced for this
-project -- see files/history/geometric_edge.md for the full writeup):
+Read data/graphs/<stem>/pocketness.pdb and the matching raw structure under
+data/structures/raw/. Match residues by (chain, resSeq). Replace the pocket flag
+in the B-factor field with the raw CA atom's B-factor or pLDDT for that residue.
+Keep the input coordinates and residue order, apart from the RBP4 trim below.
+Missing residues are not inserted. Run convert_mse_to_met.py before rebuilding
+protein graphs that contain MSE residues.
 
-  1. `data/graphs/<stem>/pocketness.pdb` is NOT the original structure file. Its
-     B-factor column has been overwritten by the Voronota pocket-detection step with
-     a BINARY pocket-membership flag (verified: only values {0.00, 1.00} appear,
-     vs 142 distinct real pLDDT values in the matching raw AlphaFold file for the
-     same protein). So the real experimental B-factor / AlphaFold pLDDT is LOST in
-     pocketness.pdb -- you cannot recover per-residue confidence from it directly.
-  2. The real value IS still recoverable, from `data/structures/raw/<stem>*.pdb1`
-     (the untouched source structure both pocketness.pdb and the FASTA files were
-     derived from), by matching residues on (chain, resSeq). Verified empirically:
-     100% of pocketness.pdb residues matched a raw-file residue by this key, across
-     4 spot-checked proteins (1 AlphaFold model, 1 experimental structure with many
-     alt-conformations, 1 with unresolved-density gaps, 1 with selenomethionine).
-  3. Two OTHER divergence mechanisms between the raw structure and pocketness.pdb
-     were checked and found to be NON-issues (Voronota already normalizes them):
-       - alternate conformations (altLoc): raw BPI has 474 CA records for 456
-         residues (18 duplicated by altLoc); pocketness.pdb has exactly 456 CA
-         records, i.e. one conformer per residue already.
-       - selenomethionine (MSE, a HETATM in raw PDB, chemically an ordinary Met in
-         the backbone): raw GM2A/PITPNA contain MSE. CORRECTED -- this note used to
-         claim Voronota had collapsed MSE into a plain residue because pocketness.pdb
-         showed 0 MSE records and its residue count matched the graph. Voronota had in
-         fact DELETED those residues (its "[-protein]" atom filter excludes MSE), and
-         the matching count was an artifact of the symmetric end-trim the loader then
-         applied. Fixed at the source: preprocessing/convert_mse_to_met.py rewrites MSE
-         as MET, the graphs of these two proteins were regenerated from
-         data/structures/mse_fixed/, and their node counts now equal their FASTA
-         lengths (GM2A 162, PITPNA 269).
-     So only the confidence column needed fixing here, not residue identity/count.
-  4. Missing/unresolved residues (real gaps in electron density, e.g. CERT_6j81 has
-     gaps at PDB residues 492-496 and 534-541) are NOT fixed by this script -- they
-     are a genuine physical absence in the crystal, not an artifact of file
-     processing. pocketness.pdb (like the raw file) simply omits them; this script
-     preserves that (it does not insert placeholder residues).
+Write under data/esm3_input/:
+    <stem>.pdb
+    <stem>_node_confidence.csv: chain, resSeq, raw_value, confidence
+    is_predicted_manifest.csv: stem, is_predicted
 
-WHAT THIS SCRIPT PRODUCES (new files only; nothing under data/graphs/ or
-data/embedding_ESM3/ is read for writing, or modified, or deleted):
+Confidence is pLDDT / 100 for AlphaFold structures and 1 - minmax(B-factor) for
+experimental structures. These are source-dependent scales, not calibrated
+probabilities. AlphaFold files are identified by "AF-" in the raw filename.
 
-  data/esm3_input/<stem>.pdb
-      pocketness.pdb's ATOM records (same coordinates, same already-normalized
-      residue set) with the B-factor column replaced by the real value recovered
-      from the raw structure (the CA atom's B-factor/pLDDT, applied to every atom
-      of that residue -- this matches AlphaFold's own convention of repeating one
-      pLDDT value across a residue's atoms; for experimental structures it is an
-      approximation of true per-atom B-factors, since only CA's value is recovered).
-
-  data/esm3_input/<stem>_node_confidence.csv
-      One row per graph node, in the EXACT SAME ORDER as
-      data/graphs/<stem>/coarse_graph_nodes.csv (same (chain, resSeq) source), with
-      columns: chain, resSeq, raw_value, confidence.
-      `confidence` is a direction-normalized, per-protein-scaled value in [0, 1]
-      where HIGHER ALWAYS MEANS "more reliable / more ordered", regardless of
-      source, so downstream code does not need to know is_predicted to use it:
-        - AlphaFold stems:    confidence = raw pLDDT / 100        (already 0-100,
-                              higher = more confident, just rescaled)
-        - experimental stems: confidence = 1 - minmax(B-factor)   (B-factor is an
-                              arbitrary per-structure scale where HIGHER means MORE
-                              disordered, i.e. the opposite direction of pLDDT; this
-                              flips and rescales it so "higher confidence" means the
-                              same thing for both structure types)
-
-  data/esm3_input/is_predicted_manifest.csv
-      stem,is_predicted -- True for AlphaFold-derived raw files (filename contains
-      "AF-"), False for experimental structures. Needed by the ESM3-loading script
-      (preprocessing/embed_protein_esm3_v2.py) to pass `is_predicted=` correctly to
-      the SDK when it re-derives coordinates/sequence from data/esm3_input/<stem>.pdb.
-
-Run: python preprocessing/build_consistent_esm3_pdb.py
+    python3 preprocessing/build_consistent_esm3_pdb.py
 """
 from __future__ import annotations
 
@@ -82,10 +29,7 @@ from pathlib import Path
 DATA_ROOT = Path(__file__).resolve().parent.parent / "data"
 OUT_DIR = DATA_ROOT / "esm3_input"
 
-# RBP4's pocketness.pdb ends with a single orphan atom: residue 175 has only its
-# backbone N resolved, so Voronota emitted no node for it while still writing that one
-# atom. The loader drops that last line before use; mirrored here so the written PDB and
-# its confidence CSV describe exactly the residue set the rest of the pipeline sees.
+# Drop RBP4's trailing orphan atom to match the loader's residue set.
 DROP_LAST_LINE_STEM = "RBP4"
 
 
@@ -106,10 +50,7 @@ def ca_bfactor_map(raw_path: str) -> dict[tuple[str, str], float]:
     out = {}
     with open(raw_path, errors="ignore") as handle:
         for line in handle:
-            # MSE (selenomethionine) is a HETATM in the raw file but an ordinary
-            # methionine in the graph (preprocessing/convert_mse_to_met.py), and its
-            # CA carries a real B-factor -- take it, or those residues would be the
-            # only ones left without a confidence value.
+            # Read confidence from MSE CA records too; converted graphs use MET for these residues.
             is_mse = line.startswith("HETATM") and line[17:20] == "MSE"
             if not (line.startswith("ATOM") or is_mse):
                 continue

@@ -170,10 +170,10 @@ ranking the train row ids, so nothing is opened.
 
 | file | size | needed by |
 |---|---|---|
-| `cache/Tanimoto_compact_*` (matrix, structure index, row ids, manifest) | 1.4 MiB | `--tanimoto_weight` |
-| `cache/Tanimoto_compact_isomeric_*` | 1.7 MiB | `--tanimoto_weight --lipid_isomers` |
+| `cache/tanimoto/Tanimoto_compact_*` (matrix, structure index, row ids, manifest) | 1.4 MiB | `--tanimoto_weight` |
+| `cache/tanimoto/Tanimoto_compact_isomeric_*` | 1.7 MiB | `--tanimoto_weight --lipid_isomers` |
 
-- Built by `preprocessing/build_tanimoto_compact.py` (`--isomeric` for the second set),
+- Built by `preprocessing/similarity/build_tanimoto_compact.py` (`--isomeric` for the second set),
   directly from the interaction table's SMILES. It is the only Tanimoto builder: the old
   per-candidate square matrix (`Total_tanimoto_matrix_uint8.npy`, 2.8 GB) and its row-id
   vector (`Total_multiple_lipid_batch.npy`) are no longer built or read.

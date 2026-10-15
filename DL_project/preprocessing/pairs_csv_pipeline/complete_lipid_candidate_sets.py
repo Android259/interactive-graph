@@ -1,61 +1,16 @@
 #!/usr/bin/env python3
 
-# Build the interaction table the loader reads, in four stages.
+# Prepare interaction rows in four stages:
+# 1. Repair unambiguous head-group names.
+# 2. Choose one spelling per species.
+# 3. Complete candidate sets, keeping each row's candidates first.
+# 4. Merge duplicate protein-lipid pairs and collect provenance.
 #
-# Usage: python3 preprocessing/complete_lipid_candidate_sets.py [--input CSV] [--output CSV]
-#        [--report CSV] (see --help for the remaining flags, e.g. --keep-head-group-names,
-#        --keep-spelling-variants)
+# Keep conflicting molecular-formula groups unchanged and report them.
+# Stages 1-3 preserve row order. Stage 4 changes pair IDs; rebuild Tanimoto artifacts.
+# See AN_INSTRUCTION.md for the pipeline order and --keep-* options.
 #
-# Each stage answers a different question about a row, and they are ordered so that a
-# stage never has to guess at something a later one settles:
-#
-#   [1] what the lipid IS        repair_head_group_names
-#         A name whose structures cannot be that head group is rewritten to the class
-#         they do belong to. First, because stage 3 spreads a wrong name across the
-#         class it collides with.
-#
-#   [2] how it is WRITTEN        canonicalise_spellings
-#         One species, one FullIdentityOfLipid. Four spelling variants -- stray
-#         punctuation, spacing, the order of two alternative head groups, and the '*'
-#         shorthand -- otherwise turn 285 species into 312 lipids. Before stage 4,
-#         which collapses the duplicate rows this uncovers.
-#
-#   [3] which STRUCTURES it may be   complete_table
-#         Every row of a lipid gets the whole candidate set anyone listed for it, so
-#         the input stops depending on how thoroughly a row was annotated.
-#
-#   [4] one ROW per cell         merge_duplicate_pairs
-#         A (protein, lipid) cell measured more than once becomes one row naming every
-#         screen it was recovered in.
-#
-# Stages 1 and 2 were checked in both orders and agree, since a rename carries the
-# `Lipid` short id with it. Stage 3 before stage 4 keeps a row's own candidates at the
-# front of its list, so the first candidate never moves and a run with
-# lipid_first_fragment_only is unaffected.
-#
-# What the candidate ambiguity is:
-# - A ";"-separated SMILES field is a bag of candidate structures for one measured
-#   lipid species -- sn-positional and double-bond isomers a mass spectrum cannot
-#   separate -- not the pieces of one molecule.
-# - The same lipid is annotated at different depth in different rows. Downstream that
-#   makes the input depend on how thoroughly the row was annotated rather than on
-#   chemistry.
-#
-# Safety rules:
-# - The input file is never overwritten; the result goes to a new CSV.
-# - Row order is preserved through stages 1-3: original row positions are active pair
-#   IDs used by Tanimoto weights. Stage 4 changes them, and says so.
-# - A component whose candidates do not all share one molecular formula is NOT a single
-#   lipid. Those are left untouched and reported, rather than silently merged. There are
-#   9 on this table, every one a CxHyNO8 against a CxHyNO9 -- a sphingolipid annotated
-#   both with and without an extra oxygen, which are not isomers and cannot be one
-#   species. They predate the stages above (a run with --keep-head-group-names
-#   --keep-spelling-variants reports the same 9) and are left for the source to settle.
-# - A head group the structures contradict is only renamed when the structures name
-#   their class unambiguously; otherwise it is reported and left alone.
-# - Added candidates are written with the spelling they already have elsewhere in
-#   the file, so no new SMILES string enters the dataset and the existing embedding
-#   table keeps covering every key.
+#     python3 preprocessing/pairs_csv_pipeline/complete_lipid_candidate_sets.py --help
 
 import argparse
 import collections
@@ -65,7 +20,7 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from dataloader.lipid_classes import head_group_class  # noqa: E402
 
@@ -88,15 +43,13 @@ DEFAULT_OUTPUT = Path(
     "data/Processed_Negative_Interaction_Corrected_Domains_SMILES_Fixed"
     "_CandidatesCompleted.csv"
 )
-DEFAULT_REPORT = Path("preprocessing/lipid_candidate_completion_report.csv")
-DEFAULT_DUPLICATE_REPORT = Path("preprocessing/duplicate_pair_merge_report.csv")
+DEFAULT_REPORT = Path("data/unpreprocessed_files/lipid_candidate_completion_report.csv")
+DEFAULT_DUPLICATE_REPORT = Path("data/unpreprocessed_files/duplicate_pair_merge_report.csv")
 SMILES_COLUMNS = ("SmileGlobal", "SmileFragment")
 PAIR_COLUMNS = ("LTPProtein", "FullIdentityOfLipid")
-# Columns whose values are collected from every row of a merged pair rather than taken
-# from the kept one, so the provenance of a repeated measurement survives the merge.
+# Collect provenance from all merged rows.
 PROVENANCE_COLUMNS = ("Screen", "ChainFragments", "Lipid")
-# The column naming the measured species, as opposed to the spelling
-# `FullIdentityOfLipid` gives it. See `species_key_by_spelling`.
+# Use Lipid short IDs to group species spellings.
 SPECIES_COLUMN = "Lipid"
 EMPTY_VALUES = {"", "0", "Empty", "NonConclusive", "nan", "NaN", "None"}
 
@@ -127,10 +80,7 @@ def molecular_formula(smiles):
     return rdMolDescriptors.CalcMolFormula(Chem.MolFromSmiles(smiles))
 
 
-# How many phosphorus atoms each head group carries. Chemistry, not something the table
-# can be asked, because a class can be wrong in all of its rows at once -- and one is.
-# Only the classes this panel contains are listed; a class absent from the table is not
-# checked rather than guessed at.
+# Expected phosphorus counts for the supported head-group classes.
 HEAD_GROUP_PHOSPHORUS = {
     "Bismonoacylglycerolphosphate": 1,
     "Cardiolipin": 2,
@@ -181,30 +131,10 @@ def structure_formulas(row):
 
 
 def repair_head_group_names(table):
-    """Rename a species whose structures cannot be the head group its name claims.
+    """Repair head-group names when composition and molecular formula identify one class.
 
-    The formula check inside a component asks whether its members agree with each other.
-    This asks the other question -- whether they agree with the name -- and it is the one
-    that catches a head group assigned wrongly. Phosphatidylglycerophosphate carries two
-    phosphorus atoms; all three of its species here are annotated with one-phosphorus
-    structures. No within-component check can see that: the members agree with each other
-    perfectly, they simply are not the lipid the name says.
-
-    Left as it was, the error spread. Phosphatidylglycerophosphate (32:1)'s one structure
-    is also one of Phosphatidylglycerol (32:1)'s, so the two joined into a component and
-    PGP came out of an earlier run of this script holding all 15 PG structures. Keying
-    components by head group stops the spread; this repairs the cause, and it has to run
-    first, before the structure that carries the wrong name is completed under it.
-
-    The name gives way to the structure, and only when the structure names its own class
-    unambiguously: some other species of this table must state the same composition and
-    carry the same molecular formula, and its head group must be one the formula agrees
-    with. That holds for PGP (32:1), whose structure is a C38O10P1 phosphatidylglycerol
-    exactly like PG (32:1)'s. It does not hold for PGP (34:2) and (36:2), whose structures
-    are C40O9P1 and C42O9P1 against the C40O10P1 and C42O10P1 of the phosphatidylglycerols
-    of the same composition -- an oxygen short of a PG and a phosphorus short of a PGP,
-    so they are neither. Those are reported and left alone: naming them would be inventing
-    a measurement, and what they really are has to come from whoever assigned them.
+    Require a matching species with a compatible head group. Report ambiguous cases
+    and leave their names unchanged. Run before candidate completion.
     """
     expected_of = HEAD_GROUP_PHOSPHORUS
     by_name = {name: group for name, group in table.groupby("FullIdentityOfLipid")}
@@ -254,11 +184,7 @@ def repair_head_group_names(table):
 
     if renames:
         table = table.copy()
-        # `Lipid` travels with the name. It is what `species_key_by_spelling` groups on,
-        # so leaving the old short id behind would make the renamed rows and the rows they
-        # just joined disagree about which species they are -- 35 rows saying PGP(32:1)
-        # against 36 saying PG(32:1), settled by a majority vote that should never have
-        # been asked for.
+        # Update the short ID with the head-group name so species grouping stays consistent.
         id_of = {
             new_name: normalise_species_id(
                 by_name[new_name][SPECIES_COLUMN].mode().iloc[0]
@@ -303,25 +229,10 @@ def read_row_candidates(table, isomeric=True):
 
 
 def candidate_components(rows):
-    """Connected components of candidates that co-occur in a row.
+    """Group co-occurring candidates with union-find.
 
-    Union-find over the candidates rather than over the sets: two rows listing the
-    same isomer are annotations of the same lipid, so their candidates belong to one
-    component, and that component is exactly the completed candidate set.
-
-    Keyed by (head-group class, candidate), not by the candidate alone. Sharing an
-    isomer says two rows describe one lipid only when they agree about the head group,
-    and one pair here does not: Phosphatidylglycerophosphate (32:1) was annotated with a
-    single structure carrying one phosphorus -- a phosphatidylglycerol, since PGP has
-    two -- and that structure is also one of PG (32:1)'s. Keyed by the candidate alone
-    the two joined, and PGP came out of this script holding all 15 PG structures instead
-    of its own one. The formula guard below cannot see it: both sides are C38O10P1, which
-    is the whole reason they got confused in the first place.
-
-    Splitting the key costs nothing where the merge was right. The other five completions
-    on this table are between entries of one class -- a spelling variant, or the ';'
-    ambiguity of PG against BMP, which `head_group_class` already resolves to one side --
-    so they still meet in one component.
+    Key candidates by (head-group class, canonical SMILES). This prevents a shared
+    structure from joining entries with different head-group classes.
     """
     parent = {}
 
@@ -414,34 +325,9 @@ def normalise_species_id(value):
 
 
 def species_key_by_spelling(table):
-    """Map every `FullIdentityOfLipid` spelling to the species it names.
+    """Map each FullIdentityOfLipid spelling to its majority Lipid short ID.
 
-    `FullIdentityOfLipid` is a spelling, not an identity. The same measured species is
-    written four different ways in this table, and each way became a separate lipid:
-
-      A  a stray ': ' prefix          ': Phosphatidylcholine (32:2)'
-      B  spacing around the ';'       'PC (O-36:5); LPC (36:5)' vs '...;LPC (36:5)'
-      C  the two alternative head-group assignments in either order
-      D  the '*' shorthand against the alternatives spelled out,
-         'Sphingomyelin (d*34:1)' vs 'Sphingomyelin (d34:1);Sphingomyelin (DH34:1)'
-
-    28 short ids carry more than one spelling this way -- 2 of type A, 2 of B, 6 of C
-    and 18 of D -- so the 312 spellings the grid is built on are 285 species, and 1960
-    rows describe a cell some other row already describes. The candidate sets inside
-    every one of the 28 groups are identical, so nothing chemical distinguishes them.
-
-    Type C is the one that also breaks the cold split rather than merely inflating it:
-    the head-group class is read off the name, so a species written one way round
-    landed in a class that left training and the other way round in a class that
-    stayed. `dataloader.sampler.lipid_class_series` now resolves that independently, but
-    the duplicate rows remain, and a duplicated cell is weighted twice in the loss and
-    can be scored in validation and in test at once.
-
-    The `Lipid` column already names the species -- it is what makes the four types
-    recognisable at all -- but one of the 35 rows of PE(34:1) carries 'PE(32:1);
-    PE(34:1)' instead, so it cannot be read row by row. Each spelling therefore takes
-    the id the majority of its 35 rows agree on, and any spelling whose rows disagree
-    is returned for the caller to report rather than silently repaired.
+    Return spellings with disagreeing short IDs for reporting.
     """
     keys = {}
     conflicts = []
@@ -457,23 +343,10 @@ def species_key_by_spelling(table):
 
 
 def canonical_spelling(spellings):
-    """The one spelling a species keeps, chosen without reference to row order.
+    """Choose a species spelling deterministically.
 
-    The cleanest, most explicit entry wins: one that starts with the head group rather
-    than with stray punctuation, then the one naming the most alternatives, then the one
-    without the '*' shorthand, then sorted order. So 'Sphingomyelin (d*34:1)' gives way to
-    'Sphingomyelin (d34:1);Sphingomyelin (DH34:1)', which says the same thing without a
-    convention the reader has to know, and ': Phosphatidylglycerol (32:1)' gives way to
-    'Phosphatidylglycerol (32:1)'.
-
-    Sorted order alone would keep the damaged spelling of that last pair, since ':' sorts
-    ahead of every letter, and `repair_head_group_names` would then rename a species onto
-    a clean spelling that no longer exists in the table. Leading punctuation is therefore
-    ranked before anything else.
-
-    The choice no longer decides the head-group class -- `lipid_class_series` reads every
-    name in the entry and resolves the alternatives itself -- so beyond that this only has
-    to be deterministic.
+    Prefer no leading punctuation, more explicit alternatives and no star shorthand.
+    Use sorted order to break ties.
     """
     return sorted(
         spellings,
@@ -487,19 +360,7 @@ def canonical_spelling(spellings):
 
 
 def canonicalise_spellings(table):
-    """Rewrite `FullIdentityOfLipid` so one species is written one way.
-
-    The repair belongs in the column, not in the code that reads it. Every consumer of
-    this table -- the class holdout, the balancer, the per-lipid baselines, the report's
-    own species counts -- reads `FullIdentityOfLipid` and takes it for an identity, and
-    each of them would otherwise need its own copy of the rule. Rewritten here, the four
-    spelling variants stop existing and `merge_duplicate_pairs` collapses what is left
-    through the key it already uses.
-
-    `Lipid` locates the groups; it does not replace the column. It is not written out as
-    the identity because one of its own cells is corrupt (see `species_key_by_spelling`)
-    and because the long name is what the rest of the pipeline reads.
-    """
+    """Rewrite FullIdentityOfLipid to one spelling per species, using Lipid to locate groups."""
     keys, conflicts = species_key_by_spelling(table)
     by_species = collections.defaultdict(set)
     for spelling, key in keys.items():
@@ -532,16 +393,7 @@ def canonicalise_spellings(table):
 
 
 def screen_split_positives(table, group):
-    """True when the group holds two positives recovered in different screens.
-
-    Those rows are two measurements of one cell, not one measurement written twice: a
-    zero row's `Screen` is inherited from the species' positive rows and records
-    nothing, so only positives carry a screen worth keeping apart. 23 cells are like
-    this, every one of them an 'in cellulo' result beside an 'in vitro' one. The merge
-    keeps both by writing 'in cellulo; in vitro' into the kept row, which is the form
-    the table already uses for the cells it merged before; --keep-screen-duplicates
-    leaves them as two rows instead.
-    """
+    """Return True for two positive measurements from different screens."""
     screens = set()
     for position in group:
         row = table.iloc[position]
@@ -554,25 +406,11 @@ def screen_split_positives(table, group):
 
 
 def merge_duplicate_pairs(table, isomeric=True, keep_screen_duplicates=False):
-    """One row per (protein, lipid): merge repeated measurements of the same cell.
+    """Merge repeated protein-lipid pairs, keeping the first row.
 
-    A protein-lipid cell measured more than once carries one row per measurement, and
-    those rows agree on the label -- what differs is the chain-level assignment and,
-    through it, the order of the candidate list, plus the screen the result came from.
-    Keeping them as separate rows weights those cells twice in the loss, drags twice as
-    many sampled negatives in behind them, and lets the two copies land on opposite
-    sides of the validation/test division, so the same cell is scored in both blocks.
-
-    The merge keeps the first row of the cell, unions the candidate lists of all its
-    rows into the column that row's own SMILES sit in (its own order stays at the
-    front, so the first candidate does not move), collects the provenance columns, and
-    takes the label as the maximum -- positive wins over unlabelled, which matters if
-    this is ever run on a table whose repeated rows disagree.
-
-    Row positions change, and they are the pair IDs the Tanimoto artifacts are
-    indexed by, so they have to be rebuilt against the new file. The Tanimoto
-    loader checks its manifest against the table and falls back rather than serving
-    weights for the wrong rows, but the fallback is no substitute for a rebuild.
+    Union candidates with that row's candidates first. Collect provenance and take the
+    maximum label. Options can preserve repeated screen measurements.
+    Row positions change, so rebuild pair-indexed Tanimoto artifacts afterwards.
     """
     missing = [column for column in PAIR_COLUMNS if column not in table.columns]
     if missing:
@@ -591,8 +429,7 @@ def merge_duplicate_pairs(table, isomeric=True, keep_screen_duplicates=False):
         if len(group) > 1 and keep_screen_duplicates and screen_split_positives(
             table, group
         ):
-            # Two screens recovered this cell. Asked to, leave them as two rows rather
-            # than as one row naming both screens.
+            # Preserve separate screen measurements when requested.
             keep.extend(group)
             continue
         keep.append(group[0])
@@ -620,10 +457,7 @@ def merge_duplicate_pairs(table, isomeric=True, keep_screen_duplicates=False):
         for provenance in PROVENANCE_COLUMNS:
             if provenance not in table.columns:
                 continue
-            # Screen is collected from the positive rows alone. On a zero row it is
-            # inherited from the species' positives and records no measurement, so
-            # joining it across a merged cell invents a second screen: done blindly it
-            # marked 800 cells as recovered in both, against the 50 that really were.
+            # Only positive rows carry measured screen provenance; negative rows inherit it.
             sources = group
             if provenance == "Screen":
                 positive = [
@@ -763,17 +597,13 @@ def main():
     if missing:
         raise ValueError(f"Missing required columns: {', '.join(missing)}")
 
-    # Stage 1 of 4 -- what the lipid IS. A structure carrying the wrong head-group name
-    # pulls the class it really belongs to into its component, and stage 3 then writes
-    # that whole class onto it, so this has to be settled first.
+    # Stage 1: repair head-group names before candidate completion.
     if not args.keep_head_group_names:
         print("[1/4] head-group names")
         table, _, _ = repair_head_group_names(table)
         print()
 
-    # Stage 2 of 4 -- how it is WRITTEN. Independent of stage 1 now that a rename carries
-    # the `Lipid` short id with it (the two orders were checked and agree), and it has to
-    # precede stage 4, which is what collapses the duplicate rows this uncovers.
+    # Stage 2: canonicalise spellings before merging duplicate pairs.
     if not args.keep_spelling_variants:
         print("[2/4] spelling variants")
         table, spelling_records, spelling_conflicts = canonicalise_spellings(table)
@@ -793,9 +623,7 @@ def main():
             )
         print()
 
-    # Stage 3 of 4 -- which STRUCTURES it may be. Runs on rows whose identity is settled,
-    # and before stage 4 so that a row's own candidates stay at the front of its list and
-    # the first candidate never moves.
+    # Stage 3: complete candidates while keeping the row's own candidates first.
     print("[3/4] candidate completion")
     completed, changes, diagnostics = complete_table(
         table, isomeric=not args.non_isomeric
@@ -810,7 +638,7 @@ def main():
     print(f"input rows: {len(table)}")
     print(f"rows completed: {len(changes)} ({100 * len(changes) / max(len(table), 1):.1f}%)")
 
-    # Stage 4 of 4 -- one ROW per cell.
+    # Stage 4: merge duplicate protein-lipid pairs.
     duplicate_records = []
     if not args.keep_duplicate_pairs:
         print("[4/4] duplicate cells")

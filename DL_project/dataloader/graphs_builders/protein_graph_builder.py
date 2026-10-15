@@ -15,8 +15,6 @@ from dataloader.descriptors import PROTEIN_DESCRIPTOR_NAMES as POCKET_DESCRIPTOR
 # below stays here, and KYTE_DOOLITTLE is the one table both sides need.
 from preprocessing.compute_descriptors import KYTE_DOOLITTLE
 
-MAX_INCIDENT_EDGES = 21
-EDGE_QUANTILES = (0, 10, 25, 50, 75, 90, 100)
 
 # The 9-family encoding of prot.family (one-hot, this order). Shared with
 # --group_dro (training/new_train.py), which needs the same names to read
@@ -44,7 +42,7 @@ EXTRA_NODE_FEATURE_COUNT = len(EXTRA_NODE_COLUMNS) + 1
 
 # The seven POCKET_DESCRIPTOR_NAMES entries whose eta^2 against the 9-family split sits
 # at or near the no-structure floor of 0.24 (files/reference/pocket_shape_descriptors.md
-# section 5, preprocessing/pocket_descriptor_identity_check.py). Excludes the six entries
+# section 5, analysis/feature_identity_check.py). Excludes the six entries
 # closest to a pure family label: pocket_sasa_share (0.85), hydropathy_core (0.77),
 # pocket_residue_share (0.71), pocket_extent (0.62), ev14_q50 (0.59), depth_q10 (0.55).
 #
@@ -73,11 +71,6 @@ def restrict_parts_to_mask(parts, keep):
     the pocket restriction, whose mask is fixed and structural, and the residue
     subsampling augmentation, whose mask is redrawn per sample.
 
-    ``edge_node_degree`` / ``edge_node_pairs`` are precomputed descriptions of each
-    residue's contact environment in the *full* protein. They are subset, not
-    recomputed, deliberately: they encode how buried the residue is, which is a property
-    of the intact structure and is exactly what a reduced graph can no longer derive on
-    its own.
     """
     kept = int(keep.sum())
     renumber = torch.full((keep.numel(),), -1, dtype=torch.long)
@@ -88,8 +81,7 @@ def restrict_parts_to_mask(parts, keep):
     restricted["edge_index"] = renumber[edge_index[:, edge_keep]]
     restricted["edge_attr"] = parts["edge_attr"][edge_keep]
     for name in (
-        "x", "bury", "plm", "pocket", "geometric_node_attr", "edge_node_pairs",
-        "edge_node_degree", "frame_rotation", "frame_translation", "node_confidence",
+        "x", "bury", "plm", "pocket", "geometric_node_attr", "frame_rotation", "frame_translation", "node_confidence",
     ):
         value = restricted.get(name)
         if value is not None:
@@ -112,18 +104,6 @@ def protein_node_columns(config):
     return list(BASE_NODE_COLUMNS)
 
 
-def rnabang_edge_node_mode(config):
-    for name in (
-        "current",
-        "sorted",
-        "deepsets",
-        "pna",
-        "quantiles",
-        "set_transformer",
-    ):
-        if getattr(config, f"rnabang_edge_{name}", False):
-            return name
-    return "current"
 
 
 class ProteinGraphData(Data):
@@ -196,13 +176,12 @@ class ProteinGraphBuilder:
         parts["plm"] = plm
         use_precomputed_geometric_nodes = (
             getattr(self.config, "geometric_transformer", False)
-            or getattr(self.config, "rnabang_frozen_node_adapter", False)
             or getattr(self.config, "protein_edge_attention", False)
             or getattr(self.config, "protein_edge_mlp", False)
         )
         # protein_edge_attention/protein_edge_mlp only need the rigid frame below,
-        # not geometric_node_attr/edge_node_pairs/edge_node_degree (those feed the
-        # IPA/rnabang paths) -- loading them anyway is harmless (unused columns
+        # not geometric_node_attr (used by the geometric transformer). Loading
+        # it is harmless (unused columns
         # from the same already-open CSV) and keeps this one boolean shared instead
         # of adding a third near-identical variant.
         use_frame = (
@@ -215,28 +194,14 @@ class ProteinGraphBuilder:
             if geometric is None:
                 raise FileNotFoundError(
                     f"{os.path.dirname(nodes_path)}/geometric_transformer_nodes.csv "
-                    "is required by --geometric_transformer/--rnabang_frozen_node_adapter/"
+                    "is required by --geometric_transformer/"
                     "--protein_edge_attention/--protein_edge_mlp; rebuild the protein "
                     "tensor cache after generating it"
                 )
             parts["geometric_node_attr"] = self._cached_columns(
                 geometric,
-                self._frozen_edge_node_columns(),
+                ["contact_area", "contact_exposure"],
             )
-            edge_mode = rnabang_edge_node_mode(self.config)
-            if edge_mode in {"sorted", "deepsets", "set_transformer"}:
-                pair_columns = [
-                    column
-                    for rank in range(MAX_INCIDENT_EDGES)
-                    for column in (
-                        f"edge_area_rank_{rank}",
-                        f"edge_boundary_rank_{rank}",
-                    )
-                ]
-                parts["edge_node_pairs"] = self._cached_columns(
-                    geometric, pair_columns
-                ).reshape(-1, MAX_INCIDENT_EDGES, 2)
-            parts["edge_node_degree"] = geometric["edge_degree"].long()
             if use_frame:
                 rotation_columns = [
                     f"rotation_{row}{column}"
@@ -292,10 +257,6 @@ class ProteinGraphBuilder:
         )
         if "geometric_node_attr" in parts:
             graph_kwargs["geometric_node_attr"] = parts["geometric_node_attr"]
-        if "edge_node_pairs" in parts:
-            graph_kwargs["edge_node_pairs"] = parts["edge_node_pairs"]
-        if "edge_node_degree" in parts:
-            graph_kwargs["edge_node_degree"] = parts["edge_node_degree"]
         if "frame_rotation" in parts:
             graph_kwargs["frame_rotation"] = parts["frame_rotation"]
             graph_kwargs["frame_translation"] = parts["frame_translation"]
@@ -307,68 +268,7 @@ class ProteinGraphBuilder:
             graph_kwargs["node_confidence"] = parts["node_confidence"]
         return ProteinGraphData(**graph_kwargs)
 
-    @staticmethod
-    def _feature_mean_std(values):
-        values = values.float()
-        return (
-            values.mean(dim=0),
-            values.std(dim=0, unbiased=False).clamp_min(1e-6),
-        )
 
-    def rnabang_normalization_stats(self):
-        """Compute fixed statistics from unique training proteins only."""
-        if not getattr(self.config, "rnabang_frozen_node_adapter", False):
-            return None
-        train_parts = [
-            self.protein_graph_parts(name)[0]
-            for name in sorted(self.csvtrain["LTPProtein"].unique())
-        ]
-        x = torch.cat([part["x"] for part in train_parts])
-        bury = torch.cat([part["bury"] for part in train_parts])
-        valid_bury = bury[bury != 2]
-        if valid_bury.numel() == 0:
-            raise ValueError("training proteins contain no valid buriedness values")
-        sasa_mean, sasa_std = self._feature_mean_std(
-            torch.log1p(x[:, 1].clamp_min(0))
-        )
-        volume_mean, volume_std = self._feature_mean_std(x[:, 2])
-        bury_mean, bury_std = self._feature_mean_std(valid_bury)
-        structural_mean = torch.stack((sasa_mean, volume_mean, bury_mean))
-        structural_std = torch.stack((sasa_std, volume_std, bury_std))
-
-        edge_values = torch.cat(
-            [part["geometric_node_attr"] for part in train_parts]
-        )
-        edge_mean, edge_std = self._feature_mean_std(edge_values)
-        pair_mean = torch.zeros(2)
-        pair_std = torch.ones(2)
-        mode = rnabang_edge_node_mode(self.config)
-        if mode in {"sorted", "deepsets", "set_transformer"}:
-            pairs = torch.cat([part["edge_node_pairs"] for part in train_parts])
-            degrees = torch.cat(
-                [part["edge_node_degree"] for part in train_parts]
-            )
-            mask = (
-                torch.arange(MAX_INCIDENT_EDGES).unsqueeze(0)
-                < degrees.unsqueeze(1)
-            )
-            pair_mean, pair_std = self._feature_mean_std(pairs[mask])
-            if mode == "sorted":
-                edge_mean[:42] = pair_mean.repeat(MAX_INCIDENT_EDGES)
-                edge_std[:42] = pair_std.repeat(MAX_INCIDENT_EDGES)
-            else:
-                # The learned encoders use pair_mean/std at their two-channel input
-                # and already LayerNorm their 32-dimensional output.
-                edge_mean = torch.zeros(32)
-                edge_std = torch.ones(32)
-        return {
-            "structural_mean": structural_mean,
-            "structural_std": structural_std,
-            "edge_feature_mean": edge_mean,
-            "edge_feature_std": edge_std,
-            "edge_pair_mean": pair_mean,
-            "edge_pair_std": pair_std,
-        }
 
     def protein_graph_tensors(self, nodes, edges, plm, pok, node_confidence=None):
         """Parse the node/edge/pocket files of one protein into its graph tensors.
@@ -456,13 +356,12 @@ class ProteinGraphBuilder:
         }
         use_precomputed_geometric_nodes = (
             getattr(self.config, "geometric_transformer", False)
-            or getattr(self.config, "rnabang_frozen_node_adapter", False)
             or getattr(self.config, "protein_edge_attention", False)
             or getattr(self.config, "protein_edge_mlp", False)
         )
         # protein_edge_attention/protein_edge_mlp only need the rigid frame below,
-        # not geometric_node_attr/edge_node_pairs/edge_node_degree (those feed the
-        # IPA/rnabang paths) -- loading them anyway is harmless (unused columns
+        # not geometric_node_attr (used by the geometric transformer). Loading
+        # it is harmless (unused columns
         # from the same already-open CSV) and keeps this one boolean shared instead
         # of adding a third near-identical variant.
         use_frame = (
@@ -477,7 +376,7 @@ class ProteinGraphBuilder:
             if not os.path.exists(geometric_path):
                 raise FileNotFoundError(
                     f"{geometric_path} is required by --geometric_transformer/"
-                    "--rnabang_frozen_node_adapter/--protein_edge_attention/"
+                    "--protein_edge_attention/"
                     "--protein_edge_mlp; run "
                     "preprocessing/build_geometric_protein_graphs.py"
                 )
@@ -498,34 +397,9 @@ class ProteinGraphBuilder:
                 for column in range(3)
             ]
             parts["geometric_node_attr"] = torch.tensor(
-                self._frozen_edge_node_features(geometric),
+                geometric[["contact_area", "contact_exposure"]].values,
                 dtype=torch.float32,
             )
-            edge_mode = rnabang_edge_node_mode(self.config)
-            if edge_mode in {"sorted", "deepsets", "set_transformer"}:
-                pair_columns = [
-                    column
-                    for rank in range(MAX_INCIDENT_EDGES)
-                    for column in (
-                        f"edge_area_rank_{rank}",
-                        f"edge_boundary_rank_{rank}",
-                    )
-                ]
-                parts["edge_node_pairs"] = torch.tensor(
-                    geometric[pair_columns].values.reshape(
-                        -1, MAX_INCIDENT_EDGES, 2
-                    ),
-                    dtype=torch.float32,
-                )
-                parts["edge_node_degree"] = torch.tensor(
-                    geometric["edge_degree"].values,
-                    dtype=torch.long,
-                )
-            else:
-                parts["edge_node_degree"] = torch.tensor(
-                    geometric["edge_degree"].values,
-                    dtype=torch.long,
-                )
             if use_frame:
                 parts["frame_rotation"] = torch.tensor(
                     geometric[rotation_columns].values.reshape(-1, 3, 3),
@@ -544,48 +418,7 @@ class ProteinGraphBuilder:
         #print(f"x shape : {x.shape}")
         return self._restrict_to_pockets(self._check_node_width(parts, nodes))
 
-    def _frozen_edge_node_features(self, geometric):
-        """Select one mutually exclusive precomputed edge→node representation."""
-        return geometric[self._frozen_edge_node_columns()].values
 
-    def _frozen_edge_node_columns(self):
-        """Columns for the selected precomputed edge→node representation."""
-        mode = rnabang_edge_node_mode(self.config)
-        if mode in {"current", "deepsets", "set_transformer"}:
-            columns = ["contact_area", "contact_exposure"]
-        elif mode == "sorted":
-            columns = [
-                column
-                for rank in range(MAX_INCIDENT_EDGES)
-                for column in (
-                    f"edge_area_rank_{rank}",
-                    f"edge_boundary_rank_{rank}",
-                )
-            ] + ["edge_degree_normalized"]
-        elif mode == "pna":
-            columns = [
-                f"pna_{feature}_{statistic}"
-                for feature in ("area", "boundary")
-                for statistic in ("sum", "mean", "std", "min", "max")
-            ] + [
-                "edge_degree_normalized",
-                "edge_exposed_fraction",
-                "edge_boundary_area_ratio",
-            ]
-        elif mode == "quantiles":
-            columns = [
-                f"quantile_{feature}_{quantile}"
-                for feature in ("area", "boundary")
-                for quantile in EDGE_QUANTILES
-            ] + [
-                "quantile_area_total",
-                "quantile_boundary_total",
-                "edge_degree_normalized",
-                "edge_boundary_area_ratio",
-            ]
-        else:
-            raise ValueError(f"unknown RNA-BAnG edge-to-node mode: {mode}")
-        return columns
 
     def protein_family(self, prot_file):
         """The protein's family, straight from the interaction table's ProteinDomain.
@@ -646,9 +479,6 @@ class ProteinGraphBuilder:
             (
                 getattr(self.config, "rnabang_replace_esm3", False),
                 getattr(self.config, "rnabang_full_protein_encoder", False),
-                getattr(self.config, "rnabang_with_esm3", False),
-                getattr(self.config, "rnabang_residual_with_esm3", False),
-                getattr(self.config, "rnabang_frozen_node_adapter", False),
             )
         )
         # v2 embeddings (preprocessing/embed_protein_esm3_v2.py) are built from
@@ -659,7 +489,6 @@ class ProteinGraphBuilder:
         if not (
             getattr(self.config, "rnabang_replace_esm3", False)
             or getattr(self.config, "rnabang_full_protein_encoder", False)
-            or getattr(self.config, "rnabang_frozen_node_adapter", False)
         ):
             embed_dir = "embedding_ESM3_v2" if use_esm3_v2 else "embedding_ESM3"
             embed_files = glob.glob(
@@ -723,22 +552,7 @@ class ProteinGraphBuilder:
                     pickle.load(f), dtype=torch.float32
                 )
 
-        if (
-            getattr(self.config, "rnabang_with_esm3", False)
-            or getattr(self.config, "rnabang_residual_with_esm3", False)
-        ):
-            # The frozen replacement takes ESM3's slot in the concatenation, so these
-            # modes compose with it: cat(ProteinMPNN, RNA-BAnG) rather than
-            # cat(ESM3, RNA-BAnG). Scales differ wildly between sources -- see the bng
-            # post-mortem in proposals.md -- so whatever goes in here should be brought
-            # to a comparable magnitude before it can contribute.
-            first = (
-                frozen_tensor
-                if frozen_tensor is not None
-                else torch.as_tensor(esm3_tensor, dtype=torch.float32)
-            )
-            plm_tensor = torch.cat((first, rnabang_tensor), dim=-1)
-        elif use_rnabang:
+        if use_rnabang:
             plm_tensor = rnabang_tensor
         elif frozen_tensor is not None:
             # Replaces ESM3 outright: validate() rejects combining this with any

@@ -1,31 +1,14 @@
 #!/usr/bin/env python3
-"""Generate frozen per-residue ProteinMPNN encoder representations.
+"""Generate per-residue ProteinMPNN encoder embeddings from backbone geometry.
 
-The official repository and its vanilla weights are kept in external/ProteinMPNN.
-No extra environment is needed: ProteinMPNN is plain PyTorch.
+Load the repository and vanilla weights from external/ProteinMPNN. Take the
+encoder output before sequence decoding. Set augment_eps=0 to disable coordinate
+noise. Map parse_PDB's gap-padded residue slots to graph nodes by residue number.
+
+Read data/esm3_input/*.pdb. Write data/embedding_PROTEINMPNN/<stem>_PROTEINMPNN.pkl
+for --proteinmpnn_replace_esm3.
 
     python3 preprocessing/embed_protein_proteinmpnn.py
-
-Every PDB in data/esm3_input is encoded and written as
-data/embedding_PROTEINMPNN/<stem>_PROTEINMPNN.pkl, consumed by
---proteinmpnn_replace_esm3.
-
-What is taken: the output of the ENCODER stack (three message-passing layers over
-each residue's 48 nearest neighbours, with N/CA/C/O/Cb distance features), before any
-sequence decoding. That vector is a function of local backbone geometry alone, which
-is the reason to try it here -- unlike ESM3 it carries no sequence-family signal, and
-the cold-family split is precisely what withholds family information.
-
-Two details are load-bearing:
-
-* ``augment_eps=0``. The checkpoint was trained with 0.2 A of Gaussian coordinate
-  noise; leaving it on would make the embedding of one protein differ between runs.
-* ProteinMPNN's ``parse_PDB`` returns one row per *residue-numbering slot*, padding
-  gaps in the numbering, while coarse_graph_nodes.csv has one row per residue that
-  actually exists. Four of the 35 project proteins have such gaps (GLTP 205 vs 206,
-  HSDL2 273 vs 275, LCN15 149 vs 154, STARD11 226 vs 235), so the rows are selected
-  by residue number rather than taken wholesale. Getting this wrong would shift the
-  embedding against the graph without any error -- the loader only checks the count.
 """
 
 import argparse
@@ -102,9 +85,7 @@ def embed_one(pdb_path, output_dir, model, device):
     from protein_mpnn_utils import parse_PDB, tied_featurize
 
     parsed = parse_PDB(str(pdb_path), ca_only=False)
-    # Not every project PDB names its chain "A" (data/esm3_input keeps whatever the
-    # source structure used), and tied_featurize raises a bare KeyError on a letter
-    # that is not there. Read the letters parse_PDB actually found.
+    # Use the chain letters found by parse_PDB; do not assume chain A.
     letters = sorted(
         key[len("seq_chain_"):] for key in parsed[0] if key.startswith("seq_chain_")
     )

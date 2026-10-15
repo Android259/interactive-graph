@@ -14,8 +14,8 @@
 # --excluded_groups из него выброшены, а сам белок кандидата исключается даром: строка
 # является отрицательной ровно тогда, когда её белок не связывает её липид.
 #
-# Матрицы: data/protein_similarity/ (preprocessing/build_protein_tmscore.py,
-# preprocessing/build_protein_sequence_similarity.py). Без них запуск падает на сборке
+# Матрицы: data/cache/protein_similarity/ (preprocessing/similarity/build_protein_tmscore.py,
+# preprocessing/similarity/build_protein_sequence_similarity.py). Без них запуск падает на сборке
 # датасета с указанием нужного построителя, а не молча отбирает равномерно.
 #
 # Замерено на таблице (сид 42, ratio 2, доля 1.0), среднее по отобранным отрицательным,

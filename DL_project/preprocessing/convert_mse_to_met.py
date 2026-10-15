@@ -1,36 +1,15 @@
 #!/usr/bin/env python3
-"""Rewrite selenomethionine (MSE) as ordinary methionine (MET) in a PDB file.
+"""Convert MSE residues to MET before building protein graphs.
 
-WHY
+Voronota's protein filter excludes MSE HETATM records. For each MSE record, change:
+    HETATM -> ATOM
+    residue MSE -> MET
+    atom SE -> SD
+    element SE -> S
 
-MSE is a methionine whose sulfur is replaced by selenium -- introduced during
-expression to phase the crystallographic data, not a property of the protein. The PDB
-format stores it as a HETATM with residue name MSE, so
-preprocessing/voronota-js-receptor-data-graph drops it: its line
+Preserve coordinates, residue identifiers, occupancy and B-factors. Copy non-MSE
+records unchanged. pdb2fasta.py also reads MSE as methionine.
 
-    voronota_restrict_atoms("-use", "[-protein]");
-
-keeps only atoms typed as protein, and MSE is not one. The result is a graph with a
-hole where a real residue sits: GM2A loses 2 residues, PITPNA loses 8, and their
-sequence neighbours end up contacting each other directly across the gap.
-
-preprocessing/pdb2fasta.py already treats MSE as 'M' (its ca_pattern matches the MSE
-HETATM explicitly), so the FASTA -- and therefore the ESM3 v1 embedding -- always had
-these residues. Converting them here makes the graph agree with the sequence at the
-source, instead of patching the mismatch downstream.
-
-WHAT IS CHANGED (only these four fields, only on MSE records)
-
-    record name   HETATM -> ATOM
-    residue name  MSE    -> MET
-    atom name     SE     -> SD    (methionine's sulfur is named SD)
-    element       SE     -> S
-
-Coordinates, chain, residue number, occupancy and B-factor are copied verbatim; every
-non-MSE line, including other HETATM groups (waters, buffer molecules, ligands), is
-passed through untouched so that Voronota keeps excluding them.
-
-USAGE
     python3 preprocessing/convert_mse_to_met.py input.pdb output.pdb
 """
 from __future__ import annotations

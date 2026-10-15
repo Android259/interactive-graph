@@ -96,6 +96,7 @@ REPORT_FIELDS = (
     "prot_CA_for_pockets",
     *RUN_METRIC_FIELDS,
     *DISCOVERED_FIELDS,
+    "unknown_descriptor_names",
     "best_epoch",
     "best_valid_balanced_accuracy",
     "best_to_final_drop",

@@ -2,18 +2,12 @@
 
 # Build the compact Tanimoto artifacts from the interaction table.
 #
-# The only Tanimoto builder in the project. It stores one row per DISTINCT candidate
-# structure (roughly twelve hundred) plus the index that expands it back to one entry
-# per candidate instance, so the per-candidate similarity is
-# compact[structure_index[i], structure_index[j]] -- byte-identical to the old
-# per-candidate square matrix (2.89 GB, Total_tanimoto_matrix_uint8.npy), which is no
-# longer built or read. Why byte-identity holds: dataloader/tensors_reading/
-# tanimoto_compact_reader.py.
+# Store one row per distinct candidate structure. Candidate similarity is
+# compact[structure_index[i], structure_index[j]]. Morgan radius 2, 1024 bits;
+# Tanimoto values are stored as round(similarity * 255).
 #
-# The candidate rule here (row_candidates/collect) is the loader's: SmileGlobal unless it
-# is "0", candidates split on ";", canonicalized, deduplicated within the row.
-# preprocessing/build_tanimoto_headgroup.py and analysis/probes/split_similarity_vs_metric.py
-# import it from here, so there is one transcription of it.
+# Use SmileGlobal unless it is "0", then SmileFragment. Split on ";", canonicalize
+# and deduplicate within each row. Isomeric mode writes separate artifacts.
 #
 # Output (dataloader/tensors_reading/tanimoto_compact_tensors_reader.py reads them):
 #   Tanimoto_compact_matrix_uint8.pt       structures x structures
@@ -22,7 +16,7 @@
 #   Tanimoto_compact.manifest.json         counts + the source table's size and mtime
 #
 # Usage:
-#     python3 preprocessing/build_tanimoto_compact.py [--data-dir DIR] [--input CSV]
+#     python3 preprocessing/similarity/build_tanimoto_compact.py [--data-dir DIR] [--input CSV]
 #                                                     [--isomeric]
 
 import argparse
@@ -34,7 +28,7 @@ import pandas as pd
 from rdkit import Chem, DataStructs, RDLogger
 from rdkit.Chem import AllChem
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataloader.dataset_source import INTERACTION_CSV
 from dataloader.cache_builders.tanimoto_compact_tensors_builder import write_compact
 
@@ -43,19 +37,8 @@ DEFAULT_DATA_DIR = Path("data")
 
 
 def row_candidates(smile_global, smile_fragment, isomeric=False):
-    """The canonical candidates of one row, in field order.
-
-    ``isomeric`` mirrors the loader's ``lipid_isomers``: LipidGraphBuilder canonicalizes
-    with ``isomericSmiles=self.config.lipid_isomers``, so an isomeric run keeps
-    stereoisomers apart where a non-isomeric one collapses them into a single candidate.
-    That changes both which structures exist and how many candidates a row contributes,
-    which is why the two modes need their own artifacts rather than sharing one set.
-    Default False: this is what the function always did, and the non-isomeric artifacts
-    on disk were built by it.
-    """
-    # Exactly the loader's rule (LipidGraphBuilder._select_lipid_embedding_text): an
-    # untrimmed comparison, so a stray " 0" picks the same column in both places
-    # rather than silently indexing this matrix against a different candidate list.
+    """Canonical candidates in field order, optionally retaining stereochemistry."""
+    # Keep the loader's exact "0" comparison before trimming candidate strings.
     text = str(smile_global)
     if text == "0":
         text = str(smile_fragment)
@@ -114,12 +97,7 @@ def tanimoto_matrix(smiles, radius=2, n_bits=1024, progress_every=5000):
 
 
 def distinct_structures(smiles):
-    """Distinct canonical SMILES in first-appearance order, and each candidate's row.
-
-    First-appearance order rather than sorted: it is stable for a fixed table, needs no
-    comparison of chemistry strings, and keeps the compact matrix's row order traceable
-    to the table it came from.
-    """
+    """Distinct canonical SMILES in first-appearance order, and each candidate's row."""
     order = {}
     for item in smiles:
         if item not in order:

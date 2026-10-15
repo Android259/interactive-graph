@@ -1,38 +1,28 @@
 #!/usr/bin/env python3
-"""Per-residue Foldseek 3Di letters for every protein graph, aligned to its nodes.
+"""Build Foldseek 3Di sequences for protein graphs.
 
-3Di (van Kempen et al., "Fast and accurate protein structure search with Foldseek",
-Nature Biotechnology 42, 2024) is a 20-letter structural alphabet: each residue gets
-one letter describing the local backbone geometry it forms with its spatially nearest
-residue. It is read here as a second per-residue alphabet next to the amino acid,
-for --deepclip_protein_tokens (dataloader/protein_tokens.py).
+3Di uses 20 states to describe spatial interactions between residues. Each state
+is stored as a letter. Foldseek selects residue pairs by virtual-center distance.
+See van Kempen et al., Nature Biotechnology 42, 2024:
+https://pmc.ncbi.nlm.nih.gov/articles/PMC10869269/
 
-Input: data/graphs/<name>/pocketness.pdb -- the structure Voronota built the graph
-from, so its residues ARE the nodes of coarse_graph_nodes.csv, in the same order. Not
-data/esm3_input/<name>.pdb: that copy predates the 2026-09-17 graph rebuild and has
-fewer residues than the graph for GLTP (205/206), GM2A (162/193), HSDL2 (273/275) and
-LCN15 (149/154). Foldseek reads only coordinates, so the pocket flag pocketness.pdb
-keeps in its B-factor column does not matter here.
-
-Output: data/protein_3di.csv, one row per protein:
+Input: data/graphs/<name>/pocketness.pdb and coarse_graph_nodes.csv.
+Output: data/protein_3di.csv, one row per protein, with columns:
     LTPProtein, residues, aa, three_di, foldseek_version
-`aa` and `three_di` have one letter per graph node, in node order.
 
-Alignment is CHECKED, not assumed: Foldseek writes its own amino-acid string next to
-the 3Di one, and that string must equal the node table's residue_type codes read as
-letters (RESIDUE_LETTERS). Any protein where it does not -- a dropped residue, an
-unknown residue written as X -- stops the script with the protein named, instead of
-producing letters shifted against the nodes (preprocessing/AGENTS.md).
+The script checks that Foldseek's amino-acid sequence matches the graph's residue
+sequence and that the 3Di sequence has the same length. A mismatch stops the script
+before it writes the CSV. dataloader/protein_tokens.py reads the result for
+--deepclip_protein_tokens.
 
-Needs the Foldseek binary (not a Python package); see
-files/reference/deepclip_architecture.md for the exact download and version used.
+The Foldseek binary path is set in FOLDSEEK_PATH below. Installation details are
+in files/reference/deepclip_architecture.md.
 
-    python3 preprocessing/build_foldseek_3di.py --foldseek ~/tools/foldseek/bin/foldseek
+    python3 preprocessing/build_foldseek_3di.py
 """
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -42,6 +32,9 @@ import pandas
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from preprocessing.compute_descriptors import RESIDUE_LETTERS  # noqa: E402
+
+
+FOLDSEEK_PATH = os.path.expanduser("~/tools/foldseek/bin/foldseek")
 
 
 def read_fasta(path):
@@ -79,13 +72,12 @@ def run(foldseek, arguments, log):
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--foldseek", default=shutil.which("foldseek") or "foldseek")
     parser.add_argument("--graphs-dir", default=os.path.join(root, "data", "graphs"))
     parser.add_argument("--out", default=os.path.join(root, "data", "protein_3di.csv"))
     args = parser.parse_args()
 
     version = subprocess.run(
-        [args.foldseek, "version"], check=True, capture_output=True, text=True
+        [FOLDSEEK_PATH, "version"], check=True, capture_output=True, text=True
     ).stdout.strip()
 
     names = sorted(
@@ -93,8 +85,7 @@ def main():
         if os.path.exists(os.path.join(args.graphs_dir, name, "coarse_graph_nodes.csv"))
     )
     with tempfile.TemporaryDirectory() as work:
-        # Every structure is called pocketness.pdb, and Foldseek names an entry after
-        # its file -- so each is linked under its protein's name first.
+        # Link each pocketness.pdb under its protein name for Foldseek entry names.
         structures = os.path.join(work, "structures")
         os.mkdir(structures)
         for name in names:
@@ -104,17 +95,15 @@ def main():
             )
         db = os.path.join(work, "db")
         with open(os.path.join(work, "foldseek.log"), "w") as log:
-            # --chain-name-mode 0: entries are named after the file alone when it
-            # holds one chain, which every structure here does (checked below by
-            # requiring exactly one entry per name).
-            run(args.foldseek, [
+            # Use file-based entry names; reject missing or duplicate entries below.
+            run(FOLDSEEK_PATH, [
                 "createdb",
                 *[os.path.join(structures, f"{name}.pdb") for name in names],
                 db, "--chain-name-mode", "0", "--threads", "1",
             ], log)
-            run(args.foldseek, ["lndb", f"{db}_h", f"{db}_ss_h"], log)
-            run(args.foldseek, ["convert2fasta", db, f"{db}_aa.fasta"], log)
-            run(args.foldseek, ["convert2fasta", f"{db}_ss", f"{db}_3di.fasta"], log)
+            run(FOLDSEEK_PATH, ["lndb", f"{db}_h", f"{db}_ss_h"], log)
+            run(FOLDSEEK_PATH, ["convert2fasta", db, f"{db}_aa.fasta"], log)
+            run(FOLDSEEK_PATH, ["convert2fasta", f"{db}_ss", f"{db}_3di.fasta"], log)
         amino_acids = read_fasta(f"{db}_aa.fasta")
         three_di = read_fasta(f"{db}_3di.fasta")
 

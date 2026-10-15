@@ -2,24 +2,14 @@
 
 # Build a head-group-only Tanimoto artifact from the interaction table.
 #
-# Each candidate SMILES (same rule as build_tanimoto_compact.collect: SmileGlobal
-# unless it is "0", candidates split on ";", canonicalized, deduplicated per row)
-# has its acyl chains cut off, keeping only the head group. A "tail" is exactly
-# what descriptors._qualifying_tails already calls one: a connected run of
-# >=4 non-aromatic, non-ring carbons. Its outermost anchor atom -- the one bonded
-# to something outside that carbon-only run, typically the ester/amide carbonyl
-# carbon -- stays with the head group; only the carbons further down the chain
-# are removed. That keeps the ester/amide oxygens attached instead of turning
-# them into orphan atoms once their carbon neighbour is cut.
+# The tail-cutting rule below is project-specific.
 #
-# Candidates that differ only in chain length or unsaturation collapse onto the
-# same head-group structure, so this is stored the same way
-# build_tanimoto_compact.py stores whole-structure Tanimoto: one row per DISTINCT
-# structure (here, distinct head group) plus the index needed to expand back to
-# per-candidate similarities, instead of one row per candidate instance.
+# Candidates come from build_tanimoto_compact.collect. Remove tails identified by
+# _qualifying_tails (>=4 connected non-ring, non-aromatic carbons), retaining atoms
+# bonded outside the carbon component. Compare distinct remaining structures with
+# Morgan fingerprints and Tanimoto; retain indices back to candidates and table rows.
 #
-# Output (same layout/dtypes as dataloader/tensors_reading/tanimoto_compact_tensors_reader.py's files, under a
-# separate prefix so this is never confused with or read as whole-molecule data):
+# Output under data/cache/tanimoto_headgroup/:
 #   Tanimoto_headgroup_compact_matrix_uint8.npy      head groups x head groups
 #   Tanimoto_headgroup_compact_structure_index.npy   candidate -> head-group row
 #   Tanimoto_headgroup_compact_row_ids.npy           candidate -> interaction table row
@@ -27,7 +17,7 @@
 #                                                     source table size + mtime
 #
 # Usage:
-#     python3 preprocessing/build_tanimoto_headgroup.py [--data-dir DIR] [--input CSV]
+#     python3 preprocessing/similarity/build_tanimoto_headgroup.py [--data-dir DIR] [--input CSV]
 #                                                        [--isomeric]
 
 import argparse
@@ -39,11 +29,11 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem, RDLogger
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataloader.dataset_source import INTERACTION_CSV
 from preprocessing.compute_descriptors import _qualifying_tails
-from preprocessing.build_tanimoto_compact import distinct_structures
-from preprocessing.build_tanimoto_compact import collect, tanimoto_matrix
+from preprocessing.similarity.build_tanimoto_compact import distinct_structures
+from preprocessing.similarity.build_tanimoto_compact import collect, tanimoto_matrix
 
 
 DEFAULT_DATA_DIR = Path("data")
@@ -53,13 +43,9 @@ FORMAT_VERSION = 1
 
 
 def head_group_smiles(smiles):
-    """Canonical SMILES of ``smiles`` with every qualifying acyl tail cut off.
+    """Remove qualifying tails; return unchanged SMILES if none exist.
 
-    A molecule with no qualifying tail (already just a head group, e.g. a sterol
-    or a short-chain ligand) passes through unchanged. Returns None only when
-    RDKit cannot parse ``smiles`` at all, or when the cut leaves nothing behind
-    (a bare chain with no anchor atom to keep) -- distinct from "unchanged"
-    because a caller must not silently treat "nothing left" as "no tail found".
+    Return None for invalid input or an empty/unparsable remaining fragment.
     """
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -95,9 +81,7 @@ def head_group_smiles(smiles):
 
 
 def head_groups_for(smiles_list):
-    """Head-group SMILES for every entry, falling back to the whole structure
-    when the cut leaves nothing (reported, never silently dropped: an empty
-    fallback would misalign the index built from this list)."""
+    """Extract head groups, reporting whole-structure fallbacks to preserve indices."""
     result = []
     fallbacks = 0
     for smiles in smiles_list:
@@ -115,7 +99,7 @@ def head_groups_for(smiles_list):
 
 
 def compact_paths(root_dir, isomeric=False):
-    root_dir = Path(root_dir).resolve() / "cache"
+    root_dir = Path(root_dir).resolve() / "cache" / "tanimoto_headgroup"
     prefix = ISOMERIC_PREFIX if isomeric else PREFIX
     return (
         root_dir / f"{prefix}_matrix_uint8.npy",
@@ -175,8 +159,7 @@ def main():
     smiles, row_ids = collect(table, isomeric=args.isomeric)
     print(f"candidates: {len(smiles)} over {len(set(row_ids.tolist()))} rows")
 
-    # Cut every DISTINCT whole structure once, then fan the result back out over
-    # the full candidate list -- cheaper than re-cutting duplicate candidates.
+    # Cut each distinct structure once, then expand back to candidate order.
     whole_structures, whole_index = distinct_structures(smiles)
     print(f"distinct structures (whole molecule): {len(whole_structures)}")
     whole_heads = head_groups_for(whole_structures)

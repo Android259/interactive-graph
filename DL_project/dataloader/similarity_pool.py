@@ -34,7 +34,7 @@ from dataloader.descriptors import (
     LIPID_DESCRIPTOR_NAMES,
     PROTEIN_DESCRIPTOR_NAMES,
 )
-from preprocessing.protein_similarity_common import (
+from preprocessing.similarity.protein_similarity_common import (
     METRIC_PREFIX,
     load_similarity,
     similarity_paths,
@@ -45,8 +45,8 @@ LIPID_COLUMN = "FullIdentityOfLipid"
 PROTEIN_COLUMN = "LTPProtein"
 PAIR_COLUMN = "pair_id"
 
-# source name -> the metric file set under data/protein_similarity/, built by
-# preprocessing/build_protein_sequence_similarity.py and build_protein_tmscore.py.
+# source name -> the metric file set under data/cache/protein_similarity/, built by
+# preprocessing/similarity/build_protein_sequence_similarity.py and build_protein_tmscore.py.
 PROTEIN_METRIC_SOURCES = {
     "protein_identity": "identity",
     "protein_blosum62": "blosum62",
@@ -280,9 +280,9 @@ def resolve_similarity_pool(source, csv, data_dir, descriptor_names=(), config=N
         if loaded is None:
             matrix_path, _, _ = similarity_paths(data_dir, metric)
             builder = (
-                "preprocessing/build_protein_tmscore.py"
+                "preprocessing/similarity/build_protein_tmscore.py"
                 if metric == "tmscore"
-                else "preprocessing/build_protein_sequence_similarity.py"
+                else "preprocessing/similarity/build_protein_sequence_similarity.py"
             )
             raise FileNotFoundError(
                 f"{METRIC_PREFIX[metric]}_* is missing or stale under "

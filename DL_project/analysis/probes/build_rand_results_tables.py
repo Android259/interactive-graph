@@ -39,7 +39,7 @@ from analysis.checkpoint_scores import (  # noqa: E402
     label_descriptor_features,
     score_checkpoints,
 )
-from analysis.baselines.null_model import DEFAULT_FAMILIES, TANIMOTO, resolve_similarity  # noqa: E402
+from analysis.baselines.knn_model import DEFAULT_FAMILIES, TANIMOTO, resolve_similarity  # noqa: E402
 from analysis.interaction_increment import increment_table, print_increment_report  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 
@@ -171,11 +171,11 @@ def main():
             f'model runs on exactly the descriptor set the network was trained to see -- '
             f'falling back to "{TANIMOTO}" (this file\'s original, unconditional default) '
             "when the label sets none. Pass an explicit comma-separated "
-            "descriptor-name list, or \"tanimoto\", to override -- see null_model.py "
+            "descriptor-name list, or \"tanimoto\", to override -- see knn_model.py "
             "--features."
         ),
     )
-    parser.add_argument("--features-label", help="short name for --features, see null_model.py --label")
+    parser.add_argument("--features-label", help="short name for --features, see knn_model.py --label")
     args = parser.parse_args()
 
     families = [f for f in args.families.split(",") if f]

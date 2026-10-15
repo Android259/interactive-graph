@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
-"""Embed every isomeric SMILES (preprocessing/embed_isomeric_smiles.py's output list)
-with the pretrained MoLFormer checkpoint and cache the resulting per-token embeddings.
+"""Embed a SMILES list with the pretrained MoLFormer checkpoint.
 
-Loads IBM's MoLFormer (train_pubchem_light.LightningModule, bert_vocab.txt tokenizer)
-from the project-local checkpoint, runs it over the SMILES list in batches, and pickles
-{smiles: token_embedding_tensor} to data/lipid_SMILES_isomeric_embedding.pkl. This is
-the isomeric counterpart of the deterministic (non-isomeric) lipid SMILES embedding
-table dataloader/tensors_reading/lipid_embedding_tensors_reader.py reads for training;
-needed only when a run sets --lipid_isomers.
+Read the list collected by embed_smiles_isomeric_and_nonisomeric.py. Load the local checkpoint
+and tokenizer, encode batches, and pickle {smiles: token_embedding_tensor}.
+The default output is data/lipid_SMILES_isomeric_embedding.pkl for --lipid_isomers.
 
-Usage:
     python3 preprocessing/embed_isomeric_smiles_molformer.py
-    python3 preprocessing/embed_isomeric_smiles_molformer.py --input preprocessing/isomeric_smiles_before_encoding.pkl \\
-        --output data/lipid_SMILES_isomeric_embedding.pkl
+    python3 preprocessing/embed_isomeric_smiles_molformer.py --input INPUT.pkl --output OUTPUT.pkl
 """
 
 import argparse
@@ -27,7 +21,7 @@ from pathlib import Path
 from rdkit import Chem
 
 
-DEFAULT_INPUT = Path("preprocessing/isomeric_smiles_before_encoding.pkl")
+DEFAULT_INPUT = Path("data/unpreprocessed_files/isomeric_smiles_before_encoding.pkl")
 DEFAULT_OUTPUT = Path("data/lipid_SMILES_isomeric_embedding.pkl")
 DEFAULT_HPARAMS = Path("../../data/Pretrained MoLFormer/hparams.yaml")
 DEFAULT_CHECKPOINT = Path(

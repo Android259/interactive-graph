@@ -160,7 +160,7 @@ def geometry(features: np.ndarray, labels: np.ndarray) -> dict:
     """Is the class easy to read because the representation SEPARATES the classes, or
     because it barely separates anything and the probe is fitting noise?
 
-    The same two questions preprocessing/protein_representation_identity_check.py asks
+    The same two questions analysis/feature_identity_check.py --features ESM3 asks
     of the protein representations, on the lipid side. That companion is the reason they
     are worth asking at all: ESM3 looks usable until you measure it and find median
     cosine 0.974 between any two of the 35 proteins, i.e. one point wearing 35 labels.

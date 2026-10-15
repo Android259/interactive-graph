@@ -42,7 +42,7 @@ them redundant with either of the others.
 Positions compared are the candidates of positive-interaction rows only, unless
 --include-negatives (mode `between`) / unless all-rows is the job (mode `within`,
 which always runs both). Read from the compact Tanimoto artifacts
-(preprocessing/build_tanimoto_compact.py) -- no RDKit, no model.
+(preprocessing/similarity/build_tanimoto_compact.py) -- no RDKit, no model.
 
     python3 analysis/tanimoto_groups/analyze_group_tanimoto.py between
     python3 analysis/tanimoto_groups/analyze_group_tanimoto.py between --restrict-domain=START
@@ -74,7 +74,7 @@ def load_candidate_tanimoto(data_dir, csv_path, isomeric):
     if compact is None:
         raise SystemExit(
             "compact Tanimoto artifacts missing or older than the table; rebuild with "
-            "python3 preprocessing/build_tanimoto_compact.py" + (" --isomeric" if isomeric else "")
+            "python3 preprocessing/similarity/build_tanimoto_compact.py" + (" --isomeric" if isomeric else "")
         )
     return compact.candidate_view(), compact.row_ids
 

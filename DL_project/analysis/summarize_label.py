@@ -344,7 +344,7 @@ def read_csv_metrics(table_path: Path, label: str) -> tuple[dict, dict]:
     return core, auc_fallback
 
 
-def read_null_model_aucs(label: str) -> dict[str, float | None]:
+def read_knn_model_aucs(label: str) -> dict[str, float | None]:
     report_path = label_dir(GRAPHICS_DIR, label) / f"{label}.md"
     result = {"in_protein_AUC": None, "pair_AUC": None}
     if not report_path.exists():
@@ -378,7 +378,7 @@ def build_ranked_table(labels: list[str], table_path: Path) -> str:
         csv_metrics, csv_auc_fallback = read_csv_metrics(table_path, label)
         if all(v is None for v in csv_metrics.values()):
             print(f"# WARNING: no rows for label={label!r} in {table_path}")
-        auc_metrics = read_null_model_aucs(label)
+        auc_metrics = read_knn_model_aucs(label)
         for key in ("pair_AUC", "in_protein_AUC"):
             if auc_metrics[key] is None:
                 auc_metrics[key] = csv_auc_fallback[key]

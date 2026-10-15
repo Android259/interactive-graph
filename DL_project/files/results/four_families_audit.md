@@ -265,7 +265,7 @@ descriptors_path хуже, чем у add_lipprop.
 (`architecture/loss.py:pairwise_ranking_loss`, `\cite{ranknet}`), он не оптимизирует
 BA при пороге 0.5, поэтому судить его по gap/BA методологически неверно (то же
 предостережение — в `geometric_edge.md` §3.2, уже прочитано агентом-дайджестом).
-Нужно перепрогнать анализ через `null_model.py`/AUC, а не через `summarize_label.py`,
+Нужно перепрогнать анализ через `knn_model.py`/AUC, а не через `summarize_label.py`,
 прежде чем делать вывод об успехе/неудаче.
 
 **Наборы дескрипторов, которые стоит попробовать:**

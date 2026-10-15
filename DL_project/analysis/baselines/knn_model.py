@@ -28,7 +28,7 @@ on. Read them as a set, not one instead of another:
                   (top-k mean similarity to its training positives minus the same over
                   its negatives). The subtraction cancels the sampled class ratio, which
                   is what makes `within_protein` read as chance at small k -- see
-                  dataloader.chemistry_prior.null_scores_contrastive. The hardest bar.
+                  dataloader.chemistry_prior.knn_scores_contrastive. The hardest bar.
 
 Every split axis, one code path. Which rows are held out is the ONLY thing that differs
 between axes, so it is the only thing branched on (see Block/split_held_block):
@@ -63,12 +63,12 @@ its measured weakness is threshold placement, and a comparison against a network
 same fixed threshold would credit the network for a decision boundary rather than for
 information. AUC compares what each one knows.
 
-    python3 analysis/baselines/null_model.py
-    python3 analysis/baselines/null_model.py --scores /tmp/scores_small27k.csv --epoch 120
-    python3 analysis/baselines/null_model.py --sets sphingolipids --split test
-    python3 analysis/baselines/null_model.py --family_only gltp \\
+    python3 analysis/baselines/knn_model.py
+    python3 analysis/baselines/knn_model.py --scores /tmp/scores_small27k.csv --epoch 120
+    python3 analysis/baselines/knn_model.py --sets sphingolipids --split test
+    python3 analysis/baselines/knn_model.py --family_only gltp \\
         --lipid_subclass CerP+Hex2Cer+SHexCer --features chain,unsaturation,hbond,heavy
-    python3 analysis/baselines/null_model.py --lipid_species_coldsplit 0.3 --out /tmp/lcs.csv
+    python3 analysis/baselines/knn_model.py --lipid_species_coldsplit 0.3 --out /tmp/lcs.csv
 
 With `--scores` (the CSV `analysis/checkpoint_scores.py` writes) the network's AUC is
 computed on exactly the rows it was evaluated on, matched by `pair_id`, and the
@@ -95,8 +95,8 @@ if PROJECT_ROOT not in sys.path:
 
 from dataloader.chemistry_prior import (  # noqa: E402
     LIPID_DESCRIPTOR_NAMES, PAIR_DESCRIPTOR_NAMES, feature_similarity,
-    molformer_species_similarity, null_scores, null_scores_contrastive,
-    null_scores_within_protein, species_similarity,
+    molformer_species_similarity, knn_scores, knn_scores_contrastive,
+    knn_scores_within_protein, species_similarity,
 )
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.splitting_on_blocks.lipid_species_blocks import species_coldsplit_block  # noqa: E402
@@ -134,7 +134,7 @@ MOLFORMER = "molformer"
 
 # ModelConfig defaults for the flags a lipid-axis arg file leaves alone; a split has to
 # be rebuilt with the same ones the compared run trained under or the rows will not
-# match (the pair_id check in null_model_table says so rather than guessing).
+# match (the pair_id check in knn_model_table says so rather than guessing).
 DEFAULT_RATIO = 2
 DEFAULT_NEIGHBOURS = (5, 15, 40)
 
@@ -143,9 +143,9 @@ DEFAULT_NEIGHBOURS = (5, 15, 40)
 # held frame, because they need its protein column too -- _competitor_scores is the one
 # place that difference lives.
 COMPETITORS = {
-    "null": null_scores,
-    "within_protein": null_scores_within_protein,
-    "contrastive": null_scores_contrastive,
+    "null": knn_scores,
+    "within_protein": knn_scores_within_protein,
+    "contrastive": knn_scores_contrastive,
 }
 DEFAULT_COMPETITORS = tuple(COMPETITORS)
 
@@ -159,27 +159,27 @@ DEFAULT_COMPETITORS = tuple(COMPETITORS)
 # split, a cheap csv fingerprint) so a rebuilt interaction table (project memory
 # [[table-rebuilt-2026-08-24]]) naturally misses instead of silently returning stale
 # numbers -- see _cache_key.
-CACHE_PATH = os.path.join(PROJECT_ROOT, "analysis", ".null_model_cache.json")
+CACHE_PATH = os.path.join(PROJECT_ROOT, "analysis", ".knn_model_cache.json")
 
 
 def _csv_fingerprint(csv):
     return f"{len(csv)}:{int(csv['Interaction'].sum())}"
 
 
-def load_null_model_cache(path=CACHE_PATH):
+def load_knn_model_cache(path=CACHE_PATH):
     if os.path.isfile(path):
         with open(path) as handle:
             return json.load(handle)
     return {}
 
 
-def save_null_model_cache(cache, path=CACHE_PATH):
+def save_knn_model_cache(cache, path=CACHE_PATH):
     """Atomic write (tmp + rename): a cache that only ever grows one entry at a time
     should not lose everything already computed to a crash or an interrupted run --
     exactly the failure mode this project has hit repeatedly with long cluster jobs.
     """
     # No sort_keys: json.load/json.dump both preserve dict insertion order, and a
-    # cache-hit record's column order (which print_null_model_report's caller sees)
+    # cache-hit record's column order (which print_knn_model_report's caller sees)
     # should match a cache-miss one's -- sorting here would silently permute it.
     tmp = f"{path}.tmp"
     with open(tmp, "w") as handle:
@@ -223,7 +223,7 @@ def resolve_similarity(csv, data_dir, features, label=None, zscore=False):
 
     `zscore`: see dataloader.chemistry_prior.feature_similarity. A "zscore" marker is
     appended to the returned `feature_list` (and, when `label` was not given, to the
-    auto-generated one) purely so null_model_table's cache treats a zscored and a
+    auto-generated one) purely so knn_model_table's cache treats a zscored and a
     non-zscored run of the same --features as different entries -- without it, two
     runs sharing an auto-generated label but differing only in --zscore would
     silently collide in the cache and one would read the other's numbers.
@@ -305,7 +305,7 @@ def auc(truth, score):
 def auc_on_scored(truth, score):
     """(AUC over the rows this competitor could score, share of rows it could score).
 
-    `null_scores_within_protein`/`null_scores_contrastive` return nan for a held row
+    `knn_scores_within_protein`/`knn_scores_contrastive` return nan for a held row
     whose protein has NO training rows left (or none of one label) -- real under a lipid
     axis: a protein that only ever binds the held-out chemistry keeps nothing once those
     classes leave training. A single nan poisons the pooled AUC (pandas' rank()
@@ -343,7 +343,7 @@ def per_protein_auc(held, score, minimum_rows=6):
     train still carries that into its score here) -- only the cross-protein
     heterogeneity that pooled AUC could otherwise exploit for free. See
     per_lipid_auc for the symmetric case (protein-only/combined feature sets, where
-    THIS function is the degenerate one -- see print_null_model_report).
+    THIS function is the degenerate one -- see print_knn_model_report).
 
     Proteins with fewer than `minimum_rows` rows, or with only one class present,
     carry no usable ranking and are skipped -- reported, so a mean over three
@@ -376,7 +376,7 @@ def per_lipid_auc(held, score, minimum_rows=6, group_column="lipid_class"):
     ranking) -- only the cross-lipid heterogeneity pooled AUC could otherwise exploit.
 
     `group_column="lipid_class"` (dataloader.lipid_classes.lipid_class_series's
-    head-group class, e.g. "Phosphatidylglycerol" -- null_model_table attaches this
+    head-group class, e.g. "Phosphatidylglycerol" -- knn_model_table attaches this
     column before calling), not `FullIdentityOfLipid` (exact species): a held-out
     block's candidate-PROTEIN axis is small by construction (2-5 proteins per
     excluded family), so a single species is essentially never tested against
@@ -393,7 +393,7 @@ def per_lipid_auc(held, score, minimum_rows=6, group_column="lipid_class"):
     Degenerate (always exactly 0.5) when `score` depends on the lipid alone, for the
     same reason per_protein_auc is degenerate when `score` depends on the protein
     alone: every row of one lipid then shares the identical score, so the ranking is
-    an unbroken tie. See print_null_model_report's entity_column check.
+    an unbroken tie. See print_knn_model_report's entity_column check.
     """
     values = []
     frame = held.assign(_score=np.asarray(score, dtype=float))
@@ -436,7 +436,7 @@ def per_pair_auc(held, score, group_column="lipid_class"):
     Only meaningful for a score that varies on BOTH axes (pair/combined features):
     for a lipid-only or protein-only score, subtracting the OTHER axis' mean removes
     real signal, not just confound, since that score has no genuine variation on the
-    axis being subtracted in the first place. print_null_model_report accordingly
+    axis being subtracted in the first place. print_knn_model_report accordingly
     only surfaces this for entity_column == "pair_id".
 
     Rows this competitor could not score at all (nan -- see auc_on_scored) are dropped
@@ -661,7 +661,7 @@ def _network_rows(network, block, seed, split_name):
     return None if mine.empty else mine
 
 
-def null_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4),
+def knn_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4),
                       neighbour_counts=DEFAULT_NEIGHBOURS, share=0.7, ratio=2,
                       split="valid", network=None, epoch=None,
                       entity_column="FullIdentityOfLipid", label=None, features=None,
@@ -711,7 +711,7 @@ def null_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4
     --scores.
     """
     if (blocks is None) == (families is None):
-        raise ValueError("null_model_table takes either `blocks` or `families`")
+        raise ValueError("knn_model_table takes either `blocks` or `families`")
     if blocks is None:
         blocks = blocks_from_families(families)
     unknown = [name for name in competitors if name not in COMPETITORS]
@@ -721,7 +721,7 @@ def null_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4
         network = network[network["epoch"] == epoch]
     split_names = ("valid", "test") if split == "both" else (split,)
 
-    cache = load_null_model_cache(cache_path) if label is not None else None
+    cache = load_knn_model_cache(cache_path) if label is not None else None
     csv_fingerprint = _csv_fingerprint(csv)
     feature_list = sorted(features) if features is not None else None
 
@@ -791,7 +791,7 @@ def null_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4
                             # regardless of entity_column -- cheap either way, and which
                             # one is degenerate (always exactly 0.5, see per_protein_auc/
                             # per_lipid_auc) depends on entity_column, so
-                            # print_null_model_report decides which to show rather than
+                            # print_knn_model_report decides which to show rather than
                             # this function guessing on its behalf.
                             record[f"{name}_AUC_prot_k{neighbours}"] = per_protein_auc(
                                 held, scores
@@ -806,7 +806,7 @@ def null_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4
                         cache[cache_key] = {
                             "label": label, "features": feature_list, "record": record
                         }
-                        save_null_model_cache(cache, cache_path)
+                        save_knn_model_cache(cache, cache_path)
 
                 mine = _network_rows(network, block, seed, split_name)
                 if mine is not None:
@@ -830,7 +830,7 @@ def null_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4
                     # ever mechanically degenerate: the network sees both protein and
                     # lipid information regardless of what the competitors' --features
                     # granularity is, so all three stay meaningful and
-                    # print_null_model_report shows them unconditionally.
+                    # print_knn_model_report shows them unconditionally.
                     record["net_AUC_prot"], _ = per_protein_auc(merged, probs)
                     record["net_AUC_lipid"], _ = per_lipid_auc(merged, probs)
                     record["net_AUC_pair"] = per_pair_auc(merged, probs)
@@ -893,12 +893,12 @@ def _reading_of(column):
     return None
 
 
-def print_null_model_report(table, split, epoch, entity_column="FullIdentityOfLipid"):
-    """The printout main() produces, given a table from null_model_table -- mean over
+def print_knn_model_report(table, split, epoch, entity_column="FullIdentityOfLipid"):
+    """The printout main() produces, given a table from knn_model_table -- mean over
     seeds, the never-pooled-over-all-seven AUC means, and the within-entity rankings.
     The raw per-(block, seed) rows `table` itself holds are NOT printed here (still
     fully present in `table` for a caller, and in the on-disk cache when
-    null_model_table was given a `label` -- see CACHE_PATH): with 5+ blocks x several
+    knn_model_table was given a `label` -- see CACHE_PATH): with 5+ blocks x several
     seeds x several k x several competitors, the raw rows are mostly noise next to the
     summaries below, which is what every reader has actually wanted so far.
 
@@ -918,7 +918,7 @@ def print_null_model_report(table, split, epoch, entity_column="FullIdentityOfLi
       entity_column == "pair_id"           (combined/pair features): neither is
                                             degenerate -- both print.
     The network's own net_AUC_prot/net_AUC_lipid (when `network` was given to
-    null_model_table) are NEVER degenerate this way -- the network sees both protein
+    knn_model_table) are NEVER degenerate this way -- the network sees both protein
     and lipid information regardless of the competitors' own --features -- so they
     print unconditionally whenever present, even for a block/entity_column whose
     competitor sibling is hidden as degenerate.
@@ -936,7 +936,7 @@ def print_null_model_report(table, split, epoch, entity_column="FullIdentityOfLi
     # side by side invites reading "both look fine" as "no confound", which is not
     # what either one (or the pair of them) actually establishes -- per_pair_auc is
     # the number that does. The single-axis columns are NOT dropped from `table` --
-    # still fully there, and in the on-disk cache when null_model_table was given a
+    # still fully there, and in the on-disk cache when knn_model_table was given a
     # `label` -- only hidden from this printout for this one granularity.
     is_pair = entity_column == "pair_id"
     readings = {name: [] for name in ("prot", "lipid", "pair", "pooled")}
@@ -956,7 +956,7 @@ def print_null_model_report(table, split, epoch, entity_column="FullIdentityOfLi
     show = {
         "prot": (prot_meaningful or has_net["prot"]) and not is_pair,
         "lipid": (lipid_meaningful or has_net["lipid"]) and not is_pair,
-        # *_AUC_pair_k* is computed unconditionally in null_model_table regardless of
+        # *_AUC_pair_k* is computed unconditionally in knn_model_table regardless of
         # entity_column (see its own comment there), so there is always data to show
         # here -- shown alongside prot/lipid now, not only when is_pair collapses to
         # pair-only (that collapse, and its "replaces" rationale above, is unchanged
@@ -1207,7 +1207,7 @@ def main():
 
     blocks = resolve_blocks(args, csv, data_dir)
     competitors = tuple(name for name in args.competitors.split(",") if name)
-    table = null_model_table(
+    table = knn_model_table(
         csv, similarity, index,
         blocks=blocks,
         seeds=[int(s) for s in args.seeds.split(",") if s],
@@ -1221,7 +1221,7 @@ def main():
     print(f"=== features = {label} ({','.join(feature_list)}) ===")
     print(f"entity granularity: {entity_column}, competitors: {','.join(competitors)}\n")
     for split in (("valid", "test") if args.split == "both" else (args.split,)):
-        print_null_model_report(table, split, args.epoch, entity_column=entity_column)
+        print_knn_model_report(table, split, args.epoch, entity_column=entity_column)
 
     if args.out:
         table.to_csv(args.out, index=False)

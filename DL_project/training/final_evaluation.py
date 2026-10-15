@@ -302,7 +302,15 @@ def run_test(run, run_summary, surviving_structure, discovered_dropout_report):
         formatted.extend(row[i].rjust(subgroup_widths[i]) for i in range(1, len(row)))
         return "  ".join(formatted)
 
+    from dataloader.descriptors import UNKNOWN_DESCRIPTOR_NAMES
+
     with open(test_metrics_path, "w") as f:
+        if UNKNOWN_DESCRIPTOR_NAMES:
+            f.write(
+                "unknown_descriptor_names: "
+                + json.dumps(UNKNOWN_DESCRIPTOR_NAMES, separators=(",", ":"))
+                + "\n"
+            )
         for key, value in vars(conf).items():
             if isinstance(value, bool):
                 value = int(value)

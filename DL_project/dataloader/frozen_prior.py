@@ -8,8 +8,8 @@ import numpy as np
 
 from dataloader.chemistry_prior import (
     fit_prior_calibration,
-    null_scores,
-    null_scores_leave_one_row_out,
+    knn_scores,
+    knn_scores_leave_one_row_out,
     species_similarity,
 )
 from dataloader.pocket_lipid_compatibility import raw_compatibility
@@ -32,13 +32,13 @@ class FrozenPriorBuilder:
         if self.config.chem_prior:
             similarity, index = species_similarity(csv, self.ROOT_DIR)
             neighbours = self.config.chem_neighbours
-            train = null_scores_leave_one_row_out(self.csvtrain, similarity, index, neighbours)
+            train = knn_scores_leave_one_row_out(self.csvtrain, similarity, index, neighbours)
             valid = (
-                null_scores(self.csvtrain, self.csvalidate["FullIdentityOfLipid"], similarity, index, neighbours)
+                knn_scores(self.csvtrain, self.csvalidate["FullIdentityOfLipid"], similarity, index, neighbours)
                 if not self.csvalidate.empty else np.array([], dtype=float)
             )
             test = (
-                null_scores(self.csvtrain, self.csvtest["FullIdentityOfLipid"], similarity, index, neighbours)
+                knn_scores(self.csvtrain, self.csvtest["FullIdentityOfLipid"], similarity, index, neighbours)
                 if not self.csvtest.empty else np.array([], dtype=float)
             )
             columns["s_chem"] = (train, valid, test)

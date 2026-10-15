@@ -14,8 +14,14 @@
 training/                 active entry point, CLI config parser, reproducibility
 architecture/             model modules (InteractionClassification + encoders)
 dataloader/               active PLIDataset (Dataloader.py)
-data/                     input artifacts (CSVs, ESM3/PLM embeddings, graphs) + lipid graph generator
-preprocessing/            offline data prep (embeddings, negatives, PDB/FASTA, graphs)
+data/                     input artifacts (CSVs, ESM3/PLM embeddings, graphs/,
+                           lipid_graphs/, cache/) + lipid graph generator;
+                           unpreprocessed_files/ holds originals and intermediates
+                           nothing active reads
+preprocessing/            offline data prep (embeddings, PDB/FASTA, protein graphs)
+                           -- pairs_csv_pipeline/ builds the interaction table
+                           (see its AN_INSTRUCTION.md), similarity/ builds the
+                           Tanimoto and protein-similarity matrices
 analysis/                 canonical metrics-table build / analysis / plots
                            -- baselines/, probes/, tanimoto_groups/ subfolders; see analysis/AGENTS.md
 arg_files/                 run configs, one .md per experiment, grouped by family subfolder
@@ -58,7 +64,7 @@ closest one before editing files in that tree.
   `analysis/`, because they write into the live run pipeline (the first is called from
   `training/final_evaluation.py` after every test run), not read-only reporting.
 - `preprocessing/build_tanimoto_matrix.py` no longer exists; the compact builder
-  (`preprocessing/build_tanimoto_compact.py`) is the only Tanimoto build path.
+  (`preprocessing/similarity/build_tanimoto_compact.py`) is the only Tanimoto build path.
 
 ## Active Pipeline
 

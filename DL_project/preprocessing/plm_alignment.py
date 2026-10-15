@@ -1,24 +1,11 @@
-"""Validate that ESM3 per-residue embeddings line up with protein graph nodes.
+"""Check ESM3 v1 embedding alignment with protein graph nodes.
 
-The protein encoder concatenates ESM3 row ``i`` onto graph node ``i``
-(``node = torch.cat((node, plm), -1)`` in architecture/protein_encoder.py), so a
-stored embedding must have **exactly one row per graph residue** once its BOS/EOS pair
-is removed, *and those rows must be in the graph's order*.
+Remove BOS/EOS rows and compare the embedding row count with the node count.
+Compare the structure-derived input FASTA with the graph's residue sequence.
+Report node positions where the sequences differ.
 
-Scope / honesty: this checks both the count and the ORDER, the latter by comparing
-the FASTA that ESM3 was actually run on against the graph's own residue names. That
-is a real order check for the v1 pipeline, whose embeddings come from
-preprocessing/pdb2fasta.py output. It is not a UniProt->PDB alignment: if a protein's
-FASTA ever stops being structure-derived, the counts could still agree while the
-residue comparison starts reporting mismatches -- which is exactly the intended signal.
-
-A count-only check is what let the GM2A/PITPNA selenomethionine bug survive: MSE
-residues were kept by pdb2fasta.py and deleted by Voronota, so the embedding had two
-(resp. eight) extra rows in the MIDDLE of the sequence, and the symmetric end-trim that
-used to compensate restored the count while shifting the order. That is fixed at the
-source now -- preprocessing/convert_mse_to_met.py, then a graph rebuild -- so no row
-selection survives in the loader beyond dropping BOS/EOS, and this check is what keeps
-it that way.
+This checks the v1 FASTA-based pipeline. It does not align a UniProt sequence to a PDB
+or inspect the amino-acid identity stored inside an embedding tensor.
 """
 from __future__ import annotations
 

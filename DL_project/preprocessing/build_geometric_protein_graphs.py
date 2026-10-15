@@ -1,13 +1,9 @@
-"""Precompute node inputs for the optional protein geometric transformer.
+"""Build node features for the protein geometric transformer.
 
-For every protein under data/graphs/<name>/ that has coarse_graph_nodes.csv,
-coarse_graph_links.csv and pocketness.pdb, builds per-node geometric features
-(backbone frames, contact area/boundary sums, per-edge PNA-style aggregates over
-the incident Voronota contacts) and writes them to
-data/graphs/<name>/geometric_transformer_nodes.csv. Used once to populate these
-per-protein tables before a run with the geometric protein encoder reads them.
+Read coarse_graph_nodes.csv, coarse_graph_links.csv and pocketness.pdb from each
+protein directory under data/graphs/. Write geometric_transformer_nodes.csv with
+backbone frames and aggregates of incident Voronota contacts.
 
-Usage:
     python3 preprocessing/build_geometric_protein_graphs.py
 """
 

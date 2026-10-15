@@ -9,7 +9,7 @@ each distinct pair of structures hundreds of times over -- 2.89 GB of almost ent
 repeated bytes.
 
 Every one of those bytes is a pure function of the two structures.
-``preprocessing/build_tanimoto_compact.py`` computes them as ``round(BulkTanimotoSimilarity(fp_a, fp_b) * 255)`` over Morgan
+``preprocessing/similarity/build_tanimoto_compact.py`` computes them as ``round(BulkTanimotoSimilarity(fp_a, fp_b) * 255)`` over Morgan
 fingerprints, and a fingerprint is a pure function of the canonical SMILES string, so two
 instances of one structure necessarily have byte-identical rows. Keeping one row per
 distinct structure therefore loses nothing:
@@ -50,6 +50,7 @@ import torch
 
 COMPACT_FORMAT_VERSION = 1
 CACHE_SUBDIR = "cache"
+TANIMOTO_SUBDIR = "tanimoto"
 # Two disjoint sets, because lipid_isomers changes the candidate list itself, not just
 # the similarities: with stereochemistry kept, isomers that collapse into one candidate
 # under the non-isomeric rule stay separate, so a row contributes a different number of
@@ -107,10 +108,10 @@ class _CandidateView:
 
 
 def compact_paths(root_dir, isomeric=False):
-    """Cache-file paths under ``<root_dir>/cache`` -- see
+    """Cache-file paths under ``<root_dir>/cache/tanimoto`` -- see
     dataloader/cache_builders/tanimoto_compact_tensors_builder.py for the builder that writes
     them."""
-    root_dir = Path(root_dir).resolve() / CACHE_SUBDIR
+    root_dir = Path(root_dir).resolve() / CACHE_SUBDIR / TANIMOTO_SUBDIR
     prefix = ISOMERIC_COMPACT_PREFIX if isomeric else COMPACT_PREFIX
     return (
         root_dir / f"{prefix}_matrix_uint8.pt",

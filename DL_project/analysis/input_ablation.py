@@ -133,7 +133,7 @@ from forward_args import build_forward_args  # noqa: E402
 from architecture.descriptor_mlp_head import DescriptorMLPHead  # noqa: E402
 from dataloader.descriptors import LIPID_DESCRIPTOR_NAMES, full_catalog_order  # noqa: E402
 
-from analysis.baselines.null_model import WORKING, auc, per_protein_auc  # noqa: E402
+from analysis.baselines.knn_model import WORKING, auc, per_protein_auc  # noqa: E402
 
 torch.set_flush_denormal(True)
 

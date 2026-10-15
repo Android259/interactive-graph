@@ -71,7 +71,7 @@ from analysis.protein_profile_probe import (  # noqa: E402
     interval,
     partial_spearman,
 )
-from preprocessing.pocket_descriptor_identity_check import (  # noqa: E402
+from analysis.feature_identity_check import (  # noqa: E402
     eta_squared,
     mean_plm_embedding,
     protein_families,
@@ -339,7 +339,7 @@ def main():
         pocketness_path = protein_dir / "pocketness.pdb"
         if not pocketness_path.is_file() or name not in families_by_protein:
             continue
-        # Same embedding-availability filter preprocessing/pocket_descriptor_identity_check.py
+        # Same embedding-availability filter analysis/feature_identity_check.py
         # uses, kept only so this script's cohort matches the one the documented eta^2=0.62
         # baseline (files/reference/pocket_shape_descriptors.md section 5) was computed on -- the
         # embedding itself plays no role in what follows.

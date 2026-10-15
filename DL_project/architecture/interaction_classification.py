@@ -122,8 +122,6 @@ class InteractionClassification(torch.nn.Module):
                     params.append(parameter)
         return params
 
-    def set_rnabang_normalization(self, stats):
-        self.protein1.set_rnabang_normalization(stats)
 
     def discovered_dropout(self):
         """Learned dropout p per Concrete Dropout site, keyed by module path.
@@ -263,8 +261,6 @@ class InteractionClassification(torch.nn.Module):
         prot_frame_rotation=None,
         prot_frame_translation=None,
         prot_geometric_node_attr=None,
-        prot_edge_node_pairs=None,
-        prot_edge_node_degree=None,
         frozen_prior=None,
         descriptor_catalog_input=None,
         chain_rank=None,
@@ -364,9 +360,7 @@ class InteractionClassification(torch.nn.Module):
             descriptor_catalog_input=descriptor_catalog_input,
             frame_rotation=prot_frame_rotation,
             frame_translation=prot_frame_translation,
-            geometric_node_attr=prot_geometric_node_attr,
-            edge_node_pairs=prot_edge_node_pairs,
-            edge_node_degree=prot_edge_node_degree)
+            geometric_node_attr=prot_geometric_node_attr)
 
         # Width hand-off, before the adversary and cross-attention (both built at
         # config.hiddim). None whenever --protein_hiddim matches --hiddim, which is
@@ -476,9 +470,7 @@ class InteractionClassification(torch.nn.Module):
                 pocket_index=self_pocket_index,
                 frame_rotation=prot_frame_rotation,
                 frame_translation=prot_frame_translation,
-                geometric_node_attr=prot_geometric_node_attr,
-                edge_node_pairs=prot_edge_node_pairs,
-                edge_node_degree=prot_edge_node_degree)
+                geometric_node_attr=prot_geometric_node_attr)
 
             if getattr(config, "lipid_graph_isomers", False):
                 lip2 = self.lipid2(

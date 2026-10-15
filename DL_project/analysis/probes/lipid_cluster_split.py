@@ -276,7 +276,7 @@ def main():
     if compact is None:
         raise SystemExit(
             "compact Tanimoto artifacts are missing or stale for this table; "
-            "rebuild them with preprocessing/build_tanimoto_compact.py"
+            "rebuild them with preprocessing/similarity/build_tanimoto_compact.py"
         )
     print(
         f"compact Tanimoto: {compact.structures} distinct structures, "

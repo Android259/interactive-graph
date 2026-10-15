@@ -2,7 +2,7 @@
 
 Every descriptor in POCKET_DESCRIPTOR_NAMES describes the protein alone, and every one
 of them turns out to be a family fingerprint to some degree (η² 0.28-0.85,
-preprocessing/pocket_descriptor_identity_check.py) -- on 35 proteins / 9 families,
+analysis/feature_identity_check.py) -- on 35 proteins / 9 families,
 almost any sufficiently informative protein-only summary is. A quantity that depends on
 BOTH the protein and the candidate lipid together cannot collapse to a protein label the
 same way, because it is not a function of the protein alone.
@@ -274,7 +274,7 @@ def coarsen_to_levels(values, edges):
     in [13.6, 32.0], so at full resolution it is very nearly a protein id -- eta^2
     against protein identity 0.78, squarely inside the 0.28-0.85 band that got every
     entry of POCKET_DESCRIPTOR_NAMES rejected as a fold label
-    (preprocessing/pocket_descriptor_identity_check.py). Rounding to a handful of levels
+    (analysis/feature_identity_check.py). Rounding to a handful of levels
     keeps the physical claim -- this cavity is longer than that one -- and destroys the
     one-to-one map that makes it a label.
 

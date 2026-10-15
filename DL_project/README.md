@@ -20,7 +20,7 @@
   ESM3 по остаткам (`data/embedding_ESM3*/`), дескрипторы кармана.
 - **Липид**: SMILES (у части липидов — несколько кандидатов-изомеров), эмбеддинги
   MoLFormer (`data/lipid_SMILES_embedding_deterministic.*`), атомные графы
-  (`data/lipid_graphs/`), сходство Tanimoto (`data/cache/Tanimoto_compact_*`).
+  (`data/lipid_graphs/`), сходство Tanimoto (`data/cache/tanimoto/Tanimoto_compact_*`).
 - Подробный контракт файлов данных: [data/AGENTS.md](data/AGENTS.md).
 
 ## Схема пайплайна

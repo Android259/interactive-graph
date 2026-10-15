@@ -1,7 +1,7 @@
 """The chemistry-only lipid propensity score, shared by the dataloader and analysis.
 
 Callers :
-    analysis/baselines/null_model.py uses it as a standalone
+    analysis/baselines/knn_model.py uses it as a standalone
     predictor to compare against the network. 
 
     Dataloader (under `--chem_prior`) attaches it to every row as a frozen input, 
@@ -57,7 +57,7 @@ def species_similarity(csv, data_dir):
     it. Taking the max is the same reduction the loader applies when it turns candidate
     similarities into one number per pair.
     """
-    cache_dir = os.path.join(data_dir, "cache")
+    cache_dir = os.path.join(data_dir, "cache", "tanimoto")
     matrix = np.load(
         os.path.join(cache_dir, "Tanimoto_compact_isomeric_matrix_uint8.npy")
     ).astype(np.float32) / 255.0
@@ -95,7 +95,7 @@ def molformer_species_similarity(data_dir):
     (the row/column order, one species name per row).
 
     Same (similarity, index) 2-tuple contract as species_similarity, so
-    analysis/baselines/null_model.py's --features=molformer branch is a drop-in third option
+    analysis/baselines/knn_model.py's --features=molformer branch is a drop-in third option
     beside tanimoto (Morgan-fingerprint) and named hand-built descriptors -- this one
     is keyed per species like species_similarity, not per structure, because
     build_molformer_similarity_matrix.py already reduces each species' candidate
@@ -352,7 +352,7 @@ def raw_feature_matrix(csv, data_dir, names, zscore=False):
 def feature_similarity(csv, data_dir, names, zscore=False):
     """Generalised null-model similarity from an arbitrary named subset of
     protein-only, lipid-only and pair descriptors -- one flag's worth of comma-
-    separated names covers every combination analysis/baselines/null_model.py needs,
+    separated names covers every combination analysis/baselines/knn_model.py needs,
     instead of one hardcoded function per combination.
 
     `zscore`: for MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES entries only (occupancy/
@@ -389,10 +389,10 @@ def feature_similarity(csv, data_dir, names, zscore=False):
     keyed by pair_id) -- neither species nor protein alone determines that vector.
 
     Returns (similarity, index, entity_column): the same (similarity, index) contract
-    species_similarity/null_scores/null_scores_leave_one_row_out already use, plus
+    species_similarity/knn_scores/knn_scores_leave_one_row_out already use, plus
     entity_column naming which column of a frame (FullIdentityOfLipid / LTPProtein /
     pair_id) `index` is keyed by, so a caller building `held`/`train` frames knows
-    which column to hand null_scores.
+    which column to hand knn_scores.
     """
     entities, matrix, entity_column, _ = raw_feature_matrix(csv, data_dir, names, zscore=zscore)
     index = {entity: position for position, entity in enumerate(entities)}
@@ -418,7 +418,7 @@ def lipid_descriptor_similarity(csv, data_dir=None):
     return similarity, index
 
 
-def null_scores(train, held_species, similarity, index, neighbours,
+def knn_scores(train, held_species, similarity, index, neighbours,
                  entity_column="FullIdentityOfLipid"):
     """Similarity-weighted train positive rate of the k nearest training entities.
 
@@ -441,12 +441,12 @@ def null_scores(train, held_species, similarity, index, neighbours,
     return np.array(scores)
 
 
-def null_scores_within_protein(train, held, similarity, index, neighbours,
+def knn_scores_within_protein(train, held, similarity, index, neighbours,
                                 entity_column="FullIdentityOfLipid",
                                 protein_column="LTPProtein"):
-    """`null_scores`, but each held row asks only about ITS OWN protein.
+    """`knn_scores`, but each held row asks only about ITS OWN protein.
 
-    The difference is the whole comparison. `null_scores` above averages the training
+    The difference is the whole comparison. `knn_scores` above averages the training
     positive rate of the nearest entities over EVERY protein at once -- "are lipids like
     this one generally bound" -- so it is a lipid-only predictor: two held rows sharing a
     lipid get the same score however different their proteins are. This one restricts
@@ -482,10 +482,10 @@ def null_scores_within_protein(train, held, similarity, index, neighbours,
     return np.array(scores)
 
 
-def null_scores_contrastive(train, held, similarity, index, neighbours,
+def knn_scores_contrastive(train, held, similarity, index, neighbours,
                             entity_column="FullIdentityOfLipid",
                             protein_column="LTPProtein"):
-    """`null_scores_within_protein`, but comparing the two labels separately.
+    """`knn_scores_within_protein`, but comparing the two labels separately.
 
     The one above averages the training positive RATE over a protein's k nearest
     training lipids, so it inherits whatever class ratio the pool was sampled at. At
@@ -505,7 +505,7 @@ def null_scores_contrastive(train, held, similarity, index, neighbours,
 
     nan when the protein has no training rows on one of the two sides -- there is no
     comparison to make then, and callers already filter nan (see
-    analysis/baselines/null_model.py's auc_on_scored).
+    analysis/baselines/knn_model.py's auc_on_scored).
     """
     positives, negatives = {}, {}
     for name, frame in train.groupby(protein_column):
@@ -591,17 +591,17 @@ def fit_chem_calibration(s_chem_train, labels_train, steps=400, learning_rate=0.
     return float(means[0]), float(spreads[0]), intercept, float(weights[0])
 
 
-def null_scores_leave_one_row_out(frame, similarity, index, neighbours,
+def knn_scores_leave_one_row_out(frame, similarity, index, neighbours,
                                    entity_column="FullIdentityOfLipid"):
     """Per-row chemistry score for rows that are themselves part of the reference set.
 
-    `entity_column` -- see null_scores. At row (pair_id) granularity every entity has
+    `entity_column` -- see knn_scores. At row (pair_id) granularity every entity has
     exactly one row by construction, so `count == 1` always and the code below's
     "exclude this entity from its own neighbour set" branch fires for every row rather
     than the `count > 1` leave-one-out branch -- still correct, just always the same
     one of the two paths.
 
-    `null_scores` is safe for held-out rows: under `--double_coldsplit` their species
+    `knn_scores` is safe for held-out rows: under `--double_coldsplit` their species
     never appears in `train` at all (0% overlap, files/reference/marginals_and_cold_split.md
     section 6), so a held row cannot see its own label. Training rows are not so lucky
     -- every training row's species IS in the training reference set, and a species has
@@ -617,7 +617,7 @@ def null_scores_leave_one_row_out(frame, similarity, index, neighbours,
     ordinary, because a different species' rate does not depend on this row at all.
 
     `frame` doubles as both the reference set and the rows to score, which is why this
-    takes one argument where `null_scores` takes two.
+    takes one argument where `knn_scores` takes two.
     """
     labels = frame["Interaction"].to_numpy(dtype=float)
     species_of_row = frame[entity_column].to_numpy()
@@ -648,3 +648,56 @@ def null_scores_leave_one_row_out(frame, similarity, index, neighbours,
             (weights * rates[nearest]).sum() / max(weights.sum(), 1e-9)
         )
     return scores
+
+
+MOLFORMER_EMBEDDING_FILE = "lipid_SMILES_embedding_deterministic.pkl"
+
+
+def molformer_canonical_key(smiles):
+    """Same recipe dataloader/graphs_builders/lipid_graph_builder.py's
+    _canonical_embedding_key uses under the default (--lipid_isomers unset) config:
+    isomericSmiles=False, so the key matches what the deterministic embedding table
+    was built and is looked up with.
+    """
+    from rdkit import Chem
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return Chem.MolToSmiles(mol, canonical=True, isomericSmiles=False)
+
+
+def species_embeddings(csv, smiles_encoding):
+    """{species: 768-dim vector}, mean-pooled over tokens then over candidates.
+
+    One row per distinct FullIdentityOfLipid, its FIRST occurrence's candidate list
+    -- same convention analysis/feature_identity_check.py's candidate_matrix uses
+    (the candidate SMILES field is a property of the species' identity, constant
+    across the rows that share it).
+    """
+    import torch
+
+    from dataloader.pocket_lipid_compatibility import candidates_for_row
+
+    vectors, missing_species, missing_keys = {}, [], set()
+    seen = set()
+    for _, row in csv.iterrows():
+        species = row["FullIdentityOfLipid"]
+        if species in seen:
+            continue
+        seen.add(species)
+        pooled = []
+        for candidate in candidates_for_row(row):
+            key = molformer_canonical_key(candidate)
+            if key is None:
+                continue
+            encoding = smiles_encoding.get(key)
+            if encoding is None:
+                missing_keys.add(key)
+                continue
+            pooled.append(torch.as_tensor(encoding).squeeze(0).mean(dim=0).numpy())
+        if pooled:
+            vectors[species] = np.mean(np.stack(pooled), axis=0)
+        else:
+            missing_species.append(species)
+    return vectors, missing_species, missing_keys

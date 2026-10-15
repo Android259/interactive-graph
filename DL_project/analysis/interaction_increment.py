@@ -39,12 +39,12 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__fi
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "preprocessing"))
 
-from analysis.baselines.null_model import (  # noqa: E402
+from analysis.baselines.knn_model import (  # noqa: E402
     DEFAULT_FAMILIES,
     TANIMOTO,
     _group_stats,
     auc,
-    null_scores,
+    knn_scores,
     per_lipid_auc,
     per_pair_auc,
     per_protein_auc,
@@ -89,14 +89,14 @@ def increment_table(csv, similarity, index, network, families, seeds, neighbours
     """One row per (family, seed, epoch): the increment measurement.
 
     `balanced_lipid_classes` must match whether `--label`'s own run set
-    --balanced_lipid_classes -- see null_model.null_model_table's own note.
+    --balanced_lipid_classes -- see knn_model.knn_model_table's own note.
 
     `network` is the RAW (unfiltered) scores DataFrame from
     analysis/checkpoint_scores.py; filtered here by `split`, matching
-    null_model_table's contract in analysis/baselines/null_model.py. `epochs=None`
+    knn_model_table's contract in analysis/baselines/knn_model.py. `epochs=None`
     means every epoch present in `network`. `entity_column` must match whatever
     `similarity`/`index` are keyed by -- see
-    dataloader.chemistry_prior.feature_similarity/null_model.
+    dataloader.chemistry_prior.feature_similarity/knn_model.
     resolve_similarity. Returns the table main() used to print -- factored out so
     analysis/full_label_report.py can build it without a --scores CSV round-trip.
     """
@@ -113,9 +113,9 @@ def increment_table(csv, similarity, index, network, families, seeds, neighbours
             )
             block = valid if split == "valid" else test
             # per_lipid_auc's default grouping -- attached once here so every epoch's
-            # merge (below) carries it, same as null_model_table does for `held`.
+            # merge (below) carries it, same as knn_model_table does for `held`.
             block = block.assign(lipid_class=lipid_class_series(block))
-            chemistry = null_scores(
+            chemistry = knn_scores(
                 train, block[entity_column], similarity, index, neighbours, entity_column
             )
             for epoch in epochs:
@@ -144,8 +144,8 @@ def increment_table(csv, similarity, index, network, families, seeds, neighbours
                 # mechanically degenerate (always exactly 0.5, see per_protein_auc/
                 # per_lipid_auc) depends on entity_column, so print_increment_report
                 # decides which to show rather than this function guessing on its
-                # behalf -- same split of responsibility as null_model_table/
-                # print_null_model_report.
+                # behalf -- same split of responsibility as knn_model_table/
+                # print_knn_model_report.
                 chem_prot, _ = per_protein_auc(merged, merged["_chem"].to_numpy())
                 net_prot, proteins = per_protein_auc(merged, merged["prob"].to_numpy())
                 chem_lipid, _ = per_lipid_auc(merged, merged["_chem"].to_numpy())
@@ -189,18 +189,18 @@ def increment_table(csv, similarity, index, network, families, seeds, neighbours
 
 def print_increment_report(table, split, neighbours, entity_column="FullIdentityOfLipid"):
     """The printout main()/full_label_report.py use, given a table from increment_table --
-    same reporting shape as null_model.py's print_null_model_report (mean over seeds
+    same reporting shape as knn_model.py's print_knn_model_report (mean over seeds
     per family, then mean/median/std over all seven at once, no WORKING-three/
-    other-four split -- see files/results/signal_state.md 6.4 and null_model.py's own
+    other-four split -- see files/results/signal_state.md 6.4 and knn_model.py's own
     _group_stats), plus the within-entity rankings (per_protein_auc/per_lipid_auc)
-    and per_pair_auc, gated by `entity_column` exactly the way null_model.py's report
+    and per_pair_auc, gated by `entity_column` exactly the way knn_model.py's report
     would gate them for the SAME similarity/index/entity_column increment_table was
     given (chem_prot/chem_lipid here are built from that same null model, so they are
     degenerate under the identical condition null_AUC_prot_k*/null_AUC_lipid_k* are).
     net_prot/net_lipid are never degenerate -- the network sees both axes regardless
     of the null model's own granularity -- so they print whenever their group does.
 
-    Unlike null_model.py's report, `table` also carries an epoch axis (this project's
+    Unlike knn_model.py's report, `table` also carries an epoch axis (this project's
     saved dynamics checkpoints): sections 1-2 keep that axis (mean over family+seed,
     one row per epoch, the trajectory); sections from 3 on fix it at the LAST epoch,
     the same checkpoint build_rand_results_tables.py/full_label_report.py otherwise
@@ -262,7 +262,7 @@ def print_increment_report(table, split, neighbours, entity_column="FullIdentity
         within_entity("protein", "proteins", prot_cols)
     if show_lipid:
         # "lipid class" (dataloader.lipid_classes.lipid_class_series), not species --
-        # see null_model.py's per_lipid_auc docstring for why species-level grouping
+        # see knn_model.py's per_lipid_auc docstring for why species-level grouping
         # is structurally unusable on this dataset's split shape.
         within_entity("lipid class", "lipids", lipid_cols)
     if show_pair:
@@ -287,15 +287,15 @@ def main():
             f'"{TANIMOTO}" (default): full-structure Morgan-fingerprint similarity, '
             "the original null model. Otherwise a comma-separated descriptor-name "
             "list -- lipid-only, protein-only, pair, or any combination -- see "
-            "null_model.py --features. analysis/full_label_report.py resolves this "
+            "knn_model.py --features. analysis/full_label_report.py resolves this "
             "automatically off a label's own --descriptor_heads "
             "when called via --label instead of --scores."
         ),
     )
-    parser.add_argument("--features-label", help="short name for --features, see null_model.py --label")
+    parser.add_argument("--features-label", help="short name for --features, see knn_model.py --label")
     parser.add_argument(
         "--zscore", action="store_true",
-        help="see null_model.py --zscore -- standardises the six multiplicative pair descriptors",
+        help="see knn_model.py --zscore -- standardises the six multiplicative pair descriptors",
     )
     args = parser.parse_args()
 
