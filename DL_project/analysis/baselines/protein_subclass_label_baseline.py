@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """No-model baseline: predict binding from (protein, lipid subclass) alone.
 
-"Простая классификация пары белок-подкласс липида" -- the planka GE is measured
-against (files/history/geometric_edge.md, files/results/mlp_s15_pu_loss_first_
-measurement.md), computed properly here instead of citing it from memory. For each
-(LTPProtein, lipid subclass) cell, the prediction is the TRAIN positive rate of that
-cell thresholded at 0.5 -- no chemistry beyond the subclass label, no structure, no
+For each (LTPProtein, lipid subclass) cell, the prediction is the TRAIN positive rate of that
+cell thresholded at 0.5 ; no chemistry beyond the subclass label, no structure, no
 model (dataloader/Dataloader.py::_label_only_baseline is the same recipe, generalised
 here from a single key -- lipid identity or lipid class -- to the JOINT (protein,
 subclass) key, which that method already supports generically via any key Series).

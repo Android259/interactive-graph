@@ -878,7 +878,7 @@ def binary_confusion_metrics(
 
 def _pocket_mask(nodes: pd.DataFrame, pocket_path: Path) -> np.ndarray:
     """Pocket mask with the same B-factor and side-chain convention as the loader."""
-    from preprocessing.pocket_shape_descriptors import read_pocket_atoms
+    from preprocessing.compute_descriptors import read_pocket_atoms
 
     _, pocket_residues, _ = read_pocket_atoms(pocket_path)
     keys = [
@@ -893,7 +893,7 @@ def _pocket_mask(nodes: pd.DataFrame, pocket_path: Path) -> np.ndarray:
 
 def _shape_values(pocket_path: Path) -> tuple[float, float, float]:
     from preprocessing.compute_descriptors import pocket_shape_full
-    from preprocessing.pocket_shape_descriptors import read_pocket_atoms
+    from preprocessing.compute_descriptors import read_pocket_atoms
 
     coordinates, _, _ = read_pocket_atoms(pocket_path)
     shape = pocket_shape_full(coordinates)
@@ -930,7 +930,7 @@ def _cavity_values(pocket_path: Path) -> tuple[float, float]:
     """
     from scipy.spatial import ConvexHull, Delaunay
 
-    from preprocessing.pocket_shape_descriptors import read_pocket_atoms
+    from preprocessing.compute_descriptors import read_pocket_atoms
 
     pocket, _, _ = read_pocket_atoms(pocket_path)
     if len(pocket) < 4:

@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Add metric reports that are not yet represented in the shared CSV table.
 
-Lives in training/, not analysis/: scripts/wait_and_sync.sh runs this (as a CLI) right
-after syncing a cluster's finished runs, to write every newly-arrived report into the
-shared table before anything else reads it -- a result-recording step of the run
-pipeline, not a read-only analysis/ report over a table assumed already complete.
+Scripts/wait_and_sync.sh runs this after syncing a cluster's finished runs, to write 
+every newly-arrived report into the shared table before anything else reads it
 """
 
 from __future__ import annotations

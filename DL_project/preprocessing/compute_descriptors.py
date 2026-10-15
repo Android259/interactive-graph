@@ -251,8 +251,6 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
         "ev28_q50": float(numpy.median(ev28)),
         "ev28_q90": float(numpy.percentile(ev28, 90)),
         "ev56_q10": float(numpy.percentile(ev56, 10)),
-        "ev56_q50": float(numpy.median(ev56)),
-        "ev56_q90": float(numpy.percentile(ev56, 90)),
         "buriedness_q10": float(numpy.percentile(burial, 10)),
         "buriedness_q90": float(numpy.percentile(burial, 90)),
         "depth_q50": float(numpy.median(depth)),
@@ -263,6 +261,96 @@ def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
     if missing:
         raise ValueError(f"pocket descriptor not computed: {missing}")
     return values
+
+
+def read_pocket_atoms(pocketness_path):
+    """Pocket side-chain coordinates, pocket residue keys and all residue keys.
+
+    One pass over the file: the residue key of every ATOM/HETATM record in order,
+    then the same backbone/flag filters pocket_atom_coordinates applies, so the
+    coordinates are identical and the residue keys mask coarse_graph_nodes.csv.
+    """
+    coordinates = []
+    pocket_residues = set()
+    all_residues = []
+    seen = set()
+    with open(pocketness_path) as handle:
+        for line in handle:
+            if not line.startswith(("ATOM", "HETATM")) or len(line) < 63:
+                continue
+            residue = line[22:28].strip()
+            if residue not in seen:
+                seen.add(residue)
+                all_residues.append(residue)
+            if line[13:17].strip() in POCKET_BACKBONE_ATOMS:
+                continue
+            if int(line[62]) <= 0:
+                continue
+            pocket_residues.add(residue)
+            coordinates.append(
+                (float(line[30:38]), float(line[38:46]), float(line[46:54]))
+            )
+    return numpy.array(coordinates, dtype=float), pocket_residues, all_residues
+
+
+def descriptors_for(protein_dir):
+    """The research catalog: every pocket column this project can compute, promoted
+    or not. PROTEIN_DESCRIPTOR_NAMES is the promoted subset; what is left here is
+    the raw residue counts and the scale-carrying cavity axes, both deliberately
+    out of production because protein size stands in for fold on a cold-family
+    split. Reported by analysis/probes/pocket_shape_descriptors_report.py.
+    """
+    protein_dir = Path(protein_dir)
+    nodes = pandas.read_csv(protein_dir / "coarse_graph_nodes.csv")
+    coordinates, pocket_residues, all_residues = read_pocket_atoms(
+        protein_dir / "pocketness.pdb"
+    )
+    if not pocket_residues:
+        return None
+
+    key = [str(int(value)) if float(value).is_integer() else str(value)
+           for value in nodes["ID_resSeq"]]
+    mask = numpy.array([residue in pocket_residues for residue in key])
+    if mask.sum() == 0:
+        return None
+    site = nodes[mask]
+
+    row = {"protein": protein_dir.name, "pocket_residues": int(mask.sum()),
+           "protein_residues": int(len(nodes))}
+
+    if len(coordinates) < 4:
+        return None
+    row.update(pocket_shape_full(coordinates))
+
+    sasa = float(site["residue_sas_area"].sum())
+    volume = float(site["residue_volume"].sum())
+    row["pocket_volume_per_sasa"] = volume / max(sasa, 1e-9)
+
+    for column, name in (
+        ("residue_mean_ev14", "ev14"),
+        ("residue_mean_ev28", "ev28"),
+        ("residue_mean_ev56", "ev56"),
+        ("residue_mean_buriedness", "buriedness"),
+        ("residue_mean_voromqa_depth", "depth"),
+    ):
+        if column not in site:
+            continue
+        values = site[column].to_numpy(dtype=float)
+        for quantile in (10, 50, 90):
+            row[f"{name}_q{quantile}"] = float(numpy.percentile(values, quantile))
+
+    hydropathy = numpy.asarray(KYTE_DOOLITTLE)[site["residue_type"].to_numpy(dtype=int)]
+    aromatic = numpy.isin(site["residue_type"].to_numpy(dtype=int), AROMATIC_RESIDUE_TYPES)
+    if "residue_mean_buriedness" in site:
+        burial = site["residue_mean_buriedness"].to_numpy(dtype=float)
+        core = burial >= numpy.median(burial)
+        row["hydropathy_core"] = float(hydropathy[core].mean())
+        row["hydropathy_rim"] = float(hydropathy[~core].mean()) if (~core).any() else float("nan")
+        row["aromatic_share_core"] = float(aromatic[core].mean())
+        row["aromatic_share_rim"] = float(aromatic[~core].mean()) if (~core).any() else float("nan")
+    row["aromatic_share"] = float(aromatic.mean())
+    row["hydropathy_mean"] = float(hydropathy.mean())
+    return row
 
 
 def pocket_cavity_volume(pocketness_path):
@@ -326,7 +414,7 @@ def pocket_chemistry_descriptor(vertices, pocket, pocketness_path=None):
     values["pocket_packing_density"] = packing
     return values
 # Increment the format version when descriptor definitions or columns change.
-_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 6
+_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 7
 
 
 def _protein_descriptors_csv_path(data_dir):

@@ -25,13 +25,6 @@ RUN_METRIC_FIELDS = (
     "mean_valid_balanced_accuracy",
     "auc_valid_balanced_accuracy",
     "valid_balanced_accuracy_std",
-    # The same five questions asked of validation AUC instead of validation balanced
-    # accuracy. Balanced accuracy is the quality of the split AT the 0.5 threshold (and 
-    # stays the checkpoint-selection metric), AUC is the quality of the ORDER whatever the 
-    # threshold. They come apart exactly where this project keeps landing -- under --adversarial_grl 
-    # valid balanced accuracy sits at 0.49-0.51 for entire runs, which reads as "learned nothing" 
-    # and cannot be told apart from "learned something, threshold elsewhere" without this.
-    # Empty for every run before the validation pass started collecting per-row scores.
     "checkpoint_valid_AUC",
     "max_valid_AUC_epoch",
     "max_valid_AUC",

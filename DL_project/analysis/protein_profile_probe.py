@@ -65,7 +65,7 @@ cosine) -- same anchors, so a result here is directly comparable without adjustm
     python3 analysis/protein_profile_probe.py similarity --quantiles=100 --neighbours=5
 
 MODE `correlate` -- no training, no model: do the cavity's own SHAPE descriptors
-(preprocessing/pocket_shape_descriptors.py -- how far the cavity extends, how elongated it
+(analysis/probes/pocket_shape_descriptors_report.py -- how far the cavity extends, how elongated it
 is, how its enclosure is distributed) correlate with simpler, more interpretable
 binding-derived targets (mean acyl chain length of a protein's positives; how many
 distinct head-group classes it accepts), controlling for protein size and for protein
@@ -450,7 +450,7 @@ def legacy_size_descriptors(protein_dir):
     the same target, on the same proteins, with the same test -- the whole point of the
     comparison. Definitions follow pocket_descriptor() in preprocessing/compute_descriptors.py.
     """
-    from preprocessing.pocket_shape_descriptors import read_pocket_atoms
+    from preprocessing.compute_descriptors import read_pocket_atoms
 
     nodes = pandas.read_csv(protein_dir / "coarse_graph_nodes.csv")
     _, pocket_residues, _ = read_pocket_atoms(protein_dir / "pocketness.pdb")
@@ -633,7 +633,7 @@ def report_within_family(data, target_column, pooled, minimum=8):
 def run_correlate():
     from pathlib import Path
 
-    from preprocessing.pocket_shape_descriptors import descriptors_for
+    from preprocessing.compute_descriptors import descriptors_for
 
     rows = []
     legacy_rows = []

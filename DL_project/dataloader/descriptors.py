@@ -186,17 +186,13 @@ PROTEIN_DESCRIPTOR_NAMES = (
     "pocket_extent_lambda_sqrt",
     "pocket_elongation_lambda_sqrt",
     "pocket_flatness_lambda_sqrt",
-    # Fifth batch, promoted out of the research catalog once pocket_descriptor stopped
-    # being a positional tuple: the deep end of every enclosure/depth distribution
-    # whose shallow decile or median was already in production, the ev56 column that
-    # had neither, and the core half of the aromatic share whose rim half was promoted
-    # alone in the second batch.
+    # Fifth batch: the deep end of each enclosure/depth distribution whose shallow
+    # decile or median was already here, plus the core half of the aromatic share.
+    # ev56_q50/q90 were dropped again -- one value across all 35 proteins.
     "ev14_q90",
     "ev28_q50",
     "ev28_q90",
     "ev56_q10",
-    "ev56_q50",
-    "ev56_q90",
     "buriedness_q10",
     "buriedness_q90",
     "depth_q50",
