@@ -359,7 +359,7 @@ def run_test(run, run_summary, surviving_structure, discovered_dropout_report):
         # key into a registry (dataloader/splitting_on_blocks/lipid_isolation_blocks.py), so the report
         # would otherwise record "0.85" and nothing about which chemistry that was --
         # and a report has to be readable years after the registry moved on. Taken from
-        # the dataset rather than re-read from the registry: this is what the run held
+        # the dataset instead of being re-read from the registry: this is what the run held
         # out, not what a lookup says it should have.
         # Contamination of the training pool this run actually trained on: the share of
         # its negatives standing in a (protein, article subclass) cell that already holds

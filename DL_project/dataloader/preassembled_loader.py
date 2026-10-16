@@ -1,18 +1,15 @@
-"""One split's samples preassembled into device tensors, batched by indexing.
+"""Preassemble one split on the device and form batches by indexing.
 
-Applies only under --deepclip or dh/mlp (descriptor_catalog_only): tiny models where
-PyG re-collating every sample, every batch, every epoch costs more than the model's
-own arithmetic. Not usable for a real protein/lipid graph -- raises on any node-level
-field (_NODE_LEVEL_KEYS) or a lipid with more than just `x`.
+Used for --deepclip and dh/mlp (descriptor_catalog_only), where repeated PyG
+collation costs more than model arithmetic. Reject protein node fields
+(_NODE_LEVEL_KEYS) and lipid fields other than x; real graphs are unsupported.
 
-Nothing here is re-implemented, only replayed, so batch order and candidate draws stay
-bit-identical to the DataLoader this replaces: the original batch sampler and its
-base-seed draw are reused, and lipid_random_choice's draw is replayed from the same
-process-wide generator in the same order -- which needs num_workers=0, since a worker's
-draw can't be observed from here (a drawn split with workers is not preassembled).
+Replay the original batch sampler, its base-seed draw, and lipid_random_choice
+from the same process RNG in the same order. This preserves batches and draws
+bit-for-bit. Drawn splits require num_workers=0; worker draws cannot be replayed.
 
-Yields the same attributes a collated PyG batch would: graph-level fields concatenated,
-lipid as architecture/deepclip.py's own padded `x`/`mask` (+ `lengths` on the CPU).
+Yield PyG-compatible attributes: concatenated graph fields and padded lipid
+x/mask as in deepclip.py. lengths stays on CPU.
 """
 
 import random
@@ -20,8 +17,7 @@ import random
 import torch
 
 
-# Node-level protein fields. --deepclip's samples carry none of them (Dataloader.get);
-# one showing up means the sample is not what this module was written for.
+# Protein node fields are unsupported; --deepclip samples contain none.
 _NODE_LEVEL_KEYS = frozenset({
     "x", "edge_index", "edge_attr", "bury", "plm", "pocket", "geometric_node_attr",
     "frame_rotation", "frame_translation",
@@ -49,14 +45,12 @@ class PreassembledBatch:
 
 
 def preassembly_mode(dataset, num_workers=0):
-    """"fixed", "drawn", or None when this split cannot be preassembled.
+    """Return "fixed", "drawn", or None for unsupported splits.
 
-    Dataloader.__iter__ turns the sample cache off exactly when a sample changes from
-    one access to the next. "fixed": it never does. "drawn": the only thing that
-    changes is the lipid candidate (lipid_random_choice), which is replayed per access.
-    Residue subsampling also switches the cache off; it draws inside the protein graph
-    and is not replayed, so such a split stays None.
-    "drawn" needs num_workers=0: with workers the draws happen in the worker processes.
+    Dataloader.__iter__ disables caching for changing samples. Fixed samples do not
+    change; drawn samples change only lipid candidates, replayed per access.
+    Residue subsampling is not replayed and returns None.
+    Drawn mode requires num_workers=0 because worker RNG draws happen elsewhere.
     """
     if getattr(dataset, "_sample_cache_enabled", False):
         return "fixed"
@@ -88,8 +82,8 @@ class PreassembledLoader:
         self._base_seed_drawn = False
         self._device = device
 
-        # One variant per (row, candidate): the row's candidates are variants
-        # first[idx] .. first[idx] + count[idx] - 1. A "fixed" split has one each.
+        # Variants for row idx span first[idx] .. first[idx] + count[idx] - 1.
+        # Fixed splits have one variant per row.
         if self._mode == "drawn":
             self._candidate_counts = [
                 dataset.candidate_count(idx) for idx in range(len(dataset))
@@ -136,9 +130,8 @@ class PreassembledLoader:
             if len(rows) != count:
                 raise ValueError(f"{key!r} is missing from some samples")
 
-        # One stacked tensor per field, [variants, *per-sample shape]. A batch is
-        # stacked[variants] reshaped to what torch.cat over the samples gives -- the
-        # first two axes merged -- or left [batch] for a 0-dim field, which PyG stacks.
+        # Fields have shape [variants, *sample_shape]. Index and merge the first two
+        # axes to match torch.cat, or keep [batch] for scalar fields as PyG does.
         self._protein_fields = {
             key: torch.stack(rows).to(device) for key, rows in protein_rows.items()
         }
@@ -198,9 +191,8 @@ class PreassembledLoader:
         )
 
     def __iter__(self):
-        # _BaseDataLoaderIter.__init__'s base-seed draw, reproduced for its effect on
-        # the loader's generator. Before the sampler runs, as in the DataLoader, where
-        # the batch sampler's generator function only starts drawing on first next().
+        # Replay _BaseDataLoaderIter's base-seed draw before the sampler's first
+        # next(), preserving the loader generator state.
         if not (self._persistent and self._base_seed_drawn):
             torch.empty((), dtype=torch.int64).random_(generator=self._generator)
             self._base_seed_drawn = True

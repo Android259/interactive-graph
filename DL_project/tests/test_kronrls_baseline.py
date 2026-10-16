@@ -44,7 +44,7 @@ def test_default_csv_matches_canonical_dataset_source():
 
 def test_two_step_kronrls_reconstructs_training_labels_when_lambda_is_zero():
     # Identity kernels make the closed form exact and condition-number-free: with
-    # lambda=0, A = I^-1 Y I^-1 = Y, so this checks the solver's algebra rather than
+    # lambda=0, A = I^-1 Y I^-1 = Y, so this checks the solver's algebra instead of
     # numerical conditioning of some particular kernel.
     protein_kernel = np.eye(3)
     lipid_kernel = np.eye(2)

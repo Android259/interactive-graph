@@ -15,7 +15,7 @@ while the other walked nested ones too, so the same cluster could produce a
 
 Every field is looked up under several spellings because `oarstat -J` names them
 differently across OAR versions, and a missing field must degrade to "unknown"
-rather than to a crash -- this runs inside a poll loop that has to survive
+instead of to a crash -- this runs inside a poll loop that has to survive
 whatever the scheduler says.
 """
 

@@ -1,23 +1,18 @@
-"""How well a pocket's own dimensions match a candidate lipid's own dimensions.
+"""Compare pocket dimensions with candidate lipid dimensions.
 
-Every descriptor in POCKET_DESCRIPTOR_NAMES describes the protein alone, and every one
-of them turns out to be a family fingerprint to some degree (η² 0.28-0.85,
-analysis/feature_identity_check.py) -- on 35 proteins / 9 families,
-almost any sufficiently informative protein-only summary is. A quantity that depends on
-BOTH the protein and the candidate lipid together cannot collapse to a protein label the
-same way, because it is not a function of the protein alone.
+Compute pocket_extent(p) - chain_length(l). Extent is the PCA-axis span used
+by POCKET_DESCRIPTOR_NAMES (graphs_builders/protein_graph_builder);
+length is the longest unbranched aliphatic run.
+See files/reference/pocket_lipid_compatibility.md for measurements against
+the chemistry prior in files/history/geometric_edge.md.
 
-The one built here: pocket_extent(p) - chain_length(l), where pocket_extent is the same
-PCA-axis span POCKET_DESCRIPTOR_NAMES already computes (dataloader/graphs_builders/protein_graph_builder)
-and chain_length is the longest unbranched aliphatic run of the candidate lipid --
-literally "does the cavity reach as far as the tail is long". Documented in
-files/reference/pocket_lipid_compatibility.md, which also carries the measurement of whether it
-adds anything over files/history/geometric_edge.md chemistry prior.
+Protein-only descriptors showed family eta^2 0.28-0.85 on 35 proteins and
+9 families (analysis/feature_identity_check.py). A joint quantity varies
+with the lipid as well, instead of identifying only the protein.
 
-Consumer of the raw value, wired in Dataloader:
-  --pocket_compat_prior : frozen, calibrated, added to the logit outside the network
-                          (same mechanism as --chem_prior, and jointly calibrated with
-                          it when both are on -- see dataloader/chemistry_prior.py).
+Dataloader --pocket_compat_prior adds the frozen calibrated term to the
+logit. If --chem_prior is enabled, both are calibrated jointly through
+chemistry_prior.py.
 """
 import os
 
@@ -29,33 +24,27 @@ from preprocessing.compute_descriptors import (
     pocket_shape,
 )
 
-# Sentinels this project's SMILES columns use for "no structure recorded", matching
-# analysis/protein_profile_probe.py (mode `correlate`), which imports EMPTY from here rather than
-# keeping its own copy.
+# Missing-structure sentinels shared with analysis/protein_profile_probe.py
+# (mode correlate), which imports EMPTY instead of keeping a copy.
 EMPTY = {"", "0", "Empty", "NonConclusive", "nan", "NaN", "None"}
 
 
 def smiles_for_row(row):
-    """The first usable SMILES string for one interaction-table row, or None.
+    """Return the first usable candidate, or None.
 
-    SmileGlobal first, SmileFragment as fallback -- the same preference order
-    chain_length_per_protein used before this was factored out. A cell can carry
-    several candidates separated by ';'; this returns the first of them, and
-    candidates_for_row returns all.
+    Prefer SmileGlobal, then SmileFragment, as the former chain_length_per_protein
+    did. Fields use semicolon-separated candidates; candidates_for_row returns all.
     """
     candidates = candidates_for_row(row)
     return candidates[0] if candidates else None
 
 
 def candidates_for_row(row):
-    """Every candidate structure listed for one row, in field order.
+    """Return all candidate structures for a row, in field order.
 
-    The candidates are the isomers the spectrum could not separate, so which of them the
-    measured molecule was is unknown. A quantity derived from the structure is therefore
-    a quantity with a spread, and taking the first candidate reports one arbitrary member
-    of it -- the member the annotation happened to list first, which is not a property of
-    the lipid. The callers here average over the whole list instead, which is also what
-    the averaged evaluation does to the model's own predictions.
+    Candidates are isomers unresolved by the spectrum. Callers average the full
+    list, as candidate-averaged evaluation averages predictions; choosing the
+    first would make the value depend on annotation order.
     """
     for column in ("SmileGlobal", "SmileFragment"):
         text = str(row.get(column, "")).strip()
@@ -67,13 +56,11 @@ def candidates_for_row(row):
 
 
 def candidate_fields_by_row(csv):
-    """`candidates_for_row` for a whole table at once, one tuple per row.
+    """Apply candidates_for_row to a table, returning one tuple per row.
 
-    Identical result, without a Series per row: `csv.iterrows()` builds one, and the
-    callers ask for this table once per measure -- 21 measures x 11018 rows was 221k
-    Series constructions, 4.8 s of a 9.1 s dataset build with not one RDKit parse
-    among them. Memoized by the raw column texts as well, since rows of one species
-    repeat them.
+    Avoid iterrows Series creation and memoize repeated raw column texts.
+    Recorded cost: 21 measures x 11018 rows created 221k Series, taking 4.8 s
+    of a 9.1 s build without RDKit parsing.
     """
     length = len(csv)
     columns = [
@@ -85,9 +72,8 @@ def candidate_fields_by_row(csv):
     for texts in zip(*columns):
         field = by_text.get(texts)
         if field is None:
-            # The first column whose text is not a sentinel decides the row, exactly as
-            # candidates_for_row returns on it -- including when its parts all filter
-            # out, which yields an empty field rather than falling through to the next.
+            # Use the first non-sentinel column, as candidates_for_row does.
+            # If all its parts filter out, return empty instead of trying the next column.
             field = ()
             for text in texts:
                 text = str(text).strip()
@@ -105,29 +91,20 @@ def candidate_fields_by_row(csv):
 
 
 def chain_lengths_by_species(csv):
-    """Longest acyl chain of EVERY candidate structure, per FullIdentityOfLipid.
+    """Return longest acyl-chain lengths per candidate, keyed by FullIdentityOfLipid.
 
-    A species can appear hundreds of times (once per protein it was screened against);
-    computing this per ROW would redo the same RDKit parse and BFS that many times.
+    Compute once per species instead of repeating RDKit parsing and BFS for its
+    hundreds of protein rows. Keep candidates separate: PC(34:1) as 16:0/18:1
+    has longest chain 18, while 14:0/20:1 has 20. Training draws and averaged
+    evaluation select candidates, so the value must describe the encoded structure.
 
-    One value per candidate rather than one per species, because the candidates differ
-    in how the carbons are split between the two chains and their longest chains differ
-    with them -- PC(34:1) as 16:0/18:1 is 18 long, as 14:0/20:1 it is 20. Which of them
-    the model is looking at is decided per sample (the draw during training, the
-    candidate index during averaged evaluation), so the term that describes it has to be
-    available per candidate too; collapsing the list to one number would describe a
-    molecule that was never encoded.
-
-    Entries are NaN where RDKit cannot parse the candidate or it carries no qualifying
-    carbon at all, and a species with no usable candidate gets a single NaN -- the caller
-    decides how to fill that in (see raw_compatibility_matrix).
+    Use NaN for failed RDKit parses or candidates without qualifying carbon.
+    A species with no usable candidate gets [NaN]; callers choose imputation
+    (see raw_compatibility_matrix).
     """
-    # Local import: dataloader/descriptors.py (longest_acyl_chain's home, see
-    # that module's LIPID_DESCRIPTOR_NAMES) imports candidates_for_row from THIS
-    # module at its own top level, so importing descriptors here at module load
-    # time would cycle -- deferred to call time, by when both modules are already
-    # fully loaded either way round.
-    from preprocessing.compute_descriptors import longest_acyl_chain
+    # Defer the descriptors import to avoid a cycle: descriptors imports
+    # candidates_for_row from this module.
+    from preprocessing.compute_descriptors import chain
 
     lengths = {}
     for species, rows in csv.groupby("FullIdentityOfLipid"):
@@ -136,7 +113,7 @@ def chain_lengths_by_species(csv):
             candidates = candidates_for_row(row)
             if candidates:
                 break
-        measured = [longest_acyl_chain(smiles) for smiles in candidates]
+        measured = [chain(smiles) for smiles in candidates]
         lengths[species] = numpy.array(
             [numpy.nan if length is None else float(length) for length in measured]
             or [numpy.nan],
@@ -146,12 +123,10 @@ def chain_lengths_by_species(csv):
 
 
 def chain_length_by_species(csv):
-    """Mean longest acyl chain per species -- the candidate-blind summary.
+    """Return mean candidate longest-chain length per species.
 
-    What a caller that has no candidate to look at should use: the analysis scripts, and
-    the train-only statistics that must not depend on which candidate a row happened to
-    draw. The per-sample values come from chain_lengths_by_row instead, which numbers
-    the candidates the way the encoder does.
+    Use for candidate-blind analysis and train-only statistics, independent of
+    sample draws. Per-sample values come from chain_lengths_by_row in encoder order.
     """
     return {
         species: (
@@ -164,31 +139,22 @@ def chain_length_by_species(csv):
 
 
 def chain_lengths_by_row(csv, isomeric=False, cache=None):
-    """Longest acyl chain per candidate, in the order the encoder numbers them.
+    """Return per-row candidate chain lengths in encoder order.
 
-    Per ROW rather than per species, and deduplicated by canonical SMILES the way
-    LipidGraphBuilder._lipid_fragment_keys deduplicates: candidate index k has to name
-    the same structure on both sides. Rows of one species carry the same candidate SET
-    after preprocessing/complete_lipid_candidate_sets.py, but not the same ORDER -- each
-    row keeps its own annotation first -- so numbering off one arbitrary row of the
-    species would hand the compatibility term the length of a structure the encoder gave
-    a different index to.
+    Deduplicate canonical SMILES as LipidGraphBuilder._lipid_fragment_keys does.
+    Rows of a species share a candidate set after complete_lipid_candidate_sets.py,
+    but keep their own annotation first. Index k must identify the same structure
+    in the encoder and compatibility term, so do not use one species-wide order.
 
-    Parsing is cached by field text and by candidate string, so the whole table costs
-    about as many RDKit parses as it has distinct structures.
+    Cache field texts and candidate strings: parsing scales with unique structures.
+    Optional cache is descriptor_cache_reader.load_lipid_descriptor_cache's
+    {"raw_to_canonical", "values", ...}. Hits skip canonicalization and computation;
+    new raw strings fall back to direct computation, preserving the source of truth.
 
-    `cache`, when given, is a dataloader/descriptor_cache_reader.py load result
-    ({"raw_to_canonical", "values", ...}): a raw candidate present there skips both the
-    canonicalising parse and the length computation entirely. A raw string the cache has
-    never seen (a candidate added to the table since the cache was built) falls back to
-    computing it here exactly as without a cache -- an accelerator, not a second source
-    of truth this table could disagree with.
-
-    Returns a list of per-row lists; entries are None where RDKit cannot parse the
-    candidate or it has no qualifying carbon, and a row with no usable candidate gets
-    [None].
+    Return per-row lists, with None for failed parses or no qualifying carbon.
+    A row without usable candidates gets [None].
     """
-    from preprocessing.compute_descriptors import longest_acyl_chain
+    from preprocessing.compute_descriptors import chain
 
     raw_to_canonical = cache["raw_to_canonical"] if cache else {}
     cached_values = cache["values"] if cache else {}
@@ -218,7 +184,7 @@ def chain_lengths_by_row(csv, isomeric=False, cache=None):
                 if key not in by_smiles:
                     cached = cached_values.get(key)
                     by_smiles[key] = (
-                        cached["chain"] if cached is not None else longest_acyl_chain(key)
+                        cached["chain"] if cached is not None else chain(key)
                     )
                 lengths.append(by_smiles[key])
             lengths = lengths or [None]
@@ -228,13 +194,11 @@ def chain_lengths_by_row(csv, isomeric=False, cache=None):
 
 
 def _candidate_arrays(per_row):
-    """Per-candidate chain lengths, one array per row and each its own length.
+    """Return ragged candidate-chain arrays, one per row.
 
-    Ragged on purpose. A rectangle would have to be padded to the widest candidate list
-    in the table -- 37 -- and every statistic computed over it would then count a row's
-    last structure once per padding slot, so a row with one candidate would weigh
-    thirty-seven times what it should. Each row carries exactly its own candidates
-    instead, and a lookup clamps the index to the row's own length.
+    Padding to the maximum 37 candidates would overweight a one-candidate row
+    37-fold by repeating its last value. Keep only real candidates; lookups
+    clamp to each row's own length.
     """
     return [
         numpy.array(
@@ -246,14 +210,11 @@ def _candidate_arrays(per_row):
 
 
 def pocket_extent_by_protein(root_dir, protein_names, cache=None):
-    """pocket_extent(p) for each named protein, reusing the model-facing geometry.
+    """Return pocket_extent for each protein using the model's geometry.
 
-    Same pocket_atom_coordinates + pocket_shape that POCKET_DESCRIPTOR_NAMES' own
-    pocket_extent entry uses -- this is that entry, not a second measurement of it.
-
-    `cache`, when given, is a per-protein dict ({name: {"extent"}}); a name present
-    there skips the PDB re-parse. A name the cache has never seen falls back to parsing
-    it here, same as without a cache.
+    Reuse pocket_atom_coordinates and pocket_shape, as POCKET_DESCRIPTOR_NAMES does.
+    Optional cache is {protein: {"extent": value}}. Hits skip PDB parsing;
+    missing names fall back to parsing.
     """
     cache = cache or {}
     extents = {}
@@ -268,32 +229,24 @@ def pocket_extent_by_protein(root_dir, protein_names, cache=None):
 
 
 def coarsen_to_levels(values, edges):
-    """Round `values` to the midpoint of whichever band of `edges` they fall in.
+    """Round values to the midpoint of their edge band.
 
-    The channel this closes: `pocket_extent` takes 35 distinct values over 35 proteins
-    in [13.6, 32.0], so at full resolution it is very nearly a protein id -- eta^2
-    against protein identity 0.78, squarely inside the 0.28-0.85 band that got every
-    entry of POCKET_DESCRIPTOR_NAMES rejected as a fold label
-    (analysis/feature_identity_check.py). Rounding to a handful of levels
-    keeps the physical claim -- this cavity is longer than that one -- and destroys the
-    one-to-one map that makes it a label.
+    Pocket extent has 35 distinct values for 35 proteins, spanning [13.6, 32.0].
+    Its protein-identity eta^2 is 0.78, within the 0.28-0.85 range of rejected
+    POCKET_DESCRIPTOR_NAMES family proxies (analysis/feature_identity_check.py).
+    A few levels preserve size ordering while removing unique values.
 
-    `edges` comes from the caller because it must be cut on TRAIN proteins only: edges
-    fitted on all 35 would let a held-out protein help decide the band it lands in.
+    Callers must fit edges on training proteins only. Fitting all 35 would let
+    held-out proteins influence their own bands.
     """
     which = numpy.clip(numpy.searchsorted(edges, values, side="right") - 1, 0,
                        len(edges) - 2)
     centres = numpy.asarray([
         0.5 * (edges[i] + edges[i + 1]) for i in range(len(edges) - 1)
     ])
-    # The outer bands are half-open, so their midpoints would be infinite; the nearest
-    # finite cut is the honest stand-in and keeps the levels monotone. With exactly 2
-    # bands (3 edges) that "nearest finite cut" is the SAME single interior edge for
-    # both bands -- centres[0] and centres[-1] would collapse onto one number, making
-    # the two bands indistinguishable as a feature (verified directly: a 2-band call
-    # returned one repeated value for every input). Falling back to the values' own
-    # spread keeps the two bands apart without touching the >= 3-band case at all,
-    # where centres[0] != centres[-1] already.
+    # Use the nearest finite cut for infinite outer-band midpoints.
+    # With two bands, both would use the same interior cut and collapse to one value;
+    # use the observed spread to keep them distinct. The >=3-band case is unchanged.
     if len(edges) == 3:
         spread = float(numpy.std(values)) if len(values) else 1.0
         spread = spread if spread > 1e-9 else 1.0
@@ -306,24 +259,15 @@ def coarsen_to_levels(values, edges):
 
 
 def raw_compatibility(csv, root_dir, isomeric=False):
-    """pocket_extent(protein) - chain_length(lipid) for every row of `csv`.
+    """Return pocket_extent(protein) - chain_length(candidate) per row.
 
-    Both terms are pure geometry/chemistry -- neither reads Interaction -- so unlike
-    dataloader/chemistry_prior.py's leave-one-out score, there is no label to leak and
-    no special handling is needed for rows that are themselves part of a reference set.
+    Return (values, missing_chain_mask), both ragged arrays in candidate order.
+    Dataloader.get selects the encoded candidate; index 0 is the fixed first one.
+    Neither term reads Interaction, so reference rows need no leave-one-out handling.
 
-    Both are one array per row, as long as that row's candidate list: the lipid half of
-    the term depends on which candidate structure the sample is encoded as, so the
-    difference does too, and which entry a sample reads is chosen where that structure is
-    chosen (Dataloader.get). Entry 0 is the row's first candidate, which is what a
-    run that never draws sees.
-
-    Returns (values, missing_chain_mask): a lipid whose SMILES RDKit cannot parse, or
-    that has no non-aromatic non-ring carbon at all, gets NaN rather than a silently
-    wrong number; the mask says which entries those are so the caller can impute
-    explicitly (raw_compatibility itself has no notion of "train", so it cannot decide
-    what a safe fill value is) and log how many were affected rather than losing them
-    quietly.
+    Failed parses or candidates without non-aromatic, non-ring carbon get NaN.
+    The mask lets callers impute and log missing values explicitly. This function
+    has no training split and cannot choose a safe fill value itself.
     """
     protein_names = sorted(csv["LTPProtein"].dropna().unique().tolist())
     extents = pocket_extent_by_protein(root_dir, protein_names)

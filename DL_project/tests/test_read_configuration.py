@@ -185,7 +185,7 @@ def test_esm3_v2_rejects_rnabang_only_modes(mode):
 
 
 def test_read_configuration_parses_protein_disable_pre_sa_mlp_with_gine_conv():
-    # Split out of the bulk flag list rather than dropped: validate() requires gine_conv
+    # Split out of the bulk flag list instead of being dropped: validate() requires gine_conv
     # for this flag while protein_self_attention is on, and gine_conv is mutually
     # exclusive with the transformer_conv the bulk case sets.
     config = read_named_configuration([
@@ -440,7 +440,7 @@ def test_model_config_weight_decay_defaults_to_small_nonzero():
 
 
 def test_disable_early_stopping_is_enabled_by_default_and_stays_on_when_passed():
-    # Runs are scored on their whole curve rather than stopped at a patience bound,
+    # Runs are scored on their whole curve instead of being stopped at a patience bound,
     # so the default is to let every epoch run.
     assert ModelConfig().disable_early_stopping is True
 
@@ -685,7 +685,7 @@ def test_fit_ramp_tracks_train_balanced_accuracy_linearly():
     assert config.adv_fit_progress(0.5) == 0.0
     assert config.adv_fit_progress(1.0) == 1.0
     assert config.adv_fit_progress(0.75) == pytest.approx(0.5)
-    # Below chance and missing metrics clamp rather than going negative.
+    # Below chance and missing metrics clamp instead of going negative.
     assert config.adv_fit_progress(0.2) == 0.0
     assert config.adv_fit_progress(None) == 0.0
 

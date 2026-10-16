@@ -8,8 +8,7 @@ two classes.
 `edge_index[0]` is the reference node whose local frame `edge_attr` was computed
 relative to (the node being updated); `edge_index[1]` is the neighbor contributing
 keys/values. This is the opposite of PyG's usual source->target message-passing
-convention, so it is spelled out with `reference`/`neighbor` names throughout rather
-than `src`/`dst`, to avoid silently assuming the wrong direction.
+convention, so it is spelled out with `reference`/`neighbor` names throughout instead of `src`/`dst`, to avoid silently assuming the wrong direction.
 
 Neither layer applies its own residual connection or normalization -- both are
 applied uniformly by the caller for every conv choice already (GATv2Conv,

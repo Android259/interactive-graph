@@ -1,14 +1,12 @@
-# Preprocessing Instructions
+# Preprocessing instructions
 
-- Preprocessing scripts produce embeddings, negative samples, FASTA/PDB derivatives, and graph-related inputs.
-- Do not run them or overwrite their outputs unless explicitly requested.
-- Preserve file naming and identifiers expected by `dataloader/Dataloader.py`.
-- Preserve interaction-table row order: original row positions are active pair
-  IDs used by Tanimoto weights.
-- Protein graph generation must keep node identifiers, edge endpoints,
-  pocket-residue order, and PLM residue order aligned.
-- Never silently replace an edge endpoint missing from the generated node
-  table. Report the affected structure and residue identifier.
-- Treat external binaries, network calls, and large model embedding generation as expensive side effects.
-- Prefer small mocked/unit checks when changing parsing or path logic.
-- Report required external tools or unavailable dependencies instead of silently changing the workflow.
+These scripts prepare embeddings, negative samples, FASTA and PDB files, and graph inputs.
+
+- Run scripts or overwrite their outputs only when explicitly requested.
+- Keep the file names and identifiers expected by `dataloader/Dataloader.py`.
+- Keep interaction-table rows in their original order. Row positions are pair IDs used by Tanimoto weights.
+- Keep graph node IDs, edge endpoints, pocket residues, and PLM residues aligned.
+- If an edge endpoint is missing from the node table, report the structure and residue ID. Never replace it silently.
+- Treat external programs, network calls, and large embedding jobs as expensive operations.
+- Use small mocked or unit checks when changing parsing or path handling.
+- Report missing tools and dependencies. Do not silently change the workflow.

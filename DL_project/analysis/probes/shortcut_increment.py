@@ -115,7 +115,7 @@ def shortcut_columns(names, train, held, similarity, index, neighbours,
             # `classes.loc[train.index]` would silently read whichever rows of the
             # original table happen to sit at those positions. It does not fail, it
             # returns a structured wrong answer -- 0.172 pooled, which looks like a
-            # finding rather than a bug.
+            # finding instead of a bug.
             built[name] = group_positive_rate(
                 train, held,
                 classes.loc[train["pair_id"]].to_numpy(),
@@ -199,7 +199,7 @@ def shortcut_table(csv, similarity, index, lengths, extents, classes, network, n
         table["increment"] = table["stack_net"] - table["stack"]
         table["increment_prot"] = table["stack_net_prot"] - table["stack_prot"]
         # Share of what the model beats chance by that no shortcut reproduces. The
-        # denominators are clipped away from zero rather than left to divide: a family
+        # denominators are clipped away from zero instead of left to divide: a family
         # whose stack already sits at chance would otherwise produce a share of
         # thousands and drag every mean it enters.
         def share(net, stack):

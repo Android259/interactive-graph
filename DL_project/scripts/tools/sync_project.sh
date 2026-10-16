@@ -69,7 +69,7 @@ rsync_flags=(-az --human-readable)
 (( DRY_RUN )) && rsync_flags+=(--dry-run --itemize-changes)
 
 if [[ "${DIRECTION}" == "up" ]]; then
-    # Exact filters for oversized local files, rather than excluding data/
+    # Exact filters for oversized local files, instead of excluding data/
     # wholesale or maintaining a fragile allowlist. Protected as well as
     # excluded, because --delete-excluded is used for the mirror cleanup.
     while IFS= read -r -d '' data_file; do

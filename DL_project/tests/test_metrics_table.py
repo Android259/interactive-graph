@@ -346,7 +346,7 @@ def test_append_metric_writes_values_from_config_object(tmp_path):
         reader = csv.DictReader(handle)
         row = next(reader)
     # The table now mirrors every ModelConfig field, so run-environment settings like
-    # num_workers come along too rather than being filtered out.
+    # num_workers come along too instead of being filtered out.
     assert "num_workers" in reader.fieldnames
     assert row["lipid_isomers"] == "1"
     assert row["batch"] == "64"

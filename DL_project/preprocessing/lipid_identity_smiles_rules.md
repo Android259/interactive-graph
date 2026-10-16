@@ -1,237 +1,105 @@
-# Lipid Identity Rules From SMILES Features
+# Lipid classes from SMILES
 
-These rules classify a SMILES-derived feature set. Apply rules in order.
+The feature checks are implemented in `training/pair_baseline_common.py`,
+in `smiles_features()`. Baseline models use them to describe lipid structures.
+The code does not read this Markdown file.
 
-## Lipid Group Stereochemistry Properties
+The classification rules below describe the former identity audit, which compared
+SMILES with `FullIdentityOfLipid`. That audit has been removed. Baseline models
+extract features without assigning a lipid class through these rules.
+For the former classification, rules were applied in order; the first match won.
 
-- Glycerophospholipid groups (`PC`, `PE`, `PG`, `PI`, `PS`, `LPC`, `LPE`, `LPG`, `BMP`, `Cardiolipin`) have fatty-acid unsaturation treated as cis. In SMILES this is normalized to canonical cis text form `/C=C\`.
+## Cis and trans conventions
 
-- Sphingolipid groups (`Ceramide`, `Ceramide phosphate`, `HexCer`, `Hex2Cer`, `SHexCer`, `Sphingomyelin`) can contain two different double-bond contexts:
-  - sphingoid base C4/C5 double bond
-  - fatty-acid chain double bond
+These are the group-specific conventions for SMILES correction. Feature extraction
+does not rewrite double-bond stereochemistry.
 
-- For sphingolipids with `d` sphingoid base syntax, the sphingoid base C4/C5 double bond is treated as trans. In SMILES this is kept as canonical trans text form `/C=C/` when it is the first double bond after hydroxylated sphingoid carbon syntax such as `[C@]([H])(O)`, `[C@@]([H])(O)`, `[C@H](O)`, `[C@@H](O)`.
+For `PC`, `PE`, `PG`, `PI`, `PS`, `LPC`, `LPE`, `LPG`, `BMP`, and `Cardiolipin`,
+fatty-acid double bonds are treated as cis and written as `/C=C\`.
 
-- For sphingolipids with `DH` syntax, the sphingoid base C4/C5 double bond is absent. Any remaining double bond is treated as fatty-acid unsaturation and normalized to cis `/C=C\`.
+Sphingolipids can have double bonds in the sphingoid base and in the fatty-acid chain.
+The groups here are `Ceramide`, `Ceramide phosphate`, `HexCer`, `Hex2Cer`, `SHexCer`,
+and `Sphingomyelin`.
 
-- For sphingolipids with `t` or `t*` syntax, the sphingoid base is phytosphingoid/trihydroxy and has no protected C4/C5 double bond. Any remaining double bond is treated as fatty-acid unsaturation and normalized to cis `/C=C\`.
+For a `d` sphingoid base, the C4/C5 double bond is treated as trans and written as
+`/C=C/`. This is the first double bond after a hydroxylated chiral carbon written
+as `[C@]([H])(O)`, `[C@@]([H])(O)`, `[C@H](O)`, or `[C@@H](O)`.
+Other fatty-acid double bonds are treated as cis.
 
-- Additional fatty-acid unsaturation in sphingolipids is treated as cis and normalized to `/C=C\`.
+A `DH` base has no C4/C5 double bond. A `t` or `t*` base is phytosphingoid, with
+three hydroxyl groups and no protected C4/C5 double bond. For these bases,
+remaining fatty-acid double bonds are treated as cis and written as `/C=C\`.
+Identify the lipid group before applying these conventions.
 
-- These stereochemistry properties are lipid-group properties. They are used together with identity rules: first identify the lipid group/class, then apply the group-specific cis/trans rule to SMILES double-bond syntax.
+## Features
 
-## Feature Meanings
+Some checks use the molecular graph through RDKit. Text checks also appear in the
+script. They depend on how the SMILES is written and are approximate.
 
-- `amide_present`: amide bond in SMILES, detected by `NC(...)=O` or `NC(=O)`. This is the fatty-acid amide linkage of sphingolipids.
+- `amide_present`: an amide pattern, `NC(...)=O` or `NC(=O)`.
+- `sphingoid_base_present`: an amide and one of the hydroxylated chiral-carbon patterns listed above.
+- `phosphate_count`: the number of `P(` substrings.
+- `choline_present`: RDKit SMARTS `[OX2][CX4][CX4][N+](C)(C)C` or the text pattern `OCC[N+](C)(C)C`.
+- `ethanolamine_present`: RDKit SMARTS `[OX2][CX4][CX4][NX3;!$([N+])]` or the text pattern `OCCN`. Choline and serine matches exclude ethanolamine.
+- `serine_present`: a carboxyl pattern, `C(O)(=O)` or `C(=O)O`, together with an `(N)` branch and `COP`.
+- `inositol_present`: `[C@H]1`, no `O1`, and at least four `(O)` branches.
+- `glycerol_head_present`: a phosphate-linked acyclic glycerol with no tails. Text patterns include `(O)(CO)COP` and `OCC(O)CO`.
+- `pg_tail_layout_present`: an RDKit check for two glycerols around one phosphate. One has two acyl ester tails; the other has none.
+- `bmp_tail_layout_present`: an RDKit check for two glycerols around one phosphate, each with one acyl ester tail.
+- `sugar_ring_count`: RDKit counts five- or six-member rings with one ring oxygen and hydroxylated carbons. Without RDKit, the script counts `O1`, `O2`, and `O3`.
+- `sulfate_present`: `S(=O)(=O)`, `S(O)(=O)=O`, or `S(=O)(O)=O`.
+- `glycerol_backbone_present`: a phosphate-linked acyclic glycerol from RDKit, or a text match for `COP`, `COC(`, `OC[C@]`, `[C@](CO`, or `OC[C@@]`. A sphingoid-base match excludes it.
+- `glycerol_backbone_count`: the number of `[C@](` and `[C@@](` substrings. This is an approximate count.
+- `ester_count`: acyl ester carbonyls counted through RDKit. Without RDKit, the script searches `OC(` windows for a carbonyl ending in `)=O` or `=O)`.
+- `ether_tail_count`: matches for `COCCCC`, `CO/C=C`, and `CO\C=C`.
+- `tail_count`: the RDKit glycerol-tail count plus an amide tail when the graph count is available and positive. Otherwise, it is `ester_count + ether_tail_count + amide_tail_count`. An amide contributes one tail.
+- `free_oh_count`: an approximate count from `(O)`, a starting `OC`, and `CO)` or `CO;` patterns.
+- `carboxyl_present`: RDKit SMARTS `[CX3](=O)[OX1H0-,OX2H1]` or a text match for `(=O)O`, `C(=O)O`, `C(O)(=O)`, `C(O)=O`, or `C(=O)[O-]`.
+- `hydrocarbon_chain_present`: at least eight `C` symbols in the SMILES. The symbols need not be consecutive.
+- `polyene_alcohol_present`: at least three carbon-carbon double bonds and an alcohol match. RDKit checks the graph; text checks use `C=C` and `(O)`. The check also excludes the carboxyl text patterns `(=O)O` and `C(O)=O`, phosphate, esters, and amides.
 
-- `sphingoid_base_present`: `amide_present` plus a chiral hydroxylated sphingoid carbon. SMILES patterns: `[C@]([H])(O)`, `
+## Classification order
 
-[C@@]([H])(O)`, `[C@H](O)`, `[C@@H](O)`.
+Each rule requires all the listed conditions. `NOT` means the feature must be false.
 
-- `phosphate_count`: count of phosphate atoms by substring `P(`.
+1. Sphingomyelin: `amide_present`, `sphingoid_base_present`, `phosphate_count >= 1`, `choline_present`.
 
-- `choline_present`: phosphocholine headgroup. If RDKit is installed, script uses graph SMARTS `[OX2][CX4][CX4][N+](C)(C)C`. Without RDKit, script falls back to SMILES text pattern `OCC[N+](C)(C)C`.
+2. Ceramide phosphate: `amide_present`, `sphingoid_base_present`, `phosphate_count >= 1`, `NOT choline_present`, `sugar_ring_count == 0`.
 
-- `ethanolamine_present`: ethanolamine headgroup. If RDKit is installed, script uses graph SMARTS `[OX2][CX4][CX4][NX3;!$([N+])]`. It is false when `choline_present` or `serine_present` is true. Without RDKit, script falls back to SMILES text pattern `OCCN`.
+3. SHexCer: `amide_present`, `sphingoid_base_present`, `sugar_ring_count >= 1`, `sulfate_present`.
 
-- `serine_present`: serine-like headgroup. SMILES requires a carboxyl pattern (`C(O)(=O)` or `C(=O)O`),
+4. Hex2Cer: `amide_present`, `sphingoid_base_present`, `sugar_ring_count >= 2`, `NOT sulfate_present`.
 
- an amine branch `(N)`, and phospholipid linkage `COP`.
+5. HexCer: `amide_present`, `sphingoid_base_present`, `sugar_ring_count == 1`, `NOT sulfate_present`, `phosphate_count == 0`.
 
-- `inositol_present`: inositol-like ring. SMILES requires `[C@H]1`, no `O1`, and at least four hydroxyl branches `(O)`.
+6. Ceramide: `amide_present`, `sphingoid_base_present`, `phosphate_count == 0`, `sugar_ring_count == 0`.
 
-- `glycerol_head_present`: glycerol headgroup used by PG/LPG. If RDKit is installed, script checks for a phosphate-linked acyclic glycerol unit with zero tails. Without RDKit, script falls back to SMILES text patterns `(O)(CO)COP` or `OCC(O)CO`.
+7. Cardiolipin: `phosphate_count == 2`, `glycerol_backbone_count >= 3`, `tail_count == 4`.
 
-- `pg_tail_layout_present`: RDKit graph check for PG layout. Around one phosphate, one glycerol unit has two acyl ester tails, and the second glycerol unit is the headgroup with zero acyl ester tails.
+8. BMP: `phosphate_count == 1`, `bmp_tail_layout_present`, `free_oh_count >= 2`, `NOT choline_present`, `NOT ethanolamine_present`, `NOT serine_present`, `NOT inositol_present`.
 
-- `bmp_tail_layout_present`: RDKit graph check for BMP layout. Around one phosphate, two different glycerol units are present, and each glycerol unit has exactly one acyl ester tail.
+9. PC: `phosphate_count == 1`, `glycerol_backbone_present`, `choline_present`, `tail_count == 2`, `NOT amide_present`.
 
-- `sugar_ring_count`: if RDKit is installed, script counts 5/6-member sugar-like rings with one ring oxygen and hydroxylated ring carbons. Without RDKit, script falls back to rough ring-closure text count `O1`, `O2`, `O3`.
+10. PE: `phosphate_count == 1`, `glycerol_backbone_present`, `ethanolamine_present`, `tail_count == 2`, `NOT amide_present`.
 
-- `sulfate_present`: sulfate group. SMILES patterns: `S(=O)(=O)`, `S(O)(=O)=O`, `S(=O)(O)=O`.
+11. PG: `phosphate_count == 1`, `glycerol_backbone_present`, `glycerol_head_present`, `pg_tail_layout_present`, `NOT amide_present`.
 
-- `glycerol_backbone_present`: glycerolipid/glycerophospholipid backbone. If RDKit is installed, script checks for an acyclic phosphate-linked glycerol unit. Without RDKit, script falls back to SMILES text patterns `COP`, `COC(`, `OC[C@]`, `[C@](CO`, `OC[C@@]`. It is false when `sphingoid_base_present` is true.
+12. PI: `phosphate_count == 1`, `glycerol_backbone_present`, `inositol_present`, `tail_count == 2`, `NOT amide_present`.
 
-- `glycerol_backbone_count`: rough count of chiral glycerol-like centers by `[C@](` and `[C@@](`.
+13. PS: `phosphate_count == 1`, `glycerol_backbone_present`, `serine_present`, `tail_count == 2`, `NOT amide_present`.
 
-- `ester_count`: acyl ester count. If RDKit is installed, script counts ester carbonyls by graph bonds. Without RDKit, script searches `OC(` windows that contain carbonyl ending `)=O` or `=O)`.
+14. LPC: `phosphate_count == 1`, `glycerol_backbone_present`, `choline_present`, `tail_count == 1`, `free_oh_count >= 1`, `NOT amide_present`.
 
-- `ether_tail_count`: ether-linked tail count. SMILES patterns: `COCCCC`, `CO/C=C`, `CO\C=C`.
+15. LPE: `phosphate_count == 1`, `glycerol_backbone_present`, `ethanolamine_present`, `tail_count == 1`, `free_oh_count >= 1`, `NOT amide_present`.
 
-- `tail_count`: `ester_count + ether_tail_count + amide_tail_count`, where `amide_tail_count` is 1 when `amide_present` is true.
+16. LPG: `phosphate_count == 1`, `glycerol_backbone_present`, `glycerol_head_present`, `tail_count == 1`, `free_oh_count >= 1`, `NOT amide_present`.
 
-- `free_oh_count`: rough hydroxyl count. Counts `(O)`, plus terminal/start patterns `OC`, `CO)`, `CO;`.
+17. TAG: `phosphate_count == 0`, `glycerol_backbone_present`, `ester_count == 3`, `free_oh_count == 0`, `NOT amide_present`.
 
-- `carboxyl_present`: free fatty-acid carboxyl. If RDKit is installed, script uses SMARTS `[CX3](=O)[OX1H0-,OX2H1]` for carboxylic acid/carboxylate. Without RDKit, script falls back to SMILES text patterns: `(=O)O`, `C(=O)O`, `C(O)(=O)`, `C(O)=O`, `C(=O)[O-]`.
+18. DAG: `phosphate_count == 0`, `glycerol_backbone_present`, `ester_count == 2`, `free_oh_count >= 1`, `NOT amide_present`.
 
-- `hydrocarbon_chain_present`: hydrocarbon chain. Current text check: total SMILES carbon symbol count `C` is at least 8. This keeps polyunsaturated chains valid when `/C=C\` breaks consecutive `CCCCCC`.
+19. Fatty acyl / free fatty acid: `phosphate_count == 0`, `carboxyl_present`, `hydrocarbon_chain_present`, `NOT glycerol_backbone_present`, `NOT amide_present`, `sugar_ring_count == 0`.
 
-- `polyene_alcohol_present`: retinol-like pattern. If RDKit is installed, script counts carbon-carbon double bonds and alcohol oxygen by graph. Without RDKit, it uses text `C=C` and hydroxyl `(O)`. Requires at least three `C=C`, hydroxyl/alcohol, no carboxyl, `phosphate_count == 0`, 
+20. Retinol: `polyene_alcohol_present`, `phosphate_count == 0`, `ester_count == 0`, `amide_present == false`, `glycerol_backbone_present == false`.
 
-`ester_count == 0`, and `amide_present == false`.
-
-1. Sphingomyelin:
-   IF amide_present
-   AND sphingoid_base_present
-   AND phosphate_count >= 1
-   AND choline_present
-   THEN class = Sphingomyelin
-
-2. Ceramide phosphate:
-   IF amide_present
-   AND sphingoid_base_present
-   AND phosphate_count >= 1
-   AND NOT choline_present
-   AND sugar_ring_count == 0
-   THEN class = Ceramide phosphate
-
-3. SHexCer:
-   IF amide_present
-   AND sphingoid_base_present
-   AND sugar_ring_count >= 1
-   AND sulfate_present
-   THEN class = SHexCer
-
-4. Hex2Cer:
-   IF amide_present
-   AND sphingoid_base_present
-   AND sugar_ring_count >= 2
-   AND NOT sulfate_present
-   THEN class = Hex2Cer
-
-5. HexCer:
-   IF amide_present
-   AND sphingoid_base_present
-   AND sugar_ring_count == 1
-   AND NOT sulfate_present
-   AND phosphate_count == 0
-   THEN class = HexCer
-
-6. Ceramide:
-   IF amide_present
-   AND sphingoid_base_present
-   AND phosphate_count == 0
-   AND sugar_ring_count == 0
-   THEN class = Ceramide
-
-7. Cardiolipin:
-   IF phosphate_count == 2
-   AND glycerol_backbone_count >= 3
-   AND tail_count == 4
-   THEN class = Cardiolipin
-
-8. BMP:
-   IF phosphate_count == 1
-   AND bmp_tail_layout_present
-   AND free_oh_count >= 2
-   AND NOT choline_present
-   AND NOT ethanolamine_present
-   AND NOT serine_present
-   AND NOT inositol_present
-   THEN class = BMP
-
-9. PC:
-   IF phosphate_count == 1
-   AND glycerol_backbone_present
-   AND choline_present
-   AND tail_count == 2
-   AND NOT amide_present
-   THEN class = PC
-
-10. PE:
-    IF phosphate_count == 1
-    AND glycerol_backbone_present
-    AND ethanolamine_present
-    AND tail_count == 2
-    AND NOT amide_present
-    THEN class = PE
-
-11. PG:
-    IF phosphate_count == 1
-    AND glycerol_backbone_present
-    AND glycerol_head_present
-    AND pg_tail_layout_present
-    AND NOT amide_present
-    THEN class = PG
-
-12. PI:
-    IF phosphate_count == 1
-    AND glycerol_backbone_present
-    AND inositol_present
-    AND tail_count == 2
-    AND NOT amide_present
-    THEN class = PI
-
-13. PS:
-    IF phosphate_count == 1
-    AND glycerol_backbone_present
-    AND serine_present
-    AND tail_count == 2
-    AND NOT amide_present
-    THEN class = PS
-
-14. LPC:
-    IF phosphate_count == 1
-    AND glycerol_backbone_present
-    AND choline_present
-    AND tail_count == 1
-    AND free_oh_count >= 1
-    AND NOT amide_present
-    THEN class = LPC
-
-15. LPE:
-    IF phosphate_count == 1
-    AND glycerol_backbone_present
-    AND ethanolamine_present
-    AND tail_count == 1
-    AND free_oh_count >= 1
-    AND NOT amide_present
-    THEN class = LPE
-
-16. LPG:
-    IF phosphate_count == 1
-    AND glycerol_backbone_present
-    AND glycerol_head_present
-    AND tail_count == 1
-    AND free_oh_count >= 1
-    AND NOT amide_present
-    THEN class = LPG
-
-17. TAG:
-    IF phosphate_count == 0
-    AND glycerol_backbone_present
-    AND ester_count == 3
-    AND free_oh_count == 0
-    AND NOT amide_present
-    THEN class = TAG
-
-18. DAG:
-    IF phosphate_count == 0
-    AND glycerol_backbone_present
-    AND ester_count == 2
-    AND free_oh_count >= 1
-    AND NOT amide_present
-    THEN class = DAG
-
-19. Fatty acyl / free fatty acid:
-    IF phosphate_count == 0
-    AND carboxyl_present
-    AND hydrocarbon_chain_present
-    AND NOT glycerol_backbone_present
-    AND NOT amide_present
-    AND sugar_ring_count == 0
-    THEN class = Fatty acyl
-
-20. Retinol:
-    IF polyene_alcohol_present
-    AND phosphate_count == 0
-    AND ester_count == 0
-    AND amide_present == false
-    AND glycerol_backbone_present == false
-    THEN class = Retinol
-
-21. Unknown:
-    IF no rule matched
-    THEN class = Unknown
-    AND leave SMILES unchanged
-    AND report unknown_class
+21. Unknown: no earlier rule matched. The former audit reported `unknown_class` and left the input SMILES unchanged.

@@ -33,7 +33,7 @@ Two entry shapes, same underlying formula:
     the compact Tanimoto matrix either -- any symmetric similarity matrix in the same
     layout (raw uint8 0-255, or an already-normalized float) works.
 
-THE REPORTS. Default run: the two things that are properties of the split rather than
+THE REPORTS. Default run: the two things that are properties of the split instead of
 of a model, and both of which move when the table does (the deduplicated table changed
 the row count, the positive count and, through them, the compact Tanimoto artifacts):
 
@@ -181,7 +181,7 @@ def isolation_and_cross_mean(compact, held_rows, train_rows):
 
 def isolation_from_structures(matrix, held, kept):
     """The same formula from structure-indexed masks or index arrays a caller already
-    holds, rather than row ids -- what a search loop needs when it maintains `held`/
+    holds, instead of row ids -- what a search loop needs when it maintains `held`/
     `kept` incrementally over many steps and cannot afford a row lookup at each one
     (analysis/lipid_block_search.py's Units.isolation_from_masks).
 
@@ -249,7 +249,7 @@ def similarity_profile(compact, held_rows, train_rows):
     """Mean / median / share>=0.9 of the best training similarity per block structure.
 
     The mean is `isolation` -- recomputed here from the same vector
-    (best_similarities) rather than called twice, so the three numbers are guaranteed
+    (best_similarities) instead of called twice, so the three numbers are guaranteed
     to describe one distribution and not two.
     """
     best = best_similarities(compact, held_rows, train_rows)
@@ -407,7 +407,7 @@ def evaluation_rows(csv, rows, cap):
     """How many rows an averaged evaluation scores for the given table rows.
 
     One per candidate structure, capped the way Dataloader caps it, so the number
-    is the work a validation pass does rather than the size of the block.
+    is the work a validation pass does instead of the size of the block.
     """
     from dataloader.pocket_lipid_compatibility import candidates_for_row
 

@@ -5,7 +5,7 @@
 #   bash scripts/run_experiment_pack.sh <pack-spec-file>
 # where the spec file is written by scripts/pack_lib.sh's pack_spec_write_file
 # (see its header for the record layout and why it is a file, not an inline
-# argument). Keeping the logic in a real repository file rather than in a
+# argument). Keeping the logic in a real repository file instead of in a
 # printf'd one-liner is what makes it reviewable and testable; the submitter
 # only splices the spec file's path onto the oarsub command line.
 #
@@ -246,7 +246,7 @@ run_experiment() {
             return "${status}"
         done
         # Every slot on this card is busy (another job holds them); wait and
-        # rescan rather than giving up the experiment.
+        # rescan instead of giving up the experiment.
         sleep 60
     done
 }

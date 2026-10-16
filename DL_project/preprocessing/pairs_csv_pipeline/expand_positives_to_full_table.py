@@ -1,23 +1,9 @@
 #!/usr/bin/env python3
 """Add the negative complement to the positive-pair table.
 
-Third step of the pipeline (see AN_INSTRUCTION.md). The input is the measured rows
-after their corrections; this writes the full protein x lipid table: the positive rows
-unchanged and in their own order, then, for every cell nobody measured, one row
-labelled `Interaction=0`.
-
-Row order is what pair IDs are, so it is fixed:
-
-  * the positive rows first, in the order they arrive;
-  * then the negatives, protein-major in the order proteins first appear among the
+    the positive rows first, in the order they arrive;
+    then the negatives, protein-major in the order proteins first appear among the
     positives, and inside a protein in the order the lipid names first appear.
-
-A negative cell was never measured and has no data of its own, so every lipid column
-is copied from the lipid's first positive row exactly as it stands.
-
-The input may still hold a cell as two rows (one per repeated measurement). The
-complement is taken over the distinct cells and those rows are passed through, for
-`complete_lipid_candidate_sets.py` to merge in the step after this one.
 
 `ProteinDomain` comes from the protein's own positive rows. `index` is the lipid's
 position in the lipid order above, left empty on positive rows, and `Unnamed: 0`

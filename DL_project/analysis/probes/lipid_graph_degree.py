@@ -9,7 +9,7 @@ protein contact graph, which is what makes that division approximately a mean th
 Every --lipid_graph_isomers run in this project so far also used 30 on the LIPID graph,
 because until --lipid_edge_mlp_lambda existed the divisor was shared with the protein
 one. A molecule is not a contact graph: an atom has a handful of bonds, not thirty. This
-script measures how many, so the flag is set from the data rather than from an estimate.
+script measures how many, so the flag is set from the data instead of from an estimate.
 
 Reads only: counts rows in data/lipid_graphs/<hash>/{nodes,edges}.csv, parses nothing
 else, builds no molecule, touches no GPU.

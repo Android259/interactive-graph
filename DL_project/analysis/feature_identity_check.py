@@ -25,7 +25,7 @@ GLOBAL -- whole dataset, every entity against every other entity of the same kin
 
   1. eta^2, joint and per-entry. `joint eta^2` is the headline number: share of the
      WHOLE standardised vector's variance (every descriptor entry at once, not one at
-     a time) that sits between identity groups rather than within them -- the direct
+     a time) that sits between identity groups instead of within them -- the direct
      answer to "does this descriptor SET, combined, determine identity", since a
      handful of individually-weak entries can jointly pin identity down (or a single
      strong entry can dominate the per-entry view while contributing little once the
@@ -114,7 +114,7 @@ is now one implementation here):
   --family_separation FAM  which PROTEIN descriptor singles out one family against all
                            the others (Mann-Whitney outrank + eta^2 + permutation p),
                            over every descriptor in data/protein_descriptors.csv
-                           rather than only the model-facing ones -- was
+                           instead of only the model-facing ones -- was
                            analysis/probes/lbp_family_descriptor_separation.py.
   --pair_vs_family         eta^2 of each PAIR descriptor's actual COMPUTED value against
                            protein family, collapsed to one value per protein so the
@@ -127,7 +127,7 @@ is now one implementation here):
     python3 analysis/feature_identity_check.py --descriptors
     python3 analysis/feature_identity_check.py --descriptors=occupancy,hbond_match,volume_fit
     python3 analysis/feature_identity_check.py --lipid_classes
-    python3 analysis/feature_identity_check.py --lipid_classes --descriptor_set both --out /tmp/lipid_eta2.csv
+    python3 analysis/feature_identity_check.py --lipid_classes --out /tmp/lipid_eta2.csv
     python3 analysis/feature_identity_check.py --family_separation LBP_BPI_CETP --family_separation lipocalin
     python3 analysis/feature_identity_check.py --pair_vs_family
     python3 analysis/feature_identity_check.py --edge_geometry --out /tmp/edge_eta2.csv
@@ -151,11 +151,13 @@ from dataloader.chemistry_prior import (  # noqa: E402
     raw_feature_matrix, species_similarity,
 )
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
-from dataloader.descriptors import MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES  # noqa: E402
+from preprocessing.compute_descriptors import pair_names_of_kind  # noqa: E402
+
+MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES = pair_names_of_kind("product")
 from dataloader.sampler import lipid_class_series  # noqa: E402
 
 # The same coldsplit machinery analysis/baselines/knn_model.py itself uses for its (family,
-# seed) held-out blocks, reused rather than reimplemented so a block reproduced here
+# seed) held-out blocks, reused instead of being reimplemented so a block reproduced here
 # is provably the same rows a null-model/network run would see -- working_set/
 # split_func/lipid_classes_for_holdout/DEFAULT_FAMILIES are plain re-exports on
 # knn_model's own module namespace (see its own imports), not analysis specific to
@@ -166,13 +168,13 @@ from analysis.baselines.knn_model import (  # noqa: E402
 )
 # REPRESENTATIONS (directory/suffix/trim per learned protein representation) and
 # mean_pooled (the loader that reads and residue-averages them) are protein_
-# representation_identity_check.py's own -- reused rather than reimplemented so
+# representation_identity_check.py's own -- reused instead of being reimplemented so
 # "one vector per protein" here is exactly the vector that script already measured
 # ESM3 collapsing to one point on, not a second, possibly-diverging recipe.
 
 
 # Same reserved value as analysis/baselines/knn_model.py's own TANIMOTO -- kept as a separate
-# literal rather than an import so the --features default here needs nothing beyond
+# literal instead of an import so the --features default here needs nothing beyond
 # dataloader.chemistry_prior itself.
 TANIMOTO = "tanimoto"
 # --features molformer: analysis/feature_identity_check.py --features molformer's own learned
@@ -244,7 +246,7 @@ def standardise(matrix):
 
 def eta_squared(values, labels):
     """Share of `values`' variance across all entities that lies between groups of
-    `labels`, rather than within them -- preprocessing/pocket_descriptor_identity_
+    `labels`, instead of within them -- preprocessing/pocket_descriptor_identity_
     check.py's own eta_squared, unchanged.
     """
     values = np.asarray(values, dtype=float)
@@ -262,7 +264,7 @@ def eta_squared(values, labels):
 def eta_squared_joint(matrix, labels):
     """Whole-vector generalisation of eta_squared: share of the STANDARDISED
     descriptor matrix's total sum-of-squares -- summed across every column at once,
-    not one column at a time -- that lies between identity groups rather than within
+    not one column at a time -- that lies between identity groups instead of within
     them.
 
     Per-column eta_squared can only say "this one entry, on its own, tracks
@@ -352,7 +354,7 @@ def nearest_neighbour_identity_rate(similarity, labels, permutations=999, seed=0
     the rate a same-sized random draw would give by chance; and a label-permutation
     p-value.
 
-    Takes a similarity matrix rather than raw feature vectors so the "pair" (row)
+    Takes a similarity matrix instead of raw feature vectors so the "pair" (row)
     granularity -- entities in the thousands -- never touches an O(entities^2 x
     descriptors) distance broadcast; `similarity` is already the O(entities^2 +
     entities x descriptors) computation dataloader.chemistry_prior._standardised_
@@ -361,7 +363,7 @@ def nearest_neighbour_identity_rate(similarity, labels, permutations=999, seed=0
     The permutation test reshuffles `labels` across entities `permutations` times and
     recomputes the same match rate under each reshuffle -- cheap because `nearest`
     (an index into the OTHER entities, fixed by the vectors alone) is computed once
-    and reused for every reshuffle rather than rebuilt.
+    and reused for every reshuffle without rebuilding.
     """
     labels = np.asarray(labels)
     n = len(labels)
@@ -410,9 +412,9 @@ def mantel_test(similarity, labels, permutations=999, seed=0):
     does not scale to pair granularity).
 
     Takes the already-built `similarity` matrix (1/(1+distance), dataloader.
-    chemistry_prior._standardised_similarity) rather than the raw feature matrix, so
+    chemistry_prior._standardised_similarity) instead of the raw feature matrix, so
     the feature side's own O(entities^2) distance is recovered by inverting values
-    already computed upstream rather than paid for a second time.
+    already computed upstream, avoiding duplicate work.
 
     one-hot(labels), standardised per column exactly like any other descriptor
     matrix here, stands in for a continuous "pure identity" reference the way it does
@@ -452,7 +454,7 @@ def mantel_test(similarity, labels, permutations=999, seed=0):
 
 def species_class_map(csv):
     """{lipid species: head-group class}, dataloader.lipid_classes.lipid_class_series
-    applied once per distinct species rather than once per row.
+    applied once per distinct species instead of once per row.
     """
     species = csv[["FullIdentityOfLipid"]].drop_duplicates()
     species = species.assign(lipid_class=lipid_class_series(species))
@@ -464,7 +466,7 @@ def protein_family_map(csv):
     recipe analysis/feature_identity_check.py's protein_families uses
     (in practice a protein's ProteinDomain is constant across its own rows; the
     majority vote is just insurance against the rare exception silently biasing this
-    script's own labels rather than raising).
+    script's own labels instead of raising).
     """
     return csv.groupby("LTPProtein")["ProteinDomain"].agg(
         lambda values: values.value_counts().index[0]
@@ -488,7 +490,7 @@ def build_axis_labels(entity_column, entities, csv, species_class, protein_famil
     `entity_column` (feature_similarity's own granularity) can actually vary on --
     see this module's docstring for why the matching fine-grained axis (species at
     lipid granularity, protein at protein granularity) is mechanically degenerate and
-    left out rather than printed as a meaningless 1.0.
+    omitted because printing 1.0 would be meaningless.
     """
     if entity_column == "FullIdentityOfLipid":
         return {"lipid_class": np.array([species_class[e] for e in entities])}
@@ -563,7 +565,7 @@ def rank_descriptors(csv, data_dir, descriptor_names, zscore):
     every row of the table answers "if this were the only pair descriptor in
     --features, what would GLOBAL's own eta^2 table say" -- the same numbers
     print_global_report would show one descriptor at a time, just collected so they
-    can be sorted and compared directly instead of read off separate runs.
+    can be sorted and compared directly instead of reading off separate runs.
 
     `imbalance` = |eta2(lipid) - eta2(protein)|: near 0 means the descriptor leans on
     lipid and protein identity about equally (or on neither); large means it is
@@ -681,11 +683,8 @@ def parse_feature_tokens(features_arg):
     """--features string -> (base_names, specs).
 
     A token "<name>_coarse=<K>" means: fetch the named descriptor's RAW values (any
-    lipid/protein/pair name raw_feature_matrix knows -- whether or not it already has
-    its own project "coarse" variant; dataloader.descriptors' aromatic_share_
-    coarse/polar_share_coarse are hand-picked FIXED bands over a share already known
-    to live in [0, 1], which does not generalise to a descriptor with a different
-    native scale, e.g. depth_bulk_match) and quantile-bin it into K groups instead of
+    lipid/protein/pair name raw_feature_matrix knows) and quantile-bin it into K
+    groups instead of
     using the raw value -- see apply_coarsening.
 
     A token "<name>_neutral" means: subtract that descriptor's own per-protein mean
@@ -707,7 +706,7 @@ def parse_feature_tokens(features_arg):
     chain_extent_gap/tail_elongation_fit are deliberately excluded -- an angstrom-vs-
     angstrom or shape-ratio comparison, not a product two different native scales
     could unbalance) or is already unconditionally on (aromatic_contact_min/
-    hbond_match_min) -- raised here rather than silently accepted as a no-op, so a
+    hbond_match_min) -- raised here instead of silently accepted as a no-op, so a
     "_zscore" token that would not change anything is never mistaken for one that did.
 
     Any other token is used as-is, exactly like today.
@@ -759,7 +758,7 @@ def apply_coarsening(matrix, column_names, specs):
     threshold, so it applies to any descriptor regardless of native scale.
     `duplicates="drop"` because several of these descriptors are dense with exact
     ties a strict K-way split cannot always honour, which would otherwise raise
-    rather than fall back to fewer, wider bins. A "raw" entry passes its column
+    instead of falling back to fewer, wider bins. A "raw" entry passes its column
     through unchanged. Only called when no "neutral" spec is present -- see main --
     so `kind` here is always "raw" or "coarse".
     """
@@ -817,7 +816,7 @@ def resolve_pair_broadcast_features(csv, data_dir, specs):
     a "zscore" spec resolves its own base with zscore=True instead -- the two are
     cached separately (keyed by (base, zscore)), so a --features set naming the same
     base BOTH plain and "_zscore"-suffixed (e.g. "depth_bulk_match,depth_bulk_match_
-    zscore") fetches and reports both, side by side, rather than one silently
+    zscore") fetches and reports both, side by side, instead of one silently
     shadowing the other.
     """
     cache = {}
@@ -843,7 +842,7 @@ def resolve_pair_broadcast_features(csv, data_dir, specs):
 
 
 # ================================================================= mode --lipid_classes
-# Which of the lipid descriptors are head-group-class FINGERPRINTS rather than
+# Which of the lipid descriptors are head-group-class FINGERPRINTS instead of
 # chemistry -- was analysis/probes/lipid_descriptor_class_identity.py. The protein-side
 # question (section 2 of files/reference/descriptor_catalog.md) has an eta^2-by-family
 # table and the "family-neutral 7" every geometric_edge_* baseline uses is that table's
@@ -856,58 +855,6 @@ def resolve_pair_broadcast_features(csv, data_dir, specs):
 # protein side: "at the floor" is the bar for neutrality, and a permutation p-value
 # guards against reading noise above it as structure.
 SIGNIFICANCE = 0.05
-
-
-def candidate_matrix(csv, data_dir, names):
-    """(species, matrix) for measure names that are not in LIPID_DESCRIPTOR_NAMES.
-
-    raw_feature_matrix only resolves the catalog the MODEL can be given, and the
-    candidates of descriptor_catalog section 7g are deliberately not in it yet --
-    measuring a descriptor must not require first wiring it into what the network sees.
-    Values come from the shared pair-descriptor cache (every _MEASURES entry is always
-    built), averaged over a species' candidate structures the same way
-    chemistry_prior's own lipid table does, so the two agree on what "this species'
-    value" means.
-    """
-    from dataloader.descriptor_cache_reader import load_lipid_descriptor_cache
-    from dataloader.pocket_lipid_compatibility import candidates_for_row
-    from preprocessing.compute_descriptors import _MEASURES
-
-    cache = load_lipid_descriptor_cache(os.path.join(PROJECT_ROOT, "data"), isomeric=False)
-    if cache is None:
-        raise SystemExit(
-            "no pair-descriptor cache -- run data/build_descriptor_cache.py first; "
-            "computing these from scratch here would re-embed conformers per lipid"
-        )
-    missing = [name for name in names if name not in _MEASURES]
-    if missing:
-        raise SystemExit(f"not cached measures: {missing}")
-
-    species, rows = [], []
-    seen = set()
-    for _, row in csv.iterrows():
-        name = row["FullIdentityOfLipid"]
-        if name in seen:
-            continue
-        seen.add(name)
-        collected = {measure: [] for measure in names}
-        for raw in candidates_for_row(row):
-            canonical = cache["raw_to_canonical"].get(raw)
-            entry = cache["values"].get(canonical) if canonical else None
-            if entry is None:
-                continue
-            for measure in names:
-                value = entry.get(measure)
-                if value is not None:
-                    collected[measure].append(float(value))
-        # np.nan, not 0.0: a species none of whose candidates has this measure has no
-        # value, and eta_squared must not read a filler zero as a real one. Only
-        # tail_double_bond_position is routinely absent (fully saturated lipids).
-        species.append(name)
-        rows.append([
-            float(np.mean(collected[m])) if collected[m] else np.nan for m in names
-        ])
-    return species, np.array(rows, dtype=float)
 
 
 def coldsplit_set_labels(classes):
@@ -935,7 +882,7 @@ def axis_table(matrix, column_names, labels, axis_name, permutations, seed):
         values = matrix[:, index]
         # A descriptor undefined for some species (tail_double_bond_position on a fully
         # saturated lipid) is measured on the species where it IS defined, with the
-        # count reported, rather than imputed -- an imputed value would be a constant
+        # count reported. Imputation would introduce a constant
         # shared by exactly the saturated lipids, which is itself a class signal.
         defined = ~np.isnan(values)
         values, group_labels = values[defined], np.asarray(labels)[defined]
@@ -964,8 +911,7 @@ def verdict(row):
     """class-neutral / borderline / fingerprint, on the same bar as the protein side.
 
     "fingerprint" needs BOTH: measurably above the arithmetic floor AND not explainable
-    as a reshuffle. A descriptor above the floor with p >= 0.05 is "borderline" rather
-    than neutral because at these entity counts the permutation test is the weaker of
+    as a reshuffle. A descriptor above the floor with p >= 0.05 is "borderline" instead of neutral because at these entity counts the permutation test is the weaker of
     the two checks, and calling such a column safe is the error this whole table exists
     to avoid.
     """
@@ -1021,7 +967,6 @@ def run_lipid_classes(args):
     from dataloader.lipid_classes import lipid_class_series as class_series
     from dataloader.descriptors import LIPID_DESCRIPTOR_NAMES as LIPID_NAMES
     from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS
-    from preprocessing.compute_descriptors import CANDIDATE_LIPID_DESCRIPTOR_NAMES
 
     data_dir = os.path.join(PROJECT_ROOT, "data") + os.sep
     csv = pandas.read_csv(interaction_csv_path(data_dir))
@@ -1030,43 +975,16 @@ def run_lipid_classes(args):
     # weighted by how often a species was screened would make eta^2 report which classes
     # were assayed most, not which classes the descriptor can tell apart.
     catalog = list(LIPID_NAMES)
-    candidates = list(CANDIDATE_LIPID_DESCRIPTOR_NAMES)
-    if args.descriptor_set == "candidates":
-        catalog = []
-    elif args.descriptor_set == "catalog":
-        candidates = []
 
-    species, matrix, column_names = None, None, []
-    if catalog:
-        species, matrix, entity_column, column_names = raw_feature_matrix(
-            csv, data_dir, catalog, zscore=False
+    species, matrix, entity_column, column_names = raw_feature_matrix(
+        csv, data_dir, catalog, zscore=False
+    )
+    if entity_column != "FullIdentityOfLipid":
+        raise SystemExit(
+            f"expected lipid granularity, got {entity_column!r} -- "
+            "LIPID_DESCRIPTOR_NAMES should resolve per species"
         )
-        if entity_column != "FullIdentityOfLipid":
-            raise SystemExit(
-                f"expected lipid granularity, got {entity_column!r} -- "
-                "LIPID_DESCRIPTOR_NAMES should resolve per species"
-            )
-        column_names = list(column_names)
-    if candidates:
-        candidate_species, candidate_values = candidate_matrix(csv, data_dir, candidates)
-        if species is None:
-            species, matrix = candidate_species, candidate_values
-        else:
-            # Same species, different order: raw_feature_matrix sorts, candidate_matrix
-            # keeps first-seen csv order. Reindexed by NAME rather than positionally --
-            # zipping two differently ordered lists would silently pair each species'
-            # catalog values with another species' tail values, which is the one error
-            # here that would look like a result instead of a crash. The SET must still
-            # match exactly; a difference there is a real divergence, not an ordering.
-            if set(candidate_species) != set(species):
-                raise SystemExit(
-                    f"catalog and candidate species sets disagree: "
-                    f"{len(set(species) ^ set(candidate_species))} differ"
-                )
-            position = {name: i for i, name in enumerate(candidate_species)}
-            reordered = candidate_values[[position[name] for name in species], :]
-            matrix = np.hstack([matrix, reordered])
-        column_names = column_names + candidates
+    column_names = list(column_names)
 
     species_frame = pandas.DataFrame({"FullIdentityOfLipid": species})
     classes = class_series(species_frame).to_numpy()
@@ -1130,7 +1048,7 @@ def run_lipid_classes(args):
 # --double_coldsplit, LBP_BPI_CETP is the family where the descriptor baseline clears its
 # null model by a wide margin (test BA 0.677 on dh_family_neutral_lipprop, 0.796-0.826 on
 # the earlier descriptors_path line) and files/results/signal_state.md section 8 calls
-# that an unexplained leak rather than chemistry. lipocalin rides along as a positive
+# that an unexplained leak instead of chemistry. lipocalin rides along as a positive
 # control: a statistic that cannot reproduce its known pocket_extent separation is not
 # measuring what it claims to.
 
@@ -1168,7 +1086,7 @@ def run_family_separation(args):
     """Every protein-side descriptor the table holds, against one family vs the rest.
 
     Reads data/protein_descriptors.csv (preprocessing.compute_descriptors'
-    protein_descriptor_table) rather than raw_feature_matrix, so descriptors that were
+    protein_descriptor_table) instead of raw_feature_matrix, so descriptors that were
     never wired into POCKET_DESCRIPTOR_NAMES are measured too -- the search does not
     proceed one suspect per session.
     """
@@ -1402,9 +1320,8 @@ def main():
             f"({','.join(PAIR_DESCRIPTOR_NAMES)}) -- exactly analysis/baselines/knn_model.py's "
             "own --features. Any token may instead be '<name>_coarse=<K>' -- quantile-"
             "bin that descriptor's raw values into K groups (pandas.qcut, data-driven "
-            "edges) instead of using it raw, for ANY name here regardless of whether "
-            "it already has its own fixed-band _coarse variant (aromatic_share_coarse, "
-            "polar_share_coarse). E.g. depth_bulk_match_coarse=3. Any token may "
+            "edges) instead of using it raw, for ANY name here. E.g. "
+            "depth_bulk_match_coarse=3. Any token may "
             "instead (or also, on a different token) be '<name>_neutral' -- subtract "
             "that descriptor's own per-protein mean and per-lipid_class mean "
             "(analysis/baselines/knn_model.py's per_pair_auc residual, applied to an input "
@@ -1474,12 +1391,6 @@ def main():
              "floor and a permutation p against the fine classes, the four "
              "LIPID_COLDSPLIT_SETS, and each set against the rest, ending in a "
              "neutral/borderline/fingerprint verdict per descriptor.",
-    )
-    modes.add_argument(
-        "--descriptor_set", default="catalog", choices=("catalog", "candidates", "both"),
-        help="--lipid_classes only. catalog: LIPID_DESCRIPTOR_NAMES, what the model can "
-             "be given today. candidates: the head-group-neutral candidates, cached but "
-             "not yet model-facing. both: one table over the union.",
     )
     modes.add_argument(
         "--family_separation", action="append", default=None, metavar="FAMILY",

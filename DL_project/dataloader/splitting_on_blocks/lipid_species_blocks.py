@@ -1,35 +1,21 @@
-"""The lipid axis cut at the CONCRETE STRUCTURE, for --lipid_species_coldsplit.
+"""Hold out structure-disjoint lipids with --lipid_species_coldsplit.
 
-The fourth cut on the lipid side, and the only one whose unit is an individual lipid
-rather than a named chemical set:
+Other lipid-axis cuts use fixed classes (--lipid_coldsplit), target Tanimoto
+isolation (--lipid_isolation), or Titeca et al. Figure 3a subclasses
+(--lipid_subclass). This cut draws individual lipids, sized by positive count.
 
-  --lipid_coldsplit   four hand-built sets of project head-group classes
-  --lipid_isolation   a block chosen by Tanimoto distance to a target isolation
-  --lipid_subclass    one subclass of Titeca et al. (a head-group row of Figure 3a)
-  --lipid_species_coldsplit   a seeded draw of individual lipids, sized by how many
-                      positives it has to carry
+FullIdentityOfLipid names, e.g. PC(34:1), each list candidate sn-positional
+and double-bond isomers unresolved by the spectrum. Names share structures:
+149/1226 structures occur under multiple names. Holding out 15% of names
+alone left 12-22% of held structures in training under another name.
 
-What it guarantees is narrower and stricter than the three above: no concrete lipid
-structure appears both in training and in the evaluated block. That is NOT the same as
-holding out a set of `FullIdentityOfLipid` names, and the difference is measurable in
-this table rather than hypothetical. A name is a measured species (a sum composition
-like "Phosphatidylcholine (34:1)") and it carries a BAG of candidate structures -- the
-sn-positional and double-bond isomers the spectrum cannot separate. Those bags overlap:
-149 of the 1226 distinct structures are offered by more than one name. Drawing 15% of
-NAMES therefore leaves 12-22% of the drawn structures still present in training under a
-different name, which is precisely the leak this flag exists to close.
+Draw connected components of the name-structure bipartite graph: names,
+their candidates, and all transitively linked names. Only cuts between
+components are structure-disjoint. The table has 243 components over 283
+names, 207 singleton names, and a largest component of 6, retaining fine cuts.
 
-The unit is therefore the connected component of the bipartite name-structure graph:
-a name, every structure it offers, every other name offering one of those structures,
-transitively. Cutting between components is the finest cut that is structure-disjoint,
-and any cut inside one is not disjoint at all. In this table that costs almost nothing
--- the graph is nearly atomized, 243 components over 283 names, 207 of them a single
-name, the largest holding 6 -- so "structure-disjoint" and "fine-grained" are not in
-tension here the way they would be in a set of congeneric drug-like series.
-
-Nothing about the rest of the split changes: every protein stays in training, and the
-block is halved label-by-label into validation and test by the same code every other
-lipid-axis flag goes through (Dataloader._split_interactions).
+All proteins remain in training. Dataloader._split_interactions halves the
+held block label-by-label into validation/test, as for other lipid-axis cuts.
 """
 from __future__ import annotations
 
@@ -39,14 +25,12 @@ from rdkit import Chem
 
 
 def row_candidate_structures(smile_global, smile_fragment, isomeric=False):
-    """The canonical candidate structures of one table row, in field order.
+    """Return canonical candidates in field order using LipidGraphBuilder rules.
 
-    Exactly LipidGraphBuilder's own rule (_select_lipid_embedding_text plus
-    _lipid_fragment_keys): the untrimmed "0" test picks which column is read, then the
-    ";"-separated field is split, stripped, emptied of ""/"0" parts and deduplicated by
-    canonical SMILES. `isomeric` mirrors --lipid_isomers, which decides whether
-    stereoisomers are separate structures or one, so a run cuts on the same notion of
-    "a structure" that its own encoder uses.
+    Match _select_lipid_embedding_text and _lipid_fragment_keys: choose the field
+    with the untrimmed "0" test, split on semicolons, strip, skip empty/"0" parts,
+    and deduplicate canonical SMILES. isomeric follows --lipid_isomers, so the
+    split and encoder use the same definition of a structure.
     """
     text = str(smile_global)
     if text == "0":
@@ -66,11 +50,10 @@ def row_candidate_structures(smile_global, smile_fragment, isomeric=False):
 
 
 def structures_by_species(csv, isomeric=False):
-    """{FullIdentityOfLipid: frozenset of its candidate structures}.
+    """Return {FullIdentityOfLipid: frozenset of candidate structures}.
 
-    Canonicalization is memoized on the (SmileGlobal, SmileFragment) pair rather than
-    run per row: the table's 9905 rows carry 419 distinct pairs, so this is 419 RDKit
-    passes (~0.5 s) instead of 9905.
+    Memoize by (SmileGlobal, SmileFragment): 9905 rows had 419 distinct pairs,
+    requiring 419 RDKit passes (~0.5 s) instead of 9905.
     """
     by_pair = {}
     mapping = {}
@@ -87,11 +70,9 @@ def structures_by_species(csv, isomeric=False):
 
 
 def structure_components(csv, isomeric=False):
-    """The name-structure graph's connected components, as tuples of names.
+    """Return sorted connected components, each a sorted tuple of names.
 
-    Sorted, and each component's names sorted inside it, so the order a seeded draw
-    permutes is a property of the table alone -- not of dict iteration order, and not
-    of how many workers happened to build it.
+    Seeded draws then depend on table content, not dict order or worker count.
     """
     by_species = structures_by_species(csv, isomeric=isomeric)
     owners = {}
@@ -119,22 +100,16 @@ def structure_components(csv, isomeric=False):
 
 
 def species_coldsplit_block(csv, share, seed, isomeric=False):
-    """A structure-disjoint block carrying about `share` of the table's positives.
+    """Draw a structure-disjoint block covering about share of table positives.
 
-    Whole components are drawn in a seeded random order and accumulated until the
-    positive target is met, so the block is structure-disjoint by construction and its
-    SIZE is what the share controls. Sizing by positives rather than by a count of
-    names is what makes the share mean the same thing from run to run: positives are
-    spread thinly and unevenly over the names (634 of them over 283 names, median 1 per
-    name, 154 names carrying exactly one), so a fixed count of names would hand one
-    seed twice the evaluated positives of another.
+    Accumulate whole components in seeded random order until the positive
+    target is reached. Positive counts size evaluation more reliably than names:
+    634 positives span 283 names, median 1, with 154 names having exactly one.
+    Fixed name counts could give twice as many evaluated positives for one seed.
 
-    The seed is the run's own seed, so the five seeds of a grid measure five different
-    draws rather than five repetitions of one arbitrary block. That is deliberate: a
-    single fixed block of individual lipids would be one draw of many with nothing to
-    recommend it, unlike a subclass, which names itself.
-
-    Returns (species tuple, stats dict).
+    Use the run seed: a five-seed grid tests five draws, not one arbitrary fixed
+    block repeatedly. Unlike subclasses, individual-name blocks have no fixed
+    chemical definition. Return (species tuple, stats dict).
     """
     components = structure_components(csv, isomeric=isomeric)
     positives = csv.groupby("FullIdentityOfLipid")["Interaction"].sum()
@@ -165,9 +140,8 @@ def species_coldsplit_block(csv, share, seed, isomeric=False):
             block.loc[block["Interaction"] == 1, "LTPProtein"].nunique()
         ),
         "train_positives": int(train["Interaction"].sum()),
-        # Proteins left with no positive anywhere in training: they can still appear as
-        # negatives, but nothing in train says what they DO bind. Reported rather than
-        # prevented -- the fix is a smaller share, which is the caller's call.
+        # Report proteins with no training positive; they may still supply negatives.
+        # Do not redraw silently. The caller can choose a smaller share.
         "proteins_without_train_positive": int(
             csv["LTPProtein"].nunique() - len(train_positive_proteins)
         ),

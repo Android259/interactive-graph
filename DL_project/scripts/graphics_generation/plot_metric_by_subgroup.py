@@ -41,7 +41,7 @@ SUBGROUP_COLUMNS = (
     "loss",
 )
 # Reports written before AUC was added to new_train.py's per-protein table have every
-# other column in the same order and place, so both layouts are read rather than only
+# other column in the same order and place, so both layouts are read instead of only
 # the current one -- the alternative is that adding one column retroactively makes
 # every report already on disk unreadable. Same reasoning as CONFIG_DEFAULTS below,
 # which backfills configuration fields that did not exist when a report was written;

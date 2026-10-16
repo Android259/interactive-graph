@@ -1,128 +1,159 @@
-# External tools and model checkpoints used by preprocessing
+# Preprocessing tools and checkpoints
 
-Everything here is a hard dependency of a preprocessing step that produces files under
-`data/`. Versions are recorded because the outputs are committed artifacts: a different
-version silently produces different numbers for the same input.
+These tools produce files under `data/`. Keep track of their versions when rebuilding
+outputs. Different versions can give different results for the same input.
 
-## Voronota (protein graphs)
+## Voronota
 
-| item | value |
-|---|---|
-| engine | `preprocessing/voronota-js` (committed, 14 MB, `--version` prints `Voronota-JS version 1.29`) |
-| release | **v1.29.4412** (upstream tag, 2025-06-15) |
-| wrapper script | `preprocessing/voronota-js-receptor-data-graph` (shipped with the release, unmodified) |
-| per-protein parameters | `data/unpreprocessed_files/voronota_parameter_per_ltp.csv` |
-| driver | `data/graphs/graph_from_pdb.py` (positional pairing of structures to parameter rows -- verify before reusing) |
-| outputs | `data/graphs/<stem>/{coarse_graph_nodes,coarse_graph_links,graph_nodes,graph_links}.csv`, `pocketness.pdb`, `buriedness.pdb`, `coarse_mean_buriedness.pdb` |
+Voronota builds protein graphs. The binary is `preprocessing/voronota-js` (14 MB).
+Its version output is `Voronota-JS version 1.29`.
 
-### How the version was established
+The release used for the reproduction check was `v1.29.4412`, dated 2025-06-15.
+The wrapper is `preprocessing/voronota-js-receptor-data-graph`. It comes from the
+release and has no project changes.
 
-The project never recorded it. The wrapper script is byte-identical across every commit
-in this repository (md5 of the LF-normalized file: `22bcc6c201be9e188459f93566f82169`)
-and matches exactly four consecutive upstream releases -- v1.29.4307, v1.29.4370,
-v1.29.4408, v1.29.4412 -- while differing from every release before and after that
-range. v1.29.4412 was then built from source and re-run on `GM2A_1g13.pdb1` with that
-protein's stored parameters: all seven output files reproduced the committed ones
-byte-for-byte (only line endings differ, the stored files are CRLF). That is the
-confirmation; any release in the four-tag window is equally consistent with the data.
+Protein parameters are in `data/unpreprocessed_files/voronota_parameter_per_ltp.csv`.
+The driver is `data/graphs/graph_from_pdb.py`. It pairs structures and parameter rows
+by position, so check their order before running it.
 
-### Rebuilding the engine from source
+For each protein, the output folder `data/graphs/<stem>/` contains:
 
-```
+- `coarse_graph_nodes.csv` and `coarse_graph_links.csv`;
+- `graph_nodes.csv` and `graph_links.csv`;
+- `pocketness.pdb`, `buriedness.pdb`, and `coarse_mean_buriedness.pdb`.
+
+### Version check
+
+The original version was not recorded. The wrapper was compared with its repository
+history and upstream releases. After converting line endings to LF, its MD5 was
+`22bcc6c201be9e188459f93566f82169`. It matched four releases: `v1.29.4307`,
+`v1.29.4370`, `v1.29.4408`, and `v1.29.4412`.
+
+A build of `v1.29.4412` was then run on `GM2A_1g13.pdb1` with the stored parameters.
+All seven outputs matched the committed files after accounting for CRLF line endings.
+This check supports the four-release range; it does not identify one unique release.
+
+### Build from source
+
+```bash
 curl -sSL -o v.tar.gz https://github.com/kliment-olechnovic/voronota/archive/refs/tags/v1.29.4412.tar.gz
-tar xzf v.tar.gz            # src/, expansion_js/ and expansion_lt/ are all required
+tar xzf v.tar.gz
 cd voronota-1.29.4412/expansion_js
 g++ -std=c++14 -I"./src/dependencies" -O3 -o ./voronota-js $(find ./src/ -name '*.cpp')
 ```
 
-Takes about three minutes. The wrapper needs `voronota-js` on `PATH`, and it is written
-with CRLF line endings -- run it through `tr -d '\r'` before executing on Linux.
+Keep `src/`, `expansion_js/`, and `expansion_lt/` from the archive.
+The wrapper needs `voronota-js` on `PATH`. Its line endings are CRLF;
+convert them with `tr -d '\r'` before running it on Linux.
 
 ### Selenomethionine
 
-Voronota's `voronota_restrict_atoms("-use", "[-protein]")` drops `HETATM ... MSE`
-records, deleting real residues from the graph. `preprocessing/convert_mse_to_met.py`
-rewrites them as ordinary methionine first; the converted structures live in
-`data/structures/mse_fixed/`. Only `GM2A_1g13` and `PITPNA_1uw5` are affected in this
-dataset.
+The Voronota filter `voronota_restrict_atoms("-use", "[-protein]")` drops
+`HETATM ... MSE` records. This removes those residues from the graph.
+`preprocessing/convert_mse_to_met.py` converts them to ordinary methionine first.
+The converted structures are in `data/structures/mse_fixed/`.
+The affected proteins in this dataset are `GM2A_1g13` and `PITPNA_1uw5`.
 
-## ESM3 (protein language model embeddings)
+## ESM3
 
-| item | value |
-|---|---|
-| checkpoint name | **`esm3-sm-open-v1`** (the only one this project has ever used) |
-| Hugging Face repo | `EvolutionaryScale/esm3-sm-open-v1` -- **no longer gated** (`gated: false`, `private: false`), downloads anonymously |
-| python package | `esm` 3.2.3 (`pip install esm`); it resolves the checkpoint name internally and downloads via `huggingface_hub.snapshot_download` |
-| local cache | `data/esm3_checkpoint` (5.2 GB, 22 files, git-ignored), set through `HF_HOME` by `preprocessing/embed_protein_esm3_v2.py` before importing `esm` |
-| credentials | none needed. `HF_TOKEN` / `HF_API_TOKEN` are still honoured if set, but the download works without them |
-| v1 outputs | `data/embedding_ESM3/<stem>_*_ESM3.pkl` -- sequence track only, built from `data/fasta/` |
-| v2 outputs | `data/embedding_ESM3_v2/<stem>_ESM3v2.pkl` -- sequence + structure + SASA + confidence, built from `data/esm3_input/<stem>.pdb` |
+The project uses the `esm3-sm-open-v1` checkpoint from
+`EvolutionaryScale/esm3-sm-open-v1` on Hugging Face. The recorded Python package
+version is `esm` 3.2.3. The package resolves the checkpoint name and downloads it
+through `huggingface_hub.snapshot_download`.
 
-Both variants store one row per residue plus a BOS/EOS pair, so the loader strips the
-first and last row before attaching them to graph nodes.
+The recorded access check found the repository public and ungated. It downloaded
+without credentials. The script still uses `HF_TOKEN` or `HF_API_TOKEN` when set.
 
-### Running it
+`preprocessing/embeddings/embed_protein_esm3_v2.py` sets the default `HF_HOME` before
+importing `esm`. An existing `HF_HOME` is kept. The default cache is
+`data/esm3_checkpoint`, which is ignored by Git. The recorded cache had 22 files
+and used 5.2 GB.
 
-```
-pip install esm
-python3 preprocessing/embed_protein_esm3_v2.py data/esm3_input/<stem>.pdb
-```
+The two embedding formats are:
 
-The first run downloads the checkpoint into `data/esm3_checkpoint` (about two minutes);
-later runs reuse it. CPU inference works -- roughly a minute per protein at these sizes.
+- v1: sequence input from `data/fasta/`; output in `data/embedding_ESM3/<stem>_*_ESM3.pkl`.
+- v2: sequence, structure, SASA, and confidence from `data/esm3_input/<stem>.pdb`;
+  output in `data/embedding_ESM3_v2/<stem>_ESM3v2.pkl`.
 
-### Token status
+Both formats include BOS and EOS rows around the residue rows.
+The loader removes the first and last rows before assigning embeddings to graph nodes.
 
-`preprocessing/EmbedProtein.py:5` contains a commented-out `HF_API_TOKEN`. It is
-**expired** (the API answers `User Access Token "jesperecamarchefdp" is expired`) and it
-is committed in source, so treat it as compromised regardless: rotate it, do not restore
-it. Nothing here needs it -- passing it actually breaks the download that works
-anonymously, because an expired bearer token turns a public 200 into a 401.
-
-### Reproducibility
-
-Re-embedding is deterministic in structure but not bit-exact across machines. Control
-run: an untouched protein (ATCAY) re-embedded on CPU differed from the committed tensor
-by at most 0.0068 in absolute value, mean 2.3e-4, against a value spread of std 276 --
-a relative difference of 8e-7, with per-residue cosine similarity >= 0.9999997. That is
-floating-point kernel variation (the stored tensors were produced on other hardware),
-not a pipeline difference. GM2A and PITPNA were re-embedded on CPU on that basis; the
-other 33 proteins keep their original tensors untouched.
-
-## RNA-BAnG (alternative per-residue protein representation)
-
-| item | value |
-|---|---|
-| checkout | `external/RNA-BAnG` (official repository) |
-| checkpoint | `external/RNA-BAnG/ckpt/icml.pth` (committed, no gating) |
-| environment | `external/RNA-BAnG/environment.yml`; the minimum needed on top of this project's own torch is `gemmi`, `einops`, `omegaconf` |
-| inputs | `data/esm3_input/*.pdb` (already aligned to `coarse_graph_nodes.csv`) |
-| outputs | `data/embedding_RNABANG/<stem>_RNABANG.pkl`, no BOS/EOS, exactly one row per graph node |
-
-CPU inference is deterministic here: re-running an untouched protein (ATCAY) reproduced
-the committed tensor exactly (`torch.equal` true), which is the check to repeat before
-overwriting any stored embedding.
-
-## Foldseek (3Di structure tokens for `--deepclip_protein_tokens`)
-
-A standalone C++ binary, installed outside the repository.
-
-| | |
-|---|---|
-| source | authors' static build: `https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz` (no AVX2: `foldseek-linux-sse2.tar.gz`) |
-| archive sha256 | `f886374e29ebbf03849cd9c4c8929be00904856dd271627d8c3043607e2af95a` |
-| `foldseek version` | `463739e0014a1549a527de589102cde98f802f37` |
-| installed at | `~/tools/foldseek/bin/foldseek` |
+### Run
 
 ```bash
-mkdir -p ~/tools && cd ~/tools
-curl -sSL -o foldseek-linux-avx2.tar.gz https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz
-sha256sum foldseek-linux-avx2.tar.gz      # compare with the table
-tar xzf foldseek-linux-avx2.tar.gz
-python3 preprocessing/build_foldseek_3di.py --foldseek ~/tools/foldseek/bin/foldseek
+pip install esm
+python3 preprocessing/embeddings/embed_protein_esm3_v2.py data/esm3_input/<stem>.pdb
 ```
 
-The URL always serves the latest build; a different hash means a different version
-whose 3Di letters may differ -- rebuild `data/protein_3di.csv` and compare with the
-committed one. The script runs `createdb --chain-name-mode 0 --threads 1` -> `lndb` ->
-`convert2fasta` and checks each protein's sequence against its graph.
+The first run downloads the checkpoint. Later runs use the cache.
+Recorded CPU timings were about two minutes for the download and one minute per protein.
+These timings depend on the machine and connection.
+
+### Old token
+
+An earlier check found an expired, commented-out `HF_API_TOKEN` in
+`preprocessing/EmbedProtein.py:5`. It had been committed to source.
+Do not restore or reuse it. In that check, passing the expired token caused a 401
+response, while the anonymous download worked.
+
+### Reproducibility check
+
+An ATCAY embedding was rebuilt on CPU and compared with the stored tensor.
+The maximum absolute difference was 0.0068 and the mean difference was 2.3e-4.
+The stored values had a standard deviation of 276. The relative difference was
+8e-7, and the cosine similarity for each residue was at least 0.9999997.
+This check did not show bit-for-bit agreement across machines.
+
+## RNA-BAnG
+
+The source is in `external/RNA-BAnG`. The checkpoint is
+`external/RNA-BAnG/ckpt/icml.pth`, included in that repository without an access gate.
+The environment is described in `external/RNA-BAnG/environment.yml`.
+The recorded minimum additions to this project's PyTorch environment were
+`gemmi`, `einops`, and `omegaconf`.
+
+Inputs are `data/esm3_input/*.pdb`, aligned to `coarse_graph_nodes.csv`.
+Outputs are `data/embedding_RNABANG/<stem>_RNABANG.pkl`.
+Each output has one row per graph node, without BOS or EOS rows.
+
+In the recorded CPU check, rerunning ATCAY gave exactly the stored tensor
+(`torch.equal` returned true). Repeat this check before replacing stored embeddings.
+
+## Foldseek
+
+Foldseek is a separate C++ program. It produces 3Di tokens used by
+`--deepclip_protein_tokens`.
+
+The recorded installation is `~/tools/foldseek/bin/foldseek`.
+`FOLDSEEK_PATH` in `preprocessing/build_foldseek_3di.py` sets this path.
+
+The authors provide the AVX2 build at
+https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz.
+For machines without AVX2, the archive is `foldseek-linux-sse2.tar.gz` at the same site.
+
+Recorded AVX2 archive SHA256:
+`f886374e29ebbf03849cd9c4c8929be00904856dd271627d8c3043607e2af95a`.
+Recorded `foldseek version`: `463739e0014a1549a527de589102cde98f802f37`.
+
+Download and unpack the binary:
+
+```bash
+mkdir -p ~/tools
+curl -sSL -o ~/tools/foldseek-linux-avx2.tar.gz https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz
+sha256sum ~/tools/foldseek-linux-avx2.tar.gz
+tar xzf ~/tools/foldseek-linux-avx2.tar.gz -C ~/tools
+```
+
+Compare the archive hash with the recorded value above. The download URL serves
+the latest build, so the version may change.
+
+Run the script from the project root:
+
+```bash
+python3 preprocessing/build_foldseek_3di.py
+```
+
+The script calls `createdb --chain-name-mode 0 --threads 1`, then `lndb` and
+`convert2fasta`. It checks each protein sequence against its graph.
+If the Foldseek version changes, rebuild `data/protein_3di.csv` and compare it
+with the stored file before replacing it.

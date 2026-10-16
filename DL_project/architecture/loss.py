@@ -215,7 +215,7 @@ def Non_Negative_Positive_Unlabeled_loss(
 
     Each group is evaluated by a recursive call with that group's scalar prior, so the
     arithmetic above is not duplicated -- which also means the diagnostics record one
-    entry per (call, group present in the batch) rather than one per call.
+    entry per (call, group present in the batch) instead of one per call.
     """
     if isinstance(prior, torch.Tensor) and prior.dim() > 0:
         return _grouped_pu_loss(
@@ -321,7 +321,7 @@ class GroupDROState:
     a moving worst-group weighted mean instead: after every batch the weight on
     each family is multiplied by exp(step_size * that family's batch loss) and
     renormalised, so a family the model is currently doing worst on comes to
-    dominate the objective rather than being averaged away.
+    dominate the objective instead of being averaged away.
 
     group_adj (>0) implements the paper's "generalization adjustment": before the
     exp() update (never in the backpropagated loss itself) each family's batch
@@ -417,8 +417,8 @@ def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None, protein
     optimising, and analysis/baselines/knn_model.py reports it as `net_AUC_prot`.
 
     The cost is pair count. Batches are drawn across proteins, so most of the pair
-    matrix is discarded and a batch may contribute very few pairs, or none. Rather than
-    raise, a batch with no same-protein pair returns zero with no gradient, exactly as
+    matrix is discarded and a batch may contribute very few pairs, or none.
+    A batch with no same-protein pair returns zero with no gradient, exactly as
     an all-one-class batch does -- but a run whose batches rarely share a protein is
     training on almost nothing, and the pair count is worth logging before trusting a
     result. For each surviving pair the loss is
@@ -430,7 +430,7 @@ def pairwise_ranking_loss(outl, interaction_labels, sample_weights=None, protein
 
     Under --balanced_batches (the setting this is meant to run under) every batch holds
     both classes by construction. Without it, an all-one-class batch carries no pair to
-    rank; rather than raise, this returns a zero with no gradient for that batch, the
+    rank; return zero with no gradient for that batch, the
     same degradation Non_Negative_Positive_Unlabeled_loss falls back to when a batch has
     no labeled positives.
     """

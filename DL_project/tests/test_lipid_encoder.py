@@ -10,7 +10,7 @@ from training.read_configuration import ModelConfig
 def make_config(**overrides):
     """Build a small real ModelConfig for the lipid encoder.
 
-    The real dataclass rather than a hand-listed stub: the encoder reads a growing set
+    The real dataclass instead of a hand-listed stub: the encoder reads a growing set
     of config fields, and a stub only gets fixed once each new one crashes a test.
     """
     config = ModelConfig(

@@ -56,7 +56,7 @@ class DescriptorMLPHead(torch.nn.Module):
         # inner width, config.hiddim-wide output" shape every other gated MLP block in
         # this project uses (e.g. Final_Layer's own classifier, NamedDescriptorHead's
         # ffn) -- --m/--hiddim are the configurable width flags, --third_layers_in_mlps
-        # the configurable depth flag, all reused rather than a bespoke pair for this
+        # the configurable depth flag, all reused instead of a bespoke pair for this
         # head alone.
         hidden = max(config.m * self.output_dim, self.output_dim)
         self.mlp = build_mlp(self.token_count, hidden, self.output_dim, config, act_fn)

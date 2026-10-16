@@ -1,37 +1,22 @@
-"""Memory-mapped store for the lipid SMILES embedding table.
+"""Map canonical SMILES to (1, tokens, 768) float32 embeddings.
 
-The table is a dict of canonical SMILES -> (1, tokens, 768) float32 tensor, shipped as
-a pickle. A pickle has to be read whole into the process that opens it, so N concurrent
-training jobs hold N private copies of the same numbers: 267 MiB each for
-``lipid_SMILES_embedding_deterministic.pkl``, and about 1 GiB of transient peak while
-the unpickler builds them. On the local 13 GiB machine that peak, not the cores, is what
-caps ``scripts/run_local.sh`` at four concurrent jobs.
+The source pickle loads entirely per process: 267 MiB for
+lipid_SMILES_embedding_deterministic.pkl.
+On the local 13 GiB machine, that peak limited run_local.sh to four jobs.
 
-This module keeps the same values in a ``torch.save`` archive instead, which
-``torch.load(..., mmap=True)`` can map straight off disk. Every process then reads the
-same page cache, so the table costs RAM once for the machine rather than once per job,
-and only for the entries a run actually touches -- an unused entry stays on disk.
+A torch.save archive loaded with mmap=True shares the OS page cache across
+jobs and faults in only requested entries. Dtype, shape, and bytes are saved
+unchanged; scripts/verify_lipid_embedding_store.py checks elementwise equality.
+Runs therefore compute the same values as with the pickle.
 
-What matters for this project: **the tensors are the same objects the pickle held.**
-They are re-saved verbatim, same dtype, same shape, same bytes, so a run served by the
-store computes exactly what a run served by the pickle computes, down to the last bit.
-``scripts/verify_lipid_embedding_store.py`` checks that element by element.
+lipid_encoding uses squeeze, a view. With default lipid_first_fragment_only,
+_lipid_encoding_cache (89 MiB per run) also shares mapped storage.
+lipid_concat/fragments_mask use torch.cat, retaining private per-row tensors,
+but still avoid private copies of the 267 MiB source table.
 
-Two further consequences worth knowing, because they are what makes the warm cache
-shared as well:
-
-- ``lipid_encoding`` returns ``torch.squeeze(encoding)``, and squeeze is a *view*. Under
-  the default ``lipid_first_fragment_only`` a row's cached encoding is therefore a view
-  into the mapped file, not a copy -- so ``_lipid_encoding_cache`` (89 MiB, held for the
-  whole run) becomes shared too, without touching the cache code at all.
-- ``lipid_concat`` / ``lipid_fragments_mask`` build their encodings with ``torch.cat``,
-  which copies. Those modes keep a private per-row tensor, as before, and still save the
-  267 MiB source table.
-
-The manifest guards staleness the same way ``protein_graph_tensor_cache`` does: the
-store is used only while the source pickle's size and nanosecond mtime still match what
-it was built from. A regenerated embedding table therefore falls back to the pickle
-rather than silently serving stale vectors.
+Use the store only while source-pickle size and nanosecond mtime match the
+manifest, as for protein_graph_tensor_cache. Regenerated sources fall back
+to the pickle instead of stale vectors.
 """
 
 import json
@@ -76,11 +61,10 @@ def store_is_current(root_dir, source_name):
 
 
 def load_lipid_embedding_store(root_dir, source_name):
-    """Map the store for one embedding table, or None to fall back to the pickle.
+    """Map the store, or return None so callers load the source pickle.
 
-    None is a normal answer, not an error: a checkout that has never run the builder, a
-    regenerated pickle, or a filesystem that cannot mmap all end up here, and the caller
-    reads the pickle exactly as it did before.
+    None covers a missing build, a regenerated pickle, or unavailable mmap.
+    These are normal fallback cases, not errors.
     """
     if not store_is_current(root_dir, source_name):
         return None

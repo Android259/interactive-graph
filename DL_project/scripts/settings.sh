@@ -38,7 +38,7 @@ WALLTIME="${WALLTIME:-5:00:00}"
 # Measured on Kraken 2026-08-19: 120 epochs of the fast-attention model take about
 # 22 minutes per run with four runs sharing one H100. 25 minutes left a 12% margin,
 # which was enough only while the card ran four at a time; at eight the runs contend
-# for it and each one slows down -- that is why this was raised to 35 rather than
+# for it and each one slows down -- that is why this was raised to 35 instead of
 # staying at 25.
 # Trimmed back to 20 (2026-09-04): the family_neutral bilinear_fusion grid actually
 # run overnight (2026-09-03/04) measured training_duration_sec of 300-850s (5-14 min)
@@ -71,7 +71,7 @@ DESCRIPTORS_HEAD_WALLTIME="${DESCRIPTORS_HEAD_WALLTIME:-0:20:00}"
 # (600 of convolution + 1360 of BLSTM) and 8960 at the widest arm of the current
 # sweep (deepclip_f8_normal_mean_ep120). That whole 1960-8960 range sits close to
 # --descriptors_head's ~1000, which is why one number
-# covers all five arm files rather than each getting its own: the parameter count
+# covers all five arm files instead of each getting its own: the parameter count
 # varies 4.6x across them, but what varies with it is a 5-to-40-channel LSTM input,
 # i.e. a few hundred extra multiply-accumulates per timestep on a model whose per
 # epoch cost is dominated by the dataloader, not by its matmuls.

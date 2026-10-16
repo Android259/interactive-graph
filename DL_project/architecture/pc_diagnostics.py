@@ -193,7 +193,7 @@ def cosine_stats(matrix, max_pairs=DEFAULT_MAX_PAIRS, generator=None):
 
     `spread` is max minus min and is the honest summary -- a high mean cosine with
     a wide spread still separates rows, a high mean with no spread does not. Pairs
-    are subsampled above `max_pairs` to keep this O(max_pairs) rather than O(n^2).
+    are subsampled above `max_pairs` to keep this O(max_pairs) instead of O(n^2).
     """
     tensor, _ = _matrix(matrix)
     rows = tensor.shape[0]

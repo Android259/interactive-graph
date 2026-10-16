@@ -19,14 +19,12 @@ CACHE_SUBDIR = "cache"
 
 
 def _cache_files(node_columns):
-    """Cache/manifest filenames for one protein-node column set.
+    """Return cache/manifest filenames for this protein-node column set.
 
-    BASE_NODE_COLUMNS keeps the original CACHE_FILE/MANIFEST_FILE names, so the
-    cache built before per-config variants existed is read and overwritten
-    exactly as before. Any other column set -- --no_protein_geometry's empty
-    tuple, or a future --protein_extra_node_features cache -- gets its own
-    pair named after the columns, so it can never collide with or overwrite a
-    cache another config still relies on.
+    BASE_NODE_COLUMNS keeps legacy CACHE_FILE/MANIFEST_FILE names.
+    Other sets, including --no_protein_geometry's empty tuple and future
+    --protein_extra_node_features variants, use column-specific names to avoid
+    overwriting caches needed by other configurations.
     """
     if tuple(node_columns) == BASE_NODE_COLUMNS:
         return CACHE_FILE, MANIFEST_FILE
@@ -80,12 +78,10 @@ def load_protein_graph_tensor_cache(root_dir, node_columns=BASE_NODE_COLUMNS):
                 or stat.st_mtime_ns != source["mtime_ns"]
             ):
                 return {}
-        # mmap so concurrent training jobs share one copy of these tensors through the
-        # page cache instead of each materializing its own. Nothing here is written in
-        # place -- _cached_protein_parts only copies the dict and takes views/columns --
-        # so the mapping stays shared for the life of the run. Archives written before
-        # torch's zipfile format, or a filesystem that cannot map them, raise here and
-        # fall back to the ordinary read, which loads the identical tensors.
+        # Share mapped tensors across jobs. _cached_protein_parts copies dicts and
+        # takes views/columns without in-place writes, keeping mappings shared.
+        # Old non-zip torch archives or unsupported filesystems fall back to ordinary
+        # loading of identical tensors.
         try:
             return torch.load(
                 cache_path, map_location="cpu", weights_only=True, mmap=True

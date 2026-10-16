@@ -1,25 +1,16 @@
-"""One pairwise-similarity matrix, the index into it, and the axis it is keyed on.
+"""Share a similarity matrix, name-to-index map, and entity axis.
 
-Not named for negatives, and deliberately so: a candidate is weighted by how similar it
-is to the POSITIVES it should be confusable with, so this holds the comparison against
-positives, not a property of negatives. What is negative-specific is the one consumer --
-`dataloader/sampler.py`'s steered draw, configured by `--negative_similarity` -- and
-nothing in here knows about it. The builders come from
-`dataloader/chemistry_prior.py`, which already owned every one of them; this module adds
-only the choice between them and the axis contract that makes the choice usable.
+chemistry_prior.py builds the matrices; this module selects them and defines
+the axis contract. sampler.py uses pools for --negative_similarity, comparing
+candidates with positives. The pool itself is not specific to negatives.
 
-A `SimilarityPool` carries the matrix, the name -> row index, and the COLUMN of the
-interaction table that names one entity of it. Three axes follow from the sources, and
-the sampler treats all three alike:
+Axes:
+FullIdentityOfLipid: Tanimoto, MolFormer, lipid descriptors.
+LTPProtein: three protein matrices or protein descriptors.
+pair_id (row label): descriptors spanning both partners.
 
-    FullIdentityOfLipid   tanimoto, molformer, lipid descriptors
-    LTPProtein            the three protein-similarity matrices, protein descriptors
-    pair_id (row label)   a descriptor set naming both sides, which neither the lipid
-                          nor the protein alone determines
-
-The axis also decides WHICH positives a candidate is compared against, because the two
-are not symmetric: see `SimilarityPool.condition_column` here and
-`dataloader.sampler.conditioned_reference` for the measurement that forced it.
+The axis also selects reference positives. See SimilarityPool.condition_column
+and sampler.conditioned_reference for the required conditioning.
 """
 
 import os
@@ -52,14 +43,13 @@ PROTEIN_METRIC_SOURCES = {
     "protein_blosum62": "blosum62",
     "protein_tmscore": "tmscore",
 }
-# source name -> the descriptor set it defaults to when --negative_similarity_descriptors
-# names none. Any explicit name list overrides it, including one spanning both sides,
-# which moves the axis to the pair.
+# Default descriptor sets for --negative_similarity_descriptors.
+# An explicit list overrides them; naming both partners selects the pair axis.
 DESCRIPTOR_SOURCES = {
     "lipid_descriptors": LIPID_DESCRIPTOR_NAMES,
     "protein_descriptors": PROTEIN_DESCRIPTOR_NAMES,
 }
-# Naive label-prior sources: a per-candidate score rather than a pairwise matrix.
+# Naive label-prior sources provide per-candidate scores.
 PRIOR_SOURCES = ("protein_subclass_prior", "learned_prior")
 # Sources that take a descriptor name list through --negative_similarity_descriptors.
 NAMED_FEATURE_SOURCES = ("lipid_descriptors", "protein_descriptors", "learned_prior")
@@ -84,29 +74,22 @@ class SimilarityPool:
 
     @property
     def condition_column(self):
-        """The coordinate a candidate must SHARE with the positives it is compared to.
+        """Return the coordinate shared with reference positives, or None.
 
-        None means the comparison is against the sampling group's own positives, which
-        is what a lipid-axis (and a pair-axis) pool wants: the group is a protein or a
-        family of them, so "close to anything this group binds" already reads as "a
-        lipid like the ones this protein binds".
-
-        A protein-axis pool cannot use that reference -- it scores 1.0 almost everywhere,
-        since a candidate's own protein is one of the group's positive proteins. It
-        conditions on the LIPID instead, making the question the mirror of the lipid
-        axis': how like the proteins that bind THIS lipid is the candidate's protein.
-        `dataloader.sampler.conditioned_reference` carries the measurement that forced
-        this and the leakage rule that bounds it.
+        Lipid/pair pools use the sampling group's positives (None): lipids similar
+        to those this protein or family binds.
+        Protein pools condition on lipid: proteins that bind the candidate's lipid.
+        Using the group's proteins instead gives similarity 1.0 almost everywhere,
+        because it includes the candidate's own protein.
+        See sampler.conditioned_reference for measurements and leakage exclusions.
         """
         return LIPID_COLUMN if self.column == PROTEIN_COLUMN else None
 
     def row_keys(self, frame):
-        """One index key per row of `frame`, on this pool's own axis.
+        """Return each frame row's key on this pool's entity axis.
 
-        The pair axis reads the frame's INDEX rather than a column: `feature_similarity`
-        keys a pair-granularity matrix by `csv.index`, and every frame the sampler hands
-        back is a slice of that same table, so the labels still line up after sampling
-        and splitting (the invariant `dataloader/AGENTS.md` states for pair IDs).
+        Pair pools use frame.index: feature_similarity uses csv.index, and sampler
+        frames retain those labels through sampling/splitting (dataloader/AGENTS.md).
         """
         if self.column == PAIR_COLUMN:
             return frame.index
@@ -118,33 +101,24 @@ class SimilarityPool:
 
 
 class LearnedPriorPool:
-    """The naive prior's learned counterpart: a small MLP that predicts a pair's label.
+    """Score candidate pairs with a small descriptor MLP fitted before training.
 
-    Same job as `CellPriorPool` -- score every candidate by how much it looks like a
-    real binder to a cheap predictor, so the steered quota fills with the pairs that
-    predictor cannot separate -- with the lookup table replaced by
-    `architecture.mlp_utils.build_mlp`, the standard block every other MLP in this
-    project is built from, over the descriptor catalog.
+    Replace CellPriorPool's lookup with architecture.mlp_utils.build_mlp.
+    Steer toward likely binders to select negatives the cheap scorer confuses
+    with positives.
 
-    Why it is FIT BEFORE the run and then frozen, rather than trained against the
-    network KBGAN-style: `dataloader.chemistry_prior.fit_prior_calibration` already
-    states this project's reason, and it applies unchanged here. A cheap scorer and a
-    many-parameter encoder competing by gradient descent to explain the SAME variance is
-    underdetermined -- nothing pins the split between them -- and this network is already
-    known to take whichever route reaches the loss first. Fitting on train labels alone,
-    before the network sees a gradient, removes the ambiguity. What this therefore does
-    NOT do is update the generator from the network's own current confusion, which is the
-    one thing KBGAN's REINFORCE loop buys; that needs the draw moved inside the epoch
-    loop and is not what this class is.
+    Fit on training labels and freeze, as in chemistry_prior.fit_prior_calibration.
+    Joint scorer/encoder optimization leaves their contributions undetermined;
+    the network can take whichever route reduces loss first. This is not KBGAN's
+    REINFORCE loop: updating from current model confusion would require draws
+    inside the epoch loop.
 
-    Adds nothing to the scored model: the MLP lives here, picks rows, and is discarded.
-    `number_of_parameters` is the base configuration's, so a steered run stays directly
-    comparable with it -- the same property the naive prior has.
+    The MLP only selects rows and is discarded. It adds no parameters to the
+    scored model; number_of_parameters stays comparable to the base configuration.
     """
 
     kind = "learned_prior"
-    # One score per interaction-table row, so the row label is the key, exactly as a
-    # pair-granularity descriptor matrix is keyed.
+    # Key per-row scores by row label, like pair-descriptor matrices.
     column = PAIR_COLUMN
     condition_column = None
 
@@ -163,26 +137,21 @@ class LearnedPriorPool:
 
 
 class CellPriorPool:
-    """A naive (protein, lipid subclass) label prior, as a per-candidate score.
+    """Score candidates by the training positive rate of (protein, lipid subclass).
 
-    The other pool kind answers "how like the positives is this candidate". This one
-    answers the question the project's own strongest naive competitor answers: "would a
-    lookup table of train labels call this cell positive at all". Steering toward a high
-    score therefore fills the quota with the pairs that competitor cannot tell from real
-    binders -- same protein, same subclass as something it binds -- which is exactly the
-    contrast a network has to win to be worth more than the lookup.
+    A high score selects negatives sharing a cell with known binders, testing
+    whether the network improves on the lookup. This differs from matrix pools,
+    which compare similarity to positives.
 
-    Why this prior and not another naive one: on `--lipid_species_coldsplit=0.15` it is
-    the strongest naive predictor on record, test BA 0.871 +- 0.009 against the network's
-    own 0.902 (files/proposals/species15_information_above_protein_subclass.md section 1,
-    measured by analysis/baselines/protein_subclass_label_baseline.py). The label-only
-    lipid lookups are far weaker on their own axis -- per-species 0.570, per-head-group
-    class 0.539 test BA (preprocessing/lipid_marginal_baseline.py) -- so they have much
-    less to confuse a model with.
+    On --lipid_species_coldsplit=0.15, the recorded lookup test BA was
+    0.871 +/- 0.009 versus network 0.902. Lipid-only lookups scored 0.570 by
+    species and 0.539 by head-group class (lipid_marginal_baseline.py).
+    See files/proposals/species15_information_above_protein_subclass.md section 1
+    and analysis/baselines/protein_subclass_label_baseline.py.
 
-    Carries only the species -> subclass map. The rates themselves are built in
-    `dataloader.sampler.cell_prior_reference`, with the same leakage rule
-    `conditioned_reference` uses, because only the sampler knows `excluded_groups`.
+    Store only species-to-subclass membership here. sampler.cell_prior_reference
+    builds rates and applies conditioned_reference's leakage rule, since the
+    sampler knows excluded_groups.
     """
 
     kind = "cell_prior"
@@ -206,12 +175,10 @@ class CellPriorPool:
 
 
 def resolve_similarity_pool(source, csv, data_dir, descriptor_names=(), config=None):
-    """Build the `SimilarityPool` named by `--negative_similarity`.
+    """Build the pool selected by --negative_similarity.
 
-    Raises rather than falling back when a source's artifacts are missing: a steered run
-    that silently drew uniformly would be recorded as steered, and
-    `number_of_parameters`-style identity of past runs is not the only thing that has to
-    stay honest -- `vars(conf)` goes into the run report.
+    Raise on missing artifacts. A uniform fallback would misreport a steered run:
+    vars(conf) records the requested configuration in the run report.
     """
     if source not in NEGATIVE_SIMILARITY_SOURCES:
         raise ValueError(
@@ -228,9 +195,8 @@ def resolve_similarity_pool(source, csv, data_dir, descriptor_names=(), config=N
         names = tuple(descriptor_names) or (
             tuple(LIPID_DESCRIPTOR_NAMES) + tuple(PROTEIN_DESCRIPTOR_NAMES)
         )
-        # Naming both sides puts raw_feature_matrix at PAIR granularity: one feature row
-        # per interaction-table row, in the table's own order, which is what a
-        # per-candidate score has to be keyed by.
+        # Naming both partners gives one feature row per interaction-table row,
+        # in table order, matching per-candidate score keys.
         entities, features, entity_column, columns = raw_feature_matrix(
             csv, data_dir, names
         )
@@ -272,10 +238,9 @@ def resolve_similarity_pool(source, csv, data_dir, descriptor_names=(), config=N
         pool = SimilarityPool(similarity, index, entity_column, source)
     else:
         metric = PROTEIN_METRIC_SOURCES[source]
-        # Structures checked, the interaction table deliberately not: what this matrix
-        # has to cover is the PROTEIN SET, and `covers` below reads that off the table
-        # directly. Refusing on the table's mtime instead would reject a perfectly good
-        # 35 x 35 matrix over an edit that never touched which proteins exist.
+        # Validate structures, then check protein coverage with covers.
+        # Do not reject a 35 x 35 matrix for interaction-table mtime changes that
+        # leave the protein set unchanged.
         loaded = load_similarity(data_dir, metric, data_dir=data_dir)
         if loaded is None:
             matrix_path, _, _ = similarity_paths(data_dir, metric)

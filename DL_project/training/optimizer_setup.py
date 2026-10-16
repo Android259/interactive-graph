@@ -165,7 +165,7 @@ class OptimizerSetup:
     def apply_lipid_path_handicap(self, weight):
         """Set the lipid branch's lr to ``weight`` times the rest of the model's.
 
-        Read off a sibling group rather than off conf.lr so whatever the lr schedule has
+        Read off a sibling group instead of off conf.lr so whatever the lr schedule has
         done this epoch is inherited: lr_warmup_cosine rewrites every group's lr from its
         own previous value, so anchoring to conf.lr would silently undo the warm-up and the
         cosine decay for the lipid branch alone. Called at the top of each epoch, after the

@@ -590,7 +590,7 @@ def test_the_surviving_candidate_is_still_preferred_when_the_quota_overflows():
     )
 
     # The one candidate with any distance from the positive is in; the second slot is
-    # filled uniformly from the zero-weight rest rather than dropped.
+    # filled uniformly from the zero-weight rest instead of being dropped.
     assert "Phosphatidylcholine (36:3)" in set(negatives["FullIdentityOfLipid"])
     assert len(negatives) == 2
 

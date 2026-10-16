@@ -39,7 +39,7 @@ class CrossAttention(torch.nn.Module):
         # cross_attention_bury_bias/cross_attention_chain_bias: extra, INDEPENDENT
         # additive key-bias terms (bury for lipid-query/protein-key, chain_rank for
         # protein-query/lipid-key -- the latter direction had no bias mechanism at all
-        # before this). Kept separate from pocket_attention_bias above rather than
+        # before this). Kept separate from pocket_attention_bias above instead of
         # folded into it, so this cannot change that flag's existing behaviour for any
         # run that doesn't opt into the new ones. softplus keeps each scale >= 0, so
         # a larger bury/chain_rank value always contributes MORE in the same direction
@@ -291,7 +291,7 @@ class CrossAttention(torch.nn.Module):
         forward()'s grouped-attention branch builds (and are None, requiring a local
         build, exactly on the non-fast_attention path -- no new segment/scatter logic
         either way). The full outer product over a graph's lipid x protein/pocket
-        nodes is masked and summed directly rather than routed through
+        nodes is masked and summed directly instead of routed through
         torch_geometric.nn.global_add_pool: building a flat pair index for a
         variable-size dense product would be new indexing logic of the kind this
         feature is meant to avoid, and masking padding to zero before summing over

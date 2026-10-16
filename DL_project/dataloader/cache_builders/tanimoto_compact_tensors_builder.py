@@ -1,8 +1,7 @@
-"""Builder for the compact Tanimoto artifacts.
+"""Build compact Tanimoto artifacts.
 
-dataloader/tensors_reading/tanimoto_compact_tensors_reader.py holds the reader, the shared
-path/format logic, and the explanation of why this compact form is byte-identical to
-the retired full matrix.
+Reader, paths, format, and byte equivalence to the retired full matrix:
+tensors_reading/tanimoto_compact_tensors_reader.py.
 """
 
 import json

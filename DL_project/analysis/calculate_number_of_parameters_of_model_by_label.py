@@ -26,13 +26,13 @@ would fail validate() for an unrelated reason.
 
 The eight-part grouping mirrors the model's own module names
 (architecture/interaction_classification.py: lipid1/2, protein1/2,
-cross_attention1/2, final_layer) rather than being specific to any one
+cross_attention1/2, final_layer) instead of being specific to any one
 configuration, so it stays correct across --double_attention (lipid2/protein2
 merge into their lipid1/protein1 counterparts) and most alternative protein
 encoders. A row is added on the fly, immediately under the group it came from,
 for parameters that do not fit the eight -- RNA-BAnG's adapter path or the
 geometric transformer, say -- so a config the eight parts were not written for
-still reports its true total rather than silently dropping a module.
+still reports its true total instead of silently dropping a module.
 """
 
 import argparse
@@ -148,7 +148,7 @@ def ensure_split_flags(flags, extra_excluded_groups, extra_seed):
 
     # A bare --lipid_coldsplit (no "=value") is how the arg_file marks that axis for
     # the submitter, which then strips the bare flag and appends its own
-    # --lipid_coldsplit=<set>. Mirrored here rather than left for read_configuration.py,
+    # --lipid_coldsplit=<set>. Mirrored here instead of left for read_configuration.py,
     # which requires a value and would otherwise reject the bare flag as unknown.
     if "--lipid_coldsplit" in flags:
         flags = [flag for flag in flags if flag != "--lipid_coldsplit"]

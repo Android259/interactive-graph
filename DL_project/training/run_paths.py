@@ -85,7 +85,7 @@ def excluded_set_name(conf):
         # test number means, so it has to change the path too -- without this a filtered and
         # an unfiltered run of the same label share one run/ directory, one test_metrics
         # folder and one (exclusion_set, seed) key in metrics_summary.csv, and whichever
-        # finished last would silently stand for both. Appended rather than folded into the
+        # finished last would silently stand for both. Appended instead of being folded into the
         # "groups_species%02d" part so the "groups_" prefix every consumer keys on still
         # starts the name.
         excluded_set_parts.append("covered")

@@ -417,7 +417,7 @@ def format_stability_by_group(
 ) -> str:
     """Per group: how many of its runs converged, and collapse_epoch_count mean/max --
     was analysis/probes/lcs_new_configs_summary.py's own stability block, generalised
-    to any label's own groups rather than the four --lipid_coldsplit ones it was
+    to any label's own groups instead of the four --lipid_coldsplit ones it was
     hardcoded to. "n/a" for either column a table predates, same convention as every
     other field here (safe_column_index).
     """

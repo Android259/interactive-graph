@@ -9,7 +9,7 @@
 # poll that finishes and one that is still connecting when the next is due.
 #
 # The jump host resets the first attempt now and then (see the retry below), so
-# every caller needs the same handling; that is why this is one file rather than
+# every caller needs the same handling; that is why this is one file instead of
 # a few lines repeated in each.
 
 SSH_CONNECT_TIMEOUT="${SSH_CONNECT_TIMEOUT:-20}"
@@ -35,7 +35,7 @@ ssh_master_alive() {
 #       it can never hang on a prompt nobody can answer.
 #
 # Taken under a lock, so two launchers starting at once open one connection
-# between them rather than racing to create the same socket.
+# between them instead of racing to create the same socket.
 ensure_ssh_master() {
     local allow_password="${1:-1}"
     local batch_opt=() attempt status=1
@@ -49,7 +49,7 @@ ensure_ssh_master() {
         else
             # The jump host occasionally resets the very first attempt
             # ("Connection closed by UNKNOWN port 65535") even when the network
-            # is fine, so retry rather than lose a whole poll interval to one
+            # is fine, so retry instead of losing a whole poll interval to one
             # flaky attempt.
             for attempt in $(seq 1 "${SSH_MASTER_ATTEMPTS}"); do
                 if ssh -M -S "${SSH_CONTROL_PATH}" \
@@ -76,7 +76,7 @@ ensure_ssh_master() {
 # The arguments every later ssh and rsync should carry, so they all travel over
 # the shared connection instead of opening their own.
 #
-# Sets two globals rather than printing, because one is an array (ssh) and one is
+# Sets two globals instead of printing, because one is an array (ssh) and one is
 # a single string (rsync -e takes a command line).
 ssh_set_transport() {
     ssh_args=(-S "${SSH_CONTROL_PATH}" -o BatchMode=yes

@@ -136,7 +136,7 @@ def train_one_epoch(run, idx, counttrain, countval):
     # already banked the task loss, so without their own accumulators they leave no
     # trace in TensorBoard at all. They are what says whether a partner is still
     # individually decodable -- the premise the whole GRL setup rests on -- so they are
-    # tracked separately rather than folded into "epoch/train loss".
+    # tracked separately from "epoch/train loss".
     adversary_stats = {
         "adv": 0.0, "adv_batches": 0, "dann": 0.0, "dann_batches": 0,
         "chem": 0.0, "chem_batches": 0,
@@ -329,7 +329,7 @@ def train_one_epoch(run, idx, counttrain, countval):
             if valid_accumulator is not None:
                 # Candidates of one pair are scattered over the shuffled batches; the
                 # pass collects them and the block is scored once below, so the loss and
-                # the counters see pairs rather than candidates.
+                # the counters see pairs instead of candidates.
                 valid_accumulator.add(outl, prot, interaction_labels)
                 continue
             sample_count = validate_prediction_label_shapes(
@@ -385,7 +385,7 @@ def train_one_epoch(run, idx, counttrain, countval):
     if (idx + 1) % TENSORBOARD_FLUSH_EVERY_EPOCHS == 0:
         run.writer.flush()
     print(f"valid epoch balanced_accuracy: {format_metric(valid_metrics['balanced_accuracy'])}")
-    # Its own line rather than appended to the one above: scripts/lib/progress_table.sh
+    # Use a separate line: scripts/lib/progress_table.sh
     # parses that line by field position, and the summarize/graphics path reads the
     # epoch history, not this print.
     print(f"valid epoch AUC: {format_metric(valid_metrics['AUC'])}")

@@ -1,32 +1,32 @@
 #!/usr/bin/env python3
-"""Build the shared cache for the descriptor catalog's shared
-per-candidate/per-protein base values (chain/unsaturation/hbond/heavy/tail_count/extent --
-see needs_cache below).
+"""Build the shared lipid, protein and pair descriptor tables.
 
-Every training job otherwise runs RDKit over every candidate SMILES in the interaction
-table and re-parses every protein's pocketness.pdb/coarse_graph_nodes.csv itself --
-~12.2s of a ~13.6s dataset construction, measured on the current 35-protein table, and
-none of it depends on --seed or --excluded_groups. Built once by this script, N
-concurrent jobs share one cache file instead of paying that N times. See
-dataloader/descriptor_cache_reader.py for the cache format and the fallback discipline a
-missing/stale cache falls back to (compute directly, exactly as before this existed).
+Every training job otherwise runs RDKit over every candidate SMILES, re-parses
+every protein's pocketness.pdb/coarse_graph_nodes.csv, and recomputes every pair
+formula itself -- ~12.2s of a ~13.6s dataset construction, measured on the current
+35-protein table, and none of it depends on --seed or --excluded_groups. Built once
+by this script, N concurrent jobs share one set of tables instead of paying that N
+times. See dataloader/descriptor_cache_reader.py for the table/manifest format and
+the fallback discipline a missing/stale table falls back to (compute directly,
+exactly as before any of this existed).
 
 Meant to be run before a grid launches (scripts/run_local.sh calls it, alongside
-data/build_lipid_embedding_store.py), which is also why it is a no-op when the cache is
-already current: launching a grid must not rebuild it every time.
+data/build_lipid_embedding_store.py), which is also why it is a no-op when every
+table is already current: launching a grid must not rebuild them every time.
 
 Usage:
     python3 data/build_descriptor_cache.py [--args_file=PATH] [--force] [--quiet]
                                                  [--check_only]
 
-    --args_file=PATH  Pick whether a cache is needed, and which isomeric variant, from
-                       that run's flags: none of --descriptor_heads, --protein_descriptors,
-                       --lipid_descriptors or --deepclip_protein_gate means no cache is
-                       read at all (see dataloader/Dataloader.py._compute_descriptors),
-                       and --lipid_isomers selects the isomeric-SMILES variant. Without
-                       this, a cache is assumed needed and the deterministic
+    --args_file=PATH  Pick whether the tables are needed, and which isomeric
+                       variant, from that run's flags: none of --descriptor_heads,
+                       --protein_descriptors, --lipid_descriptors or
+                       --deepclip_protein_gate means nothing is read at all (see
+                       dataloader/Dataloader.py._compute_descriptors), and
+                       --lipid_isomers selects the isomeric-SMILES variant. Without
+                       this, the tables are assumed needed and the deterministic
                        (non-isomeric) variant is built.
-    --force           Rebuild even when the cache is already current.
+    --force           Rebuild even when every table is already current.
     --quiet           Print nothing when there was nothing to do.
     --check_only      Report whether a rebuild is needed (exit 0: nothing to do: not
                        needed, or already current; exit 1: a rebuild would run) without
@@ -48,8 +48,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from dataloader.cache_builders.descriptor_csv_builder import (  # noqa: E402
     build_lipid_descriptor_cache,
+    build_pair_value_cache,
 )
-from dataloader.descriptor_cache_reader import store_is_current  # noqa: E402
+from dataloader.descriptor_cache_reader import pair_value_cache_is_current  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 
 
@@ -115,39 +116,49 @@ def main(argv):
             return 2
 
     needed, isomeric = needs_cache(args_file)
+    variant = "isomeric" if isomeric else "deterministic"
     if not needed:
         if not quiet:
-            print(
-                "pair descriptor cache: not needed "
-                "(no descriptor flag is on)"
-            )
+            print("descriptor cache: not needed (no descriptor flag is on)")
         return 0
 
     data_dir = PROJECT_ROOT / "data"
-    if store_is_current(data_dir, isomeric) and not force:
+    # pair_value_cache_is_current bundles all three: it checks the lipid table
+    # (store_is_current), the pair table's own manifest, and that
+    # data/protein_descriptors.csv exists.
+    if pair_value_cache_is_current(data_dir, isomeric) and not force:
         if not quiet:
-            variant = "isomeric" if isomeric else "deterministic"
-            print(f"pair descriptor cache: {variant} already current")
+            print(f"descriptor cache: {variant} already current")
         return 0
 
     if check_only:
         if not quiet:
-            variant = "isomeric" if isomeric else "deterministic"
-            print(f"pair descriptor cache: {variant} needs a rebuild")
+            print(f"descriptor cache: {variant} needs a rebuild")
         return 1
 
     import pandas
+
+    from preprocessing.compute_descriptors import protein_descriptor_table
 
     csv_path = interaction_csv_path(str(data_dir) + "/")
     csv = pandas.read_csv(csv_path)
     protein_names = sorted(csv["LTPProtein"].dropna().unique().tolist())
 
-    path, smiles_count, protein_count = build_lipid_descriptor_cache(
+    lipid_path, smiles_count, protein_count = build_lipid_descriptor_cache(
         data_dir, csv, protein_names, csv_path, isomeric=isomeric
     )
     print(
-        f"pair descriptor cache: built {smiles_count} SMILES, {protein_count} "
-        f"proteins -> {path.name} ({path.stat().st_size / 2**10:.0f} KiB)"
+        f"descriptor cache: lipid built {smiles_count} SMILES -> {lipid_path.name} "
+        f"({lipid_path.stat().st_size / 2**10:.0f} KiB)"
+    )
+
+    protein_table = protein_descriptor_table(str(data_dir), force=force)
+    print(f"descriptor cache: protein built {len(protein_table)} proteins -> protein_descriptors.csv")
+
+    pair_path, pair_count = build_pair_value_cache(data_dir, csv, isomeric=isomeric)
+    print(
+        f"descriptor cache: pair built {pair_count} pairs -> {pair_path.name} "
+        f"({pair_path.stat().st_size / 2**10:.0f} KiB)"
     )
     return 0
 

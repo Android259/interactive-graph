@@ -8,9 +8,9 @@ if the 768-dim vector architecture/lipid_encoder.py projects through one
 `torch.nn.Linear(768, hiddim)` does not even carry which head-group class the molecule
 belongs to, then no amount of work downstream of that projection can recover it, and
 every cold-split result that depends on recognising a novel head group is bounded by
-that fact rather than by the model.
+that fact instead of by the model.
 
-Detached rather than a head inside the run on purpose. A head attached to
+Detached instead of a head inside the run on purpose. A head attached to
 InteractionClassification would answer the same question at the price of a full training
 run per reading, and its number would be entangled with the split, the sampler and the
 interaction loss -- none of which the question involves. This takes seconds and the
@@ -53,7 +53,7 @@ import training.pair_baseline_common as pbc  # noqa: E402
 
 # The hand-built lipid descriptors the comparison runs on: LIPID_DESCRIPTOR_NAMES minus
 # nothing -- the whole catalog, so the baseline is the best the project's own features
-# can do rather than a subset chosen to lose.
+# can do instead of a subset chosen to lose.
 from dataloader.descriptors import LIPID_DESCRIPTOR_NAMES  # noqa: E402
 
 
@@ -174,7 +174,7 @@ def geometry(features: np.ndarray, labels: np.ndarray) -> dict:
 
     Columns are z-scored across species FIRST, because that is what the probe's own
     StandardScaler does and the two numbers have to describe the same space. Without it
-    this measures column scale rather than geometry: on the raw hand-built descriptors
+    this measures column scale instead of geometry: on the raw hand-built descriptors
     every pair of species sits at cosine 0.997-1.000 purely because one large-magnitude
     column (a volume, a refractivity) dominates the dot product, while the probe -- which
     standardises -- separates the same species at 0.79 accuracy.

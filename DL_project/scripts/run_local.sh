@@ -1,111 +1,35 @@
 #!/usr/bin/env bash
-# Local entry point: run this project's group x seed grid as parallel processes
-# on this machine, instead of queuing OAR jobs on bigfoot/kraken.
-#
-# Analogous to run_bigfoot.sh / run_kraken.sh + launch/submit_grid.sh,
-# but there is only one local target, so sync/preflight/oarsub/wait_and_sync do
-# not apply: this script resolves the args file, builds the group x seed grid,
-# and runs it directly through a bounded local job queue.
+# Run group-by-seed grids locally through a bounded process queue.
+# No SSH, synchronization, preflight, OAR submission, or cluster watcher is used.
 #
 # Usage: bash scripts/run_local.sh [--complete] [--graphics] [--summarize]
 #                                  [--seeds=LIST] [--groups=LIST]
 #                                  [--no_groups=LIST] ARGS_FILE [ARGS_FILE ...]
-# Example: bash scripts/run_local.sh arg_files/archive/standard.md
-# Example: bash scripts/run_local.sh --seeds=0,1,2 nps3mlp_gat_residual
-# Example: bash scripts/run_local.sh --no_groups=GLTP nps3mlp_gat_residual
-# Example: bash scripts/run_local.sh descriptors_path descriptors_no_extent \
-#              descriptors_shares_coarse
-#          All labels' (group, seed) jobs go into ONE combined pool and share
-#          this machine's LOCAL_JOBS slots -- interleaved, not one label's
-#          whole grid finishing before the next starts, so spare capacity a
-#          single label would not use gets filled by another one already
-#          named in the same command. Same --seeds/--groups/--no_groups/
-#          --complete applied to every label. A SECOND, separate invocation
-#          (a different terminal, while this one is still running) still
-#          queues itself behind it instead of joining in -- only several
-#          labels named in the SAME command share one pool.
-# Example: bash scripts/run_local.sh --graphics --summarize label_a label_b
-#          Same pool as above; once EVERY job of EVERY label has finished
-#          (this machine runs them directly, so there is no OAR queue to wait
-#          on the way run_cluster.sh does), writes one report per label under
-#          graphics/<label>/.
+# Examples:
+#   bash scripts/run_local.sh arg_files/archive/standard.md
+#   bash scripts/run_local.sh --seeds=0,1,2 nps3mlp_gat_residual
+#   bash scripts/run_local.sh --no_groups=GLTP nps3mlp_gat_residual
+#   bash scripts/run_local.sh --graphics --summarize label_a label_b
 #
-#   --seeds=LIST     Comma/space-separated seeds. Default: 0,1,2,3,4 (same as
-#                     run_cluster.sh).
-#   --groups=LIST    Comma/space-separated excluded groups. Default: the 9
-#                     canonical groups.
-#   --no_groups=LIST Drop these groups from the list above, so leaving one group
-#                     out of a full run does not mean spelling out the other 8.
-#   --complete       Run only requested group/seed pairs without final test_metrics.
+# Labels in one call share an interleaved LOCAL_JOBS pool and common options.
+# Separate invocations queue sequentially. Reports go under graphics/<label>/.
+# --seeds: comma/space-separated seeds, default 0,1,2,3,4.
+# --groups: excluded groups, default nine canonical groups.
+# --no_groups: remove named groups from that list.
+# --complete: skip group/seed pairs with final test_metrics.
 #
-# Parallelism, threads-per-job and workers-per-job are not flags -- like every
-# other cluster-dependent setting in this project (PROJECT, GPU_RESOURCES,
-# WALLTIME, ...) they are environment overrides with a computed default, so an
-# unset environment does the right thing on this machine's resources:
-#
-#   LOCAL_JOBS             number of training processes run at once.
-#                           Default: min(usable cores, jobs RAM fits) -- see
-#                           RESERVED_CORES and RESERVED_MEM_GIB/MEM_PER_JOB_GIB
-#                           below. The actual maximum both budgets allow, not
-#                           a throughput-tuned guess; see the note further
-#                           down. An explicit LOCAL_JOBS skips both caps, on
-#                           the assumption the caller has already accounted
-#                           for memory themselves.
-#   OMP_THREADS_PER_JOB     OMP_NUM_THREADS / MKL_NUM_THREADS given to each job.
-#                           Default: (nproc - RESERVED_CORES) / LOCAL_JOBS.
-#   NUM_WORKERS_PER_JOB     --num_workers given to each job. Default: 0.
-#   RESERVED_CORES          Cores held back from the CPU split. Default: 25% of
-#                           the CPUs detected on this machine, at least 2.
-#                           Override with 0 on a headless worker.
-#   MAX_OMP_THREADS_PER_JOB Upper bound for one training process. Default: 4, the
-#                           measured optimum on the local 12-CPU machine -- 1 instead
-#                           when the args file has --descriptors_head,
-#                           or --descriptor_mlp (measured too little compute per
-#                           batch for multithreading to pay for itself; see the comment
-#                           at MAX_OMP_THREADS_PER_JOB's assignment below).
-#   RESERVED_MEM_GIB        RAM held back from the job-count cap, same idea as
-#                           RESERVED_CORES but for memory. Default: 2 -- margin
-#                           on top of the free memory the kernel reports, NOT an
-#                           assumption about how much the desktop is using (that
-#                           is measured, see below).
-#   MEM_PER_JOB_GIB         RAM budgeted per job. Setting it FIXES the budget at
-#                           that value and turns the measurement below off; left
-#                           unset, it is only the bootstrap for the first jobs
-#                           (default 4) and the real figure is measured from the
-#                           jobs themselves as soon as one is training. What is
-#                           budgeted is the MARGINAL cost of one more concurrent
-#                           job, not one job's own RSS in isolation (summing
-#                           isolated RSS overestimates: shared libtorch/MKL
-#                           pages are not duplicated per process). THIS IS THE
-#                           BINDING CONSTRAINT ON THIS MACHINE, not cores: a
-#                           LOCAL_JOBS=22 run (basing the job count on cores
-#                           alone, before this cap existed) exhausted the 31 GiB
-#                           of RAM here and the OOM killer took out GNOME Shell
-#                           itself along with several terminals. CPU and memory
-#                           are independent budgets; nothing about reserving
-#                           cores protects against this.
-#   MEM_MARGIN_PERCENT      Margin added to the measured figure. Default: 30 --
-#                           covers what a snapshot cannot see (a best-epoch
-#                           state_dict copy, the end-of-run test pass) and the
-#                           drift of a long run.
-#
-# A partial throughput sweep exists from earlier work on this machine (24
-# cores, a lighter 481k-parameter config, testmode, 3 epochs): throughput kept
-# climbing from N=1 through N=6 (0.0238 -> 0.0339 epochs/s), N=8/N=12 were
-# attempted but never got a clean, uncontaminated measurement, and it was
-# never run at all for a heavier config or for the current (nproc-2)/N split.
-# That is not enough to defend any N as "optimal" in general, so LOCAL_JOBS no
-# longer defaults to a throughput-tuned guess -- it defaults to the actual
-# maximum, one job per usable core. If a config's true throughput peak turns
-# out to sit below that (small tensors do not scale linearly across threads
-# within one process -- see the cProfile breakdown in dataloader/AGENTS.md:
-# ~44% of an epoch is torch.autograd run_backward, ~29% is attention
-# baddbmm/softmax/bmm -- so a single job rarely saturates its own thread
-# budget with useful work, and per earlier data giving a job the FULL machine
-# was measured worse than splitting it: N=4 at 6 threads/job scored below N=4
-# at 4 threads/job), the fix is to override LOCAL_JOBS down after actually
-# measuring that config, not to bake an unverified number in as everyone's
-# default.
+# Resource controls are environment variables:
+# LOCAL_JOBS: min(usable cores, jobs fitting RAM). Explicit values bypass both caps.
+# OMP_THREADS_PER_JOB: OMP/MKL threads, default usable cores / LOCAL_JOBS.
+# NUM_WORKERS_PER_JOB: DataLoader workers, default 0.
+# RESERVED_CORES: default 25% of detected CPUs, at least 2; use 0 on headless workers.
+# MAX_OMP_THREADS_PER_JOB: default 4, or 1 when any label uses a descriptor-only model.
+# RESERVED_MEM_GIB: default 2 GiB beyond current MemAvailable usage.
+# MEM_PER_JOB_GIB: explicit fixed budget disables measurement. Otherwise bootstrap
+#   at 4 GiB and measure marginal running-job cost, accounting for shared pages.
+# MEM_MARGIN_PERCENT: default 30%; covers checkpoint copies, testing, and later growth.
+# CPU and RAM limits are independent. Override LOCAL_JOBS after measuring throughput
+# for the intended configuration; automatic slots are resource limits, not an optimum.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -149,10 +73,8 @@ done
 # RUN_LOCAL_TMUX=0 opts out of both, and the relaunch sets it so the detached
 # copy does not try to detach again.
 LOCAL_RUN_SESSION="local_run"
-# FIFO of invocations queued behind an already-active run, one %q-encoded
-# argv per line -- see the "already active" branches below, where a second
-# invocation appends itself here instead of being silently dropped, and the
-# chaining check at the end of a real run, which pops and execs the next one.
+# Separate invocations queue in PENDING_BATCHES_FILE.
+# On completion, pop and exec the next batch, including after failures.
 PENDING_BATCHES_FILE="${PROJECT_ROOT}/script_logs/local_run_pending_batches"
 if [[ "${RUN_LOCAL_TMUX:-1}" != "0" && -z "${TMUX:-}" && -z "${RUN_LOCAL_DETACHED:-}" ]]; then
     mkdir -p "${PROJECT_ROOT}/script_logs"
@@ -184,10 +106,8 @@ if [[ "${RUN_LOCAL_TMUX:-1}" != "0" && -z "${TMUX:-}" && -z "${RUN_LOCAL_DETACHE
             follow_pid="${existing_pid}"
         else
             : > "${log_file}"
-            # setsid starts a new session with no controlling terminal, so the
-            # child is immune to the SIGHUP a closing SSH session sends; nohup
-            # additionally ignores it directly; disown drops it from this
-            # shell's job table so this shell exiting sends it nothing either.
+            # setsid detaches from the controlling terminal; nohup ignores SIGHUP;
+            # disown removes the child from this shell's job table.
             RUN_LOCAL_DETACHED=1 setsid nohup bash "${BASH_SOURCE[0]}" "$@" \
                 < /dev/null >> "${log_file}" 2>&1 &
             follow_pid=$!
@@ -204,13 +124,9 @@ if [[ "${RUN_LOCAL_TMUX:-1}" != "0" && -z "${TMUX:-}" && -z "${RUN_LOCAL_DETACHE
     exit 0
 fi
 
-# Same activation scripts/parameters.sh uses. Without it, a shell that never
-# ran `conda activate Kalinin_project_LP` launches every job with whatever
-# python3 happens to be on PATH -- no torch, so every job dies on the import
-# line in under a second, before it can even warn about the missing module in
-# a way that stands out from a normal training crash. Falls back to whatever
-# python3 is already on PATH (with a warning) rather than hard-failing, same
-# as parameters.sh: some environments genuinely have no conda and still work.
+# Activate the same environment as scripts/parameters.sh.
+# If conda is unavailable, warn and continue with python3 on PATH;
+# non-conda environments may already contain the dependencies.
 if [[ "${CONDA_DEFAULT_ENV:-}" != "Kalinin_project_LP" ]]; then
     if ! source "${SCRIPT_DIR}/lib/activate_training_env.sh"; then
         printf 'Could not activate the Kalinin_project_LP conda env; using current python3: %s\n' \
@@ -218,14 +134,10 @@ if [[ "${CONDA_DEFAULT_ENV:-}" != "Kalinin_project_LP" ]]; then
     fi
 fi
 
-# LOCAL_PYTHON: the interpreter the jobs run under. Default: a CPU-only torch build
-# layered over the conda env (venv --system-site-packages, torch==2.12.1+cpu), because
-# there is no GPU here and the cu130 wheel loads triton/cuBLAS/nvrtc into every process
-# -- 1052 -> 734 MiB peak RSS per job, and memory is what caps how many run at once.
-# Verified bit-identical to the cu130 build on dh_s15_mbw_hid32 (2 epochs): 19/19
-# checkpoint tensors and 407/407 report lines equal, same MKL 2024.2/MKL-DNN 3.11.2
-# underneath. Missing or broken, it falls back to the conda env's python3 with a
-# warning -- nothing here depends on the CPU build existing.
+# LOCAL_PYTHON selects the job interpreter. Default: CPU-only torch layered
+# over the conda environment (venv --system-site-packages, torch==2.12.1+cpu),
+# avoiding CUDA libraries on this CPU host. If unavailable or broken, warn
+# and fall back to the conda environment's python3.
 LOCAL_PYTHON="${LOCAL_PYTHON:-${HOME}/.venvs/ltp_cpu/bin/python}"
 if [[ ! -x "${LOCAL_PYTHON}" ]] \
     || ! "${LOCAL_PYTHON}" -c 'import torch, torch_geometric' 2>/dev/null; then
@@ -286,9 +198,7 @@ if (( ${#POSITIONALS[@]} < 1 )); then
     exit 2
 fi
 
-# A path as given, a bare stem under arg_files, or that stem with .md
-# appended -- the same three spellings every other launcher accepts, from the one
-# implementation in scripts/lib/args_file_lib.sh.
+# Resolve paths, bare arg-file stems, and optional .md suffixes through args_file_lib.sh.
 # shellcheck source=scripts/lib/args_file_lib.sh
 source "${SCRIPT_DIR}/lib/args_file_lib.sh"
 # shellcheck source=scripts/settings.sh
@@ -296,16 +206,9 @@ source "${SCRIPT_DIR}/settings.sh"
 # shellcheck source=scripts/lib/grid_lib.sh
 source "${SCRIPT_DIR}/lib/grid_lib.sh"
 
-# Several labels in one command run in the SAME job pool, interleaved under one
-# LOCAL_JOBS cap -- not queued behind each other the way a second, separate
-# manual invocation still is (the "already active" branches above: that is for
-# two genuinely independent calls that happen to overlap in time, e.g. from two
-# terminals, and stays sequential on purpose so a live run is never joined by a
-# second one it did not ask for). Several labels named in ONE command are
-# assumed to be meant to share this machine's spare capacity, not to wait their
-# turn: LABEL_* arrays hold one entry per label below, job_label_index says
-# which label each (group, seed) job in the combined grid belongs to, and
-# LOCAL_JOBS bounds the combined pool exactly as it bounded one label's before.
+# LABEL_* arrays hold each label; job_label_index maps combined-grid jobs to labels.
+# All labels in this call interleave under one LOCAL_JOBS cap.
+# Separate overlapping invocations remain sequential, preserving the active pool.
 LABEL_VARIANT=()
 LABEL_ARGS_FILE=()
 LABEL_ARGS_TEMPLATE=()
@@ -344,13 +247,9 @@ for requested in "${POSITIONALS[@]}"; do
         read -r -a this_excl_groups <<< "${GROUPS_ARG//,/ }"
     fi
 
-    # --no_groups is the complement of --groups: drop these from whatever list is
-    # active (the 9 canonical groups, or an explicit --groups), which is what a full
-    # run minus one group wants -- the whitelist alone forces spelling out the other
-    # eight. Names are matched by normalize_group_name (scripts/settings.sh),
-    # so the same spellings that work for --excluded_groups work here
-    # (case-insensitive, - and _ interchangeable: cral_trio == CRAL-TRIO). Applied
-    # identically to every label in this call, same as --seeds below.
+    # Apply --no_groups after --groups/default selection, identically for all labels.
+    # normalize_group_name accepts case-insensitive names and interchangeable -/_
+    # (e.g. cral_trio == CRAL-TRIO), as for --excluded_groups.
     if [[ -n "${SKIP_GROUPS_ARG:-}" ]]; then
         read -r -a skip_groups <<< "${SKIP_GROUPS_ARG//,/ }"
         declare -A skip_matched=()
@@ -366,9 +265,7 @@ for requested in "${POSITIONALS[@]}"; do
             done
             (( keep == 1 )) && kept_groups+=("${group}")
         done
-        # A name that matches nothing is an error, not a silent no-op: the whole
-        # point of this flag is NOT running a group, so a typo would quietly spend
-        # hours training the very group the caller meant to leave out.
+        # Reject unknown group names so typos cannot silently launch excluded work.
         for skipped in "${skip_groups[@]}"; do
             if [[ -z "${skip_matched["$(normalize_group_name "${skipped}")"]:-}" ]]; then
                 printf -- '--no_groups names a group that is not being run: %s\n' "${skipped}" >&2
@@ -383,50 +280,32 @@ for requested in "${POSITIONALS[@]}"; do
         this_excl_groups=("${kept_groups[@]}")
     fi
 
-    # --lipid_coldsplit in the args file is the OTHER axis: whole chemical families of
-    # lipids leave training while every protein stays. There is no held-out protein group
-    # then, so the grid iterates the lipid sets instead -- one run per set, four in all.
-    # The bare flag is stripped from the template because the trainer only accepts the
-    # named form, which is appended per run below.
+    # --lipid_coldsplit retains all proteins and iterates four lipid-class sets.
+    # Strip the bare marker; append the trainer's required named form per job.
     this_is_lipid_coldsplit=0
     if args_file_has_flag "${this_args_file}" --lipid_coldsplit; then
         if [[ -n "${GROUPS_ARG:-}${SKIP_GROUPS_ARG:-}" ]]; then
-            # Ignored, not fatal, and kept in step with scripts/launch/submit_grid.sh's
-            # copy of this rule: --groups/--no_groups name protein families, the other
-            # axis for this label, so one command can mix protein-axis and lipid-axis
-            # labels and have the flag apply to the former and pass over the latter.
-            # Nothing has to be undone here -- whatever the protein-group filtering above
-            # left in this_excl_groups is overwritten by the four lipid sets just below.
+            # Ignore protein --groups/--no_groups for lipid-axis labels, as submit_grid.sh does.
+            # This allows mixed axes in one call. The lipid sets overwrite this_excl_groups.
             printf -- '--lipid_coldsplit runs over lipid sets, not protein groups; '\
 'ignoring --groups/--no_groups for %s -- all four lipid sets will run.\n' \
                 "${this_args_file}" >&2
         fi
-        # Keep in step with LIPID_COLDSPLIT_SETS
-        # (dataloader/splitting_on_blocks/lipid_coldsplit_blocks.py) and
-        # LIPID_COLDSPLIT_NAMES (training/read_configuration.py); a name absent from either
-        # is rejected at parse time, so a drift here fails loudly on the first run.
+        # Keep names aligned with LIPID_COLDSPLIT_SETS and LIPID_COLDSPLIT_NAMES
+        # (splitting_on_blocks/lipid_coldsplit_blocks.py, training/read_configuration.py).
+        # Unknown names fail parsing.
         this_is_lipid_coldsplit=1
         this_excl_groups=(sphingolipids phosphorus_free choline anionic)
         this_args_template="$(printf '%s' "${this_args_template}" \
             | sed -E 's/(^|[[:space:]])--lipid_coldsplit([[:space:]]|$)/\1/g')"
     fi
 
-    # --family_only in the args file restricts the WHOLE table to one protein family
-    # before any split runs -- a warm, row-level random split inside the family
-    # (dataloader/Dataloader.py), not a held-out-family cold split. Nothing is EXCLUDED
-    # from training either way, so this axis never appends --excluded_groups (see the
-    # dispatch loop below, which appends --family_only=<group> instead). Two forms, like
-    # --lipid_subclass: BARE expands into one job per protein group (--groups/--no_groups
-    # apply normally here, same spelling as the base protein axis, because family_only
-    # rotates over the SAME PROTEIN_GROUPS list -- unlike --lipid_coldsplit/--lipid_
-    # subclass/--random_split below, whose axis is not protein groups at all);
-    # --family_only=<value> names one fixed family and runs it alone. Kept in step with
-    # scripts/launch/submit_grid.sh's copy of the same axis. Detected BEFORE --lipid_
-    # subclass/--lipid_isolation below on purpose: when an args file fixes both (a
-    # family AND a subclass -- --family_only=gltp --lipid_subclass=CerP, say), the later
-    # block's assignment to this_excl_groups must win, the same precedence submit_grid.sh
-    # gives lipid_subclass/lipid_isolation over family_only in its own two-pass version
-    # of this logic.
+    # --family_only filters the whole table before a within-family random split.
+    # Append --family_only=<group>, never --excluded_groups.
+    # Bare form iterates PROTEIN_GROUPS, honoring --groups/--no_groups;
+    # family_only=<value> runs one fixed family.
+    # Match scripts/launch/submit_grid.sh. Detect this before subclass/isolation
+    # so a combined family/subclass label lets the lipid block overwrite the axis.
     this_is_family_only=0
     this_family_only_fixed=""
     if args_file_has_flag "${this_args_file}" --family_only; then
@@ -442,29 +321,19 @@ for requested in "${POSITIONALS[@]}"; do
             # One job x seed, not nine: the family is already fixed in the template.
             this_excl_groups=("${this_family_only_fixed}")
         fi
-        # Bare form: this_excl_groups is already the (possibly --groups/--no_groups
-        # narrowed) PROTEIN_GROUPS list from above -- nothing to do here.
+        # Bare form uses the already filtered PROTEIN_GROUPS list.
     fi
 
-    # --random_split in the args file is the axis defined by holding NOTHING out: no
-    # protein family, no lipid class. It needs a marker of its own because every other
-    # axis is expressed by APPENDING a flag below, and an args file cannot suppress an
-    # appended one (flags are applied in argv order, the appended one comes last). With
-    # no split flag the loader takes its final branch -- 85% of the working set is
-    # train, the remaining 15% is halved label-by-label into validation and test -- and
-    # new_train.py files the run under exclusion_set "random". There is no group axis to
-    # rotate, so one pseudo-group named "random" runs against the seeds, and
-    # --groups/--no_groups are ignored for such a label exactly as they are above.
-    # --lipid_isolation=<key> is the lipid axis addressed by distance
-    # (dataloader/splitting_on_blocks/lipid_isolation_blocks.py). It already names its block, so there is
-    # nothing to expand: one pseudo-group, named the way new_train.py files the run.
-    # The flag itself stays in the template.
-    # --lipid_subclass is the same lipid axis cut by the SOURCE PAPER'S own subclass
-    # (Titeca et al.'s LTP x lipid-subclass matrix) rather than by the four hand-built
-    # sets above. Bare marker -> the grid iterates the eight blocks (kept in step with
-    # dataloader/splitting_on_blocks/lipid_subclass_blocks.py's FIG3_SUBCLASS_BLOCKS and with
-    # scripts/launch/submit_grid.sh's copy of the same list); --lipid_subclass=<spec>
-    # in the file -> that one block alone, flag left in the template.
+    # --random_split holds out neither proteins nor chemistry. Add no exclusion flag:
+    # the loader uses 85% train and halves the remaining 15% by label for valid/test.
+    # Use one pseudo-group, random, for result paths and seed iteration.
+    # Ignore --groups/--no_groups; appended flags otherwise win by argv order.
+    # --lipid_isolation=<key> already names a distance block; retain the template flag
+    # and run one pseudo-group with the same result name as new_train.py.
+    # --lipid_subclass uses Titeca et al.'s LTP-by-subclass blocks.
+    # Bare form expands the block list; <spec> retains one template block.
+    # Keep aligned with FIG3_SUBCLASS_BLOCKS in splitting_on_blocks/lipid_subclass_blocks.py
+    # and scripts/launch/submit_grid.sh.
     this_is_lipid_subclass=0
     this_lipid_subclass_fixed=""
     if args_file_has_flag "${this_args_file}" --lipid_subclass; then
@@ -509,10 +378,9 @@ for requested in "${POSITIONALS[@]}"; do
         this_excl_groups=("iso${this_lipid_isolation}")
     fi
 
-    # --lipid_species_coldsplit=<share> is the lipid axis cut at the CONCRETE LIPID
-    # (dataloader/splitting_on_blocks/lipid_species_blocks.py). It names its own split, so one pseudo-group
-    # runs against the seeds; the block behind that name is drawn per seed inside the
-    # loader, so two seeds hold out different lipids on purpose.
+    # --lipid_species_coldsplit=<share> uses one pseudo-group across seeds.
+    # The loader draws different structure-disjoint lipid blocks per seed
+    # (splitting_on_blocks/lipid_species_blocks.py).
     this_lipid_species=""
     if args_file_has_flag "${this_args_file}" --lipid_species_coldsplit; then
         this_lipid_species="$(args_file_flag_lines "${this_args_file}" \
@@ -567,8 +435,7 @@ for requested in "${POSITIONALS[@]}"; do
         done
     fi
 
-    # Skips pairs that already have a final test report -- same grid_lib.sh the
-    # cluster submitters use, so --complete means the same thing here, per label.
+    # --complete skips final reports through grid_lib.sh, as cluster submitters do.
     grid_load_completed "${this_variant}" "${PROJECT_ROOT}/test_metrics" 0
 
     label_index=${#LABEL_VARIANT[@]}
@@ -600,11 +467,8 @@ if (( total_jobs == 0 )); then
     exit 0
 fi
 
-# How many of the combined pool's jobs belong to each label -- report_label_if_done
-# (near reap_finished_jobs below) compares LABEL_FINISHED_JOBS against this to fire
-# a label's own "Ran N jobs" line and --graphics/--summarize report the moment
-# ITS jobs are all done, not when the whole shared pool is, since interleaved
-# labels finish at different times.
+# Track jobs per label. report_label_if_done prints completion and generates
+# --graphics/--summarize once that label finishes, even while other labels run.
 LABEL_TOTAL_JOBS=()
 for label_index in "${!LABEL_VARIANT[@]}"; do
     count=0
@@ -621,91 +485,39 @@ for label_index in "${!LABEL_VARIANT[@]}"; do
 done
 
 nproc_count="$(nproc)"
-# Derive the desktop reserve from the machine instead of carrying the old
-# 24-CPU workstation's fixed value onto smaller computers. A quarter leaves
-# useful headroom on both known hosts; the minimum of two keeps a small desktop
-# responsive. Explicit RESERVED_CORES still wins.
+# Reserve a quarter of detected CPUs, at least two, for desktop responsiveness.
+# Explicit RESERVED_CORES overrides this machine-scaled default.
 default_reserved_cores=$(( nproc_count / 4 ))
 if (( default_reserved_cores < 2 )); then default_reserved_cores=2; fi
 RESERVED_CORES="${RESERVED_CORES:-${default_reserved_cores}}"
 usable_cores=$(( nproc_count - RESERVED_CORES ))
 if (( usable_cores < 1 )); then usable_cores=1; fi
 
-# Memory cap. This is not optional headroom the way RESERVED_CORES is -- a
-# LOCAL_JOBS=22 run on this machine (24 cores, 31 GiB RAM) OOM-killed GNOME
-# Shell itself along with several terminals: CPU and memory are independent
-# budgets, and cores were never the resource actually being exhausted.
-#
-# MEM_PER_JOB_GIB is the MARGINAL cost of one more concurrent job, not one
-# job's own RSS in isolation -- summing per-process RSS overestimates badly,
-# because a large share of it is libtorch/MKL shared-library pages the kernel
-# maps once and shares across every process running the same binary, not
-# once per process. Measured directly on this machine, the heaviest config
-# used so far (1.28M params, adversarial_grl+adv_deep+balanced_batches):
-# system-wide `used` memory rose from an ~8.5 GiB idle baseline to a 25.75 GiB
-# peak running 6 of them at once -- (25.75-8.5)/6 =~ 2.9 GiB per job, not the
-# ~5.4 GiB a single isolated process's own RSS suggested. Rounded up to 4 for
-# margin (this was one config over one ~3-minute, 3-epoch window, not a full
-# multi-hour run where e.g. a new best-epoch checkpoint's
-# copy.deepcopy(model.state_dict()) could add a transient spike this did not
-# catch). A later, finer measurement on the 12-CPU/13 GiB laptop put it lower:
-# per-process PSS (which, unlike RSS, splits those shared pages across the
-# processes mapping them instead of counting them once per process) came to
-# 1.25 GiB for the main process and 0.72 GiB for its one DataLoader worker --
-# 2.0 GiB per job, on the same heavy adversarial_grl+adv_deep config. Hence 2
-# Hence 2. A config heavier than any measured here wants an explicit
-# MEM_PER_JOB_GIB, which is what the override is for.
-#
-# All of those numbers are measurements of ONE config on ONE machine, carried as a
-# constant into every other config -- which is exactly what went wrong in both
-# directions: 2 GiB/job is roughly double what this project's lighter configs
-# actually take (measured 1.13 GiB PSS per job for a 1.0M-parameter run with
-# --num_workers=0, where the 0.72 GiB DataLoader worker of the measurement above
-# does not exist), and it would be too little for a config heavier than any tried
-# so far. So the constant is now only the bootstrap for the first jobs, and the
-# budget is re-derived from the jobs actually running -- see update_job_budget
-# below. An explicitly set MEM_PER_JOB_GIB still wins and switches the
-# measurement off, because a caller who names a number has usually measured
-# something this script cannot see.
-#
-# Bootstrap 4, not 2: the first measurement now waits for a finished validation (see
-# update_job_budget), so the bootstrap alone decides how many jobs start before it.
-# At 2 GiB it started 9 of a config that settled at ~2.7 GiB PSS/job (main process
-# plus the train and valid loaders' persistent workers) and ran the machine out of RAM.
+# Budget CPU and RAM independently. Use marginal per-job memory:
+# shared libtorch/MKL pages make summed RSS overestimate concurrent cost.
+# MEM_PER_JOB_GIB overrides measurement. Otherwise start with 4 GiB/job and
+# update_job_budget measures complete job trees after the first validation.
+# The conservative bootstrap covers allocation before the first valid measurement.
 if [[ -n "${MEM_PER_JOB_GIB+set}" ]]; then
     MEM_PER_JOB_FIXED=1
 else
     MEM_PER_JOB_FIXED=0
 fi
 MEM_PER_JOB_GIB="${MEM_PER_JOB_GIB:-4}"
-# The budget in MiB, which is what everything below works in: a measured figure has
-# no reason to land on a whole gibibyte, and rounding it up to one would give back
-# most of what measuring gained.
+# Keep budgets in MiB to preserve measured resolution.
 MEM_PER_JOB_MIB=$(( MEM_PER_JOB_GIB * 1024 ))
 # Set once update_job_budget has replaced the bootstrap figure with a measured one.
 MEM_MEASURED=0
 MEM_MARGIN_PERCENT="${MEM_MARGIN_PERCENT:-30}"
-# Memory equivalent of RESERVED_CORES: kept separate (not derived from it)
-# because the two resources are unrelated, and the failure mode here is worse
-# than a slow desktop -- the OOM killer picks whatever it wants, which is how
-# GNOME Shell itself died rather than one of the training jobs.
-#
-# What the jobs' budget is taken FROM is MemAvailable -- the kernel's own
-# estimate of what can be allocated right now without swapping -- not MemTotal
-# minus a guessed idle baseline. The old form (MemTotal - 9, where 9 was one
-# particular desktop's measured footprint) travelled badly: the same constant on
-# a 13 GiB laptop left (13-9)/4 = 1, i.e. no parallelism at all, while that
-# machine actually had ~10 GiB free. Whatever the desktop, browser and editors
-# are using is already subtracted from MemAvailable, on the machine in hand, at
-# the moment of the run -- nothing has to be assumed about it. RESERVED_MEM_GIB
-# is therefore margin on top of an already conservative number, hence 2 not 9.
+# RESERVED_MEM_GIB adds independent RAM headroom.
+# Use the kernel's current MemAvailable estimate (allocatable without swapping),
+# which already accounts for desktop/browser/editor usage. Add a 2 GiB reserve;
+# do not subtract a fixed desktop footprint from MemTotal.
 RESERVED_MEM_GIB="${RESERVED_MEM_GIB:-2}"
 total_mem_gib=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 / 1024 ))
 
-# MiB of memory a new job may be given right now: what the kernel says can be
-# allocated without swapping, less the reserve. Read fresh every time, never cached
-# -- the whole point of re-deriving the budget during the run is that both sides of
-# the division change while it runs.
+# Read fresh MemAvailable minus reserve before each budget decision.
+# Both available memory and measured per-job cost can change during the grid.
 mem_headroom_mib() {
     local available
     available=$(( $(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) / 1024 \
@@ -719,16 +531,9 @@ mem_available_mib="$(mem_headroom_mib)"
 mem_max_jobs=$(( mem_available_mib / MEM_PER_JOB_MIB ))
 if (( mem_max_jobs < 1 )); then mem_max_jobs=1; fi
 
-# Default LOCAL_JOBS to the actual maximum under BOTH budgets -- one job per
-# usable core, capped by how many jobs fit in usable RAM, whichever is lower
-# -- rather than a throughput-tuned guess: that number was never cleanly
-# measured for every config this runs (only for a lighter one, at N up to 6),
-# so instead of defending an unproven "optimal" default this hands out every
-# usable core as its own job slot, up to what memory allows. Override
-# LOCAL_JOBS directly for anything else (fewer, wider jobs; a throughput
-# sweet spot once one is actually measured for the config in hand) -- doing
-# that skips both caps, on the assumption an explicit override means the
-# caller has already accounted for memory themselves.
+# Default LOCAL_JOBS to min(usable cores, jobs fitting available RAM).
+# An explicit value bypasses both caps; callers must account for memory and
+# measure any configuration-specific throughput optimum themselves.
 if [[ -n "${LOCAL_JOBS+set}" ]]; then
     LOCAL_JOBS_FIXED=1
 else
@@ -739,30 +544,16 @@ if (( LOCAL_JOBS < 1 )); then LOCAL_JOBS=1; fi
 if (( LOCAL_JOBS > total_jobs )); then LOCAL_JOBS=${total_jobs}; fi
 OMP_THREADS_PER_JOB="${OMP_THREADS_PER_JOB:-$(( usable_cores / LOCAL_JOBS ))}"
 if (( OMP_THREADS_PER_JOB < 1 )); then OMP_THREADS_PER_JOB=1; fi
-# --descriptors_head builds ~1000 parameters/~3% of a full run's
-# (training/read_configuration.py's own docstrings for each) -- too little arithmetic
-# per batch for multithreading to earn back its own synchronisation cost. Measured on
-# this machine: a --descriptors_head grid stuck at 2 concurrent jobs under the default
-# cap of 4 threads/job (9 usable cores / 4 = 2) runs 9 at a time once threads/job drops
-# to 1 (9 / 1 = 9) -- pure wall-clock, no metric moves, since thread count only changes
-# which cores run the same at::parallel_for splits, never the arithmetic itself. An
-# explicit MAX_OMP_THREADS_PER_JOB still wins, same as every override on this page.
-# Thread count is fixed once for the whole combined pool (see the comment on
-# update_job_budget below), so with several labels sharing it, ANY of them
-# being descriptors_head-sized tips the default to 1 --
-# too few threads for a heavier label in the same run costs it some intra-op
-# parallelism, which is safe; too many for a tiny one is the measured-9x
-# slowdown this default exists to avoid.
+# Descriptor-only models have little arithmetic per batch; default to one
+# OMP thread to reduce synchronization overhead. Any descriptor-only label
+# sets this default for the combined pool. Thread count stays fixed for all jobs;
+# explicit MAX_OMP_THREADS_PER_JOB overrides it.
 default_max_omp_threads_per_job=4
 for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     if args_file_has_flag "${_label_args_file}" --descriptors_head \
         || args_file_has_flag "${_label_args_file}" --descriptor_mlp; then
-        # --descriptor_mlp is the same no-encoder-towers shape as --descriptors_head
-        # (architecture/final_layer.py builds only a tiny descriptor head + classifier
-        # under either) -- same measured 9x slowdown risk from
-        # over-threading a too-small model applies. descriptor_mlp's own head
-        # (architecture/descriptor_mlp_head.py) is smaller still, no per-token
-        # self-attention at all.
+        # descriptor_mlp also has no encoder towers and uses the same one-thread default;
+        # its descriptor head has no token self-attention.
         default_max_omp_threads_per_job=1
         break
     fi
@@ -771,30 +562,14 @@ MAX_OMP_THREADS_PER_JOB="${MAX_OMP_THREADS_PER_JOB:-${default_max_omp_threads_pe
 if (( OMP_THREADS_PER_JOB > MAX_OMP_THREADS_PER_JOB )); then
     OMP_THREADS_PER_JOB="${MAX_OMP_THREADS_PER_JOB}"
 fi
-# 0, not 1: with persistent_workers each split's loader keeps a forked copy of the
-# dataset alive -- measured ~1.7 GiB of a ~2.7 GiB/job footprint for workers at
-# 1-7% CPU. Memory, not cores, caps how many jobs run here, so the workers cost jobs.
+# Default to zero DataLoader workers: persistent split workers retain forked
+# datasets and increase per-job memory, reducing concurrent slots.
 NUM_WORKERS_PER_JOB="${NUM_WORKERS_PER_JOB:-0}"
 
-# Pin each job to one last-level-cache domain. Unpinned, the kernel is free to
-# move a job's threads between domains, and on a machine whose L3 is split (the
-# 6-core Ryzen here has two 4 MiB domains, cpu 0-5 and cpu 6-11) every such
-# migration throws away that job's cached working set -- the model's parameters
-# alone are ~3 MB, nearly a whole domain -- and it has to be fetched from RAM
-# again. Pinning removes the migrations and nothing else: the thread COUNT is
-# untouched, so at::parallel_for splits every reduction exactly as before and the
-# run's numbers stay bit-identical. That is the whole point -- this file must not
-# acquire a speedup that costs a metric.
-#
-# Domains are read off the machine rather than hardcoded, because they differ per
-# CPU (one domain on a desktop Zen with a single CCX, two here, more on a server).
-# A kernel that does not expose index3, or a machine without taskset, simply runs
-# unpinned exactly as before.
-#
-# Jobs are handed domains round-robin by launch index. Since jobs launch in order
-# and LOCAL_JOBS of them run at a time, consecutive indices are what is
-# concurrently live, so round-robin spreads them evenly over the domains without
-# this script having to track which slot freed up.
+# Pin jobs round-robin to detected last-level-cache domains by launch index.
+# This reduces thread migration and working-set reloads without changing thread
+# count or reduction partitioning. Consecutive live jobs spread across domains.
+# Read domains from the host; if index3 or taskset is unavailable, run unpinned.
 JOB_CPU_DOMAINS=()
 if command -v taskset >/dev/null 2>&1; then
     while IFS= read -r cpu_domain; do
@@ -803,19 +578,13 @@ if command -v taskset >/dev/null 2>&1; then
         2>/dev/null | sort -u)
 fi
 
-# Tag matching lib/progress_table.sh's LOCAL_JOB_TAG there: bigfoot's OAR
-# .out files carry no tag, kraken's carry "k", this carries "l" -- three
-# disjoint id namespaces (two clusters' OAR job ids, this script's pids) over
-# the same tag+id naming, which is what lets script_logs/ hold all three
-# sources of logs at once without a filename ever colliding.
+# Use LOCAL_JOB_TAG=l, matching progress_table.sh. Bigfoot uses no tag and Kraken
+# uses k; distinct PID/OAR namespaces share collision-free tag+ID log names.
 LOCAL_JOB_TAG="l"
 
-# Jobs this invocation has not started yet, as "variant<TAB>group<TAB>seed"
-# lines -- the watchers read this to show a "(queued)"
-# row for each and to count WAITING in the summary table, the same way
-# .bigfoot_job_queues/active/pending.commands does for OAR. Popped from the
-# top as each job launches; removed entirely on exit (the trap below), success
-# or failure, so a dead invocation never leaves phantom queued rows behind.
+# Pending jobs are variant<TAB>group<TAB>seed lines for watcher WAITING counts
+# and queued rows, like OAR pending.commands. Pop on launch; the exit trap
+# removes the queue file on success/failure to avoid phantom jobs.
 local_queue_file="${PROJECT_ROOT}/script_logs/local_run.queue"
 mkdir -p "${PROJECT_ROOT}/script_logs"
 : > "${local_queue_file}"
@@ -844,30 +613,13 @@ else
     printf '  pinning: none (no taskset or no cache topology exposed)\n'
 fi
 
-# Build the memory-mapped lipid embedding store before the first job starts. Each job
-# would otherwise unpickle the whole table into itself -- 267 MiB resident and about a
-# gigabyte of transient peak for the deterministic table -- so on this machine four
-# concurrent jobs paid for it four times, and that peak, not the cores, is what the
-# MEM_PER_JOB_GIB cap above is mostly budgeting for. Built once here, the table is
-# mapped instead of read and the jobs share one copy through the page cache.
-#
-# Here rather than inside a job because LOCAL_JOBS of them start a second apart and
-# would race to write the same archive. Never fatal: without the store the jobs read
-# the pickle exactly as before, which is slower and heavier but not wrong. Already
-# current means no work, so relaunching a grid costs nothing.
-# Once per label (each may set --lipid_isomers differently, and the store/
-# cache builders read their own args_file to decide which variant is needed).
-#
-# OMP_NUM_THREADS/MKL_NUM_THREADS/OPENBLAS_NUM_THREADS=1 here is load-bearing, same
-# as scripts/tools/lipid_graphs_on_kraken.sh's own run_lipid_graphs.sh: both
-# builders below are single-process scripts, but numpy/BLAS (pocket_shape's
-# eigh/cov) and RDKit spin up one OS thread per host core the moment something
-# under them calls into a threaded BLAS, with no work to actually spread across
-# them -- 25 threads measured on a 24-core machine for what is serial work,
-# thrashing on creation/synchronisation instead of finishing sooner. Cut this
-# builder's own rebuild from ~7 to ~3 minutes even after the far bigger
-# lipid_shape-gating fix (dataloader/descriptor_cache_reader.py) removed the
-# redundant conformer generation that was most of the ~20-minute baseline.
+# Build current memory-mapped embedding stores once per label before launching.
+# Labels may select different isomeric variants. Serial preparation avoids jobs
+# racing to write one archive and lets jobs share its page cache.
+# Missing stores are nonfatal: jobs load the source pickle with higher RAM cost.
+# Set OMP_NUM_THREADS/MKL_NUM_THREADS/OPENBLAS_NUM_THREADS=1 during preparation
+# to avoid BLAS/RDKit thread oversubscription on serial work
+# (see scripts/tools/lipid_graphs_on_kraken.sh).
 for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     if ! OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
         python3 "${PROJECT_ROOT}/data/build_lipid_embedding_store.py" \
@@ -876,11 +628,8 @@ for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
             "${_label_args_file}" >&2
     fi
 
-    # Same idea, for the descriptor catalog's per-candidate/per-protein RDKit values
-    # (dataloader/descriptor_cache_reader.py): built once here so the grid's N (group, seed) processes
-    # share one cache instead of each re-running RDKit over the whole interaction table.
-    # Never fatal: without it a job computes these values itself, exactly as before this
-    # cache existed -- slower, not wrong.
+    # Build shared descriptor values once before the grid (descriptor_cache_reader.py).
+    # If unavailable, jobs compute values directly; correctness is unchanged.
     if ! OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
         python3 "${PROJECT_ROOT}/data/build_descriptor_cache.py" \
         --args_file="${_label_args_file}"; then
@@ -889,31 +638,16 @@ for _label_args_file in "${LABEL_ARGS_FILE[@]}"; do
     fi
 done
 
-# --- the memory budget, measured rather than assumed -----------------------------
-#
-# What one more concurrent job costs is a property of the config, not of this
-# machine: the same script runs a 481k-parameter model with no DataLoader worker and
-# a 1.28M-parameter adversarial one with two, and their real footprints differ by
-# more than a factor of two. A constant therefore has to be wrong in one direction or
-# the other, and both directions hurt -- too high wastes half the machine, too low
-# hands the OOM killer a choice it makes badly. So the constant is used only until
-# there is something to measure, and from the first training job onwards the budget
-# is what the running jobs actually occupy.
-#
-# PSS, not RSS: it divides each shared page among the processes mapping it, so the
-# libtorch and MKL text pages, and the mmapped embedding stores, are counted once in
-# total instead of once per job. Summed over the jobs it is very nearly their true
-# joint footprint, which makes the mean the cost of one more of them -- the same
-# quantity the fixed constant was always trying to name.
+# Measure marginal per-job memory after the bootstrap period.
+# Use PSS to divide shared libtorch/MKL and mapped pages across their users.
+# The mean over complete job trees estimates the cost of another concurrent job.
 
-# The whole process tree of one job, in KiB. DataLoader workers are children and
-# their memory is as real as their parent's, so a job is the tree, not the process.
+# Return job-tree memory in KiB, including DataLoader children.
 job_tree_pss_kib() {
     local root="$1" pid value total=0
     for pid in "${root}" $(pgrep -P "${root}" 2>/dev/null || true); do
         value="$(awk '/^Pss:/ {print $2; exit}' "/proc/${pid}/smaps_rollup" 2>/dev/null || true)"
-        # smaps_rollup needs a 4.14 kernel and a readable process; VmRSS is always
-        # there, and overestimating is the safe way to be wrong about a budget.
+        # Use smaps_rollup on readable processes (kernel >=4.14), with conservative VmRSS fallback.
         [[ -n "${value}" ]] || value="$(awk '/^VmRSS:/ {print $2; exit}' "/proc/${pid}/status" 2>/dev/null || true)"
         [[ -n "${value}" ]] && total=$(( total + value ))
     done
@@ -934,37 +668,27 @@ measure_job_memory_mib() {
     printf '%d\n' $(( total / count / 1024 ))
 }
 
-# Re-derive how many jobs may run at once, from the measured cost and the memory free
-# at this moment. Called before every launch and after every job that finishes, so a
-# grid that starts under a loaded desktop widens as the desktop lets go, and one that
-# meets a heavier config than expected narrows instead of meeting the OOM killer.
+# Update the concurrency cap from current free memory and measured job cost.
+# Run before launches and after completions to follow desktop/configuration changes.
 update_job_budget() {
     (( LOCAL_JOBS_FIXED )) && return 0
     local measured headroom affordable cap
     if (( ! MEM_PER_JOB_FIXED )) && [[ -n "${first_log_file}" ]] \
         && grep -q '^EPOCH 2:' "${first_log_file}" 2>/dev/null; then
-        # Measured only once a job has finished its first epoch AND its first
-        # validation: before that the model, the optimizer state and the sample caches
-        # are not allocated yet, and the valid loader's persistent DataLoader worker
-        # (a fork of the whole dataset) does not exist yet either. Measuring at the
-        # first `EPOCH` line saw 777 MiB/job for a config that settled at ~2.7 GiB,
-        # which let 9 jobs start and exhausted the 31 GiB here.
+        # Wait for the first epoch and validation before measuring: optimizer state,
+        # sample caches, and persistent validation workers must already exist.
         if measured="$(measure_job_memory_mib)"; then
             measured=$(( measured * (100 + MEM_MARGIN_PERCENT) / 100 ))
-            # Never zero: it is a divisor below, and a job that measures as free is a
-            # broken measurement rather than a job that costs nothing.
+            # Reject zero measurements: the budget is a divisor, and jobs cannot cost zero.
             (( measured < 1 )) && measured=1
-            # The peak, not the latest snapshot: a job's footprint grows over its run
-            # (workers forked late, the best-epoch state_dict, the test pass), so a
-            # lower later mean is not a reason to launch more. The first measurement
-            # replaces the bootstrap constant in either direction.
+            # The first measurement replaces bootstrap in either direction.
+            # Then retain peak mean cost, covering late workers, checkpoints, and testing;
+            # a later decrease must not launch extra jobs.
             if (( MEM_MEASURED && measured < MEM_PER_JOB_MIB )); then
                 measured=${MEM_PER_JOB_MIB}
             fi
             MEM_MEASURED=1
-            # Said out loud only when it moves by more than 5%. Re-measured before
-            # every launch, the figure drifts by a megabyte at a time, and a line per
-            # launch would bury the launches themselves.
+            # Log budget changes only above 5% to keep launch output readable.
             if (( measured * 20 < MEM_PER_JOB_MIB * 19 || measured * 20 > MEM_PER_JOB_MIB * 21 )); then
                 printf '  memory: measured %d MiB/job over %d running job(s), margin included\n' \
                     "${measured}" "${#pids[@]}"
@@ -976,11 +700,8 @@ update_job_budget() {
     headroom="$(mem_headroom_mib)"
     affordable=$(( headroom / MEM_PER_JOB_MIB ))
     cap=$(( ${#pids[@]} + affordable ))
-    # OMP_THREADS_PER_JOB was fixed before the first job started and must stay fixed:
-    # the thread count decides how at::parallel_for splits every reduction, so
-    # changing it mid-grid would make the second half of a run's numbers incomparable
-    # with the first. Widening therefore stops where the cores run out at the thread
-    # count already handed out, not where memory does.
+    # Keep OMP_THREADS_PER_JOB fixed across the grid: reduction partitioning depends
+    # on thread count, so changing it mid-grid could change seeded results.
     local core_cap=$(( usable_cores / OMP_THREADS_PER_JOB ))
     (( core_cap < 1 )) && core_cap=1
     (( cap > core_cap )) && cap=${core_cap}
@@ -989,11 +710,8 @@ update_job_budget() {
     LOCAL_JOBS=${cap}
 }
 
-# Fires the moment ONE label's own jobs are ALL done, not when the whole shared
-# pool is: labels in this run interleave (job_label_index, the combined grid
-# above), so one label finishing early while another is still training is the
-# normal case, not an edge case, and that label's "Ran N jobs" line and
-# --graphics/--summarize report must not wait on jobs that are not its own.
+# Report each label as soon as all its interleaved jobs finish,
+# without waiting for unrelated labels' jobs.
 report_label_if_done() {
     local label_index="$1" variant
     (( LABEL_FINISHED_JOBS[label_index] >= LABEL_TOTAL_JOBS[label_index] )) || return 0
@@ -1005,14 +723,8 @@ report_label_if_done() {
     fi
     (( DO_GRAPHICS || DO_SUMMARIZE )) || return 0
 
-    # Non-zero here means a section inside failed (see generate_label_report.sh's
-    # own exit-code contract, the same one run_cluster.sh/wait_and_sync.sh branch
-    # on to retry) -- the report is still written either way, just with that
-    # section's failure documented in it, so this warns rather than treats it as
-    # fatal. Bare (unguarded) under set -euo pipefail, a non-zero exit here would
-    # otherwise abort the whole local grid over ONE label's report -- every other
-    # label's jobs (running or already reaped) losing their report too, not just
-    # this one's.
+    # Report-section failures are nonfatal; generate_label_report.sh records them.
+    # Guard its status under set -e so one failed label report does not abort the grid.
     if ! bash "${PROJECT_ROOT}/scripts/lib/generate_label_report.sh" \
         "${variant}" "${LABEL_SEEDS_CSV[label_index]}" "${DO_GRAPHICS}" "${DO_SUMMARIZE}"
     then
@@ -1021,18 +733,9 @@ report_label_if_done() {
     fi
 }
 
-# Wait for at least one running job to exit, then reap every job that has, exactly
-# once each.
-#
-# Poll rather than `wait -n`: wait -n reaps ONE job anonymously and discards its exit
-# status, and a later `wait "${pid}"` on that same pid cannot recover it (bash has
-# already forgotten it, so a second wait on it is either an error or a meaningless
-# status). That used to lose the exit status of every job it silently reaped this way
-# -- for slow jobs a rare event, but jobs that all die in under a second (e.g. a whole
-# grid launched without the conda env active) can finish several at a time between one
-# stagger tick and the next, and this is exactly how a run once reported "1 job(s)
-# exited non-zero" when in fact all 18 had. Reaping only pids confirmed dead by
-# kill -0, and each exactly once via `wait "${pid}"` right here, cannot lose one.
+# Poll for exited jobs, then wait for each known PID exactly once.
+# Avoid wait -n here: anonymous reaping can lose the status needed by later
+# per-PID waits, especially when several jobs fail between polling ticks.
 reap_finished_jobs() {
     local pid label_index
     local still_running=() finished=()
@@ -1064,12 +767,10 @@ reap_finished_jobs() {
 
 pids=()
 failed=0
-# pid -> label_index, so reap_finished_jobs can credit a finished job to its
-# own label's LABEL_FINISHED_JOBS/LABEL_FAILED_JOBS and fire its report at the
-# right moment. Populated right after each launch below, unset once reaped.
+# Map PID to label for completion/failure counts and per-label reports.
+# Register immediately after launch and remove when reaped.
 declare -A PID_LABEL_INDEX=()
-# The log of the first job launched, which is what tells the budget when there is
-# something worth measuring.
+# Keep the first job's log to detect when memory measurements are valid.
 first_log_file=""
 for (( job_index=0; job_index<total_jobs; job_index++ )); do
     label_index="${job_label_index[job_index]}"
@@ -1082,44 +783,34 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     mkdir -p "${output_dir}"
     log_file="${output_dir}/${variant}_seed${seed}_ep150_batch16.log"
 
-    # BEFORE the launch, not after it: the cap has to be met by not starting a job,
-    # which is the one moment where refusing still costs nothing. Re-derived inside
-    # the wait too, so a job finishing or the desktop freeing memory is noticed while
-    # this is blocked here rather than one launch later.
+    # Enforce the cap before launching. Refresh it while waiting so completions
+    # and newly available memory are noticed immediately.
     update_job_budget
     while (( ${#pids[@]} >= LOCAL_JOBS )); do
         reap_finished_jobs
         update_job_budget
     done
 
-    # Which axis this run holds out. With --lipid_coldsplit the "group" is the name of
-    # a lipid-class set, not a protein family, and it goes to a different flag.
-    # Per label, not per job: a --lipid_coldsplit label mixed with a protein-group
-    # one in the same command reads its own axis correctly either way.
+    # Read the axis per label: mixed-axis pools dispatch each job correctly.
+    # For --lipid_coldsplit, group is a lipid-set name, not a protein family.
     if (( LABEL_IS_LIPID_COLDSPLIT[label_index] )); then
         split_flag=(--lipid_coldsplit="${group}")
     elif (( LABEL_IS_LIPID_SUBCLASS[label_index] )); then
-        # The "group" is one article lipid-subclass block spec. Appended even when the
-        # args file already names it: the same flag with the same value, last one wins.
+        # Append the article subclass spec, even if already in the template;
+        # the identical last value wins.
         split_flag=(--lipid_subclass="${group}")
     elif [[ -n "${LABEL_LIPID_ISOLATION[label_index]}" ]]; then
         # The block is named by the flag already in the template; nothing is appended.
         split_flag=()
     elif [[ -n "${LABEL_LIPID_SPECIES[label_index]}" ]]; then
-        # Same as --lipid_isolation just above: the share is already in the template,
-        # nothing is appended, and "${group}" is the "species<NN>" name new_train.py
-        # files the run under.
+        # The template already holds the share. group names the species<NN> result path.
         split_flag=()
     elif (( LABEL_IS_RANDOM_SPLIT[label_index] )); then
-        # Nothing is held out, so nothing is appended: the loader's own last branch
-        # does the split and names it. "${group}" is already the literal "random" the
-        # run will be filed under, which is why the log path needs no special case.
+        # Add no holdout flag for random: the loader defines and names the split.
         split_flag=()
     elif (( LABEL_IS_FAMILY_ONLY[label_index] )); then
-        # Nothing is EXCLUDED (the family named by "group" is the entire training
-        # pool), so --excluded_groups is never appended for this axis. Fixed form:
-        # the family is already spelled out in the template, nothing to append.
-        # Bare form: "group" is the one family this job restricts the whole table to.
+        # family_only uses the whole named family, without --excluded_groups.
+        # Fixed form is already in the template; bare form gets this job's group.
         if [[ -n "${LABEL_FAMILY_ONLY_FIXED[label_index]}" ]]; then
             split_flag=()
         else
@@ -1139,11 +830,8 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
             || printf 'GROUP'; }; }; }; } )" \
         "${group}" "${variant}" "${seed}"
 
-    # read_configuration.py applies flags in argv order and the last one wins,
-    # so appending --num_workers here would silently override an args file
-    # that sets its own (e.g. arg_files/smoke/test.md uses --num_workers=0 for
-    # deterministic single-process debugging). Only fill it in when the args
-    # file is silent about it.
+    # Fill --num_workers only when absent: appended argv values override earlier ones.
+    # Preserve explicit settings, including deterministic smoke/debug configurations.
     num_workers_flag=()
     if ! args_file_has_flag "${this_args_file}" --num_workers; then
         num_workers_flag=(--num_workers="${NUM_WORKERS_PER_JOB}")
@@ -1155,20 +843,10 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
             "${JOB_CPU_DOMAINS[job_index % ${#JOB_CPU_DOMAINS[@]}]}")
     fi
 
-    # OMP_WAIT_POLICY=PASSIVE: libgomp's default is to spin on a running CPU while
-    # waiting for the rest of the team, which pays off only when the waiting
-    # thread has a core to itself. It does not here -- the default job count puts
-    # LOCAL_JOBS x OMP_THREADS_PER_JOB threads on fewer physical cores than that
-    # (4 x 2 on 6 cores, measured on this machine), and at batch 8 the model
-    # enters and leaves thousands of tiny parallel regions per second, so the
-    # spinning is mostly burning cycles a neighbouring job could have used.
-    # PASSIVE makes a waiting thread sleep instead. Scheduling only: the thread
-    # count and therefore the arithmetic are untouched.
-    #
-    # MALLOC_ARENA_MAX=2: glibc otherwise opens up to 8 x ncores malloc arenas per
-    # process and each one keeps its own free lists, so freed memory stays spread
-    # across arenas and out of the kernel's reach. Capping them holds RSS down
-    # with no effect on what is allocated.
+    # OMP_WAIT_POLICY=PASSIVE sleeps waiting OpenMP threads, freeing CPU for other jobs.
+    # Thread counts and reduction arithmetic stay unchanged.
+    # MALLOC_ARENA_MAX=2 limits glibc arenas (otherwise up to 8*ncores per process),
+    # reducing retained RSS without changing allocations.
     # shellcheck disable=SC2086
     OMP_NUM_THREADS="${OMP_THREADS_PER_JOB}" MKL_NUM_THREADS="${OMP_THREADS_PER_JOB}" \
     OMP_WAIT_POLICY=PASSIVE MALLOC_ARENA_MAX=2 \
@@ -1182,42 +860,28 @@ for (( job_index=0; job_index<total_jobs; job_index++ )); do
     pids+=($!)
     PID_LABEL_INDEX[${pids[-1]}]="${label_index}"
 
-    # Job-id-tagged .out, symlinked to the friendlier stable-named .log so
-    # scripts/lib/progress_table.sh's local-jobs lookup (print_local_progress,
-    # keyed on "*_l<pid>.out", the same convention as the cluster's
-    # "*_<tag><oar job id>.out") can find this run while it is live. The pid is
-    # only known after backgrounding, so this comes after `pids+=($!)`, not
-    # before -- the .log redirect target above had to be pid-free from the
-    # start, which is also why it is the real file and .out is the symlink
-    # rather than the other way around.
+    # After PID creation, symlink *_l<pid>.out to the stable .log redirect target.
+    # progress_table.sh uses the tagged path to discover live local jobs,
+    # matching the clusters' *_<tag><jobid>.out convention.
     out_file="${output_dir}/${variant}_seed${seed}_${LOCAL_JOB_TAG}${pids[-1]}.out"
     ln -sf "$(basename "${log_file}")" "${out_file}"
 
     [[ -n "${first_log_file}" ]] || first_log_file="${log_file}"
 
-    # This job is no longer queued -- pop its line (jobs launch in the same
-    # order local_queue_file was written in, so it is always the first line).
+    # Pop the first queue line: launch order matches queue-file order.
     tail -n +2 "${local_queue_file}" > "${local_queue_file}.tmp"
     mv "${local_queue_file}.tmp" "${local_queue_file}"
 
-    # One-second stagger between launches: new_train.py names its TensorBoard
-    # run directory train<timestamp>_..._<seed>_..., retrying with a 1s sleep
-    # (training/new_train.py, the os.makedirs/FileExistsError loop) only if
-    # that exact name already exists. seed differs per job here so it can't
-    # collide, but staggering keeps launches readable in the terminal and
-    # matches how oarsub submissions on bigfoot/kraken are naturally spaced by
-    # SSH round-trip time -- jobs there are never launched in the same second.
+    # Stagger launches by one second for readable output. TensorBoard paths include
+    # seed and timestamp; new_train.py retries name collisions after one second.
     if (( job_index + 1 < total_jobs )); then
         sleep 1
     fi
 
 done
 
-# Drain through the same reap_finished_jobs the launch loop above used, not a
-# plain `wait` on every remaining pid: that would reap the LAST label's jobs
-# without going through report_label_if_done, so exactly the label most likely
-# to be the last one holding the pool (whichever finishes last) would never
-# get its "Ran N jobs" line or --graphics/--summarize report.
+# Drain with reap_finished_jobs so the final jobs also update per-label
+# completion counts and trigger --graphics/--summarize reports.
 while (( ${#pids[@]} > 0 )); do
     reap_finished_jobs
 done
@@ -1228,24 +892,16 @@ if (( failed > 0 )); then
     printf '%d job(s) total exited non-zero.\n' "${failed}" >&2
 fi
 
-# Chain to the next queued batch, if any -- see the "already active" branches
-# above, where a second invocation appends itself to PENDING_BATCHES_FILE
-# instead of being silently dropped. This runs regardless of whether THIS
-# batch had failures: a bad config in one queued batch must not strand every
-# batch queued behind it. exec (not a fresh launch) replaces this process in
-# place, so the next batch continues under the same detached session, pid and
-# log file; RUN_LOCAL_DETACHED is already set in this process's own
-# environment, so the next invocation will not try to self-detach again.
+# Pop and exec the next queued batch even if this batch failed.
+# Retain the detached session, PID, log, and RUN_LOCAL_DETACHED environment;
+# one bad configuration must not strand later batches.
 if [[ -s "${PENDING_BATCHES_FILE}" ]]; then
     next_batch="$(head -n 1 "${PENDING_BATCHES_FILE}")"
     tail -n +2 "${PENDING_BATCHES_FILE}" > "${PENDING_BATCHES_FILE}.tmp"
     mv "${PENDING_BATCHES_FILE}.tmp" "${PENDING_BATCHES_FILE}"
     printf 'Starting next queued batch: %s\n' "${next_batch}"
-    # exec does not run EXIT traps -- it replaces this process outright rather
-    # than exiting it -- so this batch's own queue file (normally cleaned up
-    # by the `trap ... EXIT` above) needs an explicit remove here. Already
-    # empty in the ordinary case (every job popped its own line on launch);
-    # this is just making sure rather than assuming.
+    # exec skips EXIT traps. Remove this batch's queue file explicitly before
+    # replacing the process; it is normally already empty after launches.
     rm -f "${local_queue_file}"
     eval "set -- ${next_batch}"
     exec bash "${BASH_SOURCE[0]}" "$@"

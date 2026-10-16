@@ -559,7 +559,7 @@ experiment_record() {
 
 # --- oarsub -------------------------------------------------------------------
 # An array, so an empty GPU_PROPERTY or PROJECT drops its flag entirely. `if`
-# blocks rather than `[[ ]] &&`: a false test as the last command returns 1, and
+# blocks instead of `[[ ]] &&`: a false test as the last command returns 1, and
 # `set -e` would abort the whole submitter.
 oarsub_submit() {
     local job_name="$1" walltime="$2" out_prefix="$3" job_command="$4"

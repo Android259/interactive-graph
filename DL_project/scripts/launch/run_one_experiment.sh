@@ -11,7 +11,7 @@
 # write a second one. It is in the record so that one record format describes an
 # experiment whether it is run alone or inside a pack.
 #
-# A file rather than a string spliced into the oarsub command line: the project
+# A file instead of a string spliced into the oarsub command line: the project
 # is rsynced to the cluster anyway, so there is nothing to splice it for, and a
 # file can be read and tested.
 #

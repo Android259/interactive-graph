@@ -29,7 +29,7 @@ Reads only. Trains nothing, appends to no shared table.
 
 `--epochs` must name epochs the run actually saved: `DYNAMICS_CHECKPOINT_EPOCHS` in
 training/new_train.py, currently 1, 10, 49, 51, 120. Missing files are reported and
-skipped rather than raising, so a partially finished sweep still yields what it has.
+skipped instead of raising, so a partially finished sweep still yields what it has.
 
 `--epochs selected` is the one-epoch-per-run mode (score_selected_epoch below): for
 each (family, seed) only the milestone nearest that run's own selected checkpoint is
@@ -419,13 +419,13 @@ def score_checkpoints(label, epochs, seeds, families, batch=16, device=None, ver
 # "What can still be recomputed" is a
 # question about THIS module's own inputs -- which (group, seed) cells kept weights, and
 # which rows of metrics_summary.csv lack the column -- so it belongs next to the
-# rescoring it feeds rather than in a separate script restating the same layout.
+# rescoring it feeds instead of in a separate script restating the same layout.
 #
 # Nothing below loads a checkpoint or builds a model: it lists models/ and reads the
 # table. score_checkpoints() above is what does the actual rescoring.
 #
 # The four --lipid_coldsplit held-out sets (dataloader/splitting_on_blocks/lipid_coldsplit_blocks.LIPID_COLDSPLIT_SETS),
-# spelled out rather than imported so this part stays a filesystem/CSV reader.
+# spelled out instead of being imported so this part stays a filesystem/CSV reader.
 LIPID_SETS = {"anionic", "choline", "phosphorus_free", "sphingolipids"}
 EPOCH_FILE = re.compile(r"^seed(\d+)_epoch(\d+)\.pt$")
 SELECTED_FILE = re.compile(r"^seed(\d+)\.pt$")

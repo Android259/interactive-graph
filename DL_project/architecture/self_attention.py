@@ -207,17 +207,6 @@ class ProteinSelfAttention(torch.nn.Module):
         pocket_layout=None, pocket_index=None
     ):
 
-        # Pre-norm variant:
-        # unnormalized = x
-        # x = self.ln1(x)
-        # attn_bias = self.make_attention_bias(attn_mask, pocket_mask, x)
-        # x = x.unsqueeze(1)
-        # outl, _ = self.self_attention(x, x, x, attn_mask=attn_bias)
-        # unnormalized = unnormalized + outl.squeeze(1)
-        # x = self.ln2(unnormalized)
-        # x = unnormalized + self.FFN(x)
-        # return x
-
         x = self.ln1(x)
         if can_use_grouped_attention(self.config, batch):
             if pocket_index is not None:

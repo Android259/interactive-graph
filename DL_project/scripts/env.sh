@@ -6,7 +6,7 @@
 # tools/parameters.sh both source lib/activate_training_env.sh, warning and
 # falling back to whatever python3 is on PATH when conda isn't there), but
 # nothing solved it for the one-off command -- so this file is that entry
-# point, and it sources the same helper the same way rather than repeating the
+# point, and it sources the same helper the same way instead of repeating the
 # conda search and hard-failing a fourth way.
 #
 # Three ways to use it:
@@ -26,7 +26,7 @@
 #
 # For a first-time setup that CREATES the env when it is missing, use
 # tools/enter_project_env.sh instead; this file only activates an existing one
-# and warns (rather than failing) when there isn't one to activate.
+# and warns (instead of failing) when there isn't one to activate.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -39,7 +39,7 @@ _env_sh_sourced=0
 _env_sh_conda_active=0
 if [[ "${CONDA_DEFAULT_ENV:-}" != "Kalinin_project_LP" ]]; then
     # Same activation, and same fallback, as run_local.sh and parameters.sh:
-    # warn and keep going with whatever python3 is on PATH rather than
+    # warn and keep going with whatever python3 is on PATH instead of
     # hard-fail. Some machines genuinely have no conda and still have every
     # package these scripts need on the system python3.
     if source "${SCRIPT_DIR}/lib/activate_training_env.sh"; then
@@ -65,7 +65,7 @@ export PYTHONPATH="${PROJECT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 #
 # Forcing the env's copy fixes it in both orders: 3.4.34 is backward compatible,
 # and torch runs on it unchanged (verified: matmul, cuda build string, rdkit
-# fingerprints, all in one process). LD_PRELOAD rather than putting
+# fingerprints, all in one process). LD_PRELOAD instead of putting
 # ${CONDA_PREFIX}/lib on LD_LIBRARY_PATH on purpose -- that would shadow EVERY
 # system library with the env's, which is the usual way a conda env starts
 # breaking unrelated binaries. Here exactly one library is overridden.

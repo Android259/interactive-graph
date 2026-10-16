@@ -8,9 +8,8 @@ import torch
 
 from architecture.mlp_utils import build_mlp
 
-# Full-batch steps for the learned negative-prior scorer (learned_prior_reference).
-# A few thousand rows by a few dozen standardised features: this converges well
-# inside it and costs about a second, once per dataset build.
+# Full-batch steps for learned_prior_reference: a few thousand rows and a few
+# dozen standardized features converge within this limit in ~1 s per dataset.
 LEARNED_PRIOR_STEPS = 400
 
 
@@ -25,15 +24,11 @@ def split_and_sample_interactions(csv, seed, unlabeled_fraction=0.056):
 
 
 def _shared_similarities(pool, candidates, positives):
-    """Per-candidate max similarity to the positives of its own sampling group.
+    """Return each candidate's maximum similarity to its group's positives.
 
-    The original reduction, and the one every lipid-axis pool keeps: a candidate is
-    weighted by how close it is to ANYTHING the group is already positive for. On a
-    lipid axis that reads as "a lipid like the ones this protein binds", because the
-    group is a protein or a family of them.
-
-    None (fall back to plain uniform sampling) when none of the group's positives have a
-    similarity entry.
+    For lipid pools, the group is a protein or family: choose lipids similar
+    to anything it binds. Return None for uniform sampling when no positive
+    has a similarity entry.
     """
     positions = [
         pool.index[key]
@@ -53,33 +48,16 @@ def _shared_similarities(pool, candidates, positives):
 
 
 def conditioned_reference(pool, csv, excluded_groups=None):
-    """Matrix positions of the positives a candidate is compared against, keyed by the
-    coordinate the candidate SHARES with them.
+    """Return positive matrix positions keyed by the candidate's shared coordinate.
 
-    Why a protein-axis pool cannot use `_shared_similarities`. That reduction asks "is
-    this candidate close to anything the group already binds", and on a protein axis the
-    answer is 1.0 for nearly every candidate: the candidate's own protein is itself one
-    of the group's positive proteins (it binds something, just not this lipid), and a
-    protein is identical to itself. Measured on the table with the per-family sampler,
-    all three of identity/blosum62/tmscore gave mean 1.000 steered either way -- the
-    flag was wired up and could not move anything.
+    Lipid pools compare with lipids bound by this protein; protein pools compare
+    with proteins binding this lipid. The second reference excludes the candidate's
+    protein naturally: the candidate row is labeled 0 for that lipid.
 
-    The question that is actually the mirror of the lipid one conditions on the OTHER
-    coordinate instead:
-
-        lipid axis    how like the lipids THIS PROTEIN binds is the candidate's lipid
-        protein axis  how like the proteins THAT BIND THIS LIPID is the candidate's protein
-
-    Conditioning this way also excludes the candidate's own entity for free: a row is a
-    candidate because it is labeled 0, so its protein is by definition not among the
-    proteins positive for its lipid. Nothing has to be filtered out by hand.
-
-    The reference spans every training family rather than the candidate's own group,
-    because "which proteins bind this lipid" is a cross-family question by nature -- a
-    group of one protein would leave it empty. `excluded_groups` families are dropped
-    from it: their rows become validation/test, and letting them decide which TRAIN
-    negatives get drawn would leak the held-out block into training, the same reason
-    those groups are exempt from being steered at all.
+    Use positives across all training families, not just the sampling group;
+    a single-protein group would otherwise have no reference.
+    Exclude excluded_groups: validation/test labels must not select training
+    negatives. Those groups are also exempt from steering.
     """
     rows = csv[csv["Interaction"] == 1]
     if excluded_groups:
@@ -93,12 +71,11 @@ def conditioned_reference(pool, csv, excluded_groups=None):
 
 
 def _conditioned_similarities(pool, candidates, reference):
-    """Per-candidate max similarity to the positives `reference` pairs it with.
+    """Return maximum similarity to each candidate's conditioned reference.
 
-    A candidate whose shared coordinate has no positive anywhere in training (a lipid
-    nothing is known to bind) scores 0.0 rather than being dropped: the quota is what
-    every sampler here promises to fill, and 0.0 leaves it to the uniform remainder of
-    the mass exactly as an unseen key already does.
+    If its shared coordinate has no training positive, use 0.0 instead of dropping
+    the candidate. Preserve the quota; the uniform remainder handles zero or
+    unseen similarities.
     """
     if not reference:
         return None
@@ -115,18 +92,14 @@ def _conditioned_similarities(pool, candidates, reference):
 
 
 def cell_prior_reference(pool, csv, excluded_groups=None):
-    """Train positive rate per (protein, lipid subclass) cell, plus the global fallback.
+    """Return train positive rates by (protein, lipid subclass) and a global fallback.
 
-    The naive competitor's own recipe (analysis/baselines/protein_subclass_label_baseline.py):
-    the rate is estimated on the rows a run can see, and a cell absent from them falls
-    back to the overall rate rather than to zero -- a cell nobody measured is not
-    evidence of a non-binder. `excluded_groups` families are dropped for the reason
-    `conditioned_reference` gives: their rows become validation/test, and letting their
-    labels pick train negatives would leak the held-out block.
-
-    A rate is a score in [0, 1] already, so it needs no transform before the weighting:
-    "hard" puts the mass on the cells the lookup table calls positive, "dissimilar" on
-    the ones it calls negative.
+    Match analysis/baselines/protein_subclass_label_baseline.py.
+    Unknown cells use the overall rate, not zero: unmeasured is not non-binding.
+    Exclude excluded_groups to prevent held-out labels steering train negatives,
+    as in conditioned_reference.
+    Rates already lie in [0, 1]: hard emphasizes positive-looking cells;
+    dissimilar emphasizes negative-looking cells, without another transform.
     """
     rows = csv
     if excluded_groups:
@@ -148,18 +121,13 @@ def _cell_prior_scores(pool, candidates, reference):
 
 
 def learned_prior_reference(pool, csv, excluded_groups=None, seed=0):
-    """Fit the small MLP on the training-visible labels; return one score per row.
+    """Fit a small MLP on training-visible labels and return scores for all rows.
 
-    Fit here rather than inside the pool for the reason `cell_prior_reference` is here:
-    only the sampler knows `excluded_groups`, and a held-out family's labels must not
-    decide which train negatives get drawn.
-
-    The global torch RNG is saved and restored around the fit. That is not tidiness: the
-    dataset is built after `seed_everything`, and the model's own initialisation and the
-    DataLoader's shuffle draw from that same stream afterwards. Consuming it here would
-    silently shift every one of them, so a run with this flag would differ from the base
-    in more than the negatives it drew -- which is exactly the comparison the flag
-    exists to make.
+    Fit here because the sampler knows excluded_groups; held-out labels must
+    not select training negatives, as for cell_prior_reference.
+    Save and restore the global torch RNG: dataset construction follows
+    seed_everything, and later model initialization and DataLoader shuffling
+    use that stream. Steering must not alter them by consuming RNG draws here.
     """
     rows = csv
     mask = np.ones(len(csv), dtype=bool)
@@ -190,9 +158,8 @@ def learned_prior_reference(pool, csv, excluded_groups=None, seed=0):
         x_fit = torch.as_tensor(standardised[mask], dtype=torch.float32)
         y_fit = torch.as_tensor(labels, dtype=torch.float32).reshape(-1, 1)
         positives = float(y_fit.sum())
-        # The table is ~6% positive; without this the scorer collapses onto the majority
-        # class and every candidate gets the same near-zero score, which is a uniform
-        # draw wearing a flag's name.
+        # Balance the ~6% positive table; otherwise the scorer collapses to near-zero
+        # scores for all rows, making the steered draw effectively uniform.
         pos_weight = torch.tensor(
             [(len(y_fit) - positives) / max(positives, 1.0)], dtype=torch.float32
         )
@@ -244,13 +211,11 @@ def candidate_similarities(pool, candidates, positives, reference):
 
 
 def _hard_negative_weights(sims, share):
-    """Sampling weight per candidate, blending similarity-hardness with uniform.
+    """Blend similarity-based hard-negative weights with a uniform remainder.
 
-    `share` of the mass goes to candidates by how similar they are to something already
-    known to bind (`candidate_similarities`) -- a hard negative, close enough to look
-    like a binder yet labeled unlabeled. The rest of the mass stays uniform, so a group
-    whose positives have no close negatives in its pool still draws its full quota
-    instead of concentrating on the handful nearest zero similarity.
+    Assign share of mass by candidate_similarities: unlabeled candidates
+    resembling known binders. Keep 1-share uniform so weak-similarity groups
+    fill their quota without concentrating on a few near-zero scores.
     """
     n = len(sims)
     sims = np.clip(sims, 0.0, None)
@@ -261,19 +226,12 @@ def _hard_negative_weights(sims, share):
 
 
 def _dissimilar_negative_weights(sims, share):
-    """Sampling weight per candidate, blending similarity-DISTANCE with uniform.
+    """Blend 1-similarity weights with a uniform remainder of 1-share.
 
-    The mirror of `_hard_negative_weights` over the same numbers: `share` of the mass
-    goes to candidates by `1 - similarity`, so the negatives a group trains against are
-    the ones furthest from anything it is known to bind. The rest of the mass stays
-    uniform for the same reason as there.
-
-    Why one would want this rather than hard negatives: a uniform draw over a panel
-    whose lipids are largely congeneric hands a protein many near-duplicates of its own
-    positives as negatives, so a decision rule can only separate them by the base rate.
-    Steering AWAY spreads the negatives over the panel's chemistry instead, which is the
-    opposite trade from hard mining -- an easier separation per pair, over a wider span
-    of chemistry. The two directions are mutually exclusive by configuration.
+    Favor candidates far from known binders, opposite to hard-negative mining.
+    Uniform draws on related lipids can produce near-duplicate positives and
+    negatives separable mostly by base rates. Dissimilar mining trades easier
+    pairs for broader chemistry. Configuration makes the two modes exclusive.
     """
     n = len(sims)
     distances = np.clip(1.0 - np.clip(sims, 0.0, 1.0), 0.0, None)
@@ -284,24 +242,17 @@ def _dissimilar_negative_weights(sims, share):
 
 
 def _weighted_negative_draw(candidates, draw_n, weights, seed):
-    """Draw `draw_n` of `candidates` without replacement, weighted by `weights`.
+    """Draw draw_n candidates without replacement using weights.
 
-    pandas' own weighted `.sample(replace=False)` refuses whenever one candidate's
-    normalized weight alone exceeds `1 / draw_n` (pandas/core/sample.py's
-    `size * weights.max() > 1` guard), which a concentrated pool (one very close
-    candidate, the rest at similarity 0) hits routinely. numpy's sequential
-    without-replacement draw has no such restriction, so it takes over for this path.
+    Use numpy: pandas.sample can reject concentrated weights when
+    size * weights.max() > 1 (pandas/core/sample.py), e.g. one close candidate
+    and the rest at similarity 0.
 
-    numpy does refuse one thing: a without-replacement draw asking for more items than
-    there are NON-ZERO weights. At `share=1.0` nothing is left uniform, so a candidate
-    whose own Tanimoto reduction is exactly 0 gets weight exactly 0 -- a negative
-    identical to one of the group's positives under "dissimilar", one with no similarity
-    at all to any of them under "hard". Where the quota exceeds the number of candidates
-    that survive that, the steered ones are taken first and the rest of the quota is
-    filled uniformly from the zero-weight remainder. The quota is what every sampler in
-    this module promises to draw in full -- steering is a preference over which
-    candidates fill it, never a filter that shrinks it -- which is the same reason
-    `_hard_negative_weights` keeps `1 - share` uniform at every share below 1.
+    numpy requires at least draw_n nonzero weights. At share=1, hard gives zero
+    weight to similarity-0 candidates; dissimilar gives zero to similarity-1
+    candidates. Take weighted candidates first, then fill any shortfall uniformly
+    from zero-weight rows. Steering changes preferences, never the quota.
+    For share<1, the uniform remainder already prevents this zero-weight case.
     """
     rng = np.random.default_rng(seed)
     probabilities = weights / weights.sum()
@@ -330,29 +281,19 @@ def _sample_group_balanced_negatives(
     hard_negative_share=0.5,
     negative_mode="hard",
 ):
-    """Sample `ratio` negatives per positive within each group.
+    """Draw ratio negatives per positive within each group.
 
-    `ratio` is 1 for the exact 1:1 the samplers were written for. Higher values keep
-    proportionally more of the negative pool: at 1 the working set is 1512 of the
-    table's 11018 rows, and the 9506 rows dropped are the record of which lipids each
-    protein does NOT bind. The ratio is per group, so raising it does not reintroduce
-    the between-protein prior the grouping exists to remove -- every group keeps the
-    same pos:neg proportion, just a coarser one. What it does change is the class prior
-    the loss sees, which is `--class_weights`' job.
+    ratio=1 gives 1:1. In the recorded 11018-row table, this kept 1512 rows
+    and dropped 9506 negative observations. Higher ratios retain more negatives
+    without changing between-group balance; --class_weights handles the changed
+    class prior seen by the loss.
 
-    `hard_negative_pool`, if given, is a `dataloader.similarity_pool.SimilarityPool`
-    -- a similarity matrix, its index, and the axis a row is identified on (lipid
-    species, protein, or pair): negatives are then drawn weighted by that similarity
-    instead of uniformly, whichever of the sources built it. `negative_mode` picks the
-    direction --
-    "hard" steers the draw TOWARD candidates similar to the group's own positives
-    (`_hard_negative_weights`, `--hard_negative_mining`), "dissimilar" steers it AWAY
-    from them (`_dissimilar_negative_weights`, `--dissimilar_negative_mining`) -- and
-    `hard_negative_share` is the steered mass in either direction. `excluded_groups`,
-    if given alongside the pool, exempts any group whose ProteinDomain is in it from
-    the reweighting -- those rows become validation/test after the coming split, and
-    must be drawn exactly as a run without either flag would draw them, so enabling one
-    changes what training sees and nothing about what is measured.
+    Optional hard_negative_pool is a SimilarityPool (matrix, index, lipid/protein/
+    pair axis). negative_mode selects hard (toward similarity) or dissimilar
+    (away); hard_negative_share controls steered mass in both modes.
+    See _hard_negative_weights and _dissimilar_negative_weights.
+    Groups in excluded_groups keep the original uniform draw: they become
+    validation/test, so steering changes training rows without changing evaluation.
     """
     if ratio < 1:
         raise ValueError(f"negatives per positive must be at least 1, got {ratio}")
@@ -366,19 +307,14 @@ def _sample_group_balanced_negatives(
         family_of_group = csv.groupby(groups)["ProteinDomain"].first().str.lower()
     reference = None
     if hard_negative_pool is not None:
-        # Built once from the whole training side, not per group -- see
-        # `conditioned_reference` for why a protein axis cannot use the group, and
-        # `cell_prior_reference` for the naive-prior kind.
+        # Build the reference once across training, not per group.
+        # See conditioned_reference and cell_prior_reference for axis/leakage rules.
         reference = reference_for(hard_negative_pool, csv, excluded_groups, seed)
     if strata is not None:
-        # Matching per (group, stratum) instead of per group. The cold split's second
-        # axis needs this: without it the negatives of a protein are drawn from its
-        # whole lipid panel, and if they all land in classes that later leave training,
-        # the protein arrives in the train block with positives and nothing to contrast
-        # them against -- one-sided, unfixable by weighting, and not something to paper
-        # over by discarding it. Matching inside each stratum draws the two sides of
-        # every protein from the same side of the coming cut, so each side of the cut
-        # is balanced per protein on its own.
+        # Match per (group, stratum) across the coming lipid-class cut.
+        # Without strata, removed classes may take all of a protein's negatives,
+        # leaving positive-only training rows that weights cannot repair.
+        # Matching both sides keeps each cut side balanced per protein without dropping it.
         groups = groups + "\x00" + strata.astype(str)
     is_positive = csv["Interaction"] == 1
     is_negative = csv["Interaction"] == 0
@@ -427,16 +363,12 @@ def sample_family_balanced_negatives(
     csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
     hard_negative_share=0.5, negative_mode="hard",
 ):
-    """Sample negatives per protein family to match its positive count (1:1).
+    """Match unlabeled counts to positives per ProteinDomain (1:1).
 
-    Instead of the global fixed-fraction subsample of `split_and_sample_interactions`,
-    this draws, for each of the protein families in `ProteinDomain`, exactly as many
-    unlabeled rows as that family has positives, so the working set is 1:1
-    positive:negative both globally and within every family. Sampling is seeded
-    (`random_state=seed`) and preserves the original interaction-CSV row index.
-
-    `hard_negative_pool`/`excluded_groups`/`hard_negative_share`: see
-    `_sample_group_balanced_negatives`.
+    This gives family-level and global balance, unlike the fixed global fraction
+    in split_and_sample_interactions. Use random_state=seed and preserve original
+    interaction-row indices. See _sample_group_balanced_negatives for
+    hard_negative_pool, excluded_groups, and hard_negative_share.
     """
     return _sample_group_balanced_negatives(
         csv, seed, "ProteinDomain", ratio, strata,
@@ -461,20 +393,13 @@ def sample_protein_balanced_negatives(
     csv, seed, ratio=1, strata=None, hard_negative_pool=None, excluded_groups=None,
     hard_negative_share=0.5, negative_mode="hard",
 ):
-    """Sample negatives per protein to match its positive count (1:1).
+    """Match unlabeled counts to positives per LTPProtein (1:1).
 
-    `sample_family_balanced_negatives` matches counts per `ProteinDomain`, which
-    leaves individual proteins inside a family free to skew: the family draws its
-    negatives from one shared pool, so a positive-rich protein keeps far more
-    positives than negatives while a positive-poor one gets the opposite. This
-    matches counts per `LTPProtein` instead, which balances every family as well
-    (a sum of balanced parts is balanced) and additionally removes the per-protein
-    prior a model could otherwise learn as "this protein is usually positive".
-    Sampling is seeded (`random_state=seed`) and preserves the original
-    interaction-CSV row index.
-
-    `hard_negative_pool`/`excluded_groups`/`hard_negative_share`: see
-    `_sample_group_balanced_negatives`.
+    Per-family sampling draws from a shared pool and can skew individual proteins.
+    Per-protein matching also balances families and removes the protein positive-rate
+    prior. Use random_state=seed and preserve original interaction-row indices.
+    See _sample_group_balanced_negatives for hard_negative_pool, excluded_groups,
+    and hard_negative_share.
     """
     return _sample_group_balanced_negatives(
         csv, seed, "LTPProtein", ratio, strata,
@@ -495,9 +420,8 @@ def split_and_sample_protein_balanced_interactions(
     return positive_pairs, unlabeled_pairs
 
 
-# lipid_class_series and the ambiguity table live in dataloader.lipid_classes so the
-# preprocessing scripts can apply the same rule without importing torch. Re-exported
-# here because everything already reaches for them through this module.
+# Re-export lipid_classes rules for existing callers. Preprocessing can import
+# that torch-free module directly.
 from dataloader.lipid_classes import (  # noqa: F401
     AMBIGUOUS_CLASS_RESOLUTION,
     class_level_positive_labels,
@@ -510,42 +434,25 @@ def sample_lipid_class_balanced_negatives(
     csv, seed, group_column="ProteinDomain", ratio=1, hard_negative_pool=None,
     excluded_groups=None, hard_negative_share=0.5, negative_mode="hard",
 ):
-    """Sample negatives per (group, lipid class) cell to match its positive count (1:1).
+    """Match negatives to positives within (group, lipid class) cells (1:1).
 
-    `sample_protein_balanced_negatives` removes the per-protein prior ("this protein is
-    usually positive") but leaves the per-lipid-class prior untouched: the negatives it
-    draws for a protein come from that protein's whole lipid panel, so a class the
-    screen rarely calls positive stays rare among the negatives too, and the model can
-    still answer from the lipid class alone. Matching inside each (group, class) cell
-    removes that second marginal, leaving only the pairing itself to learn from.
+    Per-protein sampling leaves lipid-class rates uneven. Cell matching removes
+    that marginal too; e.g. GLTP sphingolipid positives and START PC positives
+    otherwise support a class-only rule that may fail across families.
+    Cells without positives contribute no rows.
 
-    This bites hardest where the two priors disagree, which on this dataset is most
-    places: GLTP's positives are sphingolipids and START's are phosphatidylcholines, so
-    a class-blind sampler hands the model a usable "SM implies positive" rule that does
-    not survive the change of family.
+    Default group_column is ProteinDomain. Recorded family grouping drew
+    753 negatives for 756 positives, with class positive rates 0.50-0.51
+    (std 0.002). Per-protein sampling gave 0.25-0.68 (std 0.145).
+    Grouping cells by LTPProtein had only 376 negatives and worsened class
+    skew to 0.50-1.00 (std 0.178). Family is the finest usable grouping here.
 
-    Cells with no positives contribute nothing, as in the other samplers.
-
-    `group_column` defaults to the family rather than the protein deliberately. Measured
-    on the current CSV, grouping by ProteinDomain draws 753 negatives against 756
-    positives and flattens the per-class positive rate to 0.50-0.51 (std 0.002, versus
-    0.25-0.68 / std 0.145 for the per-protein sampler). Grouping by LTPProtein instead
-    makes the cells too small to fill: only 376 negatives are available, and the
-    surviving classes come out *more* skewed (0.50-1.00, std 0.178) than before. The
-    family is the finest grouping this dataset can actually balance.
-
-    `hard_negative_pool`/`excluded_groups`/`hard_negative_share`/`negative_mode`: see
-    `_sample_group_balanced_negatives`, whose weighting this reuses verbatim, scoped to
-    each (group, class) CELL rather than to the whole group. The cell's own positives
-    are the reference, and `draw_n` is untouched, so steering changes which candidate
-    inside a class fills that cell's quota and nothing about the per-class matching this
-    sampler exists for -- the two are orthogonal, not a trade.
-
-    What a cell leaves the pool to separate depends on the pool's axis. On a lipid axis
-    every candidate in a cell already shares the head group, so Tanimoto is down to acyl
-    composition -- a narrower span than the same flag reaches under `balanced_proteins`.
-    On a protein axis the cell is the opposite case: it holds every protein of the
-    family, so a protein-similarity pool has its full range to work with here.
+    Reuse _sample_group_balanced_negatives weighting inside each cell:
+    hard_negative_pool, excluded_groups, hard_negative_share, negative_mode.
+    Cell positives provide the reference; steering preserves draw_n and class
+    quotas. For lipid pools, the shared head group limits variation mostly to
+    acyl composition. Protein pools retain all proteins of the family and their
+    full similarity range.
     """
     if negative_mode not in ("hard", "dissimilar"):
         raise ValueError(
@@ -564,9 +471,8 @@ def sample_lipid_class_balanced_negatives(
     parts = []
     for group in sorted(groups.dropna().unique()):
         group_mask = groups == group
-        # `group` IS the ProteinDomain here (that is this sampler's grouping), so the
-        # exemption reads it directly instead of the family lookup
-        # `_sample_group_balanced_negatives` needs for its per-protein grouping.
+        # Here group is ProteinDomain, so check the exemption directly.
+        # Per-protein _sample_group_balanced_negatives needs a family lookup.
         group_excluded = group in excluded
         for lipid_class in sorted(lipid_classes[group_mask].dropna().unique()):
             cell_mask = group_mask & (lipid_classes == lipid_class)
@@ -617,16 +523,12 @@ def split_and_sample_lipid_class_balanced_interactions(
 
 
 def rebalance_excluded_group_negatives(csv, unlabeled_pairs, excluded_groups, seed):
-    """Resample each excluded group's negatives to match its positive count (1:1).
+    """Resample excluded-group negatives to match positives (1:1).
 
-    `split_and_sample_interactions` only keeps a global random subsample of
-    negatives, so a small excluded group can end up with far fewer -- or far more
-    -- negatives than positives purely by luck of that subsample -- e.g. GLTP ends
-    up ~73% positive and OSBP ~26% positive in the held-out data, which has
-    nothing to do with true biological prevalence. This draws extra negatives (or
-    drops surplus ones) per excluded group, using the group's full per-domain
-    negative pool rather than the global subsample, so the group's held-out
-    pos:neg ratio is 1:1 either way.
+    Draw from each group's full negative pool, adding or removing rows relative
+    to the global subsample. This removes random held-out ratio skew: the
+    recorded global draw gave ~73% positives for GLTP and ~26% for OSBP,
+    which does not estimate biological prevalence.
     """
     if not excluded_groups:
         return unlabeled_pairs
@@ -655,31 +557,18 @@ def rebalance_excluded_group_negatives(csv, unlabeled_pairs, excluded_groups, se
 
 
 class ClassBalancedBatchSampler(torch.utils.data.Sampler):
-    """Yield batches holding as close to equal positive and unlabeled counts.
+    """Yield dataset positions with balanced positive/unlabeled batch counts.
 
-    ``labels`` are the training interaction labels in dataset order, so the
-    yielded entries are positional dataset indices, matching ``PLIDataset.get``.
+    labels follow dataset order, matching PLIDataset.get. Emit every row once
+    per epoch. Divide each class into the required batch count, with chunk
+    sizes differing by at most one, spreading remainders without dropping tails.
 
-    Every row is emitted exactly once per epoch. The epoch holds as many batches as
-    ``batch_size`` rows per batch requires, and each class is split into that many
-    chunks whose sizes differ by at most one, so a pool that does not divide evenly
-    spreads its remainder across the epoch instead of forming one odd batch or
-    leaving a tail unprocessed.
+    Equal pools give batch_size // 2 from each class. Unequal pools retain the
+    pool ratio while covering all rows, with at least one row per class in each
+    batch. At negatives_per_positive=2, preserve two unlabeled rows per positive.
 
-    Equal-sized pools (what ``balance_negatives_by_family`` produces) chunk
-    identically, so every batch is exactly balanced and holds ``batch_size // 2`` of
-    each class. Unequal pools cannot be both fully covered and exactly balanced; the
-    batch then inherits the pool's ratio, which is the point -- at
-    ``negatives_per_positive=2`` the model should see two unlabeled rows per positive,
-    not one -- while the batch still holds ``batch_size`` rows and at least one of each
-    class.
-
-    The batch count comes from the TOTAL, not from the larger class needing
-    ``batch_size // 2``. Those agree exactly whenever the pools are equal, so nothing
-    changes for a 1:1 run; they part company when the pools are not, and the older
-    reading handed the larger class ``batch_size // 2`` and let the smaller one supply
-    proportionally less, so ``--batch=16`` against a 1:2 pool yielded 4 + 8 = 12 rows
-    rather than the 16 asked for. ``batch_size`` is the batch size.
+    Count batches from the total pool size. The old larger-class calculation
+    gave only 4+8=12 rows for batch_size=16 at ratio 1:2; equal pools are unchanged.
     """
 
     def __init__(self, labels, batch_size, generator=None):
@@ -701,12 +590,9 @@ class ClassBalancedBatchSampler(torch.utils.data.Sampler):
                 "balanced batches require both classes to be present, got "
                 f"{positives} positive and {unlabeled} unlabeled"
             )
-        # Enough batches to hand out batch_size rows each, but never more than the
-        # smaller pool can cover: past that point chunks of the smaller pool would be
-        # empty and those batches would carry a single class, which is exactly what
-        # this sampler exists to prevent. (Hitting that cap means one class is thinner
-        # than one row per batch, and the batches come out larger than asked rather
-        # than single-class.)
+        # Use enough batches for batch_size rows, capped by the smaller pool count.
+        # Beyond that cap, some batches would contain only one class.
+        # At the cap, accept larger batches instead of single-class batches.
         self.num_batches = min(
             max(1, -(-(positives + unlabeled) // batch_size)),
             positives,
@@ -717,8 +603,7 @@ class ClassBalancedBatchSampler(torch.utils.data.Sampler):
         return self.num_batches
 
     def _chunk(self, pool, batch):
-        # Boundaries at i*n//k keep chunk sizes within one of each other and
-        # spread the larger chunks evenly through the epoch.
+        # i*n//k boundaries spread chunks evenly, with sizes differing by at most one.
         start = (batch * pool.numel()) // self.num_batches
         stop = ((batch + 1) * pool.numel()) // self.num_batches
         return pool[start:stop]
@@ -738,36 +623,24 @@ class ClassBalancedBatchSampler(torch.utils.data.Sampler):
 
 
 class RotatingNegativeBatchSampler(torch.utils.data.Sampler):
-    """Every negative reaches the model, a different slice of them each epoch.
+    """Rotate negative slices each epoch while keeping all positives.
 
-    The problem this exists for. Negatives are drawn ONCE, when the dataset is built
-    (``_sample_interactions``), and the same ``negatives_per_positive`` of them are
-    replayed for all 120 epochs while the other ~80% of the table is never seen at all.
-    At the project's own ratio that is 634 positives against 9271 negatives: a 2:1 draw
-    shows 1268 of those 9271 and discards 86% of the negative evidence, and WHICH 86%
-    is a property of the seed rather than of the data.
+    A fixed dataset draw repeats the same negatives for all 120 epochs.
+    With 634 positives and 9271 negatives, ratio 2 retains 1268 negatives and
+    discards 86%, depending on the seed (roughly 80% in the broader setting).
 
-    What it does instead. The epoch's cost is unchanged -- it still emits ``chunk``
-    negatives, so a rotating run and a fixed one do the same amount of work per epoch --
-    but the chunk moves: the negatives are permuted once (seeded, so the whole schedule
-    is reproducible) and epoch *e* takes the *e*-th consecutive slice, wrapping around at
-    the end. Over ``ceil(n_negatives / chunk)`` epochs every negative has been shown
-    exactly once, and a 120-epoch run makes about sixteen such passes at the default
-    chunk. Positives are NOT rotated: there are few enough that every epoch gets all of
-    them, which is also what keeps the per-epoch class ratio fixed at what
-    ``negatives_per_positive`` asked for.
+    Permute negatives once with a seed. Epoch e takes its consecutive chunk,
+    wrapping at the end. Each pass covers every negative; ceil(n_negatives/chunk)
+    epochs suffice, and 120 epochs give about sixteen passes at the default chunk.
+    Each epoch keeps the same chunk size, class ratio, and work as fixed sampling.
+    Positives are all included every epoch.
 
-    Composition with --balanced_batches. When ``balanced`` is set the epoch's active
-    rows are handed to a fresh ClassBalancedBatchSampler, so batch composition is
-    decided by exactly the code that decides it without this flag; the positions it
-    yields are subset-local and are mapped back to dataset positions here. When it is
-    not set, the active rows are shuffled and cut into ``batch_size`` batches, which is
-    what a plain shuffling DataLoader would have done to them.
+    With balanced=True, pass active rows to ClassBalancedBatchSampler and map
+    subset-local positions back to dataset positions. Otherwise shuffle active
+    rows and divide into batch_size batches, as a shuffling DataLoader would.
 
-    ``labels`` are the training interaction labels in dataset order, as for
-    ClassBalancedBatchSampler, and the yielded entries are dataset positions.
-    ``set_epoch`` must be called before each epoch; epoch 0 is the state it is built in,
-    so a caller that forgets it trains on one fixed slice rather than on nothing.
+    labels and emitted positions use dataset order. Call set_epoch before each
+    epoch; initial epoch 0 otherwise repeats a fixed slice.
     """
 
     def __init__(self, labels, batch_size, chunk, balanced, generator=None):
@@ -791,10 +664,8 @@ class RotatingNegativeBatchSampler(torch.utils.data.Sampler):
         self.batch_size = batch_size
         self.balanced = bool(balanced)
         self.generator = generator
-        # Permuted ONCE, not per epoch: consecutive slices of one fixed permutation are
-        # what makes "every negative exactly once per pass" true. Re-permuting each
-        # epoch would sample with replacement across epochs and leave some negatives
-        # unseen for a long time, which is the behaviour this class replaces.
+        # Permute once so consecutive slices cover every negative per pass.
+        # Re-permuting each epoch could repeatedly miss some negatives.
         self.negative_order = negatives[
             torch.randperm(negatives.numel(), generator=generator)
         ]
@@ -811,10 +682,8 @@ class RotatingNegativeBatchSampler(torch.utils.data.Sampler):
         start = (self._epoch * self.chunk) % count
         take = self.negative_order[start:start + self.chunk]
         if take.numel() < self.chunk:
-            # The pass wraps here. Taking the shortfall from the FRONT keeps every epoch
-            # the same size (so the loss is averaged over a constant number of rows) at
-            # the price of showing a few negatives twice in the wrapping epoch -- the
-            # alternative, a short final epoch, changes the epoch's meaning instead.
+            # Wrap by taking the shortfall from the front. Keep epoch size and loss
+            # averaging constant, accepting repeated negatives in the wrapping epoch.
             take = torch.cat((take, self.negative_order[: self.chunk - take.numel()]))
         self._active = torch.cat((self.positive_indices, take))
         return self
@@ -837,9 +706,8 @@ class RotatingNegativeBatchSampler(torch.utils.data.Sampler):
         ]
 
     def __len__(self):
-        # Counted, not materialized: len() is asked for once per epoch by the loader and
-        # once at startup by new_train.py's batch cap, and building every batch to
-        # answer it would draw from the generator and shift the epoch's own shuffle.
+        # Compute len without building batches: loader and new_train.py query it.
+        # Materializing them would consume RNG draws and shift shuffling.
         active = int(self._active.numel())
         if not self.balanced:
             return -(-active // self.batch_size)

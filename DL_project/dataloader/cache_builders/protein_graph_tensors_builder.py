@@ -1,7 +1,6 @@
-"""Build the binary cache for precomputed protein graph CSVs.
+"""Build the binary cache from precomputed protein graph CSVs.
 
-See dataloader/tensors_reading/protein_graph_tensors_reader.py for the reader and the shared path/
-format logic.
+Reader, paths, and format: tensors_reading/protein_graph_tensors_reader.py.
 """
 
 import json

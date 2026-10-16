@@ -64,7 +64,7 @@ def standardise(values):
 def logistic_auc(design, labels, groups=None, steps=400, learning_rate=0.5):
     """AUC of a logistic fit, optionally with one intercept per group.
 
-    Plain gradient descent rather than a solver dependency: the designs here are at most
+    Plain gradient descent instead of a solver dependency: the designs here are at most
     a few columns over a few hundred rows, and separation is not a concern because the
     fit is only ever read as an AUC, never as a coefficient to interpret.
     """
@@ -143,7 +143,7 @@ def increment_table(csv, similarity, index, network, families, seeds, neighbours
                 # entity_column -- cheap either way, and which of prot/lipid is
                 # mechanically degenerate (always exactly 0.5, see per_protein_auc/
                 # per_lipid_auc) depends on entity_column, so print_increment_report
-                # decides which to show rather than this function guessing on its
+                # decides which to show instead of this function guessing on its
                 # behalf -- same split of responsibility as knn_model_table/
                 # print_knn_model_report.
                 chem_prot, _ = per_protein_auc(merged, merged["_chem"].to_numpy())

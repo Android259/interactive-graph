@@ -85,7 +85,7 @@ because the split is NOT simply "some species held out, split in half by species
    halved by ROW (dataloader/Dataloader.py._split_interactions, the
    pandas.sample(frac=0.5) branch), so a species with more than one row in the block
    can straddle valid and test. The real valid/test frames are read off an actual
-   PLIDataset build (the same machinery every run uses) rather than re-deriving that
+   PLIDataset build (the same machinery every run uses) instead of re-deriving that
    row split by hand, to avoid reproducing it wrong.
 
 Reads only. Trains nothing. Writes only --csv / --out when given. Only `species`

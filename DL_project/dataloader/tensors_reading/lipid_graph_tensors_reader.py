@@ -34,9 +34,8 @@ def load_lipid_graph_tensor_cache(root_dir):
             stat = path.stat()
             if stat.st_size != source["size"] or stat.st_mtime_ns != source["mtime_ns"]:
                 return {}
-        # mmap so concurrent training jobs share one copy of these tensors through the
-        # page cache instead of each materializing its own -- same reasoning as
-        # protein_graph_tensor_cache.load_protein_graph_tensor_cache.
+        # Share mapped tensors through the page cache across concurrent jobs,
+        # as in protein_graph_tensor_cache.load_protein_graph_tensor_cache.
         try:
             return torch.load(
                 cache_path, map_location="cpu", weights_only=True, mmap=True

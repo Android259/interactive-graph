@@ -167,8 +167,7 @@ def _protein_kernel_cache_key(
     """Keyed on the ACTUAL entity lists, not on (family, seed) -- under
     --split_mode lipid_coldsplit every protein always stays in train (only lipid
     head-group classes are excluded), so all_proteins/train_proteins come out
-    IDENTICAL for every family and every seed; keying on entity content (rather
-    than on the family/seed label that produced it) lets one single protein-kernel
+    IDENTICAL for every family and every seed; keying on entity content (instead of on the family/seed label that produced it) lets one single protein-kernel
     build serve the whole run instead of one per (family, seed) block.
     """
     return (

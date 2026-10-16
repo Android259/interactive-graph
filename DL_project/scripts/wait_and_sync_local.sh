@@ -55,7 +55,7 @@ source "${SCRIPT_DIR}/lib/progress_table.sh"
 
 # print_local_progress builds a symlink view of run/ under /tmp keyed on this
 # shell's pid (wait_progress_refresh_event_cache), reused across rounds; drop it
-# on the way out rather than leaving one per watcher behind.
+# on the way out instead of leaving one per watcher behind.
 trap 'rm -rf "$(wait_progress_event_cache_path)"' EXIT
 
 while true; do

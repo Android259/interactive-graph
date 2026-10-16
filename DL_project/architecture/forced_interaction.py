@@ -17,7 +17,7 @@ class ForcedInteraction(torch.nn.Module):
     collapse toward a near-constant, near-zero-variance output if the two projections
     drift out of alignment during training -- signed-sqrt + L2-norm (Lin et al.'s
     bilinear-CNN pooling, 2015; reused by MFB, Yu et al. 2017) is the standard fix,
-    applied here to the product itself rather than to a whole outer-product matrix
+    applied here to the product itself instead of to a whole outer-product matrix
     (there is no full bilinear tensor here to normalise, only its low-rank stand-in).
 
     There is no concatenation of v_a/v_b alongside the product for a downstream layer

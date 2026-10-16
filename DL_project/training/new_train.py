@@ -258,7 +258,7 @@ def set_epoch_schedules(run, epoch_number, epoch_progress, fit_progress, rotatin
             fit_progress if conf.chem_lambda_ramp_by_fit else epoch_progress
         )
     if conf.lipid_path_handicap:
-        # Epoch index rather than epoch_progress: this is a warm-up measured in epochs,
+        # Epoch index instead of epoch_progress: this is a warm-up measured in epochs,
         # so its length must not change when EPOCHS does.
         run.lipid_path_weight_now = conf.ramped_lipid_path_weight(epoch_number)
         run.optim.apply_lipid_path_handicap(run.lipid_path_weight_now)
@@ -344,7 +344,7 @@ def main():
         # training loop early (`if i < train_batches_to_run`). A rotating epoch larger than
         # the cap is therefore not the epoch that was asked for -- the slice still MOVES, so
         # the pool is still covered, but each epoch trains on the cap's worth of it. Said out
-        # loud rather than left to be inferred from the batch counter.
+        # loud instead of left to be inferred from the batch counter.
         print(
             f"rotating negatives : --rotate_negatives_per_epoch asks for "
             f"{len(train_loader)} batches, the {TRAIN_ROWS_PER_EPOCH_CAP}-row per-epoch cap allows "

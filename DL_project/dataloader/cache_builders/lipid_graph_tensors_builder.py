@@ -1,13 +1,11 @@
-"""Build the binary cache for precomputed lipid isomer graph CSVs.
+"""Build memory-mapped tensors from precomputed lipid-isomer graph CSVs.
 
-Mirrors dataloader/cache_builders/protein_graph_tensors_builder.py: data/build_lipid_isomer_graphs.py
-writes one nodes.csv/edges.csv pair per canonical-SMILES lipid under
-data/lipid_graphs/<graph_id>/, and LipidIsomerGraphBuilder.make_graph_lipid
-otherwise re-reads and re-parses those CSVs (RBF-expanding mean_bond_length in
-Python) on every canonical SMILES not yet in its in-process _lipid_graph_cache.
-Built once here, the resulting tensors are mmap'd so concurrent training
-processes share one copy through the page cache instead of each re-parsing
-~1300 CSV pairs, exactly like the protein tensor cache already does.
+data/build_lipid_isomer_graphs.py writes nodes.csv/edges.csv under
+ data/lipid_graphs/<graph_id>/ for each canonical SMILES.
+Without this cache, LipidIsomerGraphBuilder.make_graph_lipid parses each
+CSV and expands bond-length RBFs on its first process-local cache miss.
+Build ~1300 graph pairs once and share tensors through the page cache,
+as in cache_builders/protein_graph_tensors_builder.py.
 """
 
 import json
@@ -20,9 +18,8 @@ from architecture.protein_edge_geometry import rbf
 from dataloader.tensors_reading.lipid_graph_tensors_reader import CACHE_FORMAT_VERSION, _paths
 
 
-# Must match LipidIsomerGraphBuilder.make_graph_lipid's node_columns/edge_columns
-# and bond-length RBF bounds exactly -- the cache stores the identical tensors
-# that method would otherwise build from the same CSVs.
+# Match LipidIsomerGraphBuilder.make_graph_lipid's node/edge columns and
+# bond-length RBF bounds exactly, preserving tensors built from the same CSVs.
 NODE_COLUMNS = [
     "atomic_num",
     "formal_charge",

@@ -73,7 +73,7 @@ SYNC_EXCLUDES=(
     # per-run sync 10x faster over the slow gricad proxy.
     #
     # Exceptions, and they are the files that change when the dataset (or the data-prep
-    # code) does rather than when the model does, so a code-only sync would leave the
+    # code) does instead of when the model does, so a code-only sync would leave the
     # cluster reading an older table -- or an older lipid_graphs/, or a missing build
     # script -- than the code expects. Not a wrong number but a dead run: the loader
     # opens the table by name, LipidIsomerGraphBuilder raises FileNotFoundError/KeyError
@@ -153,7 +153,7 @@ SYNC_EXCLUDES=(
     # weights below -- "the copy already on the cluster is authoritative, do not mirror
     # a local one over it." That reasoning fits a third-party pretrained checkpoint; it
     # does not fit this directory, which is project-derived per-protein output rebuilt
-    # locally exactly like data/graphs/ is (same preprocessing/embed_protein_esm3_v2.py-
+    # locally exactly like data/graphs/ is (same preprocessing/embeddings/embed_protein_esm3_v2.py-
     # style pipeline, same "rebuilt here, has to reach every cluster" argument) -- and
     # data/graphs/ is resynced on every push while this sat frozen, so the two silently
     # drifted apart for GLTP/GM2A/HSDL2/LCN15 the moment either was rebuilt without the
@@ -181,7 +181,7 @@ SYNC_EXCLUDES=(
     --exclude='/external/'
 
     # Pretrained weights, not project data. Both are read only by the scripts that
-    # BUILD the embedding stores (preprocessing/embed_isomeric_smiles_molformer.py,
+    # BUILD the embedding stores (preprocessing/embeddings/embed_isomeric_smiles_molformer.py,
     # frozen_embedding.py, the ESM3 embedding builders); training reads the built
     # artefacts -- data/embedding_ESM3*/ and lipid_SMILES_embedding_deterministic.* --
     # and never opens these.

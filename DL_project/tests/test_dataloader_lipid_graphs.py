@@ -202,7 +202,7 @@ def test_cached_lipid_encoding_is_fixed_and_cached_without_the_draw(monkeypatch)
     seen = [dataset.cached_lipid_encoding("0", "CC;CCC") for _ in range(3)]
 
     # Validation and test read the same molecule every epoch, so their metric is one
-    # quantity across epochs rather than a new draw each time.
+    # quantity across epochs instead of a new draw each time.
     for encoding in seen:
         assert torch.equal(encoding, dataset.smiles_encoding["CC"].squeeze())
     assert set(dataset._lipid_encoding_cache) == {("0", "CC;CCC")}

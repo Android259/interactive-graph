@@ -28,7 +28,7 @@ encoder, no cross-attention, no self-attention tower, no pooling flag and no
 Final_Layer: InteractionClassification builds this module ALONE under --deepclip,
 the same way it builds only a descriptor head under --descriptors_head. The lipid
 is the whole input, which is what DeepCLIP is -- a per-protein sequence model --
-rather than an ablation of a two-partner model.
+instead of an ablation of a two-partner model.
 
 Two deliberate departures from the source, both forced and both local:
 
@@ -296,7 +296,7 @@ class DeepCLIP(torch.nn.Module):
         # Sum_last_ax: one number per position. This vector is the binding profile
         # -- the per-character readout DeepCLIP's motif logos and mutation maps are
         # built from -- so it is kept on the module for anything that wants to read
-        # it, rather than only existing inside this expression.
+        # it, instead of only existing inside this expression.
         gate_bias = None
         if self.gate is not None:
             gate_inputs = []

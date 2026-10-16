@@ -16,13 +16,13 @@
 # the queue as waiting slots free up, so jobs keep going out no matter which
 # computer queued them, which is watching, or whether either is switched on. If
 # the crontab cannot be installed it says so loudly and drains from this loop
-# instead, as a fallback rather than as the design.
+# as a fallback only.
 #
 # It is purely observational on the cluster side: it never deletes a remote queue
 # or session marker, because the computer that happens to be watching must not be
 # able to destroy state belonging to a batch queued from the other one.
 #
-# Building the metrics table locally (rather than on each cluster) is what makes
+# Building the metrics table locally (instead of on each cluster) is what makes
 # multi-cluster watching correct: run/, test_metrics/ and script_logs/ from every
 # cluster rsync into the same local tree, so one local rescan sees the union.
 set -euo pipefail
@@ -72,7 +72,7 @@ while (( $# > 0 )); do
         --interval=*)       POLL_SECONDS="${1#*=}" ;;
         -h|--help)
             # The header comment, however long it happens to be: stop at the
-            # first line that is not a comment rather than at a line number,
+            # first line that is not a comment instead of at a line number,
             # which silently starts printing code as soon as the header changes.
             awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' \
                 "${BASH_SOURCE[0]}"
@@ -94,7 +94,7 @@ note() { [[ "${WAIT_VERBOSE}" == "1" ]] && printf '%s\n' "$*" || true; }
 declare -A CLUSTER_DRAINER_OK=()
 
 # Every source this round visits, local jobs first: they cost one pgrep and a
-# file read rather than an SSH round trip, so they are never gated behind
+# file read instead of an SSH round trip, so they are never gated behind
 # CLUSTERS, and going first puts the jobs running ON this machine at the top of
 # the output instead of behind two clusters' worth of network waiting.
 SOURCES=("local" "${CLUSTER_LIST[@]}")
@@ -264,7 +264,7 @@ uninstall_remote_drainer() {
 # ever run against a cluster, and editing the drainer locally must not leave the
 # cron running last week's copy.
 #
-# Seeds the waiting-job cap, which belongs to the cluster rather than to
+# Seeds the waiting-job cap, which belongs to the cluster instead of to
 # whichever computer happens to be watching: the drainer reads it there, so two
 # machines cannot drain the same queue with two different limits. Written only
 # when absent -- changing the cap is a deliberate edit of that file, not a side
@@ -297,7 +297,7 @@ drain_from_here() {
 
 # One round trip for everything queue-related: how much is pending, across how
 # many queues, and whether the cluster-side drainer is still in the crontab.
-# Checking the crontab here rather than only at startup means a drainer removed
+# Checking the crontab here instead of only at startup means a drainer removed
 # behind our back is noticed within one poll instead of silently never running.
 cluster_queue_status() {
     local cluster="$1"
@@ -353,7 +353,7 @@ archive_idle_queues() {
 
 # --- syncing --------------------------------------------------------------
 sync_results() {
-    # Ask once which directories exist rather than letting rsync fail per missing
+    # Ask once which directories exist instead of letting rsync fail per missing
     # one: a cluster that has not produced results yet has none of them (they are
     # outputs, excluded from the project sync), and rsync would print a
     # change_dir error for each, every round.
@@ -635,7 +635,7 @@ poll_cluster() {
 
     # Results BEFORE the table, not after. run/ is what the TRAIN BA column is
     # read from, so pulling it first means the table shows this round's numbers
-    # rather than last round's, and one transfer covers both.
+    # instead of last round's, and one transfer covers both.
     #
     # Synced whenever there is, or recently was, something to watch -- and always
     # on the first round, so starting the watcher pulls whatever came in while
@@ -711,7 +711,7 @@ while true; do
     done
 
     # One row per cluster plus the local row, always, after every source has
-    # been visited, kept separate rather than summed.
+    # been visited, kept separate instead of being summed.
     wait_progress_print_cluster_stats
 
     # One rebuild per round, from the merged local tree, so both clusters' (and

@@ -326,7 +326,7 @@ REMOTE_QUEUE_DIR="${CLUSTER_QUEUE_ROOT}/active"
 # The cluster settings are %q-escaped exactly once (see cluster_remote_env) and
 # then interpreted once by the remote login shell. GPU_PROPERTY carries single
 # quotes and parentheses, so this must not be quoted by hand. Label-independent,
-# computed once rather than once per label in the loop below.
+# computed once instead of once per label in the loop below.
 remote_env="$(cluster_remote_env)"
 
 # GRICAD kills anything using >600s CPU on a frontend/login node (own
@@ -511,11 +511,11 @@ if [[ -n "${REMOTE_INPUT_PATH}" ]]; then
     # Build the memory-mapped lipid embedding store on the remote, once, before any
     # job exists. Without it every job unpickles the whole table into itself (267 MiB
     # resident, ~1 GiB of transient peak for the deterministic table); with it they map
-    # one shared copy. Here rather than in cluster_preflight_remote.sh because that
-    # script is read-only by contract, and before submission rather than inside a job
+    # one shared copy. Here instead of in cluster_preflight_remote.sh because that
+    # script is read-only by contract, and before submission instead of inside a job
     # because 45 jobs starting at once would otherwise race to write the same archive.
     #
-    # Runs as its own OAR job (run_prep_job, above) rather than directly on the
+    # Runs as its own OAR job (run_prep_job, above) instead of directly on the
     # login node -- see that function's comment.
     #
     # Never fatal: a cluster where this cannot run still trains correctly, the jobs
@@ -603,7 +603,7 @@ ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
 
 # A wrong PROJECT or GPU_PROPERTY fails on the FIRST oarsub: drain keeps the
 # remaining commands pending and returns non-zero, so nothing is lost -- fix the
-# setting and re-run rather than re-queuing 45 jobs.
+# setting and re-run instead of re-queuing 45 jobs.
 printf 'Submitting queued OAR jobs now.\n'
 ssh -S "${SSH_CONTROL_PATH}" "${remote}" \
     "cd '${REMOTE_PROJECT}' && CLUSTER_NAME=${CLUSTER_NAME} bash scripts/cluster/cluster_queue_remote.sh drain '${REMOTE_QUEUE_DIR}' '${REMOTE_USER}' '${MAX_WAITING_JOBS}'"

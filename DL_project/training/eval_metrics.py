@@ -34,7 +34,7 @@ def binary_auc(scores, labels):
     agree with the trapezoidal ROC integral instead of depending on input order --
     it matters here because a collapsed model emits long runs of identical scores.
 
-    Written out rather than imported: scikit-learn is not a dependency of this project
+    Implemented locally: scikit-learn is not a dependency of this project
     anywhere, and this is the whole of what would be taken from it. `scores` may be any
     monotone function of the model's confidence (probability or logit margin) -- only
     their order is read.
@@ -69,7 +69,7 @@ def within_protein_auc(subgroup_stats):
     """(mean AUC inside a protein, how many proteins that mean is over).
 
     THE metric for a lipid cold split, and the reason it is computed by the run itself
-    rather than only post-hoc: under --lipid_coldsplit every protein is in training, so
+    instead of only post-hoc: under --lipid_coldsplit every protein is in training, so
     the pooled AUC can be won outright by "which protein is this" -- a protein marginal
     that says nothing about which lipid it binds. Measured on
     ..._lcs_esm3_balanced_lipid_classes: pooled AUC 0.568 while this number is 0.480, and
@@ -143,7 +143,7 @@ def within_protein_pair_auc(subgroup_stats):
 def metric_values(tp, fp, tn, fn, total_loss, total_loss_count, auc=None):
     """Compute aggregate binary-classification metrics from confusion counts.
 
-    `auc` is passed in rather than computed here because it is the one metric the
+    Accept `auc` from the caller because it is the one metric the
     counts do not determine -- it needs the per-sample scores, which only the test
     path keeps. Callers that have no scores (the per-epoch train/valid aggregates)
     leave it None and it reports as "undefined", exactly like precision on an empty

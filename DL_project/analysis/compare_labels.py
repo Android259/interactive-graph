@@ -21,8 +21,7 @@ append the report to a file instead of printing it.
 
 MORE THAN TWO labels (folded in from the former analysis/label_summary_table.py, since
 that script answered "one row per label, several labels side by side" -- a different
-shape from the pairwise diff above, triggered here by how many labels are given rather
-than by a separate script): one row per label instead of a diff, each with mean/SEM/std/n
+shape from the pairwise diff above, triggered here by how many labels are given instead of by a separate script): one row per label instead of a diff, each with mean/SEM/std/n
 over that label's own matched runs. Three spreads are printed because they answer
 different questions and are routinely confused: std is how much the runs of this label
 differ from each other (on a label whose runs are (excluded group x seed), this is

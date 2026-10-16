@@ -22,12 +22,12 @@ training-signal effect.
 Why this is legitimate here, and when it is NOT. It is only meaningful if the weights
 label never trained on the rows label's evaluation rows. Under --lipid_coldsplit that
 holds by construction -- the held-out classes leave training for every protein under any
-sampler -- and it is CHECKED per (set, seed) rather than assumed: any overlap is reported
+sampler -- and it is CHECKED per (set, seed) instead of being assumed: any overlap is reported
 and, unless --allow_leakage is passed, aborts. On a random or protein-axis split the
 overlap is generally NOT zero and the check will (correctly) refuse.
 
 The two labels must share an architecture: the checkpoint is loaded strictly into a model
-built from the rows label's config, so a shape mismatch raises rather than silently
+built from the rows label's config, so a shape mismatch raises instead of silently
 loading part of the state.
 
 On which epoch. The weights a run actually tested (`best_model_state`, selected by pooled

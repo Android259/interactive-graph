@@ -18,18 +18,12 @@ class LipidGraphBuilder:
     def cached_lipid_encoding(
         self, smile_global, smile_fragment=None, candidate_index=None
     ):
-        """Return the SMILES-pair encoding from the process-local cache.
+        """Return the process-cached encoding for this SMILES pair.
 
-        ``_draw_lipid_candidate``, not the configuration flag, decides whether this row
-        is drawn: the draw is an augmentation and belongs to the training split alone
-        (Dataloader.__iter__ marks it). Validation and test come through the cache
-        below and get the same molecule every epoch.
-
-        ``candidate_index`` asks for one named member of the candidate set instead, and
-        is what the candidate-averaged evaluation uses: the split is expanded to one row
-        per candidate, each row encodes its own, and the predictions are averaged back
-        per pair. It is cached under its own key, so the members do not overwrite one
-        another.
+        _draw_lipid_candidate, set per split by Dataloader.__iter__, enables training
+        augmentation. Validation/test use fixed cached candidates each epoch.
+        candidate_index selects a specific candidate for expanded averaged evaluation;
+        cache each separately so predictions can be combined per pair without collisions.
         """
         smile_global, smile_fragment = self._smiles_pair(
             smile_global, smile_fragment
@@ -48,13 +42,11 @@ class LipidGraphBuilder:
         return cached
 
     def warm_lipid_encoding(self, smile_global, smile_fragment=None):
-        """Fill this row's cache entries without consuming the random stream.
+        """Warm candidate keys and fixed encodings without consuming RNG draws.
 
-        Warming runs on the training clone, and the caches are shared with the other two
-        (Dataloader.__iter__ copies shallowly), so both entries are filled: the
-        candidate keys the draw picks from, and the fixed encoding validation and test
-        read. Filling the second one costs nothing extra -- it is a view into the same
-        mapped embedding table.
+        The training clone shares caches with validation/test through shallow copies.
+        Warm both drawn keys and their fixed encoding; the latter is a view into the
+        same mapped embedding table, without extra tensor storage.
         """
         smile_global, smile_fragment = self._smiles_pair(
             smile_global, smile_fragment
@@ -85,12 +77,10 @@ class LipidGraphBuilder:
         return keys
 
     def draw_candidate_index(self, smile_global, smile_fragment):
-        """Draw which candidate of this row to encode, as an index into its list.
+        """Draw the candidate index for this row.
 
-        The index rather than the key, because everything else the sample carries about
-        the lipid -- the frozen prior, the compatibility input -- is stored per candidate
-        and has to describe the structure that was actually encoded, not the first one
-        in the list.
+        Use an index, not a key, so frozen priors and compatibility values select
+        the same encoded structure instead of the first candidate.
         """
         smile_global, smile_fragment = self._smiles_pair(
             smile_global, smile_fragment
@@ -112,20 +102,13 @@ class LipidGraphBuilder:
         return cached
 
     def _drawn_lipid_encoding(self, smile_global, smile_fragment):
-        """Draw one candidate for this row, redrawing on every access.
+        """Draw a fresh candidate on each access, caching only canonical keys.
 
-        Caching the drawn *encoding* would freeze the draw for the whole run: the
-        DataLoader keeps its workers alive (``persistent_workers``), so a row would
-        keep whichever candidate it happened to pick the first time and
-        ``lipid_random_choice`` would degenerate into "an arbitrary fixed
-        representative" -- the thing it exists to replace. So the cache holds the
-        canonical keys instead, which is where the cost actually was (RDKit
-        canonicalization); the lookup behind them is a dict hit into
-        ``smiles_encoding``, which ``release_source_artifacts`` deliberately keeps
-        alive in this mode, and the draw itself is O(1).
-
-        This mirrors the isomer-graph path, where the draw already happens before a
-        cache keyed by the chosen SMILES (see LipidIsomerGraphBuilder.make_graph_lipid).
+        Caching encodings would freeze the first draw for persistent_workers and
+        turn lipid_random_choice into a fixed representative. Canonicalization is
+        the expensive step; drawing and smiles_encoding lookup are O(1).
+        release_source_artifacts keeps smiles_encoding in this mode.
+        This matches make_graph_lipid, which draws before its chosen-SMILES cache.
         """
         key = (str(smile_global), str(smile_fragment))
         candidate_keys = self._lipid_candidate_key_cache.get(key)
@@ -152,20 +135,14 @@ class LipidGraphBuilder:
         return self._canonical_smiles(Chem.MolFromSmiles(smiles))
 
     def _lipid_fragment_keys(self, fragments):
-        """Canonical embedding keys for the ";"-separated SMILES of one row.
+        """Return canonical keys for a row's semicolon-separated candidate SMILES.
 
-        The field is a *bag of candidate structures* for one measured lipid species --
-        sn-positional and double-bond isomers the spectrum cannot tell apart -- not the
-        pieces of one molecule, and it is written with a space after each separator and
-        usually a trailing one ("A; B; C; "). Hence the strip, the skip of empty/"0"
-        parts (`Chem.MolFromSmiles("")` returns an empty mol whose canonical form is ""
-        and is in no embedding table) and the deduplication: the same candidate is
-        repeated inside a row often enough that keeping both would double its tokens
-        and its weight in every mode.
-
-        ``lipid_first_fragment_only`` keeps just the first usable candidate, which is
-        what this path did unconditionally before the flag existed, so it is the
-        default and leaves earlier runs reproducible.
+        Fields such as "A; B; C; " list unresolved sn-positional/double-bond isomers,
+        not molecular fragments. Strip parts, skip empty/"0", and deduplicate.
+        RDKit parses "" as an empty molecule, absent from the embedding table;
+        repeated candidates would double tokens and weights.
+        lipid_first_fragment_only keeps the first usable candidate. This default
+        preserves behavior from before the flag existed.
         """
         keys = []
         seen = set()
@@ -193,21 +170,16 @@ class LipidGraphBuilder:
 
     def _fragment_encoding(self, key):
         if getattr(self.config, "lipid_smiles_tokens", False):
-            # --lipid_smiles_tokens: the canonical SMILES string IS the encoding.
-            # `key` is already what _canonical_smiles produced for the table lookup,
-            # so the characters encoded here are the deterministic spelling of this
-            # molecule -- the same one the MoLFormer table is keyed by -- and not
-            # whatever spelling the CSV happened to store. No embedding table is
-            # loaded at all in this mode (Dataloader.__init__ skips it), which is
-            # why this returns before touching self.smiles_encoding.
+            # --lipid_smiles_tokens encodes the canonical lookup key directly, not raw CSV
+            # spelling. Dataloader skips the embedding table in this mode; return before
+            # accessing smiles_encoding.
             return smiles_one_hot(key)
         encoding = self.smiles_encoding.get(key)
         if encoding is None:
-            # A cross-file mismatch, not a sample to skip: the embedding table was
-            # built from these same columns (preprocessing/embed_smiles_isomeric_and_nonisomeric.py
-            # feeds preprocessing/embed_isomeric_smiles_molformer.py), so a missing
-            # key means the two are out of sync. Report it instead of substituting
-            # another fragment.
+            # A missing key is a cross-file mismatch, not a candidate to skip.
+            # The table uses these same columns: embed_smiles_isomeric_and_nonisomeric.py
+            # feeds embed_isomeric_smiles_molformer.py (preprocessing/embeddings/).
+            # Report the out-of-sync table instead of substituting another candidate.
             raise KeyError(
                 f"lipid SMILES missing from the embedding table: {key}. "
                 "Rebuild the table for the current interaction CSV."
@@ -215,16 +187,13 @@ class LipidGraphBuilder:
         return encoding
 
     def _encode_lipid_fragments(self, fragments):
-        """Encode one row's SMILES candidates under the configured fragment treatment.
+        """Encode candidates using the selected fragment treatment.
 
-        Both concat and fragments_mask lay the candidates out along the *token* axis of
-        the (1, tokens, 768) MolFormer encoding, so candidates of different token
-        lengths compose without padding; fragments_mask additionally records which
-        candidate every token came from, and that vector is the only thing that then
-        restricts lipid self-attention to within a candidate. Fragment ids are numbered
-        per sample and stay so after collation, which is safe because they are only
-        ever compared against the per-sample attention mask that already blocks every
-        cross-sample pair (see SelfAttention: attn_mask | ~mult_mask).
+        concat/fragments_mask concatenate (1, tokens, 768) encodings along tokens,
+        without padding differing lengths. fragments_mask also records a candidate
+        ID per token to restrict lipid self-attention within candidates.
+        IDs remain sample-local after collation: SelfAttention's
+        attn_mask | ~mult_mask already blocks cross-sample comparisons.
         """
         encodings = [
             self._fragment_encoding(key)
@@ -234,11 +203,8 @@ class LipidGraphBuilder:
         if self.config.lipid_concat:
             return torch.cat(encodings, dim=1), None
         if self.config.lipid_random_choice:
-            # The draw itself lives in _drawn_lipid_encoding and reaches only the split
-            # marked for it. Everything that arrives here under random_choice is a split
-            # that must stay fixed, or the warm-up filling its cache, so this returns the
-            # first candidate rather than drawing a representative that would then be
-            # frozen by the cache anyway.
+            # _drawn_lipid_encoding handles augmented splits. random_choice reaches here
+            # only for fixed splits or warm-up: use the first candidate, not a cached draw.
             return encodings[0], None
         if self.config.lipid_fragments_mask:
             fragment_batches = [
@@ -274,11 +240,8 @@ class LipidGraphBuilder:
             )
         else:
             key = self._canonical_embedding_key(lipid_text)
-            # Through _fragment_encoding rather than indexing smiles_encoding
-            # directly: that is the one place that knows a run may have no embedding
-            # table at all (--lipid_smiles_tokens builds the encoding from the key
-            # itself). For the MoLFormer path this is the same lookup it always was,
-            # with a KeyError that names the out-of-sync table instead of a bare one.
+            # Use _fragment_encoding for both SMILES tokens (no table) and MoLFormer lookup.
+            # It also reports missing embedding keys with the out-of-sync table name.
             encoding = self._fragment_encoding(key)
             if self.config.lipid_fragments_mask:
                 fragment_batch = torch.zeros(
@@ -290,13 +253,11 @@ class LipidGraphBuilder:
         return torch.squeeze(encoding)
 
     def complete_graph_edge_index(self, num_nodes):
-        """Undirected complete graph plus self loops over num_nodes, built once.
+        """Cache the undirected complete graph with self-loops for num_nodes.
 
-        The result depends only on num_nodes -- the lipid embedding width, constant for
-        a whole run -- so this used to rebuild the same 295296-edge tensor for every
-        sample: 17 ms in the Python list comprehension plus 60 ms in torch.tensor, 86%
-        of the 89.5 ms spent per get(). Construction is unchanged, so the cached tensor
-        is the one the old code produced.
+        Only embedding width determines it and is fixed per run. Previously, each
+        sample rebuilt 295296 edges: 17 ms for the list and 60 ms for torch.tensor,
+        86% of the 89.5 ms get() cost. Construction and tensor values are unchanged.
         """
         cached = self._complete_edge_index_cache.get(num_nodes)
         if cached is None:

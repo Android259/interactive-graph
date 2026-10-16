@@ -256,7 +256,7 @@ def test_configuration_accepts_descriptor_names_for_a_descriptor_source():
 def dataset_stub(**overrides):
     """A PLIDataset carrying only what `_sample_interactions` reads.
 
-    `object.__new__` rather than a real construction: the method under test is the
+    `object.__new__` instead of a real construction: the method under test is the
     sampling decision, and building the real dataset would load graphs, embeddings and
     caches that have nothing to do with it (the convention
     tests/test_new_dataloader_lipid_graphs.py already follows).
@@ -453,7 +453,7 @@ def test_the_naive_prior_source_is_configurable():
 def learned_pool(rows=24, features=4, hiddim=8):
     """A LearnedPriorPool over a synthetic feature matrix.
 
-    Built directly rather than through `resolve_similarity_pool`: that path computes the
+    Built directly instead of through `resolve_similarity_pool`: that path computes the
     real descriptor tables, and a unit test must not depend on the generated dataset.
     """
     from dataloader.similarity_pool import LearnedPriorPool

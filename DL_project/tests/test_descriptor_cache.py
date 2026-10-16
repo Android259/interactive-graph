@@ -153,7 +153,7 @@ def test_build_pair_value_cache_roundtrip(
         lv = lipid_cache["values"][smiles]
         lipid_input = {
             "chain": lv["chain"], "unsaturation": lv["unsaturation"],
-            "hbond": lv["hbond"], "heavy": lv["heavy_atoms"],
+            "hbond": lv["hbond"], "heavy": lv["heavy"],
             "tail_count": lv["tail_count"],
             "npr1": lv["npr1"], "npr2": lv["npr2"],
         }
@@ -184,7 +184,7 @@ def test_store_goes_stale_when_source_csv_changes(fixture_csv, csv_path, clean_c
     assert cache is not None
     assert len(cache["values"]) == 2
     # And a candidate the cache has never seen still falls back per miss, which is what
-    # makes serving the old values safe rather than merely cheap.
+    # makes serving the old values safe instead of merely cheap.
     assert "totally-new-smiles" not in cache["raw_to_canonical"]
 
 
@@ -198,7 +198,7 @@ def test_cached_values_match_uncached_computation(fixture_csv, csv_path, clean_c
     chain_direct = chain_lengths_by_row(fixture_csv, isomeric=False)
     assert chain_cached == chain_direct
 
-    for measure in ("unsaturation", "hbond", "heavy_atoms"):
+    for measure in ("unsaturation", "hbond", "heavy"):
         cached = descriptor_values_by_row(fixture_csv, measure, isomeric=False, cache=cache)
         direct = descriptor_values_by_row(fixture_csv, measure, isomeric=False)
         assert cached == direct
@@ -222,13 +222,13 @@ def test_unseen_candidate_falls_back_to_direct_computation(fixture_csv, csv_path
 
 
 def test_compute_one_reuses_seeded_measures_and_only_computes_missing_ones():
-    # A new _MEASURES entry (any future descriptor) must not force re-embedding a
+    # A new _LIPID_MEASURES entry (any future descriptor) must not force re-embedding a
     # measure that is already correct in whatever cache existed before -- otherwise
     # adding ONE cheap descriptor pays for every existing expensive one all over
     # again, every single time.
     key = "CCO"  # ethanol: trivially fast even if genuinely (re)computed
     seed_entry = {
-        "unsaturation": 999.0, "hbond": 999.0, "heavy_atoms": 999.0, "tail_count": 999.0,
+        "unsaturation": 999.0, "hbond": 999.0, "heavy": 999.0, "tail_count": 999.0,
         "radius_of_gyration": 999.0, "asphericity": 999.0, "molecular_volume": 999.0,
         "rotatable_fraction": 999.0,
         # npr1/npr2 deliberately absent -- simulates a cache built before they existed.
@@ -245,8 +245,13 @@ def test_compute_one_computes_everything_fresh_without_a_seed():
     # a KEY -- that is the invariant the cache rests on, since a reader tests
     # `measure in entry` and a silently absent one would read as "not cached" forever.
     _, entry = _compute_one("CCO", seed_entry=None)
-    assert set(entry) == {"chain", *compute_descriptors._MEASURES}
-    tail_only = set(compute_descriptors.CANDIDATE_LIPID_DESCRIPTOR_NAMES)
+    assert set(entry) == {"chain", *compute_descriptors._LIPID_MEASURES}
+    # Tail-only measures: None for a molecule with no acyl tail, by definition.
+    tail_only = {
+        "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
+        "tail_unsaturation_density", "tail_double_bond_position",
+        "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
+    }
     # experimental_lipid_volume is a data/Lipid_Volumes.xlsx lookup, not an RDKit
     # formula -- unlike every other name here, it is legitimately None for anything
     # RDKit parses fine but the sheet never measured (ethanol included), so it does
@@ -261,11 +266,11 @@ def test_compute_one_computes_everything_fresh_without_a_seed():
 
     # A real lipid: now the tail measures have values too. tail_double_bond_position is
     # the one that stays None even here when the tails are fully saturated -- the
-    # position of a double bond that does not exist, absent rather than zero.
+    # position of a double bond that does not exist, absent instead of zero.
     _, lipid = _compute_one(
         "CCCCCCCCCCCCCCCC(=O)OCC(O)COP(=O)(O)OCC[N+](C)(C)C", seed_entry=None
     )
-    assert set(lipid) == {"chain", *compute_descriptors._MEASURES}
+    assert set(lipid) == {"chain", *compute_descriptors._LIPID_MEASURES}
     assert lipid["tail_double_bond_position"] is None
     assert all(
         lipid[name] is not None
@@ -300,14 +305,14 @@ def test_build_lipid_descriptor_cache_seeds_expensive_measures_across_a_code_cha
     fixture_csv, csv_path, clean_cache_files, monkeypatch
 ):
     # First build under "old" code: pretend npr1/npr2 do not exist yet. Patched on
-    # dataloader.descriptors itself, the module _compute_one's own _MEASURES
+    # dataloader.descriptors itself, the module _compute_one's own _LIPID_MEASURES
     # name is bound from at import time in dataloader/cache_builders/pair_descriptor_
     # cache.py -- patching there is what that module actually reads.
     import dataloader.cache_builders.descriptor_csv_builder as cache_builder
 
-    original_measures = dict(cache_builder._MEASURES)
+    original_measures = dict(cache_builder._LIPID_MEASURES)
     monkeypatch.setattr(
-        cache_builder, "_MEASURES",
+        cache_builder, "_LIPID_MEASURES",
         {k: v for k, v in original_measures.items() if k not in ("npr1", "npr2")},
     )
     build_lipid_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
@@ -317,7 +322,7 @@ def test_build_lipid_descriptor_cache_seeds_expensive_measures_across_a_code_cha
     # Now "add" npr1/npr2 back (a code change) and rebuild -- every OTHER measure's
     # value must survive unchanged (reused, not re-embedded), and npr1/npr2 must be
     # freshly present.
-    monkeypatch.setattr(cache_builder, "_MEASURES", original_measures)
+    monkeypatch.setattr(cache_builder, "_LIPID_MEASURES", original_measures)
     build_lipid_descriptor_cache(DATA_DIR, fixture_csv, PROTEINS, csv_path, isomeric=False)
     new_cache = load_lipid_descriptor_cache(DATA_DIR, isomeric=False)
     new_values = new_cache["values"]

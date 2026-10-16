@@ -20,7 +20,7 @@ _RNA_BANG_DATA = Path(__file__).resolve().parents[1] / "external" / "RNA-BAnG" /
 
 
 def _rotation_class():
-    """rigid_utils.Rotation, imported on first use rather than at module import.
+    """rigid_utils.Rotation, imported on first use instead of at module import.
 
     external/ is a submodule and is not everywhere the training code is: the
     cluster sync deliberately leaves it out (scripts/lib/cluster_sync_excludes.sh).

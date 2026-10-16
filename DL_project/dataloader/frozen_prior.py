@@ -18,14 +18,11 @@ from dataloader.ragged_tensors import candidate_column, ragged_rows
 
 class FrozenPriorBuilder:
     def _raw_frozen_prior_columns(self, csv):
-        """Raw, uncalibrated values for whichever frozen-prior covariates are on.
+        """Return raw active priors as {name: (train, valid, test) arrays}.
 
-        Returns an ordered dict name -> (train_values, valid_values, test_values), read by
-        _compute_frozen_prior (--chem_prior, --pocket_compat_prior).
-
-        `csv` is the ORIGINAL table from __init__, not the sampled self.sampled_split: both
-        species_similarity and pocket_lipid_compatibility index by its row positions.
-        Rows are addressed by pair_id, never by a split frame's index.
+        Used by _compute_frozen_prior for --chem_prior and --pocket_compat_prior.
+        csv is the original table, not sampled_split: similarity and compatibility
+        use its row positions. Address rows by pair_id, not split-frame indices.
         """
         columns = {}
         # chem_adversary requires chem_prior (ModelConfig.validate).
@@ -72,11 +69,10 @@ class FrozenPriorBuilder:
         return columns
 
     def _compute_frozen_prior(self, raw_columns):
-        """Attach the frozen, calibrated additive term(s).
+        """Jointly calibrate active s_chem and compatibility terms on training labels.
 
-        The active ones of s_chem (--chem_prior) and compatibility (--pocket_compat_prior)
-        are fit jointly on TRAIN LABELS ONLY (fit_prior_calibration) and stored as the
-        single column `_frozen_prior`, which Final_Layer adds to the logit.
+        Store them in _frozen_prior, which Final_Layer adds to the logit.
+        Uses fit_prior_calibration for --chem_prior and --pocket_compat_prior.
         """
         wanted = [name for name in ("s_chem", "compat") if (
             (name == "s_chem" and self.config.chem_prior)

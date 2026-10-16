@@ -27,7 +27,7 @@ configuration columns metrics_summary.csv already stores for every run, with the
 own seed: the same sampler (`dataloader/sampler.py`), the same held-out classes, the
 same 50/50 label-stratified halving of the excluded block that
 `Dataloader._split_interactions` does. That is what makes the x value belong to the run
-whose y value sits next to it, rather than to an idealised version of its split. The
+whose y value sits next to it, instead of to an idealised version of its split. The
 reconstruction is pure pandas and reads no embedding, no graph and no checkpoint.
 
 Every split axis the project runs is handled:
@@ -61,7 +61,7 @@ of the project's figures are filed (scripts/generate_config_graphics.sh):
     graphics/<label>/split_similarity/<label>_split_similarity_vs_metric.pdf
     graphics/<label>/split_similarity/<label>_split_similarity_points.csv
 
-One pass rather than one call per label is not only convenience: the expensive step is
+One pass instead of one call per label is not only convenience: the expensive step is
 rebuilding the splits, and that work is cached per SPLIT, not per label, so two
 configurations that ran the same blocks on the same seeds pay for it once.
 
@@ -182,7 +182,7 @@ DEFAULT_PROTEIN_DESCRIPTORS = (
 # counts is a curve of block size with the model's behaviour buried in it. The counts
 # themselves still go into the point CSV beside the figure.
 #
-# Why they belong next to BA and F1 rather than instead of them: a summary metric hides
+# Report these alongside BA and F1: a summary metric hides
 # WHICH WAY a block fails. balanced_accuracy 0.5 is returned equally by a model that
 # calls everything positive and one that calls everything negative, and the project has
 # already hit both -- the PI block of results/tables/cron_test_metrics/cron_fig3_lipidgroups.txt is
@@ -205,7 +205,7 @@ DEFAULT_METRICS = ("balanced_accuracy", "F1") + CONFUSION_SHARE_METRICS
 
 
 def derived_metric(row, name):
-    """Metric columns that are computed from a metrics row rather than read from it.
+    """Compute derived metric columns from a metrics row.
 
     Returns None for a name this function does not derive, so the caller falls back to
     reading the column, and for a row whose counts are missing or do not add up to a
@@ -413,7 +413,7 @@ def working_set(csv, spec, held_classes, held_species=frozenset()):
     if spec.hard_negative_mining:
         # --hard_negative_mining reweights the negative draw from the MolFormer species
         # similarity matrix. Reproducing it would mean loading that matrix and matching
-        # its RNG draw; nothing analysed here uses it, so refuse rather than return a
+        # its RNG draw; nothing analysed here uses it, so refuse instead of returning a
         # split that is close but not the run's own.
         raise ValueError("hard_negative_mining splits are not reconstructed here")
 
@@ -564,7 +564,7 @@ def protein_similarity(proteins, names):
     move when the set does and two labels with different-sized sets are still on one
     scale. 1.0 on the diagonal, falling toward 0 as pockets differ.
 
-    Standardized over ALL 35 proteins rather than over a split's training proteins --
+    Standardized over ALL 35 proteins instead of over a split's training proteins --
     deliberately, and differently from build_protein_kernel, which standardizes on train
     only. Here the number is an x AXIS shared by every point of a curve: if each block's
     similarity were computed in its own standardization, two blocks' x values would be
@@ -656,9 +656,9 @@ def measure_split(csv, compact, spec):
             else float("nan")
         )
     # The protein axis. Computed over every protein in the table, so a block whose
-    # proteins all stayed in training reads 1.0 rather than going missing.
+    # proteins all stayed in training reads 1.0 instead of going missing.
     #
-    # Filled with NaN rather than raised when the protein kernel is unavailable: this
+    # Use NaN when the protein kernel is unavailable: this
     # module is meant to run on a machine that has a metrics table and nothing else
     # (see the torch stand-in at the top), and the LIPID axis needs none of what the
     # protein axis needs. Asking for --x test_protein_isolation there still fails, with
@@ -784,8 +784,7 @@ def latest_rows(table_path, labels, metrics):
     """Latest metrics row per (label, exclusion_set, seed), for the requested labels.
 
     Matching is the project's own convention (analysis/AGENTS.md): (label,
-    exclusion_set, seed). A rerun of the same triple replaces the earlier row rather
-    than being averaged with it.
+    exclusion_set, seed). A rerun of the same triple replaces the earlier row instead of being averaged with it.
     """
     keep = {}
     with open(table_path, newline="") as handle:
@@ -903,7 +902,7 @@ def cron_aggregated(path, metrics, curve_of_label):
     formula, reached through training/pair_baseline_common.block_tanimoto_similarity),
     and the block's row count, positive rate and protein count come from its detail
     block. The axes this report does not measure stay NaN, so asking for one of them
-    simply draws nothing rather than drawing a wrong number.
+    simply draws nothing instead of drawing a wrong number.
     """
     label, axis, blocks = read_cron_report(path)
     entries = []
@@ -927,7 +926,7 @@ def cron_aggregated(path, metrics, curve_of_label):
             entry[column] = value
             # One number per block, not one per seed: the block is fixed and only the
             # negatives are redrawn, so the report prints a zero spread for both
-            # isolation readings. Carried as NaN rather than 0.0 to keep "not measured"
+            # isolation readings. Carried as NaN instead of 0.0 to keep "not measured"
             # distinct from "measured as zero".
             entry[f"{column}_std"] = float("nan")
             entry[f"{column}_sem"] = float("nan")
@@ -983,7 +982,7 @@ def write_aggregated(path, entries, metrics):
 def aggregate(points, metrics):
     """Mean and deviation over the seeds of one (curve, exclusion set).
 
-    Keyed on the CURVE rather than on the label, because one curve can be measured by
+    Keyed on the CURVE instead of on the label, because one curve can be measured by
     two labels: a configuration's cold-split arg file and its `--random_split` sibling
     differ by exactly one line, so the random block is the same configuration at the far
     end of the same axis, not a different model. The blocks they contribute are disjoint
@@ -1170,7 +1169,7 @@ def plot(aggregated, metrics, path, x_column="test_isolation", title=""):
             x_values = [entry[x_column] for entry in series]
             means = [entry[metric] for entry in series]
             # A block run on one seed has no deviation; its band closes to the line
-            # rather than opening to nothing, which would break fill_between's polygon.
+            # instead of opening to nothing, which would break fill_between's polygon.
             deviations = [
                 0.0 if math.isnan(entry[f"{metric}_std"]) else entry[f"{metric}_std"]
                 for entry in series
@@ -1481,10 +1480,10 @@ def main():
     # layout (graphics/<label>/<kind>/<label>_<what>,
     # scripts/generate_config_graphics.sh). A curve carried by two labels is written
     # into both, so opening either configuration's directory shows the whole curve
-    # rather than the half that label happened to run.
+    # instead of the half that label happened to run.
     #
     # Several curves are still computed in ONE pass: the expensive part is rebuilding
-    # the splits, and `cache` is keyed on the split rather than on the label, so two
+    # the splits, and `cache` is keyed on the split instead of on the label, so two
     # configurations that ran the same blocks on the same seeds pay for them once.
     by_curve = defaultdict(list)
     for point in points:

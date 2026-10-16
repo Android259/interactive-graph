@@ -249,7 +249,7 @@ def run_group(label, group, seed, args, rng):
         return probs, labels
 
     # Baseline pass; also records the standardised input of every row, so a permutation
-    # can be built over the whole block rather than inside one batch.
+    # can be built over the whole block instead of inside one batch.
     override.record = []
     probs, labels = score()
     recorded = torch.cat(override.record)

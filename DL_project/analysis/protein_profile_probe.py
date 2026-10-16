@@ -154,7 +154,7 @@ def cosine(a, b):
 def esm3_neighbour_reference(train_names, held_names, profiles):
     """Profile cosine reached by copying the three nearest training proteins.
 
-    The reference every mode has to beat, computed for THIS split rather than quoted
+    The reference every mode has to beat, computed for THIS split instead of being quoted
     from another one. Holding a whole family out is a different problem from holding
     one protein out: leave-one-protein-out leaves the protein's own relatives in
     training and reaches 0.335 on average, while leaving the family out reaches 0.190,
@@ -201,7 +201,7 @@ def one_row_per_protein(dataset):
 def pooled_protein_vectors(conf, model, loader, device):
     """Run the real branch over one loader pass and catch what its pooling produces.
 
-    A forward hook rather than final_layer._pooled_partners: that one is detached and
+    A forward hook instead of final_layer._pooled_partners: that one is detached and
     filled only outside training, and this needs gradients.
     """
     pooling = getattr(model.final_layer, "prot_gem_pool", None)
@@ -421,7 +421,7 @@ def run_similarity(argv):
 def chain_length_per_protein():
     """Mean longest-chain length over the positives of each protein."""
     from dataloader.pocket_lipid_compatibility import EMPTY
-    from preprocessing.compute_descriptors import longest_acyl_chain
+    from preprocessing.compute_descriptors import chain
 
     table = pandas.read_csv(interaction_csv_path(os.path.join(PROJECT_ROOT, "data") + os.sep))
     positives = table[table["Interaction"] == 1]
@@ -434,7 +434,7 @@ def chain_length_per_protein():
                 if text in EMPTY:
                     continue
                 first = text.split(";")[0].strip()
-                length = longest_acyl_chain(first)
+                length = chain(first)
                 if length:
                     values.append(length)
                 break
@@ -446,7 +446,7 @@ def chain_length_per_protein():
 def legacy_size_descriptors(protein_dir):
     """The size-like descriptors the model already has, for comparison on the same data.
 
-    Recomputed here rather than imported so the old and the new are measured against
+    Recomputed here instead of being imported so the old and the new are measured against
     the same target, on the same proteins, with the same test -- the whole point of the
     comparison. Definitions follow pocket_descriptor() in preprocessing/compute_descriptors.py.
     """
@@ -494,7 +494,7 @@ def head_classes_per_protein():
 
 def protein_families_series():
     """Family of each protein, as a 'family'-named Series -- analysis.feature_identity_
-    check.protein_family_map's own groupby/agg, reused rather than duplicated (it
+    check.protein_family_map's own groupby/agg, reused instead of being duplicated (it
     already returns one Series per protein, this only names it for the .join() below).
     """
     from analysis.feature_identity_check import protein_family_map
@@ -583,7 +583,7 @@ def report_within_family(data, target_column, pooled, minimum=8):
     the confound it is across families.
 
     Nothing can be significant at these sizes -- the thresholds are printed to make that
-    concrete rather than to be cleared. What carries information is agreement: a
+    concrete; they are not achievable targets. What carries information is agreement: a
     descriptor pointing the same way inside both families and in the pooled result is
     saying something family cannot account for.
     """

@@ -1,44 +1,32 @@
-"""Compact form of the pairwise Tanimoto artifacts.
+"""Read compact pairwise Tanimoto artifacts without changing values.
 
-The old full form (``Total_tanimoto_matrix_uint8.npy``, no longer built or read) was
-indexed per *candidate structure instance*: a row of the interaction table that lists
-five isomer candidates contributes five entries, and the same structure recurs across
-rows. The current table yields tens of thousands of
-instances over about twelve hundred distinct structures, so the square matrix stores
-each distinct pair of structures hundreds of times over -- 2.89 GB of almost entirely
-repeated bytes.
+The retired Total_tanimoto_matrix_uint8.npy indexed candidate instances,
+including repeated structures across interaction rows. Five candidates gave
+five entries. Tens of thousands of instances covered ~1200 structures,
+repeating pairs hundreds of times in a 2.89 GB matrix.
 
-Every one of those bytes is a pure function of the two structures.
-``preprocessing/similarity/build_tanimoto_compact.py`` computes them as ``round(BulkTanimotoSimilarity(fp_a, fp_b) * 255)`` over Morgan
-fingerprints, and a fingerprint is a pure function of the canonical SMILES string, so two
-instances of one structure necessarily have byte-identical rows. Keeping one row per
-distinct structure therefore loses nothing:
+preprocessing/similarity/build_tanimoto_compact.py computes
+round(BulkTanimotoSimilarity(fp_a, fp_b) * 255) from Morgan fingerprints.
+Canonical SMILES determine fingerprints, so repeated structures have identical
+rows. Retain one row per structure:
 
     full[i, j] == compact[structure_of[i], structure_of[j]]
 
-exactly, byte for byte, including the diagonal (a structure against itself scores 1.0,
-which rounds to the same 255 the builder forces onto ``full[i, i]``).
+This includes the diagonal: similarity 1 rounds to the forced full-matrix 255.
+Materialize the same K x K candidate block before unchanged weight arithmetic.
+Computing weights directly from compact rows would change summation order
+and possibly the last digits.
 
-That identity is what makes this a memory change and not a numerical one. The loader does
-not compute weights from the compact form -- it materializes precisely the K x K submatrix
-it used to slice out of the full file, and hands that to unchanged arithmetic. Weights
-computed from the compact form directly would sum the same numbers in a different order
-and shift the last digits; this does not.
+Three files form one set, validated by the manifest:
+Tanimoto_compact_matrix_uint8.pt: structure-by-structure similarities;
+Tanimoto_compact_structure_index.pt: candidate instance to structure row;
+Tanimoto_compact_row_ids.pt: instance to interaction row, as in the old
+Total_multiple_lipid_batch.npy.
 
-Three files, written together and only meaningful as a set (see the manifest):
-
-    Tanimoto_compact_matrix_uint8.pt        structures x structures similarities
-    Tanimoto_compact_structure_index.pt     candidate instance -> structure row
-    Tanimoto_compact_row_ids.pt             candidate instance -> interaction table row,
-                                             the same content as the old Total_multiple_lipid_batch.npy
-
-Stored as ``torch.save`` archives rather than ``.npy`` so the (larger) matrix file can be
-``torch.load(..., mmap=True)``-mapped straight off disk, the same sharing the other
-tensor caches in this directory use -- verified byte-identical to the retired ``.npy``
-form element by element, both the matrix's uint8 values and the index/row-id arrays'
-int32 ones. ``Tensor.numpy()`` on the loaded tensors is a zero-copy view, so
-``CompactTanimoto``/``_CandidateView`` below still operate on plain ndarrays exactly as
-before -- only the on-disk container changed.
+torch.save archives replace .npy for torch.load(..., mmap=True) sharing.
+Elementwise checks confirmed identical uint8 matrix and int32 index/row-ID
+arrays. Tensor.numpy() gives zero-copy ndarray views for CompactTanimoto
+and _CandidateView, so only the disk container changes.
 """
 
 import json
@@ -51,11 +39,9 @@ import torch
 COMPACT_FORMAT_VERSION = 1
 CACHE_SUBDIR = "cache"
 TANIMOTO_SUBDIR = "tanimoto"
-# Two disjoint sets, because lipid_isomers changes the candidate list itself, not just
-# the similarities: with stereochemistry kept, isomers that collapse into one candidate
-# under the non-isomeric rule stay separate, so a row contributes a different number of
-# candidates and the row-id vectors of the two modes are different lengths. They can
-# never be used interchangeably, hence separate files rather than one with a flag.
+# Keep separate artifact sets for lipid_isomers: preserving stereochemistry
+# changes candidate counts and row-ID vector lengths, not just similarities.
+# The two modes cannot share files.
 COMPACT_PREFIX = "Tanimoto_compact"
 ISOMERIC_COMPACT_PREFIX = "Tanimoto_compact_isomeric"
 
@@ -77,11 +63,9 @@ class CompactTanimoto:
         return self.row_ids.shape[0]
 
     def submatrix(self, selected):
-        """The similarities among ``selected`` candidates, as the full file would give.
+        """Gather the full-equivalent K x K uint8 block for selected candidate instances.
 
-        ``selected`` indexes candidate instances, exactly as it did against the full
-        matrix, and the result is the identical K x K uint8 block -- the expansion is a
-        gather, not a recomputation.
+        Expand by indexing the compact matrix, without recomputing similarities.
         """
         structure_rows = self.structure_index[selected]
         return np.array(
@@ -89,10 +73,9 @@ class CompactTanimoto:
         )
 
     def candidate_view(self):
-        """An object indexed per candidate instance, like the old full matrix.
+        """Return a candidate-indexed view compatible with the retired full matrix.
 
-        ``view[np.ix_(a, b)]`` returns the same uint8 block ``full[np.ix_(a, b)]`` did,
-        gathered from the compact matrix, for callers written against the full form.
+        view[np.ix_(a, b)] gathers the same uint8 block as full[np.ix_(a, b)].
         """
         return _CandidateView(self)
 
@@ -122,12 +105,10 @@ def compact_paths(root_dir, isomeric=False):
 
 
 def load_compact(root_dir, source_csv=None, isomeric=False):
-    """Map the compact artifacts, or None when they are absent or stale.
+    """Map compact artifacts, or return None for missing or stale files.
 
-    ``source_csv``, when given, is checked against the manifest by size and nanosecond
-    mtime, so a rebuilt interaction table is refused (the loader then raises and asks for
-    a rebuild) instead of silently weighting by similarities computed for a different
-    candidate list.
+    If source_csv is given, check size and nanosecond mtime against the manifest.
+    The loader rejects rebuilt-table mismatches and requests a rebuild instead of using similarities for another candidate list.
     """
     matrix_path, index_path, row_path, manifest_path = compact_paths(
         root_dir, isomeric=isomeric
@@ -149,10 +130,8 @@ def load_compact(root_dir, source_csv=None, isomeric=False):
             ):
                 return None
         return CompactTanimoto(
-            # The matrix stays mapped: a run slices one K x K block out of it and never
-            # needs the rest resident, and concurrent jobs then share the mapping.
-            # Tensor.numpy() is a zero-copy view, so the mapping is preserved through to
-            # the ndarray CompactTanimoto operates on.
+            # Map the matrix and slice only the needed K x K block; jobs share other pages.
+            # Tensor.numpy() preserves this mapping as a zero-copy ndarray view.
             torch.load(
                 matrix_path, map_location="cpu", weights_only=True, mmap=True
             ).numpy(),

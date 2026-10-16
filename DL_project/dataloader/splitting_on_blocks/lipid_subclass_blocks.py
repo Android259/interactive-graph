@@ -1,60 +1,42 @@
-"""The lipid axis cut BY THE SOURCE PAPER'S OWN SUBCLASS, for --lipid_subclass.
+"""Hold out source-paper lipid subclasses with --lipid_subclass.
 
-The third axis on the lipid side, alongside the two that already exist:
+Use Titeca et al.'s Figure 3a LTP-by-subclass axis in
+files/literature/Reuter.pdf. This matches the requested task of classifying
+binders/non-binders by lipid subclass.
 
-  --lipid_coldsplit   four hand-built sets of PROJECT head-group classes
-                      (lipid_coldsplit_blocks.py's LIPID_COLDSPLIT_SETS)
-  --lipid_isolation   blocks chosen by DISTANCE, so the held-out chemistry lands at a
-                      requested Tanimoto isolation (lipid_isolation_blocks.py)
-  --lipid_subclass    one subclass of Titeca et al. (files/literature/Reuter.pdf, the y axis of
-                      the LTP x lipid-subclass matrix -- Figure 3a of the bioRxiv
-                      preprint), held out of training for every protein
+This differs from --lipid_coldsplit's four project sets, which merge PC/LPC
+and PA/PI/PS/PG/PGP/BMP/CL, and --lipid_isolation's distance-selected species.
 
-The third one exists because it is the task as the collaborators state it: "being able
-to classify binders and non-binders by lipid subclass would be quite helpful already",
-against the subclass column of the shared CSV. That is not the same partition as either
-of the other two -- LIPID_COLDSPLIT_SETS merges PC with LPC and PA with PI/PS/PG/PGP/
-BMP/CL, and an isolation block is whatever species happen to sit at the requested
-distance -- so a run on either of those answers a different question from the one
-being asked, however close it looks.
+Read membership from data/lipid_article_classification.json:
+{FullIdentityOfLipid: subclass}, written by classify_lipids_by_article.py.
+Do not duplicate it here. pair_baseline_common.resolve_excluded_lipids uses
+the same map for Kron-RLS --excluded_lipids/--excluded_lipid_groups, keeping
+network and baseline held-out species identical for the same specification.
 
-Membership is NOT repeated here. It is read from data/lipid_article_classification.json
-(written by preprocessing/classify_lipids_by_article.py, {FullIdentityOfLipid:
-subclass}), which is already the single source of truth --
-training.pair_baseline_common.resolve_excluded_lipids resolves the Kron-RLS side's
---excluded_lipids/--excluded_lipid_groups through that same file, so the network and
-the Kron-RLS baseline hold out exactly the same species for the same spec, which is
-the whole point of having this axis named the same way on both sides.
-
-A block SPEC is one or more subclass abbreviations joined by "+": "PC", "LPC+LPE+LPG".
-The "+" form is what makes subclasses too small to stand alone usable at all -- see
-FIG3_SUBCLASS_BLOCKS below.
+Join subclasses with "+", e.g. PC or LPC+LPE+LPG. Merges make small subclasses
+usable; see FIG3_SUBCLASS_BLOCKS.
 """
 from __future__ import annotations
 
 import json
 import os
 
-# The nine blocks the Kron-RLS run of the same axis actually used
-# (results/tables/cron_test_metrics/cron_fig3_lipidgroups.txt): the five subclasses big enough to be
-# their own held-out block, plus three merges of subclasses that are not.
-#
-# Why these merges and not others -- measured by analysis/probes/lipid_subclass_report.py blocks
-# over the whole table (positives / proteins holding at least one positive in the block):
-#   PC 218/16, PG 113/13, PE 80/11, FA 48/12, PA 26/4, PI 16/6      stand alone
-#   Cer 14/1, CerP 10/1, HexCer 20/1, Hex2Cer 2/1, SHexCer 2/1, SM 18/2
-#       -> one sphingolipid block, 66/4. Every one of the six is a single-protein block
-#          on its own, which cannot produce an AUC_within_protein at all.
-#   LPC 5/1, LPE 18/5, LPG 9/5 -> one lyso block, 32/6.
-#   PS 5/2, PGP 2/1, DAG 2/1, TAG 8/2 -> one block, 17/6. PS+PGP alone reached
-#       n_proteins=0 in the first Kron-RLS pass (files/results/fig3_lipid_subclass_coldsplit_
-#       results.md) -- the four-way merge is what made it measurable.
-# CL (14/2), BMP (1/1), VA (2/2) and FAL (1/1) are in no block: each IS its own row on
-# the paper's own Figure-3a axis (page 22 of files/literature/Reuter.pdf, verified directly against
-# the rendered page), just too small -- fewer positives/proteins than even the
-# single-protein sphingolipid rows merged above -- for any split to read, and none of the
-# four shares enough chemistry with an existing merge to fold into it (CL and BMP are not
-# sphingolipid/lyso/PS+PGP+DAG+TAG-like; VA/FAL are not glycerolipids at all).
+# Nine Kron-RLS blocks (results/tables/cron_test_metrics/cron_fig3_lipidgroups.txt):
+# standalone subclasses plus three merges, sized by whole-table measurements
+# from analysis/probes/lipid_subclass_report.py blocks.
+# Counts are positives/proteins with a positive:
+#   PC 218/16, PG 113/13, PE 80/11, FA 48/12, PA 26/4, PI 16/6: standalone.
+#   Cer 14/1, CerP 10/1, HexCer 20/1, Hex2Cer 2/1, SHexCer 2/1, SM 18/2:
+#   merged sphingolipids 66/4; individual blocks have too little protein coverage
+#   for useful AUC_within_protein evaluation.
+#   LPC 5/1, LPE 18/5, LPG 9/5: merged lyso 32/6.
+#   PS 5/2, PGP 2/1, DAG 2/1, TAG 8/2: merged 17/6. PS+PGP alone had
+#   n_proteins=0 in the first Kron-RLS pass; the four-way merge was measurable
+#   (files/results/fig3_lipid_subclass_coldsplit_results.md).
+# CL 14/2, BMP 1/1, VA 2/2, FAL 1/1 are separate Figure 3a rows
+# (files/literature/Reuter.pdf p.22), but too small for these blocks and
+# chemically unsuitable for existing merges. CL/BMP differ from the lipid
+# merges; VA/FAL are not glycerolipids.
 FIG3_SUBCLASS_BLOCKS = (
     "PC",
     "PG",
@@ -66,22 +48,15 @@ FIG3_SUBCLASS_BLOCKS = (
     "PA",
 )
 
-# How ISOLATED each block is from whatever stays in training, measured once by
-# analysis/probes/lipid_subclass_report.py blocks over the whole interaction table:
-# (whole-molecule Tanimoto, head-group-only Tanimoto). Mean best similarity of a
-# held-out species to the chemistry left behind -- LOW means genuinely novel, HIGH
-# means a close relative stayed in training. Stored rather than recomputed for the same
-# reason lipid_isolation_blocks.BLOCK_GEOMETRY is: the number is a property of the
-# SPEC, identical at every seed and in every run, so paying for a Tanimoto build in
-# every job's startup would buy nothing. Printed by the loader so a run's own log says
-# how cold its split actually was.
-#
-# Read the head-group column for this axis. A subclass block is cut ON the head group,
-# so its acyl tails are shared with the rest of the table by construction and the
-# whole-molecule number is optimistic here. Two entries make the point: FA's head-group
-# similarity is 1.0000 (a free fatty acid has no head group to be novel in -- holding
-# FA out holds out no head-group chemistry at all), and the six-way sphingolipid block
-# is the only one anywhere near cold (0.2624).
+# Recorded whole-table (whole-molecule, head-group-only) Tanimoto isolation,
+# measured by analysis/probes/lipid_subclass_report.py blocks.
+# Each is mean best similarity of a held-out species to training:
+# low means more novel, high means retained close relatives.
+# Store seed-independent block values, as in lipid_isolation_blocks.BLOCK_GEOMETRY,
+# to avoid rebuilding Tanimoto at every startup; the loader logs them.
+# For head-group splits, shared acyl tails make whole-molecule similarity
+# optimistic. Read the head-group column: FA scores 1.0000 (no novel head group),
+# while merged sphingolipids score 0.2624, the most isolated block.
 BLOCK_TANIMOTO = {
     "PC": (0.7956, 0.7090),
     "PG": (0.8770, 0.7804),
@@ -112,18 +87,16 @@ BLOCK_TANIMOTO = {
 }
 
 _CLASSIFICATION_FILE = "lipid_article_classification.json"
-# Callers that already carry a data directory (Dataloader's own ROOT_DIR) pass it;
-# training/read_configuration.py validates a spec long before any dataset exists and
-# has no such handle, so the project's own data/ is the default.
+# Dataloader passes ROOT_DIR. Default to project data/ for configuration
+# validation, which runs before a dataset and has no data-directory handle.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _DEFAULT_DATA_DIR = os.path.join(_PROJECT_ROOT, "data")
 
 
 def article_subclass_species(data_dir=None):
-    """{subclass abbreviation: frozenset of FullIdentityOfLipid}, read off
-    data/lipid_article_classification.json. Raises FileNotFoundError naming the
-    generator rather than a bare missing-file error -- the file is generated, not
-    tracked input, so "run this" is the useful message.
+    """Read {subclass: frozenset of FullIdentityOfLipid} from the classification JSON.
+
+    On missing generated input, raise FileNotFoundError naming its generator.
     """
     path = os.path.join(str(data_dir or _DEFAULT_DATA_DIR), _CLASSIFICATION_FILE)
     if not os.path.isfile(path):
@@ -140,11 +113,9 @@ def article_subclass_species(data_dir=None):
 
 
 def canonical_subclass_spec(spec, data_dir=None):
-    """Normalise a "+"-joined block spec to the article's own spelling, or raise.
+    """Normalize a "+"-joined spec case-insensitively to the map's spelling, or raise.
 
-    Case-insensitive, and the canonical spelling is whatever the classification file
-    carries ("HexCer", not "hexcer"), so a run directory named after the spec is named
-    the same way however the arg file spelled it.
+    For example, use HexCer, not hexcer, so run-directory names are consistent.
     """
     names = [token.strip() for token in str(spec).split("+") if token.strip()]
     if not names:

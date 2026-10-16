@@ -23,7 +23,7 @@ on. Read them as a set, not one instead of another:
                   the lipids most like L. Stronger, and the one a network has to beat
                   before "it learned the pair" means anything, since the network also
                   sees both sides. nan where a protein kept no training rows at all --
-                  reported as coverage rather than hidden, see auc_on_scored.
+                  reported as coverage instead of being hidden, see auc_on_scored.
   contrastive     Closer to something this protein BINDS than to something it does not
                   (top-k mean similarity to its training positives minus the same over
                   its negatives). The subtraction cancels the sampled class ratio, which
@@ -60,7 +60,7 @@ whether a descriptor set carries a split or merely tracks it.
 Reported as AUC, not balanced accuracy. At a fixed 0.5 threshold the chemistry null
 model scores BA 0.512 while ranking the doubly-cold block at AUC 0.589: nearly all of
 its measured weakness is threshold placement, and a comparison against a network at the
-same fixed threshold would credit the network for a decision boundary rather than for
+same fixed threshold would credit the network for a decision boundary instead of for
 information. AUC compares what each one knows.
 
     python3 analysis/baselines/knn_model.py
@@ -121,20 +121,20 @@ DEFAULT_FAMILIES = ("CRAL-TRIO", "GLTP", "IP_trans", "LBP_BPI_CETP", "START", "l
 WORKING = ("LBP_BPI_CETP", "scp2", "IP_trans")
 
 # Reserved --features value: the original whole-molecule Morgan-fingerprint null
-# model (species_similarity) rather than a named scalar descriptor set --
+# model (species_similarity) instead of a named scalar descriptor set --
 # feature_similarity has no entry for "the whole structure", only named columns.
 TANIMOTO = "tanimoto"
 
 # Reserved --features value: the whole-molecule MolFormer-embedding null model
 # (molformer_species_similarity), reading the matrix
 # preprocessing/build_molformer_similarity_matrix.py precomputes -- same idea as
-# TANIMOTO (one entity per lipid species, whole-structure similarity rather than a
+# TANIMOTO (one entity per lipid species, whole-structure similarity instead of a
 # named scalar subset) but from the learned embedding instead of a Morgan fingerprint.
 MOLFORMER = "molformer"
 
 # ModelConfig defaults for the flags a lipid-axis arg file leaves alone; a split has to
 # be rebuilt with the same ones the compared run trained under or the rows will not
-# match (the pair_id check in knn_model_table says so rather than guessing).
+# match (the pair_id check in knn_model_table says so instead of guessing).
 DEFAULT_RATIO = 2
 DEFAULT_NEIGHBOURS = (5, 15, 40)
 
@@ -196,7 +196,7 @@ def _cache_key(label, block, seed, neighbour_counts, competitors, share, ratio, 
     different rows, so the kind has to be in the key and not only the name.
     `competitors` is in it because a record carries one column block per competitor --
     without it, a table computed for `null` alone would be served to a caller asking
-    for all three, which would then read missing columns as absent rather than
+    for all three, which would then read missing columns as absent instead of
     uncomputed.
     """
     return "|".join(str(part) for part in (
@@ -256,7 +256,7 @@ def working_set(csv, seed, ratio, lipid_classes, balanced_lipid_classes=False,
     the original row of the interaction table -- is assigned by
     `Dataloader.__init__` *before* that renumbering. Matching rows against the
     scores `analysis/checkpoint_scores.py` writes needs that id, so the two lines are
-    reproduced here rather than in the baseline, whose own numbers do not use it.
+    reproduced here instead of in the baseline, whose own numbers do not use it.
 
     `balanced_lipid_classes` picks the SAMPLER, and it has to match the run being
     compared against or the rebuilt pool is a different set of rows. Dataloader.py tests
@@ -266,7 +266,7 @@ def working_set(csv, seed, ratio, lipid_classes, balanced_lipid_classes=False,
     """
     if species is not None:
         # A block named by SPECIES (--lipid_subclass / --lipid_isolation /
-        # --lipid_species_coldsplit) rather than by head-group class. The sampler's
+        # --lipid_species_coldsplit) instead of by head-group class. The sampler's
         # strata are "which side of the coming cut is this row on", so they have to be
         # computed on the same key the cut uses -- head-group class would put a held-out
         # species and a retained one of the same class on the same side.
@@ -309,8 +309,7 @@ def auc_on_scored(truth, score):
     whose protein has NO training rows left (or none of one label) -- real under a lipid
     axis: a protein that only ever binds the held-out chemistry keeps nothing once those
     classes leave training. A single nan poisons the pooled AUC (pandas' rank()
-    propagates it), which silently turned three of the four lipid sets into "nan" rather
-    than into a number plus a caveat.
+    propagates it), which silently turned three of the four lipid sets into "nan" instead of into a number plus a caveat.
 
     Scoring the covered rows and reporting the coverage is the honest reading: the
     competitor is not wrong on the rows it cannot see, it is absent, and how often it is
@@ -336,7 +335,7 @@ def per_protein_auc(held, score, minimum_rows=6):
     rows -- already buys AUC before the model has told any one protein's own
     positives from its own negatives.
 
-    Ranking a protein's own candidate lipids against each other, rather than the
+    Ranking a protein's own candidate lipids against each other, instead of the
     whole pooled block, removes exactly that: comparisons never cross a protein
     boundary, so "which protein is this" cannot contribute. It does NOT remove a
     lipid's own marginal (a lipid that is broadly positive across many proteins in
@@ -387,7 +386,7 @@ def per_lipid_auc(held, score, minimum_rows=6, group_column="lipid_class"):
     preference actually lives at, per lipid_class_series's own docstring) instead,
     which reaches minimum_rows in practice -- at a real cost: it also re-admits some
     of the cross-SPECIES heterogeneity per_lipid_auc exists to remove, just bounded to
-    within one class rather than across all of them. Pass group_column=
+    within one class instead of across all of them. Pass group_column=
     "FullIdentityOfLipid" for the pure (but usually all-NaN) per-species version.
 
     Degenerate (always exactly 0.5) when `score` depends on the lipid alone, for the
@@ -442,7 +441,7 @@ def per_pair_auc(held, score, group_column="lipid_class"):
     Rows this competitor could not score at all (nan -- see auc_on_scored) are dropped
     before the two means are taken, not merely at the end: one nan would otherwise
     poison both its protein's and its class's mean and, through pandas' rank(), the
-    whole pooled number, so a competitor with 86% coverage would report nan rather than
+    whole pooled number, so a competitor with 86% coverage would report nan instead of
     its AUC over the 86%. A nan-free score (every `null` one) loses nothing here.
     """
     frame = held.assign(_score=np.asarray(score, dtype=float))
@@ -488,7 +487,7 @@ def proximity_to_train_positives(train, held, similarity, index,
 # reconstruction (see split_held_block), `name` is what the block is called in the
 # table's `fam` column and in the cache key, and `species_of_seed` is a callable
 # seed -> the FullIdentityOfLipid set this block holds out, for the species-keyed axes
-# only (a callable rather than a set because --lipid_species_coldsplit draws its block
+# only (a callable instead of a set because --lipid_species_coldsplit draws its block
 # per seed, exactly as the loader does).
 Block = namedtuple("Block", "name kind species_of_seed")
 
@@ -532,7 +531,7 @@ def blocks_from_families(families):
     """`--families` entries -> Blocks, each axis by its own name.
 
     A name that is a LIPID_COLDSPLIT_SETS key is the lipid-class axis; anything else is
-    a protein family. Kept as one list rather than two flags because `families` is the
+    a protein family. Kept as one list instead of two flags because `families` is the
     parameter every existing caller (analysis/full_label_report.py,
     analysis/probes/greedy_descriptor_search.py) already passes both kinds of name through.
     """
@@ -549,7 +548,7 @@ def held_classes_for(csv, block, share):
     is no family to derive anything from, every protein stays in train. `--double_
     coldsplit` derives them per family (`lipid_classes_for_holdout`). Calling the
     derivation on a lipid-set name looks up a `ProteinDomain` that does not exist and
-    silently returns `[]`, which is why the two are branched on rather than merged.
+    silently returns `[]`, which is why the two are branched on instead of being merged.
 
     Accepts a Block or a bare name (a bare name is resolved through
     blocks_from_families' own rule, so a caller holding a family or set name keeps
@@ -599,7 +598,7 @@ def usable_group_counts(held, minimum_rows=6, group_column="lipid_class"):
     The same admission rule per_protein_auc/per_lipid_auc apply (at least
     `minimum_rows` rows and both labels present), counted from `held`'s grouping
     alone -- which is all it depends on, so it is the same number whichever score
-    vector is being ranked, and reporting "a mean over three proteins" rather than
+    vector is being ranked, and reporting "a mean over three proteins" instead of
     over thirty does not have to wait for one of the competitors to run.
     """
     counts = []
@@ -678,7 +677,7 @@ def knn_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4)
     `competitors`: which of COMPETITORS to score. Each one contributes its own
     `<name>_AUC*` column block, so a caller reading only one of them (a descriptor
     search looping over thousands of feature sets, say) should ask for only that one
-    rather than paying for three.
+    instead of paying for three.
 
     `balanced_lipid_classes` must match whether `--label`'s own run set
     `--balanced_lipid_classes`: it picks working_set's negative sampler, and a
@@ -703,7 +702,7 @@ def knn_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4)
     seed, neighbour_counts, competitors, share, ratio, split, a csv fingerprint) --
     see CACHE_PATH. `features` (the resolved descriptor-name list `label` stands for)
     is stored alongside each cache entry and checked against the current call's, so a
-    label re-used for a different descriptor set misses rather than returning the old
+    label re-used for a different descriptor set misses instead of returning the old
     set's numbers under the new name. `label=None` (the default) disables caching.
 
     Returns the `table` main() used to print -- factored out so
@@ -791,7 +790,7 @@ def knn_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4)
                             # regardless of entity_column -- cheap either way, and which
                             # one is degenerate (always exactly 0.5, see per_protein_auc/
                             # per_lipid_auc) depends on entity_column, so
-                            # print_knn_model_report decides which to show rather than
+                            # print_knn_model_report decides which to show instead of
                             # this function guessing on its behalf.
                             record[f"{name}_AUC_prot_k{neighbours}"] = per_protein_auc(
                                 held, scores
@@ -843,7 +842,7 @@ def knn_model_table(csv, similarity, index, families=None, seeds=(0, 1, 2, 3, 4)
 def _group_stats(groups, columns):
     """One column per (group label, stat) -- every group's mean first, then every
     group's median, then two std's, each stat's block to the right of the previous
-    one rather than interleaved per group: the mean is what every existing reader of
+    one instead of being interleaved per group: the mean is what every existing reader of
     these tables already reads first; median next to it is the check for "is this
     mean actually representative or is one split dragging it around" (a lone
     high/low seed moves a mean a lot more than it moves a median).
@@ -985,7 +984,7 @@ def print_knn_model_report(table, split, epoch, entity_column="FullIdentityOfLip
         for reading, columns in readings.items()
     }
     # Pooled columns (rank the whole block) first, then whichever within-entity
-    # group(s) this granularity shows -- grouped rather than interleaved by k, since
+    # group(s) this granularity shows -- grouped instead of being interleaved by k, since
     # these answer different questions (see the "never averaged together" note
     # below) and reading them side by side per-k invites comparing across that line
     # by accident.
@@ -1190,7 +1189,7 @@ def main():
         # --family_only filter) and pair_id is read straight off the index in
         # working_set. Without it every pair_id here is an id in the whole table while
         # the scored rows carry positions within the family, and the --scores
-        # comparison refuses the pair rather than matching wrong rows.
+        # comparison refuses the pair instead of matching wrong rows.
         csv = csv.reset_index(drop=True)
     similarity, index, entity_column, label, feature_list = resolve_similarity(
         similarity_csv, data_dir, args.features, args.label, zscore=args.zscore

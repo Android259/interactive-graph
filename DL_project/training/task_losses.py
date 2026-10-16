@@ -224,7 +224,7 @@ class TaskLosses:
     def batch_sample_weights(self, prot, sample_count):
         """Per-row loss weights for this batch, or None when the run weights nothing.
 
-        None rather than a vector of ones. Every loss below already has a None branch that
+        None instead of a vector of ones. Every loss below already has a None branch that
         takes the plain mean, and that is the *same number*: multiplying by 1.0 is exact in
         IEEE 754, so `(x * ones).sum() / ones.sum().clamp_min(1e-8)` and `x.mean()` agree bit
         for bit -- checked over 8000 random batches at sizes 8, 16, 64 and 1300, zero

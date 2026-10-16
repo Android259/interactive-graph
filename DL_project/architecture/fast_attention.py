@@ -9,7 +9,7 @@ waste), and the cost grows quadratically with batch size while the useful part g
 linearly.
 
 This module computes the same thing on the dense ``(graphs, max_nodes, dim)`` layout,
-where the blocked pairs simply do not exist. Two details make it a win rather than a
+where the blocked pairs simply do not exist. Two details make it a win instead of a
 wash:
 
 * ``nn.MultiheadAttention`` only accepts an ``(N*heads, L, S)`` attention mask, so
@@ -25,7 +25,7 @@ The projections come from the caller's ``nn.MultiheadAttention`` module, so the
 parameters (and therefore every saved state_dict) are unchanged; only the order of
 arithmetic differs. That reordering is not free numerically: summing over a graph's
 nodes instead of over the whole padded batch changes float rounding, so results match
-the default path to ~6e-08 absolute (~3e-07 relative on gradients) rather than bitwise.
+the default path to ~6e-08 absolute (~3e-07 relative on gradients); equality is not bitwise.
 That is why this sits behind ``--fast_attention`` instead of replacing the default.
 """
 
@@ -86,7 +86,7 @@ def _check_supported(mha):
     construction, so this never fires today. It exists because each of these would
     otherwise change the result *silently*: the module would keep the option, this path
     would ignore it, and the only symptom would be a quietly different model. Fail
-    loudly instead, so enabling one is a crash rather than a bad run.
+    loudly instead, so enabling one is a crash instead of a bad run.
     """
     if mha.dropout:
         raise NotImplementedError(
@@ -198,7 +198,7 @@ def grouped_attention(
     key = split_heads(key, kv_len)
     value = split_heads(value, kv_len)
 
-    # (graphs, heads, 1, kv_len): broadcast over queries rather than expanded, which is
+    # (graphs, heads, 1, kv_len): broadcast over queries without expansion, which is
     # the whole reason this path is cheaper than the padded nn.MultiheadAttention one.
     attn_bias = torch.zeros(
         graphs, 1, 1, kv_len, dtype=q_dense.dtype, device=q_dense.device
@@ -219,7 +219,7 @@ def grouped_attention(
 def can_use_grouped_attention(config, batch):
     """Whether the fast path applies: enabled, and the grouping vector is available.
 
-    ``lipid_fragments_mask`` narrows attention to a fragment rather than a whole graph,
+    ``lipid_fragments_mask`` narrows attention to a fragment instead of a whole graph,
     so its blocks are not the ``batch`` partition this path pads by; those call sites
     keep the default path.
 

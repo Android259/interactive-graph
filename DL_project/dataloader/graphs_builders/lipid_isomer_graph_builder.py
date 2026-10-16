@@ -62,9 +62,10 @@ class LipidIsomerGraphBuilder:
     labelOH = LIPID_CLASS_ONE_HOT
 
     def _load_lipid_graph_index(self):
-        """Map canonical SMILES -> graph_id, from data/build_lipid_isomer_graphs.py's
-        own index CSV. Empty under any other lipid mode (the index file is only built
-        for --lipid_graph_isomers)."""
+        """Load canonical SMILES -> graph_id from build_lipid_isomer_graphs.py's index.
+
+        Return empty in other lipid modes; only --lipid_graph_isomers builds the index.
+        """
         self.lipid_graph_dir = os.path.join(self.ROOT_DIR, "lipid_graphs")
         self.lipid_graph_index = {}
         index_path = os.path.join(self.lipid_graph_dir, "lipid_graph_index.csv")
@@ -109,9 +110,8 @@ class LipidIsomerGraphBuilder:
         global_smiles = self.canonical_lipid_smiles_list(smile_global)
         fragment_smiles = self.canonical_lipid_smiles_list(smile_fragment)
 
-        # Same rule as the embedding path: the draw is a training-split augmentation,
-        # marked per clone in Dataloader.__iter__. Validation and test fall through
-        # to the fixed first candidate below.
+        # As for embeddings, draw only on training clones marked by Dataloader.__iter__.
+        # Validation/test use the fixed first candidate below.
         if self._draw_lipid_candidate and fragment_smiles:
             return [random.choice(fragment_smiles)]
         if self.config.lipid_concat or self.config.lipid_fragments_mask:
@@ -149,13 +149,11 @@ class LipidIsomerGraphBuilder:
         return nodes, edges
 
     def _one_lipid_graph_parts(self, canonical_smiles):
-        """One fragment's {x, edge_index, edge_attr, chain_rank}, cache first.
+        """Return cached {x, edge_index, edge_attr, chain_rank} for one fragment.
 
-        data/build_lipid_graph_tensor_cache.py mmap's this exact set of tensors for
-        every graph_id under data/lipid_graphs/, so a hit here skips the CSV parse
-        and RBF expansion below entirely. A miss (cache absent, stale, or this
-        canonical SMILES built after the cache) falls back to reading the CSVs
-        directly -- slower, never wrong.
+        data/build_lipid_graph_tensor_cache.py stores these exact tensors by graph_id
+        under data/lipid_graphs/. Hits skip CSV parsing and RBF expansion.
+        Absent/stale caches or newly added SMILES fall back to equivalent CSV parsing.
         """
         graph_id = self.lipid_graph_id(canonical_smiles)
         cached = getattr(self, "_lipid_graph_tensor_cache", {}).get(graph_id)
@@ -210,8 +208,7 @@ class LipidIsomerGraphBuilder:
         "bond_dir",
         "is_aromatic",
     ]
-    # Real bond lengths run ~0.9-1.8 A, nowhere near the 2-22 A range rbf() defaults
-    # to for protein Ca-Ca contacts -- use bond-appropriate bounds instead.
+    # Use bond RBF bounds (~0.9-1.8 A), not protein Ca-Ca defaults (2-22 A).
     _BOND_LENGTH_RBF_MIN, _BOND_LENGTH_RBF_MAX = 0.8, 2.0
 
     def make_graph_lipid(self, smile_global, smile_fragment=None):

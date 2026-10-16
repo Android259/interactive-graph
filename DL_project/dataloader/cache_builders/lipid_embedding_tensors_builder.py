@@ -1,7 +1,7 @@
-"""Builder for the lipid-embedding memory-mapped store.
+"""Build the memory-mapped lipid-embedding store.
 
-dataloader/tensors_reading/lipid_embedding_tensors_reader.py holds the reader and the shared path/format logic,
-and explains why the mmap'd archive computes exactly what the source pickle computes.
+See tensors_reading/lipid_embedding_tensors_reader.py for paths, format,
+and value equivalence with the source pickle.
 """
 
 import json
@@ -18,11 +18,10 @@ def _source_record(path):
 
 
 def build_lipid_embedding_store(root_dir, source_name):
-    """Convert one embedding pickle into its memory-mappable archive.
+    """Convert an embedding pickle to a memory-mappable archive.
 
-    Returns (store_path, manifest_path, entry_count). Rebuilds unconditionally: the
-    caller decides whether it is needed, so that a forced rebuild after an odd
-    filesystem event stays possible.
+    Return (store_path, manifest_path, entry_count). Build unconditionally;
+    the caller decides when needed, including forced filesystem recovery.
     """
     import pickle
 
@@ -43,10 +42,8 @@ def build_lipid_embedding_store(root_dir, source_name):
 
     store_path, manifest_path = store_paths(root_dir, source_name)
     store_path.parent.mkdir(parents=True, exist_ok=True)
-    # contiguous() so each entry owns a tight storage in the archive: a tensor saved as
-    # a view of a bigger storage drags the whole storage into the file, and mmap would
-    # then fault in pages no run ever reads. The values here are already contiguous, so
-    # this is a no-op that documents the requirement rather than a transformation.
+    # Keep contiguous storage so saved views do not include unused backing data
+    # or map unneeded pages. Inputs are already contiguous; this call is a no-op.
     torch.save({key: value.contiguous() for key, value in table.items()}, store_path)
     manifest_path.write_text(
         json.dumps(

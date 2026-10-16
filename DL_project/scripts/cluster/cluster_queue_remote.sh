@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Runs on the cluster frontend, standalone (invoked over ssh), so it takes
-# its label from the environment rather than sourcing cluster_common.sh.
+# its label from the environment instead of sourcing cluster_common.sh.
 CLUSTER_LABEL="${CLUSTER_LABEL:-${CLUSTER_NAME:-Cluster}}"
 
 usage() {

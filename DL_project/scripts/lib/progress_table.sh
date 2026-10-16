@@ -46,7 +46,7 @@ wait_progress_python() {
 # "best" is smoothed over the last five epochs, so a single lucky epoch does not
 # claim the checkpoint. The last field is the RAW score of the last completed
 # epoch -- the same number before smoothing, which is what shows whether the run
-# is still moving right now rather than how good its best checkpoint once was.
+# is still moving right now instead of how good its best checkpoint once was.
 #
 # LC_ALL=C because the scores are parsed by the caller, not read by a person: under a
 # comma-decimal locale (fr_FR here) awk's %f writes "0,634567", which then matches no
@@ -97,7 +97,7 @@ wait_progress_parse_log() {
 #   in : job_id \t completed_epoch \t log_mtime \t exclusion_set
 #   out: job_id \t train_balanced_accuracy
 #
-# Held in a variable rather than a heredoc because stdin carries the records.
+# Held in a variable instead of a heredoc because stdin carries the records.
 _WAIT_PROGRESS_TB_PROGRAM='
 import sys
 from pathlib import Path
@@ -155,7 +155,7 @@ for line in sys.stdin:
 
     # The run directory whose completed epoch was written closest in time to the
     # log s last write is the one this job belongs to; two equally close ones
-    # mean we cannot tell them apart, so report nothing rather than guess.
+    # mean we cannot tell them apart, so report nothing instead of guessing.
     candidates = []
     for directory in dirs_by_set.get(group, ()):
         accumulator = accumulator_for(directory)
@@ -304,12 +304,12 @@ wait_progress_render_table() {
 
 # --- per-cluster OAR summary ----------------------------------------------
 # Filled in as the round visits each cluster, printed once at the end so the
-# clusters sit next to each other rather than being separated by their own
+# clusters sit next to each other instead of being separated by their own
 # progress output.
 WAIT_PROGRESS_CLUSTER_ROWS=()
 
 # Whether each source has nothing left to do, keyed by source name -- "bigfoot",
-# "kraken", "local". One map rather than an array for the clusters and a separate
+# "kraken", "local". One map instead of an array for the clusters and a separate
 # variable for local: the summary table already treats local as a third row like
 # any other, and the two bookkeepings kept having to be checked separately.
 declare -A SOURCE_IDLE=()
@@ -393,7 +393,7 @@ wait_progress_round2() {
 # Every ".out" file under script_logs, listed once. All three sources name their
 # output "<...>_<tag><id>.out" -- tag "" on bigfoot, "k" on kraken, "l" for a
 # local job, over three id spaces that cannot collide -- so one listing serves
-# all of them. Taken once per table rather than once per job: script_logs holds
+# all of them. Taken once per table instead of once per job: script_logs holds
 # every past run's logs, so walking it per job is the expensive way to ask a
 # cheap question.
 wait_progress_out_files() {
@@ -598,7 +598,7 @@ print_running_progress() {
 # colliding on a filename, and metrics_summary.csv rows are keyed by
 # datetime+config (upsert_row, analysis/build_metrics_table.py, guarded by an
 # flock against exactly the concurrent-local-jobs case this script watches
-# for) rather than by job id, so nothing here needs to know about that layer
+# for) instead of by job id, so nothing here needs to know about that layer
 # at all.
 LOCAL_JOB_TAG="l"
 # Jobs not yet launched WITHIN the currently-running grid.
@@ -626,7 +626,7 @@ LOCAL_PENDING_BATCHES_FILE="${LOCAL_PROJECT}/script_logs/local_run_pending_batch
 #
 # Symlinks, not copies: the files are already on this disk. Rebuilt at the top of
 # every call, since run/ changes under it. The name is keyed on the watcher's own
-# pid so a long-lived watcher reuses one directory rather than leaving a fresh one
+# pid so a long-lived watcher reuses one directory instead of leaving a fresh one
 # in /tmp behind every round.
 wait_progress_event_cache_path() {
     printf '/tmp/dl-events-%s-%s\n' "${USER:-$(id -un)}" "$$"
@@ -674,8 +674,8 @@ wait_progress_local_pids() {
 # The local half of the same table: scripts/run_local.sh grids on this machine.
 #
 # Same table, same function underneath. Only the two inputs differ: a job's id is
-# the training process's own pid rather than an OAR job id, and the not-yet-
-# started jobs come from run_local.sh's own queue file rather than from a
+# the training process's own pid instead of an OAR job id, and the not-yet-
+# started jobs come from run_local.sh's own queue file instead of from a
 # scheduler.
 print_local_progress() {
     local out_files="$1" running_ids="" extra_rows=""
@@ -724,7 +724,7 @@ wait_progress_print_pending_batches() {
 # contract as poll_cluster() -- the round loop calls both the same way (reset
 # ROUND_SYNCED, call, fold it into round_synced) and reads SOURCE_IDLE afterwards
 # -- but needs neither SSH nor rsync, since local jobs write straight into
-# LOCAL_PROJECT already. ROUND_SYNCED and SOURCE_IDLE are set rather than
+# LOCAL_PROJECT already. ROUND_SYNCED and SOURCE_IDLE are set instead of
 # returned because the caller resets one right before the call and reads both
 # right after, which needs no return-value plumbing.
 poll_local() {

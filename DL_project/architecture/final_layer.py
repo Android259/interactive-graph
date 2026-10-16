@@ -47,7 +47,7 @@ PROTEIN_FAMILY_COUNT = 9
 def family_dann_loss(features, family_onehot, labels, heads, class_conditional):
     """Cross-entropy of the family adversaries on already-reversed features.
 
-    Lives here rather than in the training loop so the per-class routing sits next to
+    Keep per-class routing here beside
     the heads it selects. ``features`` must already have passed through grad_reverse:
     one backward then trains each head to name the family while pushing the encoder to
     make the family undecodable.
@@ -60,7 +60,7 @@ def family_dann_loss(features, family_onehot, labels, heads, class_conditional):
     because the only way to erase the family is to erase the specificity that defines it.
     Conditioning on the label removes that particular escape route.
 
-    Returns a scalar; a class with no rows in the batch contributes nothing.
+    Returns a scalar;
     """
     if family_onehot.sum(dim=1).min() <= 0:
         # argmax of an all-zero row silently returns 0, which would relabel the sample
@@ -95,7 +95,7 @@ def chem_adversary_loss(features, frozen_prior, head):
     """MSE of the chemistry adversary on already-reversed features.
 
     Mirrors family_dann_loss's contract: `features` must already have passed through
-    grad_reverse. MSE rather than cross-entropy because the target is a continuous
+    grad_reverse. Use MSE for the continuous
     score, not a class -- there is no head-per-class analogue of
     dann_class_conditional needed here, because the target is not the label (nothing
     about it inverts in meaning across families the way P(bind | lipid class) does for
@@ -261,7 +261,7 @@ class ResidualAdversary(torch.nn.Module):
     the first standing in for the attention, the second reusing the FFN itself -- and
     the two LayerNorms and both residual paths are kept as they are.
 
-    The substitute is sized to the budget it replaces rather than to m: hidden width
+    Size the substitute to the replaced block's parameter budget: hidden width
     2 * dim puts 4 * dim^2 in its Linears, which is exactly what MultiheadAttention
     spends on Q/K/V/O. The whole adversary therefore matches the block it is meant to
     keep honest, instead of the 2-layer probe that used to lose to it by ~12x.
@@ -373,7 +373,7 @@ class Final_Layer(torch.nn.Module):
         # --bilinear_fusion (ModelConfig.validate): it is
         # already a bottlenecked multiplicative quantity in its own right, so stacking
         # it next to the pool-level bilinear product adds a second, independent
-        # bilinear channel rather than reopening the single-partner shortcut
+        # bilinear channel instead of reopening the single-partner shortcut
         # --bilinear_fusion exists to close. Width is lip_dim == prot_dim (both
         # config.hiddim; see CrossAttention.__init__ for why the two always match).
         self.node_bilinear_fusion = bool(getattr(self.config, "node_bilinear_fusion", False))
@@ -487,7 +487,7 @@ class Final_Layer(torch.nn.Module):
         # trained jointly with the rest of the model: a scalar and a whole encoder
         # competing by gradient descent for the same variance is underdetermined, and
         # this project's own measurements are the evidence that this network takes
-        # whichever shortcut is available rather than the "correct" one). There is
+        # whichever shortcut is available instead of the "correct" one). There is
         # therefore nothing to initialise here; the value read at forward() time is
         # already in logit units, and it is the SAME value whether it came from
         # chemistry alone, compatibility alone, or a joint fit of both.
@@ -551,7 +551,7 @@ class Final_Layer(torch.nn.Module):
         still genuinely single-partner. Cross-attention injects the counterpart into
         each stream (its values ARE the other partner, added residually), so running
         the adversary on its output would penalise the interaction summary cross-
-        attention builds rather than the single-partner identity shortcut we mean to
+        attention builds instead of the single-partner identity shortcut we mean to
         suppress. Stashes (lip_logits, prot_logits) in _adv for the training loop;
         resets to None when GRL is off or in eval so no stale logits are read.
         """
@@ -560,7 +560,7 @@ class Final_Layer(torch.nn.Module):
             return
         lip_outs, prot_outs = self._pool_partners(lip, prot, lip_batch, prot_batch, pool, prot_pocket)
         lam = self.adv_lambda_now
-        # A side switched off yields None rather than a zeroed logit, so the training
+        # A side switched off yields None instead of a zeroed logit, so the training
         # loop adds no term for it and its head takes no gradient at all.
         self._adv = (
             self.lip_adversary(grad_reverse(lip_outs, lam))
@@ -698,7 +698,7 @@ class Final_Layer(torch.nn.Module):
             # Same representation dann_family reverses, different target: this one
             # predicts frozen_prior (chemistry, compatibility, or their joint fit --
             # whatever Dataloader combined), not family. See __init__ for why
-            # targeting it here is safe rather than a fight with the task loss.
+            # targeting it here preserves the task-relevant signal.
             self._chem_features = grad_reverse(common_out, self.chem_lambda_now)
         else:
             self._chem_features = None

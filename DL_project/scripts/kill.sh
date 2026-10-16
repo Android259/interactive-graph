@@ -19,7 +19,7 @@
 # job-tagged .out, the .log it points at, any .err beside it -- and then the
 # directories those leave empty. Only jobs that were actually stopped here are
 # touched; a killed job's logs are a stump of an epoch or two, and a rerun of the
-# same label writes new files rather than reusing them. Off by default: a killed
+# same label writes new files instead of reusing them. Off by default: a killed
 # job's log is often exactly what one wants to read afterwards.
 #
 # The label is the config's name, which is also the run's --label and the stem of

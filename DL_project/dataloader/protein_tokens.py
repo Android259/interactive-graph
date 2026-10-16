@@ -1,28 +1,22 @@
-"""The protein's pocket as a DeepCLIP-style token sequence (--deepclip_protein_tokens).
+"""Encode pocket residues for --deepclip_protein_tokens.
 
-The protein-side counterpart of dataloader/smiles_tokens.py: one token per pocket
-residue, in chain order, each read in up to two 20-letter alphabets --
+One token per pocket residue in chain order, with up to two 20-letter alphabets:
+aa: residue_type from coarse_graph_nodes.csv, in RESIDUE_LETTERS order;
+3di: data/protein_3di.csv, built by preprocessing/build_foldseek_3di.py.
+This is the protein counterpart of smiles_tokens.py.
 
-    aa    the amino acid (coarse_graph_nodes.csv's residue_type, RESIDUE_LETTERS order)
-    3di   Foldseek's structural letter for the residue (data/protein_3di.csv, built by
-          preprocessing/build_foldseek_3di.py)
+A break flag is 1 when the preceding pocket residue is not a chain neighbor.
+Across 35 proteins, pockets have a median 33 residues and 28 breaks.
+A channel avoids nearly doubling sequence length with gap tokens, which would
+leave width-4..8 windows seeing only 2-4 residues.
 
--- plus one BREAK flag per token: 1 when the residue is not the chain neighbour of
-the pocket residue before it. A pocket is mostly scattered residues (median 33
-residues with 28 chain breaks between them over the 35 proteins), so a break is a
-channel, not a token of its own: a separate gap character would nearly double every
-sequence and leave a width-4..8 window seeing two to four residues.
+As in ProteinGraphBuilder.protein_graph_tensors, a residue is in the pocket
+when any side-chain atom has B-factor 1 in pocketness.pdb.
+Match (chain, resSeq, iCode), not positions. This handles RBP4's trailing lone
+N atom, absent from its graph, without a special case. Missing node IDs raise.
 
-Pocket membership is read the way ProteinGraphBuilder.protein_graph_tensors reads it
--- a residue is pocket when any of its side-chain atoms carries the 1 flag in
-pocketness.pdb's B-factor column -- but matched to the node table by (chain, resSeq,
-iCode) rather than by position. The positional parse needs a special case for RBP4,
-whose pocketness.pdb ends with a lone N atom of a residue the graph does not have;
-matching by identity needs none, and raises on any node the file does not describe.
-
-Tokens are stored as integer codes, not one-hot: [residues, 3] long per protein --
-aa code, 3Di code, break flag. architecture/deepclip.py expands the alphabets the run
-asked for. A padded row is -1 in all three columns.
+Store integer [residues, 3] long tensors: aa code, 3Di code, break flag.
+deepclip.py expands the requested alphabets. Padding is -1 in all columns.
 """
 
 import os
@@ -35,8 +29,8 @@ from preprocessing.compute_descriptors import POCKET_BACKBONE_ATOMS, RESIDUE_LET
 
 PROTEIN_TOKEN_ALPHABETS = ("aa", "3di")
 
-# Foldseek writes 3Di states with the 20 amino-acid letters. This order fixes which
-# one-hot column each state owns -- a schema, like SMILES_VOCABULARY.
+# Foldseek uses 20 amino-acid letters for 3Di states. This order defines
+# one-hot columns, as SMILES_VOCABULARY does.
 THREE_DI_VOCABULARY = RESIDUE_LETTERS
 THREE_DI_INDEX = {letter: code for code, letter in enumerate(THREE_DI_VOCABULARY)}
 
@@ -105,8 +99,8 @@ def pocket_token_codes(graph_dir, three_di=None):
         if not flags[key]:
             continue
         chain, sequence_number = key[0], int(node.ID_resSeq)
-        # Chain neighbour = same chain, next residue number. An insertion code is a
-        # residue squeezed in between two numbers, so it counts as adjacent.
+        # Neighbors share a chain and consecutive residue numbers; insertion codes
+        # also count as adjacent residues.
         adjacent = previous is not None and previous[0] == chain and (
             sequence_number - previous[1] in (0, 1)
         )
@@ -136,10 +130,10 @@ def load_three_di(root_dir):
 
 
 def build_protein_token_table(root_dir, proteins, alphabets):
-    """{protein: [1, longest, 3] long, padded with -1}, and {protein: [1] long length}.
+    """Return protein-to-codes [1, longest, 3] and protein-to-length [1] maps.
 
-    Padded to the longest pocket among `proteins` -- every sample of the run then has
-    the same shape, which is what lets PyG and the preassembled loader stack them.
+    Use long tensors and -1 padding to the longest requested pocket.
+    Equal shapes allow PyG and the preassembled loader to stack samples.
     """
     three_di = load_three_di(root_dir) if "3di" in alphabets else {}
     codes = {}
@@ -160,10 +154,9 @@ def build_protein_token_table(root_dir, proteins, alphabets):
 
 
 def protein_token_one_hot(codes, alphabets):
-    """[batch, longest, 3] codes -> [batch, longest, protein_token_width] float.
+    """Convert [batch, longest, 3] codes to [batch, longest, protein_token_width].
 
-    Padded positions come out all-zero, the same "no character" a SMILES one-hot has
-    past the end of a molecule.
+    Return float values, with zero padding as in SMILES one-hot encoding.
     """
     valid = codes[..., 0] >= 0
     channels = []

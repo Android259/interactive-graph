@@ -20,13 +20,11 @@ import pandas as pd
 from dataloader.dataset_source import interaction_csv_path
 from preprocessing.compute_descriptors import npr1 as _compute_npr1
 from preprocessing.compute_descriptors import npr2 as _compute_npr2
-from preprocessing.compute_descriptors import hbond_capacity as _hbond_capacity
-from preprocessing.compute_descriptors import heavy_atom_count as _heavy_atom_count
-from preprocessing.compute_descriptors import longest_acyl_chain as _longest_acyl_chain
-from preprocessing.compute_descriptors import unsaturation_count as _unsaturation_count
-from preprocessing.compute_descriptors import KYTE_DOOLITTLE, RESIDUE_LETTERS
+from preprocessing.compute_descriptors import hbond as _hbond
+from preprocessing.compute_descriptors import heavy as _heavy
+from preprocessing.compute_descriptors import chain as _chain
+from preprocessing.compute_descriptors import unsaturation as _unsaturation
 from dataloader.descriptors import LIPID_DESCRIPTOR_NAMES
-from dataloader.descriptors import PROTEIN_DERIVED_DESCRIPTOR_NAMES
 from dataloader.descriptors import PROTEIN_DESCRIPTOR_NAMES
 from dataloader.descriptor_cache_reader import load_lipid_descriptor_cache
 from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import (
@@ -38,7 +36,6 @@ from dataloader.sampler import (
     lipid_class_series,
     sample_protein_balanced_negatives,
 )
-from preprocessing.audit_lipid_identity_by_smiles import features as smiles_features
 from preprocessing.lipid_marginal_baseline import lipid_isolation_split, lipid_split
 
 try:
@@ -98,18 +95,15 @@ POCKET23_NAMES = POCKET13_NAMES + POCKET_CHEMISTRY_NAMES
 # 13+10 above -- not a separate reimplementation, so this cannot drift from the
 # network's own values the way an independently-derived formula could.
 POCKET_EXTRA_NAMES = ("ev28_q10", "aromatic_share_rim", "hydropathy_mean", "ev14_q10")
-# The two cavity measures added on top -- see _cavity_values for what they are and why
-# the pre-existing "volume" entries were not cavity measures at all.
+# The two cavity measures added on top -- preprocessing/compute_descriptors.py's
+# pocket_cavity_volume computes them, and says why the pre-existing "volume"
+# entries were not cavity measures at all.
 POCKET_CAVITY_NAMES = ("pocket_free_volume", "pocket_packing_density")
-POCKET_ALL_NAMES = POCKET23_NAMES + POCKET_EXTRA_NAMES + POCKET_CAVITY_NAMES
+# Every catalog name, not a frozen list: protein_pocket_features reads the whole
+# per-protein table now, so a newly added descriptor reaches the baselines with
+# no edit here. pocket13/pocket23 above stay fixed -- their counts are their names.
+POCKET_ALL_NAMES = PROTEIN_DESCRIPTOR_NAMES
 
-_KYTE_DOOLITTLE = np.asarray(KYTE_DOOLITTLE)
-AROMATIC = {"F", "W", "Y"}
-BASIC = {"R", "K", "H"}
-ACIDIC = {"D", "E"}
-POLAR = {"N", "Q", "S", "T", "Y", "C"}
-HBOND_DONOR = {"R", "K", "H", "N", "Q", "S", "T", "Y", "W", "C"}
-HBOND_ACCEPTOR = {"D", "E", "H", "N", "Q", "S", "T", "Y", "C"}
 
 
 def read_interactions(csv_path: Path | str = DEFAULT_CSV) -> pd.DataFrame:
@@ -166,8 +160,7 @@ def resolve_excluded_lipids(table: pd.DataFrame, names: list[str]) -> tuple[str,
     ambiguity list, which neither class form has, and this project's class names
     and article abbreviations do not share a spelling).
 
-    Raises ValueError naming whichever entries matched none of the three, rather
-    than silently excluding nothing for them (a bare class name used to slip
+    Raises ValueError naming whichever entries matched none of the three, instead of silently excluding nothing for them (a bare class name used to slip
     through as an unmatched species, producing an empty held-out block and an
     all-NaN report instead of an error).
     """
@@ -442,7 +435,7 @@ def generate_lipid_isolation_groups(
     mechanism. `target=0.0` (the default) asks for "as cold as achievable", since
     isolation is 0 at the fully-novel extreme; --isolation_target lets a run instead
     ask for `count` DIVERSE blocks clustered AROUND one chosen isolation level (e.g.
-    "3 blocks near 0.6") rather than only ever the coldest extreme.
+    "3 blocks near 0.6") instead of only ever the coldest extreme.
 
     NOT forced disjoint: an earlier version took blocks one at a time via analysis.
     lipid_block_search.search_groups, each restricted to species no earlier group
@@ -540,7 +533,7 @@ def generate_lipid_isolation_groups(
 
 def resolve_lipid_isolation_species(target: str, table: pd.DataFrame) -> tuple[str, ...]:
     """Species set for one --lipid_coldsplit=<target> block, keyed by a REQUESTED
-    Tanimoto isolation level (e.g. "0.8") rather than a named LIPID_COLDSPLIT_SETS
+    Tanimoto isolation level (e.g. "0.8") instead of a named LIPID_COLDSPLIT_SETS
     chemistry -- the --lipid_isolation axis the network itself already supports
     (dataloader/Dataloader.py, dataloader/splitting_on_blocks/lipid_isolation_blocks.py).
 
@@ -701,7 +694,7 @@ def aggregate_pair_labels(
 ) -> pd.DataFrame:
     """Collapse duplicate assay rows into a complete protein-by-lipid P-vs-U matrix.
 
-    `Interaction=0` is unlabelled rather than a confirmed negative.  A duplicate pair
+    `Interaction=0` means unlabelled; it does not confirm a negative.  A duplicate pair
     is therefore positive whenever either existing screen observed a positive.  Screen
     remains available in the separate row-level diagnostic.
 
@@ -767,7 +760,7 @@ def best_threshold_for_metric(
     a small positive count. Picking `metric` up front makes that tradeoff explicit
     instead of silently reporting a BA-optimal cut's F1 (which reads as "broken").
 
-    Vectorised over all candidate cuts at once rather than one Python iteration per
+    Vectorize all candidate cuts together, avoiding one Python iteration per
     cut: each cut's confusion matrix comes from a searchsorted over the score-sorted
     rows, so the whole sweep is O(n log n) instead of O(n_cuts * n). Same cuts and
     same values as the loop it replaces (same midpoint candidates, same ">= cut"
@@ -876,163 +869,19 @@ def binary_confusion_metrics(
     }
 
 
-def _pocket_mask(nodes: pd.DataFrame, pocket_path: Path) -> np.ndarray:
-    """Pocket mask with the same B-factor and side-chain convention as the loader."""
-    from preprocessing.compute_descriptors import read_pocket_atoms
-
-    _, pocket_residues, _ = read_pocket_atoms(pocket_path)
-    keys = [
-        str(int(value)) if float(value).is_integer() else str(value)
-        for value in nodes["ID_resSeq"]
-    ]
-    mask = np.asarray([residue in pocket_residues for residue in keys], dtype=bool)
-    if not mask.any():
-        raise ValueError(f"{pocket_path}: no pocket residues match coarse_graph_nodes.csv")
-    return mask
-
-
-def _shape_values(pocket_path: Path) -> tuple[float, float, float]:
-    from preprocessing.compute_descriptors import pocket_shape_full
-    from preprocessing.compute_descriptors import read_pocket_atoms
-
-    coordinates, _, _ = read_pocket_atoms(pocket_path)
-    shape = pocket_shape_full(coordinates)
-    return shape["pocket_extent"], shape["pocket_elongation"], shape["pocket_flatness"]
-
-
-# Van der Waals radii, angstrom (Bondi). Only the elements a protein PDB actually
-# carries; anything unlisted falls back to carbon, the commonest by far.
-_VDW_RADII = {"C": 1.70, "N": 1.55, "O": 1.52, "S": 1.80, "P": 1.80, "H": 1.20}
-
-
-def _cavity_values(pocket_path: Path) -> tuple[float, float]:
-    """(free cavity volume in A^3, packing density) of the binding pocket.
-
-    The existing "volume" in this catalog is NOT the cavity: `residue_volume` is the
-    Voronoi cell of each LINING RESIDUE -- protein material, not empty space -- and
-    since a residue's cell varies only ~21% around 198 A^3, summing it over the pocket
-    tracks the residue count at rho=0.993 (see PROTEIN_DESCRIPTOR_NAMES' own comment in
-    dataloader/descriptors.py, which is why pocket_volume_per_sasa replaced it).
-    A convex hull of the pocket atoms is no better on its own -- measured here across
-    all 35 proteins, hull volume still correlates 0.972 with residue count.
-
-    What IS new information is the hull MINUS the van der Waals volume of every atom
-    whose centre falls inside it: the space actually left for a ligand. Measured over
-    the 35 proteins: mean 1006 A^3 (range 162-3064), correlation with pocket residue
-    count 0.791 -- and the free FRACTION (this function's second return value) sits at
-    -0.196, i.e. essentially independent of how big the pocket is. That fraction is a
-    genuinely new axis rather than another size proxy.
-
-    The absolute free volume matters for a second reason: it lands on the same physical
-    scale as the lipid side's `experimental_lipid_volume` (283 species, mean 632 A^3,
-    range 22-1248), so the lipid-volume-against-pocket-volume relationship the source
-    paper (Titeca et al., files/literature/Reuter.pdf) actually measures becomes expressible.
-    """
-    from scipy.spatial import ConvexHull, Delaunay
-
-    from preprocessing.compute_descriptors import read_pocket_atoms
-
-    pocket, _, _ = read_pocket_atoms(pocket_path)
-    if len(pocket) < 4:
-        return 0.0, 0.0
-    hull = ConvexHull(pocket)
-    triangulation = Delaunay(pocket)
-    coordinates, elements = [], []
-    with open(pocket_path) as handle:
-        for line in handle:
-            if not line.startswith(("ATOM", "HETATM")) or len(line) < 63:
-                continue
-            coordinates.append((float(line[30:38]), float(line[38:46]), float(line[46:54])))
-            elements.append((line[76:78].strip() or line[13:14]).upper())
-    inside = triangulation.find_simplex(np.asarray(coordinates)) >= 0
-    occupied = sum(
-        4.0 / 3.0 * np.pi * _VDW_RADII.get(element, 1.70) ** 3
-        for element, is_inside in zip(elements, inside) if is_inside
-    )
-    free = max(hull.volume - occupied, 0.0)
-    return float(free), float(free / max(hull.volume, 1e-9))
-
-
-def _share(residue_letters: np.ndarray, allowed: set[str]) -> float:
-    return float(np.isin(residue_letters, list(allowed)).mean())
-
-
 def protein_pocket_features(
     proteins: list[str] | tuple[str, ...], graphs: Path | str = DEFAULT_GRAPHS
 ) -> pd.DataFrame:
-    """Build pocket13 and its residue-chemistry extension from existing graph files."""
-    rows = []
-    for protein in proteins:
-        protein_dir = Path(graphs) / str(protein)
-        nodes_path = protein_dir / "coarse_graph_nodes.csv"
-        pocket_path = protein_dir / "pocketness.pdb"
-        if not nodes_path.is_file() or not pocket_path.is_file():
-            raise FileNotFoundError(f"missing existing graph artefacts for {protein}: {protein_dir}")
-        nodes = pd.read_csv(nodes_path)
-        mask = _pocket_mask(nodes, pocket_path)
-        site = nodes.loc[mask]
-        residue_types = site["residue_type"].to_numpy(dtype=int)
-        residue_letters = np.asarray([RESIDUE_LETTERS[index] for index in residue_types])
-        hydropathy = _KYTE_DOOLITTLE[residue_types]
-        aromatic = np.isin(residue_letters, list(AROMATIC))
-        sasa = site["residue_sas_area"].to_numpy(dtype=float)
-        pocket_sasa = float(sasa.sum())
-        burial = site["residue_mean_buriedness"].to_numpy(dtype=float)
-        core = burial >= np.median(burial)
-        rim = ~core
-        if not rim.any():
-            rim = np.ones(len(site), dtype=bool)
-        extent, elongation, flatness = _shape_values(pocket_path)
-        free_volume, packing = _cavity_values(pocket_path)
-        row = {
-            "LTPProtein": protein,
-            "pocket_residue_share": len(site) / max(len(nodes), 1),
-            "pocket_sasa_share": pocket_sasa
-            / max(float(nodes["residue_sas_area"].sum()), 1e-9),
-            "pocket_volume_per_sasa": float(site["residue_volume"].sum())
-            / max(pocket_sasa, 1e-9),
-            "pocket_extent": extent,
-            "pocket_elongation": elongation,
-            "pocket_flatness": flatness,
-            "ev14_q50": float(np.median(site["residue_mean_ev14"].to_numpy(dtype=float))),
-            "buriedness_q50": float(np.median(burial)),
-            "depth_q10": float(
-                np.percentile(site["residue_mean_voromqa_depth"].to_numpy(dtype=float), 10)
-            ),
-            "apolar_sasa_share": float(sasa[hydropathy > 0].sum() / max(pocket_sasa, 1e-9)),
-            "aromatic_share": float(aromatic.mean()),
-            "hydropathy_core": float(hydropathy[core].mean()),
-            "hydropathy_rim": float(hydropathy[rim].mean()),
-            # POCKET_EXTRA_NAMES -- same formulas as dataloader/protein_graph_
-            # builder.py's pocket_descriptor(), same `rim` (already patched to the
-            # whole site when the burial median split leaves it empty, so no
-            # separate rim.any() fallback is needed here either).
-            "ev28_q10": float(
-                np.percentile(site["residue_mean_ev28"].to_numpy(dtype=float), 10)
-            ),
-            "aromatic_share_rim": float(aromatic[rim].mean()),
-            "hydropathy_mean": float(hydropathy.mean()),
-            "ev14_q10": float(
-                np.percentile(site["residue_mean_ev14"].to_numpy(dtype=float), 10)
-            ),
-            # See _cavity_values: the first real cavity measure in this catalog (the
-            # older "volume" entries were residue count in disguise), and the only
-            # protein-side quantity on the same physical scale as the lipid side's
-            # experimental_lipid_volume.
-            "pocket_free_volume": free_volume,
-            "pocket_packing_density": packing,
-        }
-        for name, allowed in (
-            ("basic", BASIC),
-            ("acidic", ACIDIC),
-            ("polar", POLAR),
-            ("hbond_donor", HBOND_DONOR),
-            ("hbond_acceptor", HBOND_ACCEPTOR),
-        ):
-            row[f"{name}_share_core"] = _share(residue_letters[core], allowed)
-            row[f"{name}_share_rim"] = _share(residue_letters[rim], allowed)
-        rows.append(row)
-    return pd.DataFrame(rows).set_index("LTPProtein").loc[list(proteins)]
+    """POCKET_ALL_NAMES per protein, read from data/protein_descriptors.csv.
+
+    Every column comes from preprocessing.compute_descriptors' own registry through
+    protein_descriptor_table -- the same cached table the network reads -- instead
+    of a second implementation of the same formulas living here. The values are
+    unchanged: the formulas this used to inline were that registry's own.
+    """
+    table = _protein_catalog_features(list(proteins), list(POCKET_ALL_NAMES), graphs)
+    table.index.name = "LTPProtein"
+    return table
 
 
 def protein_features_for_kernel(
@@ -1080,6 +929,342 @@ def _fallback_nan(value: float | None) -> float:
     and is falsy, so `or` would silently turn a real zero into a missing value.
     """
     return np.nan if value is None else value
+
+
+CARBOXYL_SMARTS = (
+    Chem.MolFromSmarts("[CX3](=O)[OX1H0-,OX2H1]") if Chem is not None else None
+)
+CHOLINE_SMARTS = (
+    Chem.MolFromSmarts("[OX2][CX4][CX4][N+](C)(C)C") if Chem is not None else None
+)
+ETHANOLAMINE_SMARTS = (
+    Chem.MolFromSmarts("[OX2][CX4][CX4][NX3;!$([N+])]") if Chem is not None else None
+)
+
+
+def atom_has_double_oxygen(atom):
+    for bond in atom.GetBonds():
+        neighbor = bond.GetOtherAtom(atom)
+        if neighbor.GetAtomicNum() == 8 and bond.GetBondType() == Chem.BondType.DOUBLE:
+            return True
+    return False
+
+
+def atom_is_ester_carbonyl(atom):
+    if atom.GetAtomicNum() != 6 or not atom_has_double_oxygen(atom):
+        return False
+    for oxygen in atom.GetNeighbors():
+        if oxygen.GetAtomicNum() != 8:
+            continue
+        bond = atom.GetOwningMol().GetBondBetweenAtoms(atom.GetIdx(), oxygen.GetIdx())
+        if bond.GetBondType() != Chem.BondType.SINGLE:
+            continue
+        if any(
+            neighbor.GetAtomicNum() == 6 and neighbor.GetIdx() != atom.GetIdx()
+            for neighbor in oxygen.GetNeighbors()
+        ):
+            return True
+    return False
+
+
+def count_rdkit_acyl_esters(mol):
+    if mol is None:
+        return None
+    return sum(1 for atom in mol.GetAtoms() if atom_is_ester_carbonyl(atom))
+
+
+def count_sugar_rings(mol):
+    if mol is None:
+        return None
+    count = 0
+    for ring in mol.GetRingInfo().AtomRings():
+        ring_atoms = [mol.GetAtomWithIdx(index) for index in ring]
+        oxygen_count = sum(atom.GetAtomicNum() == 8 for atom in ring_atoms)
+        carbon_count = sum(atom.GetAtomicNum() == 6 for atom in ring_atoms)
+        if len(ring) not in (5, 6) or oxygen_count != 1 or carbon_count < 4:
+            continue
+
+        ring_set = set(ring)
+        hydroxyl_count = 0
+        for atom in ring_atoms:
+            if atom.GetAtomicNum() != 6:
+                continue
+            for neighbor in atom.GetNeighbors():
+                if neighbor.GetIdx() not in ring_set and neighbor.GetAtomicNum() == 8:
+                    hydroxyl_count += 1
+        if hydroxyl_count >= 2:
+            count += 1
+    return count
+
+
+def has_alcohol(mol):
+    if mol is None:
+        return False
+    for oxygen in mol.GetAtoms():
+        if oxygen.GetAtomicNum() != 8:
+            continue
+        if any(neighbor.GetAtomicNum() == 15 for neighbor in oxygen.GetNeighbors()):
+            continue
+        if any(atom_is_ester_carbonyl(neighbor) for neighbor in oxygen.GetNeighbors()):
+            continue
+        if any(neighbor.GetAtomicNum() == 6 for neighbor in oxygen.GetNeighbors()):
+            return True
+    return False
+
+
+def count_carbon_double_bonds(mol):
+    if mol is None:
+        return None
+    count = 0
+    for bond in mol.GetBonds():
+        if bond.GetBondType() != Chem.BondType.DOUBLE:
+            continue
+        begin = bond.GetBeginAtom()
+        end = bond.GetEndAtom()
+        if begin.GetAtomicNum() == 6 and end.GetAtomicNum() == 6:
+            count += 1
+    return count
+
+
+def oxygen_tail_type(oxygen, glycerol_carbon):
+    for neighbor in oxygen.GetNeighbors():
+        if neighbor.GetIdx() == glycerol_carbon.GetIdx():
+            continue
+        if neighbor.GetAtomicNum() == 15:
+            return "phosphate"
+        if neighbor.GetAtomicNum() != 6:
+            continue
+        if atom_is_ester_carbonyl(neighbor):
+            return "ester"
+        return "ether"
+    return None
+
+
+def glycerol_layout_features(mol):
+    if mol is None:
+        return {
+            "pg_tail_layout_present": False,
+            "bmp_tail_layout_present": False,
+            "rdkit_glycerol_backbone_present": False,
+            "rdkit_glycerol_head_present": False,
+            "rdkit_tail_count": None,
+        }
+
+    units_by_phosphate = {}
+    all_tail_attachments = set()
+    for center in mol.GetAtoms():
+        if center.GetAtomicNum() != 6 or center.GetIsAromatic():
+            continue
+
+        carbon_neighbors = [
+            neighbor
+            for neighbor in center.GetNeighbors()
+            if neighbor.GetAtomicNum() == 6 and not neighbor.GetIsAromatic()
+        ]
+        for left_index, left in enumerate(carbon_neighbors):
+            for right in carbon_neighbors[left_index + 1 :]:
+                glycerol_carbons = (left, center, right)
+                if any(carbon.IsInRing() for carbon in glycerol_carbons):
+                    continue
+                if not all(
+                    any(neighbor.GetAtomicNum() == 8 for neighbor in carbon.GetNeighbors())
+                    for carbon in glycerol_carbons
+                ):
+                    continue
+
+                phosphate_indices = set()
+                acylated_carbons = set()
+                ether_carbons = set()
+                for carbon in glycerol_carbons:
+                    for oxygen in carbon.GetNeighbors():
+                        if oxygen.GetAtomicNum() != 8:
+                            continue
+                        tail_type = oxygen_tail_type(oxygen, carbon)
+                        if tail_type == "phosphate":
+                            for neighbor in oxygen.GetNeighbors():
+                                if neighbor.GetAtomicNum() == 15:
+                                    phosphate_indices.add(neighbor.GetIdx())
+                        if tail_type == "ester":
+                            acylated_carbons.add(carbon.GetIdx())
+                            all_tail_attachments.add((carbon.GetIdx(), oxygen.GetIdx()))
+                        if tail_type == "ether":
+                            ether_carbons.add(carbon.GetIdx())
+                            all_tail_attachments.add((carbon.GetIdx(), oxygen.GetIdx()))
+
+                if not phosphate_indices:
+                    continue
+
+                unit_key = tuple(sorted(carbon.GetIdx() for carbon in glycerol_carbons))
+                for phosphate_index in phosphate_indices:
+                    units_by_phosphate.setdefault(phosphate_index, {})[unit_key] = (
+                        len(acylated_carbons),
+                        len(ether_carbons),
+                    )
+
+    pg_tail_layout_present = False
+    bmp_tail_layout_present = False
+    rdkit_glycerol_head_present = False
+    for acyl_counts_by_unit in units_by_phosphate.values():
+        tail_counts = [
+            acyl_count + ether_count
+            for acyl_count, ether_count in acyl_counts_by_unit.values()
+        ]
+        if 2 in tail_counts and 0 in tail_counts:
+            pg_tail_layout_present = True
+        if 0 in tail_counts:
+            rdkit_glycerol_head_present = True
+        if sum(tail_count == 1 for tail_count in tail_counts) >= 2:
+            bmp_tail_layout_present = True
+
+    return {
+        "pg_tail_layout_present": pg_tail_layout_present,
+        "bmp_tail_layout_present": bmp_tail_layout_present,
+        "rdkit_glycerol_backbone_present": bool(units_by_phosphate),
+        "rdkit_glycerol_head_present": rdkit_glycerol_head_present,
+        "rdkit_tail_count": len(all_tail_attachments),
+    }
+
+
+def count_acyl_esters(smiles):
+    count = 0
+    start = 0
+    while True:
+        pos = smiles.find("OC(", start)
+        if pos == -1:
+            break
+        window = smiles[pos : pos + 80]
+        if ")=O" in window or "=O)" in window:
+            count += 1
+        start = pos + 3
+    return count
+
+def smiles_features(smiles):
+    mol = Chem.MolFromSmiles(smiles) if Chem is not None else None
+    glycerol_features = glycerol_layout_features(mol)
+    phosphate_count = smiles.count("P(")
+    rdkit_ester_count = count_rdkit_acyl_esters(mol)
+    ester_count = rdkit_ester_count if rdkit_ester_count is not None else count_acyl_esters(smiles)
+    ether_tail_count = sum(
+        smiles.count(pattern) for pattern in ("COCCCC", "CO/C=C", "CO\\C=C")
+    )
+    amide_present = (
+        "NC(" in smiles and ")=O" in smiles
+    ) or "NC(=O)" in smiles
+    amide_tail_count = 1 if amide_present else 0
+
+    serine_present = (
+        "C(O)(=O)" in smiles
+        and "(N)" in smiles
+        and "COP" in smiles
+    ) or (
+        "C(=O)O" in smiles
+        and "(N)" in smiles
+        and "COP" in smiles
+    )
+    choline_present = bool(
+        mol is not None and CHOLINE_SMARTS is not None and mol.HasSubstructMatch(CHOLINE_SMARTS)
+    ) or "OCC[N+](C)(C)C" in smiles
+    ethanolamine_present = (
+        bool(
+            mol is not None
+            and ETHANOLAMINE_SMARTS is not None
+            and mol.HasSubstructMatch(ETHANOLAMINE_SMARTS)
+        )
+        or "OCCN" in smiles
+    ) and not choline_present and not serine_present
+    inositol_present = "[C@H]1" in smiles and "O1" not in smiles and smiles.count("(O)") >= 4
+    glycerol_head_present = (
+        glycerol_features["rdkit_glycerol_head_present"]
+        or "(O)(CO)COP" in smiles
+        or "OCC(O)CO" in smiles
+    )
+    sulfate_present = (
+        "S(=O)(=O)" in smiles
+        or "S(O)(=O)=O" in smiles
+        or "S(=O)(O)=O" in smiles
+    )
+    rdkit_sugar_ring_count = count_sugar_rings(mol)
+    sugar_ring_count = (
+        rdkit_sugar_ring_count
+        if rdkit_sugar_ring_count is not None
+        else smiles.count("O1") + smiles.count("O2") + smiles.count("O3")
+    )
+
+    sphingoid_base_present = amide_present and (
+        "[C@]([H])(O)" in smiles
+        or "[C@@]([H])(O)" in smiles
+        or "[C@H](O)" in smiles
+        or "[C@@H](O)" in smiles
+    )
+
+    glycerol_backbone_count = smiles.count("[C@](") + smiles.count("[C@@](")
+    glycerol_backbone_present = (
+        glycerol_features["rdkit_glycerol_backbone_present"]
+        or "COP" in smiles
+        or "COC(" in smiles
+        or "OC[C@]" in smiles
+        or "[C@](CO" in smiles
+        or "OC[C@@]" in smiles
+    ) and not sphingoid_base_present
+
+    free_oh_count = smiles.count("(O)")
+    if smiles.startswith("OC"):
+        free_oh_count += 1
+    free_oh_count += smiles.count("CO)")
+    free_oh_count += smiles.count("CO;")
+    carboxyl_present = bool(
+        mol is not None
+        and CARBOXYL_SMARTS is not None
+        and mol.HasSubstructMatch(CARBOXYL_SMARTS)
+    ) or (
+        "(=O)O" in smiles
+        or "C(=O)O" in smiles
+        or "C(O)(=O)" in smiles
+        or "C(O)=O" in smiles
+        or "C(=O)[O-]" in smiles
+    )
+    carbon_count = smiles.count("C")
+    hydrocarbon_chain_present = carbon_count >= 8
+    carbon_double_bond_count = count_carbon_double_bonds(mol)
+    polyene_alcohol_present = (
+        (carbon_double_bond_count if carbon_double_bond_count is not None else smiles.count("C=C")) >= 3
+        and (has_alcohol(mol) or "(O)" in smiles)
+        and "(=O)O" not in smiles
+        and "C(O)=O" not in smiles
+        and phosphate_count == 0
+        and ester_count == 0
+        and not amide_present
+    )
+    tail_count = (
+        glycerol_features["rdkit_tail_count"] + amide_tail_count
+        if glycerol_features["rdkit_tail_count"] is not None
+        and glycerol_features["rdkit_tail_count"] > 0
+        else ester_count + ether_tail_count + amide_tail_count
+    )
+
+    return {
+        "amide_present": amide_present,
+        "sphingoid_base_present": sphingoid_base_present,
+        "phosphate_count": phosphate_count,
+        "choline_present": choline_present,
+        "sugar_ring_count": sugar_ring_count,
+        "sulfate_present": sulfate_present,
+        "glycerol_backbone_count": glycerol_backbone_count,
+        "glycerol_backbone_present": glycerol_backbone_present,
+        "tail_count": tail_count,
+        "free_oh_count": free_oh_count,
+        "ethanolamine_present": ethanolamine_present,
+        "serine_present": serine_present,
+        "inositol_present": inositol_present,
+        "glycerol_head_present": glycerol_head_present,
+        "pg_tail_layout_present": glycerol_features["pg_tail_layout_present"],
+        "bmp_tail_layout_present": glycerol_features["bmp_tail_layout_present"],
+        "ester_count": ester_count,
+        "carboxyl_present": carboxyl_present,
+        "carbon_count": carbon_count,
+        "hydrocarbon_chain_present": hydrocarbon_chain_present,
+        "polyene_alcohol_present": polyene_alcohol_present,
+    }
 
 
 def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> dict[str, float]:
@@ -1166,8 +1351,7 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
         # (built specifically "for the descriptor catalog's
         # shared per-candidate ... base values (chain/unsaturation/hbond/heavy ...)"
         # -- see that script's module docstring) under "chain"/"unsaturation"/
-        # "hbond"/"heavy_atoms" (dataloader/descriptor_cache_reader.py's own
-        # build_pair_value_cache renames "heavy_atoms" -> "heavy" at its own call
+        # The cache stores every name under its catalog name.
         # site; same rename applied here). A cache hit is a dict lookup instead of
         # re-parsing the SMILES with RDKit -- the same discipline npr1/npr2 already
         # get above, now extended to these four instead of always computing them
@@ -1175,19 +1359,19 @@ def _candidate_explicit_features(smiles: str, npr_cache: dict | None = None) -> 
         if cached_entry is not None and "chain" in cached_entry:
             chain_value = _fallback_nan(cached_entry["chain"])
         else:
-            chain_value = _fallback_nan(_longest_acyl_chain(smiles))
+            chain_value = _fallback_nan(_chain(smiles))
         if cached_entry is not None and "unsaturation" in cached_entry:
             unsaturation_value = _fallback_nan(cached_entry["unsaturation"])
         else:
-            unsaturation_value = _fallback_nan(_unsaturation_count(smiles))
+            unsaturation_value = _fallback_nan(_unsaturation(smiles))
         if cached_entry is not None and "hbond" in cached_entry:
             hbond_value = _fallback_nan(cached_entry["hbond"])
         else:
-            hbond_value = _fallback_nan(_hbond_capacity(smiles))
-        if cached_entry is not None and "heavy_atoms" in cached_entry:
-            heavy_value = _fallback_nan(cached_entry["heavy_atoms"])
+            hbond_value = _fallback_nan(_hbond(smiles))
+        if cached_entry is not None and "heavy" in cached_entry:
+            heavy_value = _fallback_nan(cached_entry["heavy"])
         else:
-            heavy_value = _fallback_nan(_heavy_atom_count(smiles))
+            heavy_value = _fallback_nan(_heavy(smiles))
     ether_tail_count = max(
         0.0,
         float(parsed["tail_count"])
@@ -1279,7 +1463,7 @@ def explicit_lipid_features(table: pd.DataFrame, npr_cache: dict | None = None) 
     for _, row in species_rows.iterrows():
         # SmileGlobal is "0" (a stand-in, not a structure) for about a third of the
         # catalog's species; SmileFragment carries a real, detailed candidate SMILES
-        # set for those same rows. Fall back to it rather than let RDKit fail on the
+        # set for those same rows. Fall back to it instead of letting RDKit fail on the
         # placeholder and every downstream feature degrade to its mol-is-None default.
         smiles_source = (
             row["SmileGlobal"]
@@ -1578,7 +1762,7 @@ def build_lipid_kernel(
       new logp/tpsa/molar_refractivity/rotatable_bond_count/aromatic_ring_count/
       ring_count whole-molecule set) instead of every explicit column at once, the
       same way mixing all 17 explicit+family_neutral columns into one RBF kernel
-      diluted the signal (files/results/cron.md) rather than helping it. Names are checked
+      diluted the signal (files/results/cron.md) instead of helping it. Names are checked
       against the columns explicit_lipid_features(table) actually produced for THIS
       table (not a fixed list) since headgroup::<class> one-hot columns depend on
       the lipid classes present.
@@ -1710,27 +1894,27 @@ def molformer_lipid_features(table: pd.DataFrame) -> pd.DataFrame:
 _PROTEIN_DESCRIPTOR_TABLE_CACHE: dict | None = None
 
 
-def _protein_catalog_features(proteins: list[str], names: list[str]) -> pd.DataFrame:
-    """Per-protein feature columns for `names` (a subset of dataloader.pair_
-    descriptors.PROTEIN_DESCRIPTOR_NAMES/PROTEIN_DERIVED_DESCRIPTOR_NAMES), read
-    straight from dataloader.chemistry_prior.protein_descriptor_table -- the
-    network's own cached, self-persisting per-protein table for the FULL descriptor
-    catalog (data/protein_descriptors.csv) -- rather than reimplementing each
-    one by hand the way protein_pocket_features does for its own (partial) column
-    set (POCKET_ALL_NAMES: pocket23 plus the four family_neutral promotions, not the
-    three lambda_sqrt shape variants or anything newer). Mirrors
-    _lipid_catalog_features' role on the lipid side. Used by build_protein_kernel's
-    pocket_subset branch, the only caller: for any requested name protein_pocket_
-    features does not already carry as a column.
+def _protein_catalog_features(
+    proteins: list[str], names: list[str], graphs: Path | str = DEFAULT_GRAPHS
+) -> pd.DataFrame:
+    """Per-protein columns for `names`, read straight from the network's own cached,
+    self-persisting per-protein table (data/protein_descriptors.csv) -- the single
+    place this module gets protein descriptor VALUES. Mirrors _lipid_catalog_
+    features' role on the lipid side.
     """
     global _PROTEIN_DESCRIPTOR_TABLE_CACHE
     if _PROTEIN_DESCRIPTOR_TABLE_CACHE is None:
         from preprocessing.compute_descriptors import protein_descriptor_table
 
-        _PROTEIN_DESCRIPTOR_TABLE_CACHE = protein_descriptor_table(str(PROJECT_ROOT / "data"))
-    return pd.DataFrame.from_dict(_PROTEIN_DESCRIPTOR_TABLE_CACHE, orient="index").loc[
-        list(proteins), names
-    ]
+        _PROTEIN_DESCRIPTOR_TABLE_CACHE = protein_descriptor_table(str(Path(graphs).parent))
+    table = pd.DataFrame.from_dict(_PROTEIN_DESCRIPTOR_TABLE_CACHE, orient="index")
+    missing = [protein for protein in proteins if protein not in table.index]
+    if missing:
+        raise FileNotFoundError(
+            f"no descriptor row for {missing} in data/protein_descriptors.csv -- "
+            f"graph artefacts under {graphs} missing, or the table is stale"
+        )
+    return table.loc[list(proteins), list(names)]
 
 
 def resolve_protein_feature_subset(
@@ -1738,27 +1922,17 @@ def resolve_protein_feature_subset(
 ) -> pd.DataFrame:
     """Per-protein feature columns for `names` -- shared resolution behind
     build_protein_kernel's pocket_subset branch, mirroring resolve_lipid_feature_
-    subset on the lipid side.
-
-    Resolution order: protein_pocket_features' own (partial) columns (POCKET_ALL_
-    NAMES) first; anything not there but in dataloader.descriptors.
-    PROTEIN_DESCRIPTOR_NAMES/PROTEIN_DERIVED_DESCRIPTOR_NAMES (e.g. the three
-    *_lambda_sqrt shape variants) from _protein_catalog_features instead of being
-    rejected. Raises ValueError on any other unknown name.
+    subset on the lipid side. Every protein name the catalog has is readable, the
+    POCKET_ALL_NAMES presets and the rest of the table alike; raises ValueError on
+    any other name.
     """
-    features = protein_pocket_features(proteins, graphs)
-    unknown = sorted(set(names) - set(features.columns))
-    catalog_names = set(PROTEIN_DESCRIPTOR_NAMES) | set(PROTEIN_DERIVED_DESCRIPTOR_NAMES)
-    catalog_only = sorted(set(unknown) & catalog_names)
-    unknown = sorted(set(unknown) - set(catalog_only))
+    unknown = sorted(set(names) - set(PROTEIN_DESCRIPTOR_NAMES))
     if unknown:
         raise ValueError(
-            f"unknown pocket descriptor names: {unknown}. Known: "
-            f"{sorted(set(features.columns) | catalog_names)}"
+            f"unknown pocket descriptor names: {unknown}. "
+            f"Known: {sorted(PROTEIN_DESCRIPTOR_NAMES)}"
         )
-    if catalog_only:
-        features = features.join(_protein_catalog_features(proteins, catalog_only), how="left")
-    return features.loc[:, list(names)]
+    return _protein_catalog_features(proteins, list(names), graphs)
 
 
 _LIPID_DESCRIPTOR_TABLE_CACHE: dict[int, tuple[dict, weakref.ref]] = {}
@@ -1768,7 +1942,7 @@ def _lipid_catalog_features(table: pd.DataFrame, names: list[str]) -> pd.DataFra
     """`names` (a subset of dataloader.descriptors.LIPID_DESCRIPTOR_NAMES) as a
     per-species DataFrame, read straight from dataloader.chemistry_prior.
     _lipid_descriptor_table -- the network's own cached, mean-over-candidates
-    per-species table for the FULL descriptor catalog -- rather than reimplementing
+    per-species table for the FULL descriptor catalog -- instead of reimplementing
     each one by hand the way explicit_lipid_features does for its own (partial,
     median-aggregated) column set. See build_lipid_kernel's explicit_subset branch,
     the only caller: it uses this for any requested name explicit_lipid_features

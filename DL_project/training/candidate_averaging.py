@@ -23,7 +23,7 @@ def average_candidate_predictions(outl, prot, labels):
 
     The labels and the protein ids are reduced alongside, taking the first member of
     each group: candidates of one row share both, so nothing is chosen there. Groups are
-    formed by value rather than by position, so a shuffled loader is handled too.
+    formed by value instead of by position, so a shuffled loader is handled too.
 
     Returns ``(outl, labels, first)``, where ``first`` is the position of each group's
     first member, for callers that have further per-sample tensors to reduce, and None
@@ -66,7 +66,7 @@ class CandidateAccumulator:
     that leaves 128 of 198 test batches holding a single pair, so anything the batch
     computes jointly -- the ranking loss, the positive-unlabelled risk estimate, the
     reported loss -- stops seeing a mixture. Accumulating instead lets the loader keep
-    its ordinary fixed-size shuffled batches: candidates meet by pair id rather than by
+    its ordinary fixed-size shuffled batches: candidates meet by pair id instead of by
     proximity, and the average is taken once the pass is over.
 
     The reduction is exact regardless of the order rows arrive in, and each pair leaves
@@ -109,7 +109,7 @@ class CandidateAccumulator:
     def averaged(self):
         """(log-probabilities, labels, protein ids) -- one row per pair, or None.
 
-        Log-probabilities rather than probabilities because every reader downstream
+        Log-probabilities instead of probabilities because every reader downstream
         treats the model output as logits: softmax and argmax are unchanged by the
         constant they lack, and cross-entropy on them is exactly the negative log of the
         averaged probability of the true class.

@@ -1,11 +1,8 @@
-"""Per-row-tuple <-> flat-tensor-plus-offsets helpers.
+"""Convert per-row candidate tuples to flat tensors with row offsets.
 
-A row has one to thirty-seven candidate structures; these helpers keep that ragged
-shape through DataFrame columns (`candidate_column`), through flat tensors indexed by
-row offsets (`_ragged_tensor`, `_candidate_position`), and through plain row lookups
-(`ragged_rows`). Shared by Dataloader.py (both the construction and per-sample-serving
-halves of PLIDataset) and frozen_prior.py, which may not import these back from
-Dataloader.py without creating a cycle.
+Rows have 1-37 candidates. candidate_column preserves tuples in DataFrames;
+_ragged_tensor/_candidate_position provide flat indexing; ragged_rows selects
+row arrays. Shared by both PLIDataset phases and frozen_prior.py.
 """
 
 import numpy as np
@@ -13,10 +10,9 @@ import torch
 
 
 def candidate_column(values):
-    """Per-candidate values as one DataFrame column, one tuple per row.
+    """Return one candidate-value tuple per DataFrame row, without padding.
 
-    A row has one to thirty-seven candidate structures; a tuple per row keeps its values
-    attached to the row through splitting and sampling, with nothing padded.
+    Rows have 1-37 candidates. Tuples retain alignment through sampling and splitting.
     """
     return [tuple(float(value) for value in row) for row in values]
 

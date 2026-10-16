@@ -10,12 +10,27 @@ Protein inputs come from data/graphs/<protein>/. Lipid inputs come from the
 interaction table. Pair descriptors combine the two descriptor tables.
 The dataloader and cache builders also call the functions in this module.
 
-The CLI updates one lipid or pair column and preserves other columns and modes.
-A protein request rebuilds the protein table because its descriptors share one pass.
+HOW TO ADD A DESCRIPTOR : name it in dataloader/descriptors.py, write a function of that
+same name in this file's matching section below, and register it. Nothing to run --
+the table fills the new column on its own.
+
+    protein : PROTEIN_DESCRIPTOR_NAMES; (vertices, pocket, pocketness_path=None);
+              _PROTEIN_MEASURES
+    lipid   : LIPID_DESCRIPTOR_NAMES; (smiles); _LIPID_MEASURES
+    pair    : PAIR_DESCRIPTOR_NAMES; @_pair_measure(kind) on (lipid, protein) --
+              a value no formula read before also goes in PAIR_DESCRIPTOR_LIPID_INPUTS,
+              or gbm_baseline.PAIR_DESCRIPTOR_PROTEIN_INPUTS on the protein side
+
+tests/test_descriptor_catalog.py fails on a name with no function, or the reverse.
+
+The CLI updates one column of one table -- protein, lipid or pair alike -- and
+preserves the other columns and modes. --force rebuilds that side's whole table
+instead, which is also how each table is first built.
 
     python3 preprocessing/compute_descriptors.py --list
     python3 preprocessing/compute_descriptors.py tpsa
     python3 preprocessing/compute_descriptors.py tpsa --isomeric
+    python3 preprocessing/compute_descriptors.py pocket_extent
     python3 preprocessing/compute_descriptors.py pocket_extent --force
     python3 preprocessing/compute_descriptors.py volume_fit
 """
@@ -39,17 +54,17 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from dataloader.descriptors import (  # noqa: E402
     PAIR_DESCRIPTOR_NAMES,
-    POCKET_CHEMISTRY_DESCRIPTOR_NAMES,
-    PROTEIN_DERIVED_DESCRIPTOR_NAMES,
     PROTEIN_DESCRIPTOR_NAMES,
 )
 
-# Keep the descriptor-name order used by the graph builder.
-POCKET_DESCRIPTOR_NAMES = PROTEIN_DESCRIPTOR_NAMES
+######################################################################################
+# PROTEIN DESCRIPTORS
+# one row per protein in data/protein_descriptors.csv
+######################################################################################
 
 
 # ----------------------------------------------------------------------------------
-# Protein side: residue tables, cavity geometry, pocket chemistry.
+# helpers: residue tables, pocket geometry, shared per-pocket quantities
 # ----------------------------------------------------------------------------------
 
 # Kyte & Doolittle (1982) hydropathy, indexed by Voronota residue_type.
@@ -189,78 +204,51 @@ def pocket_shape_lambda_sqrt(coordinates, min_robust_points=10):
     )
 
 
-def pocket_descriptor(vertices, pocket, config=None, pocketness_path=None):
-    """Return a [1, len(POCKET_DESCRIPTOR_NAMES)] tensor for one protein pocket.
-
-    Aggregate the residue table over the pocket mask. Read atom coordinates from
-    pocketness_path for shape descriptors; use zeros for shape if no PDB is supplied.
+def _pocket_site(vertices, pocket):
+    """Pocket-only rows of vertices, from pocket's boolean/tensor residue mask --
+    every pocket measure function below starts from this, the way every lipid
+    measure starts from Chem.MolFromSmiles(smiles).
     """
     mask = pocket.bool().numpy() if hasattr(pocket, "bool") else pocket
     site = vertices[mask]
     if len(site) == 0:
-        raise ValueError("pocket_descriptor requires at least one pocket residue")
-    residue_types = site["residue_type"].to_numpy(copy=True).astype(int)
-    hydropathy = numpy.asarray(KYTE_DOOLITTLE)[residue_types]
-    aromatic = numpy.isin(residue_types, AROMATIC_RESIDUE_TYPES)
-    sasa = site["residue_sas_area"].values
-    pocket_sasa = float(sasa.sum())
-    pocket_volume = float(site["residue_volume"].sum())
+        raise ValueError("pocket descriptors require at least one pocket residue")
+    return site
+
+
+def _pocket_core_rim(site):
+    """Boolean core/rim masks split at this pocket's median residue burial."""
     burial = site["residue_mean_buriedness"].to_numpy(dtype=float)
-    # Split core and rim at this pocket's median burial.
     core = burial >= numpy.median(burial)
-    rim = ~core
-    atom_coordinates = (
+    return core, ~core
+
+
+def _pocket_hydropathy(site):
+    residue_types = site["residue_type"].to_numpy(copy=True).astype(int)
+    return numpy.asarray(KYTE_DOOLITTLE)[residue_types]
+
+
+def _pocket_aromatic(site):
+    residue_types = site["residue_type"].to_numpy(copy=True).astype(int)
+    return numpy.isin(residue_types, AROMATIC_RESIDUE_TYPES)
+
+
+def _pocket_shape_spans(pocketness_path):
+    coordinates = (
         pocket_atom_coordinates(pocketness_path)
         if pocketness_path is not None
         else numpy.empty((0, 3))
     )
-    extent, elongation, flatness = pocket_shape(atom_coordinates)
-    extent_lambda_sqrt, elongation_lambda_sqrt, flatness_lambda_sqrt = (
-        pocket_shape_lambda_sqrt(atom_coordinates)
+    return pocket_shape(coordinates)
+
+
+def _pocket_shape_spans_lambda_sqrt(pocketness_path):
+    coordinates = (
+        pocket_atom_coordinates(pocketness_path)
+        if pocketness_path is not None
+        else numpy.empty((0, 3))
     )
-    ev14 = site["residue_mean_ev14"].to_numpy(dtype=float)
-    ev28 = site["residue_mean_ev28"].to_numpy(dtype=float)
-    ev56 = site["residue_mean_ev56"].to_numpy(dtype=float)
-    depth = site["residue_mean_voromqa_depth"].to_numpy(dtype=float)
-    values = {
-        "pocket_residue_share": len(site) / max(len(vertices), 1),
-        "pocket_sasa_share": pocket_sasa / max(float(vertices["residue_sas_area"].sum()), 1e-9),
-        "pocket_volume_per_sasa": pocket_volume / max(pocket_sasa, 1e-9),
-        "pocket_extent": extent,
-        "pocket_elongation": elongation,
-        "pocket_flatness": flatness,
-        "ev14_q50": float(numpy.median(ev14)),
-        "buriedness_q50": float(numpy.median(burial)),
-        "depth_q10": float(numpy.percentile(depth, 10)),
-        "apolar_sasa_share": float(sasa[hydropathy > 0].sum() / max(pocket_sasa, 1e-9)),
-        "aromatic_share": float(aromatic.mean()),
-        "hydropathy_core": float(hydropathy[core].mean()),
-        "hydropathy_rim": (
-            float(hydropathy[rim].mean()) if rim.any() else float(hydropathy.mean())
-        ),
-        "ev28_q10": float(numpy.percentile(ev28, 10)),
-        "aromatic_share_rim": (
-            float(aromatic[rim].mean()) if rim.any() else float(aromatic.mean())
-        ),
-        "hydropathy_mean": float(hydropathy.mean()),
-        "ev14_q10": float(numpy.percentile(ev14, 10)),
-        "pocket_extent_lambda_sqrt": extent_lambda_sqrt,
-        "pocket_elongation_lambda_sqrt": elongation_lambda_sqrt,
-        "pocket_flatness_lambda_sqrt": flatness_lambda_sqrt,
-        "ev14_q90": float(numpy.percentile(ev14, 90)),
-        "ev28_q50": float(numpy.median(ev28)),
-        "ev28_q90": float(numpy.percentile(ev28, 90)),
-        "ev56_q10": float(numpy.percentile(ev56, 10)),
-        "buriedness_q10": float(numpy.percentile(burial, 10)),
-        "buriedness_q90": float(numpy.percentile(burial, 90)),
-        "depth_q50": float(numpy.median(depth)),
-        "depth_q90": float(numpy.percentile(depth, 90)),
-        "aromatic_share_core": float(aromatic[core].mean()),
-    }
-    missing = [name for name in POCKET_DESCRIPTOR_NAMES if name not in values]
-    if missing:
-        raise ValueError(f"pocket descriptor not computed: {missing}")
-    return values
+    return pocket_shape_lambda_sqrt(coordinates)
 
 
 def read_pocket_atoms(pocketness_path):
@@ -295,10 +283,7 @@ def read_pocket_atoms(pocketness_path):
 
 def descriptors_for(protein_dir):
     """The research catalog: every pocket column this project can compute, promoted
-    or not. PROTEIN_DESCRIPTOR_NAMES is the promoted subset; what is left here is
-    the raw residue counts and the scale-carrying cavity axes, both deliberately
-    out of production because protein size stands in for fold on a cold-family
-    split. Reported by analysis/probes/pocket_shape_descriptors_report.py.
+    or not.
     """
     protein_dir = Path(protein_dir)
     nodes = pandas.read_csv(protein_dir / "coarse_graph_nodes.csv")
@@ -357,8 +342,8 @@ def pocket_cavity_volume(pocketness_path):
     """Estimate pocket free volume (A^3) and free fraction.
 
     Build the pocket atom cloud's convex hull. Subtract van der Waals volumes of atoms
-    whose centres lie inside it. Use the same formula as
-    training.pair_baseline_common._cavity_values; importing it would create a cycle.
+    whose centres lie inside it. The only implementation of this formula: the
+    Kron-RLS baseline used to carry its own copy and now reads this table instead.
     """
     from scipy.spatial import ConvexHull, Delaunay
 
@@ -385,36 +370,247 @@ def pocket_cavity_volume(pocketness_path):
     return float(free), float(free / max(hull.volume, 1e-9))
 
 
-def pocket_chemistry_descriptor(vertices, pocket, pocketness_path=None):
-    """Return named pocket chemistry and cavity-volume descriptors.
-
-    Compute residue-class shares for core and rim. Use the median burial for the split.
-    The two cavity entries require pocketness_path; use zeros when it is absent.
+def _residue_class_share(types, which):
+    """One residue-class-share measure, same (vertices, pocket, pocketness_path)
+    signature as every other one -- built from _RESIDUE_CLASS_TYPES instead of
+    written out ten times. `which` is "core" or "rim"; an empty rim falls back to
+    the whole site, the fallback this formula has always used.
     """
-    mask = pocket.bool().numpy() if hasattr(pocket, "bool") else pocket
-    site = vertices[mask]
-    if len(site) == 0:
-        raise ValueError("pocket_chemistry_descriptor requires at least one pocket residue")
-    residue_types = site["residue_type"].to_numpy(copy=True).astype(int)
-    burial = site["residue_mean_buriedness"].to_numpy(dtype=float)
-    # Use the same median-burial split and constant-burial fallback as pocket_descriptor().
-    core = burial >= numpy.median(burial)
-    rim = ~core
-    if not rim.any():
-        rim = numpy.ones(len(site), dtype=bool)
-    values = {}
-    for name, types in _RESIDUE_CLASS_TYPES.items():
-        member = numpy.isin(residue_types, types)
-        values[f"{name}_share_core"] = float(member[core].mean())
-        values[f"{name}_share_rim"] = float(member[rim].mean())
-    free_volume, packing = (
-        pocket_cavity_volume(pocketness_path) if pocketness_path is not None else (0.0, 0.0)
-    )
-    values["pocket_free_volume"] = free_volume
-    values["pocket_packing_density"] = packing
-    return values
+    def measure(vertices, pocket, pocketness_path=None):
+        site = _pocket_site(vertices, pocket)
+        member = numpy.isin(site["residue_type"].to_numpy(copy=True).astype(int), types)
+        core, rim = _pocket_core_rim(site)
+        mask = core if which == "core" else (rim if rim.any() else numpy.ones(len(site), dtype=bool))
+        return float(member[mask].mean())
+    return measure
+
+
+# ----------------------------------------------------------------------------------
+# one function per descriptor, named after the descriptor it computes
+# ----------------------------------------------------------------------------------
+
+# PROTEIN_DESCRIPTOR_NAMES, one function each,
+
+def pocket_residue_share(vertices, pocket, pocketness_path=None):
+    return len(_pocket_site(vertices, pocket)) / max(len(vertices), 1)
+
+
+def pocket_sasa_share(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    pocket_sasa = float(site["residue_sas_area"].sum())
+    return pocket_sasa / max(float(vertices["residue_sas_area"].sum()), 1e-9)
+
+
+def pocket_volume_per_sasa(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    pocket_sasa = float(site["residue_sas_area"].sum())
+    return float(site["residue_volume"].sum()) / max(pocket_sasa, 1e-9)
+
+
+def pocket_extent(vertices, pocket, pocketness_path=None):
+    return _pocket_shape_spans(pocketness_path)[0]
+
+
+def pocket_elongation(vertices, pocket, pocketness_path=None):
+    return _pocket_shape_spans(pocketness_path)[1]
+
+
+def pocket_flatness(vertices, pocket, pocketness_path=None):
+    return _pocket_shape_spans(pocketness_path)[2]
+
+
+def ev14_q50(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.median(site["residue_mean_ev14"].to_numpy(dtype=float)))
+
+
+def buriedness_q50(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.median(site["residue_mean_buriedness"].to_numpy(dtype=float)))
+
+
+def depth_q10(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.percentile(site["residue_mean_voromqa_depth"].to_numpy(dtype=float), 10))
+
+
+def apolar_sasa_share(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    hydropathy = _pocket_hydropathy(site)
+    sasa = site["residue_sas_area"].values
+    pocket_sasa = float(sasa.sum())
+    return float(sasa[hydropathy > 0].sum() / max(pocket_sasa, 1e-9))
+
+
+def aromatic_share(vertices, pocket, pocketness_path=None):
+    return float(_pocket_aromatic(_pocket_site(vertices, pocket)).mean())
+
+
+def hydropathy_core(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    core, _ = _pocket_core_rim(site)
+    return float(_pocket_hydropathy(site)[core].mean())
+
+
+def hydropathy_rim(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    hydropathy = _pocket_hydropathy(site)
+    _, rim = _pocket_core_rim(site)
+    return float(hydropathy[rim].mean()) if rim.any() else float(hydropathy.mean())
+
+
+def ev28_q10(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.percentile(site["residue_mean_ev28"].to_numpy(dtype=float), 10))
+
+
+def aromatic_share_rim(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    aromatic = _pocket_aromatic(site)
+    _, rim = _pocket_core_rim(site)
+    return float(aromatic[rim].mean()) if rim.any() else float(aromatic.mean())
+
+
+def hydropathy_mean(vertices, pocket, pocketness_path=None):
+    return float(_pocket_hydropathy(_pocket_site(vertices, pocket)).mean())
+
+
+def ev14_q10(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.percentile(site["residue_mean_ev14"].to_numpy(dtype=float), 10))
+
+
+def pocket_extent_lambda_sqrt(vertices, pocket, pocketness_path=None):
+    return _pocket_shape_spans_lambda_sqrt(pocketness_path)[0]
+
+
+def pocket_elongation_lambda_sqrt(vertices, pocket, pocketness_path=None):
+    return _pocket_shape_spans_lambda_sqrt(pocketness_path)[1]
+
+
+def pocket_flatness_lambda_sqrt(vertices, pocket, pocketness_path=None):
+    return _pocket_shape_spans_lambda_sqrt(pocketness_path)[2]
+
+
+def ev14_q90(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.percentile(site["residue_mean_ev14"].to_numpy(dtype=float), 90))
+
+
+def ev28_q50(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.median(site["residue_mean_ev28"].to_numpy(dtype=float)))
+
+
+def ev28_q90(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.percentile(site["residue_mean_ev28"].to_numpy(dtype=float), 90))
+
+
+def ev56_q10(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.percentile(site["residue_mean_ev56"].to_numpy(dtype=float), 10))
+
+
+def buriedness_q10(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.percentile(site["residue_mean_buriedness"].to_numpy(dtype=float), 10))
+
+
+def buriedness_q90(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.percentile(site["residue_mean_buriedness"].to_numpy(dtype=float), 90))
+
+
+def depth_q50(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.median(site["residue_mean_voromqa_depth"].to_numpy(dtype=float)))
+
+
+def depth_q90(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    return float(numpy.percentile(site["residue_mean_voromqa_depth"].to_numpy(dtype=float), 90))
+
+
+def aromatic_share_core(vertices, pocket, pocketness_path=None):
+    site = _pocket_site(vertices, pocket)
+    core, _ = _pocket_core_rim(site)
+    return float(_pocket_aromatic(site)[core].mean())
+
+
+def pocket_free_volume(vertices, pocket, pocketness_path=None):
+    return pocket_cavity_volume(pocketness_path)[0] if pocketness_path is not None else 0.0
+
+
+def pocket_packing_density(vertices, pocket, pocketness_path=None):
+    return pocket_cavity_volume(pocketness_path)[1] if pocketness_path is not None else 0.0
+
+
+# Derived instead of measured, same signature as every measure above, so its
+# column is written exactly like any other.
+def polar_share(vertices, pocket, pocketness_path=None):
+    return 1.0 - apolar_sasa_share(vertices, pocket, pocketness_path)
+
+
+# ----------------------------------------------------------------------------------
+# registry: every protein name -> the function above that computes it
+# ----------------------------------------------------------------------------------
+
+# Every protein-side name and the one function computing it -- the counterpart of
+# the lipid _LIPID_MEASURES dict. The name tuples of dataloader/descriptors.py select out
+# of this one registry; they do not each get their own.
+_PROTEIN_MEASURES = {
+    "pocket_residue_share": pocket_residue_share,
+    "pocket_sasa_share": pocket_sasa_share,
+    "pocket_volume_per_sasa": pocket_volume_per_sasa,
+    "pocket_extent": pocket_extent,
+    "pocket_elongation": pocket_elongation,
+    "pocket_flatness": pocket_flatness,
+    "ev14_q50": ev14_q50,
+    "buriedness_q50": buriedness_q50,
+    "depth_q10": depth_q10,
+    "apolar_sasa_share": apolar_sasa_share,
+    "aromatic_share": aromatic_share,
+    "hydropathy_core": hydropathy_core,
+    "hydropathy_rim": hydropathy_rim,
+    "ev28_q10": ev28_q10,
+    "aromatic_share_rim": aromatic_share_rim,
+    "hydropathy_mean": hydropathy_mean,
+    "ev14_q10": ev14_q10,
+    "pocket_extent_lambda_sqrt": pocket_extent_lambda_sqrt,
+    "pocket_elongation_lambda_sqrt": pocket_elongation_lambda_sqrt,
+    "pocket_flatness_lambda_sqrt": pocket_flatness_lambda_sqrt,
+    "ev14_q90": ev14_q90,
+    "ev28_q50": ev28_q50,
+    "ev28_q90": ev28_q90,
+    "ev56_q10": ev56_q10,
+    "buriedness_q10": buriedness_q10,
+    "buriedness_q90": buriedness_q90,
+    "depth_q50": depth_q50,
+    "depth_q90": depth_q90,
+    "aromatic_share_core": aromatic_share_core,
+    "pocket_free_volume": pocket_free_volume,
+    "pocket_packing_density": pocket_packing_density,
+    "polar_share": polar_share,
+}
+# The ten residue-class shares, from _RESIDUE_CLASS_TYPES instead of ten bodies.
+for _class_name, _class_types in _RESIDUE_CLASS_TYPES.items():
+    _PROTEIN_MEASURES[f"{_class_name}_share_core"] = _residue_class_share(_class_types, "core")
+    _PROTEIN_MEASURES[f"{_class_name}_share_rim"] = _residue_class_share(_class_types, "rim")
+del _class_name, _class_types
+
+
+def protein_measure_function(name):
+    """The callable behind one protein name -- the counterpart of lipid_measure_function."""
+    return _PROTEIN_MEASURES[name]
+
+
+# ----------------------------------------------------------------------------------
+# the table: build, cache, write one column
+# ----------------------------------------------------------------------------------
+
 # Increment the format version when descriptor definitions or columns change.
-_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 7
+_PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION = 8
 
 
 def _protein_descriptors_csv_path(data_dir):
@@ -437,6 +633,66 @@ def _protein_descriptor_table_sources(data_dir, protein_names):
     return [_source_record(path, root_dir) for path in paths if path.exists()]
 
 
+def _protein_names(data_dir):
+    """Proteins carrying both graph inputs under data/graphs/, in table row order."""
+    graphs_dir = os.path.join(data_dir, "graphs")
+    return sorted(
+        protein for protein in os.listdir(graphs_dir)
+        if os.path.isfile(os.path.join(graphs_dir, protein, "pocketness.pdb"))
+        and os.path.isfile(os.path.join(graphs_dir, protein, "coarse_graph_nodes.csv"))
+    )
+
+
+def _protein_graph_inputs(data_dir, protein):
+    """(vertices, pocket, pocketness_path) for one protein -- the raw input every
+    protein measure function reads, the way a lipid measure reads one SMILES.
+    """
+    from dataloader.tensors_reading.protein_graph_tensors_reader import _pocket_tensor
+
+    protein_dir = os.path.join(data_dir, "graphs", protein)
+    pocketness_path = os.path.join(protein_dir, "pocketness.pdb")
+    vertices = pandas.read_csv(os.path.join(protein_dir, "coarse_graph_nodes.csv"))
+    return vertices, _pocket_tensor(Path(pocketness_path)), pocketness_path
+
+
+def _protein_descriptor_manifest_is_current(data_dir, protein_names):
+    """True when the manifest matches the format version and the current source
+    sizes/mtimes -- what lets the table be reused, or one column patched into it.
+    """
+    try:
+        manifest = json.loads(_protein_descriptor_table_manifest_path(data_dir).read_text())
+    except (OSError, ValueError):
+        return False
+    return (
+        manifest.get("format_version") == _PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION
+        and manifest.get("sources") == _protein_descriptor_table_sources(data_dir, protein_names)
+    )
+
+
+def _fill_missing_columns(data_dir, table, names, csv_path):
+    """Compute `names` for every protein already in `table` and append them.
+
+    A new descriptor adds a column to a table whose graph sources are unchanged, so
+    the manifest still matches and a full rebuild would never be triggered. Filling
+    the gap here is what makes adding a descriptor "write the function, register it"
+    with no third command -- the lipid cache fills a newly added measure the same way.
+    """
+    values = {name: [] for name in names}
+    for protein in table.index:
+        vertices, pocket, pocketness_path = _protein_graph_inputs(data_dir, protein)
+        for name in names:
+            values[name].append(
+                _PROTEIN_MEASURES[name](vertices, pocket, pocketness_path)
+            )
+    for name in names:
+        table[name] = values[name]
+    try:
+        table.to_csv(csv_path)
+    except OSError:
+        pass  # as in the full build: unpersisted is fine, a wrong value is not
+    return table
+
+
 def protein_descriptor_table(data_dir, force=False):
     """Return {protein: {descriptor: value}} from protein graph files.
 
@@ -446,52 +702,38 @@ def protein_descriptor_table(data_dir, force=False):
     """
     import pandas as pd
 
-    from dataloader.tensors_reading.protein_graph_tensors_reader import _pocket_tensor
-
-    graphs_dir = os.path.join(data_dir, "graphs")
-    protein_names = sorted(
-        protein for protein in os.listdir(graphs_dir)
-        if os.path.isfile(os.path.join(graphs_dir, protein, "pocketness.pdb"))
-        and os.path.isfile(os.path.join(graphs_dir, protein, "coarse_graph_nodes.csv"))
-    )
-
+    protein_names = _protein_names(data_dir)
     csv_path = _protein_descriptors_csv_path(data_dir)
     manifest_path = _protein_descriptor_table_manifest_path(data_dir)
-    if csv_path.exists() and manifest_path.exists() and not force:
+    if (
+        csv_path.exists() and not force
+        and _protein_descriptor_manifest_is_current(data_dir, protein_names)
+    ):
         try:
-            manifest = json.loads(manifest_path.read_text())
-            current_sources = _protein_descriptor_table_sources(data_dir, protein_names)
-            if (
-                manifest.get("format_version") == _PROTEIN_DESCRIPTOR_TABLE_FORMAT_VERSION
-                and manifest.get("sources") == current_sources
-            ):
-                # Use round_trip parsing to preserve the floats written by to_csv().
-                table = pandas.read_csv(
-                    csv_path, index_col="protein", float_precision="round_trip"
-                )
-                if sorted(table.index) == protein_names:
-                    return {
-                        protein: table.loc[protein].to_dict() for protein in table.index
-                    }
+            # Use round_trip parsing to preserve the floats written by to_csv().
+            table = pandas.read_csv(
+                csv_path, index_col="protein", float_precision="round_trip"
+            )
+            if sorted(table.index) == protein_names:
+                missing = [
+                    name for name in PROTEIN_DESCRIPTOR_NAMES if name not in table.columns
+                ]
+                if missing:
+                    table = _fill_missing_columns(data_dir, table, missing, csv_path)
+                return {
+                    protein: table.loc[protein].to_dict() for protein in table.index
+                }
         except (OSError, ValueError, pandas.errors.ParserError, KeyError):
             pass  # fall through and recompute, same as any other stale/corrupt cache
 
     values = {}
     for protein in protein_names:
-        protein_dir = os.path.join(graphs_dir, protein)
-        pocketness_path = os.path.join(protein_dir, "pocketness.pdb")
-        nodes_path = os.path.join(protein_dir, "coarse_graph_nodes.csv")
-        vertices = pd.read_csv(nodes_path)
-        pocket = _pocket_tensor(Path(pocketness_path))
-        raw = dict(
-            pocket_descriptor(vertices, pocket, None, pocketness_path=pocketness_path)
-        )
-        # Add named chemistry descriptors outside the positional descriptor tensor.
-        raw.update(pocket_chemistry_descriptor(vertices, pocket, pocketness_path))
-        raw["polar_share"] = 1.0 - raw["apolar_sasa_share"]
-        raw["aromatic_share_coarse"] = coarse_share(raw["aromatic_share"])
-        raw["polar_share_coarse"] = coarse_share(raw["polar_share"])
-        values[protein] = raw
+        vertices, pocket, pocketness_path = _protein_graph_inputs(data_dir, protein)
+        # Every column through the same function a single-column write would use.
+        values[protein] = {
+            name: _PROTEIN_MEASURES[name](vertices, pocket, pocketness_path)
+            for name in PROTEIN_DESCRIPTOR_NAMES
+        }
 
     try:
         table = pd.DataFrame.from_dict(values, orient="index")
@@ -506,13 +748,47 @@ def protein_descriptor_table(data_dir, force=False):
               # writing the same file) still returns correct values, just unpersisted
 
     return values
-_SHARE_BAND_EDGES = (1.0 / 3, 2.0 / 3)
-_SHARE_BAND_CENTRES = (1.0 / 6, 0.5, 5.0 / 6)
-def coarse_share(value):
-    """Map a share to its fixed-width third centre; an edge value stays in the lower band."""
-    band = sum(1 for edge in _SHARE_BAND_EDGES if value > edge)
-    return _SHARE_BAND_CENTRES[band]
 
+
+def compute_protein_descriptor(data_dir, name, force=False):
+    """Update one protein descriptor column for every protein under data/graphs/.
+
+    Require an existing data/protein_descriptors.csv: this patches one column and
+    preserves the others. --force rebuilds the whole table instead, which is also
+    how it is first built.
+    """
+    table_path = _protein_descriptors_csv_path(data_dir)
+    if force:
+        return table_path, len(protein_descriptor_table(data_dir, force=True))
+
+    protein_names = _protein_names(data_dir)
+    if not table_path.exists():
+        raise SystemExit(
+            f"{table_path} does not exist yet -- build it once with "
+            f"`python3 preprocessing/compute_descriptors.py {name} --force` "
+            "before writing one column"
+        )
+
+    function = protein_measure_function(name)
+    values = {}
+    for protein in protein_names:
+        vertices, pocket, pocketness_path = _protein_graph_inputs(data_dir, protein)
+        values[(protein,)] = function(vertices, pocket, pocketness_path)
+
+    written = _write_column(table_path, values, name, ("protein",))
+    # A column update leaves the manifest valid: its graph sources are untouched.
+    return table_path, written
+
+
+######################################################################################
+# LIPID DESCRIPTORS
+# one row per canonical candidate SMILES and isomeric mode
+######################################################################################
+
+
+# ----------------------------------------------------------------------------------
+# helpers: acyl-chain walks, conformer ensemble, measured-volume lookup
+# ----------------------------------------------------------------------------------
 
 _MINIMUM_TAIL_CARBONS = 4
 # Require at least four carbons to exclude short head-group branches from tail counts.
@@ -657,6 +933,117 @@ def _qualifying_tails(smiles):
     return [c for c in components if c["carbons"] >= _MINIMUM_TAIL_CARBONS]
 
 
+def _tail_fragment(smiles):
+    """Return qualifying carbon tails as one molecule, or None when none remain."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    tails = _qualifying_tails(smiles)
+    if not tails:
+        return None
+    atoms = sorted({atom for tail in tails for atom in tail["atoms"]})
+    if not atoms:
+        return None
+    fragment_smiles = Chem.MolFragmentToSmiles(mol, atomsToUse=atoms, canonical=True)
+    return Chem.MolFromSmiles(fragment_smiles)
+
+
+# Generate a shared ETKDG/MMFF ensemble for the optional 3D shape measures.
+CONFORMER_COUNT = 10
+CONFORMER_SEED = 0xF00D
+
+
+def generate_conformer_ensemble(mol, n_confs=CONFORMER_COUNT, seed=CONFORMER_SEED):
+    """Return an explicit-H molecule and conformer IDs from ETKDG and MMFF.
+
+    Keep the original heavy-atom indices. Retry embedding with random coordinates.
+    Raise ValueError if embedding still fails.
+    """
+    mol_h = Chem.AddHs(mol)
+    params = AllChem.ETKDGv3()
+    params.randomSeed = seed
+    conf_ids = list(AllChem.EmbedMultipleConfs(mol_h, numConfs=n_confs, params=params))
+    if not conf_ids:
+        params.useRandomCoords = True
+        conf_ids = list(
+            AllChem.EmbedMultipleConfs(mol_h, numConfs=n_confs, params=params)
+        )
+    if not conf_ids:
+        raise ValueError(
+            f"ETKDG conformer embedding failed for {Chem.MolToSmiles(mol)}"
+        )
+    try:
+        AllChem.MMFFOptimizeMoleculeConfs(mol_h, maxIters=500)
+    except Exception:
+        pass  # MMFF parameters missing for some atom types -- keep raw ETKDG geometry
+    return mol_h, conf_ids
+
+
+@functools.lru_cache(maxsize=4096)
+def _cached_conformer_ensemble(smiles):
+    """Cache conformers by canonical SMILES for reuse across shape measures.
+
+    Return None for invalid SMILES. Use the fixed CONFORMER_SEED.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    return generate_conformer_ensemble(mol)
+
+
+def _mean_over_conformers(smiles, per_conformer_fn):
+    ensemble = _cached_conformer_ensemble(smiles)
+    if ensemble is None:
+        return None
+    mol_h, conf_ids = ensemble
+    values = [per_conformer_fn(mol_h, conf_id) for conf_id in conf_ids]
+    return float(sum(values) / len(values))
+
+
+def _median_over_conformers(smiles, per_conformer_fn):
+    """Return the median measure over the cached conformer ensemble."""
+    ensemble = _cached_conformer_ensemble(smiles)
+    if ensemble is None:
+        return None
+    mol_h, conf_ids = ensemble
+    values = [per_conformer_fn(mol_h, conf_id) for conf_id in conf_ids]
+    return float(numpy.median(values))
+
+
+# Measured volumes (Angstrom^3), looked up by canonical SMILES in data/Lipid_Volumes.csv.
+_LIPID_VOLUME_CSV = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data", "Lipid_Volumes.csv",
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _experimental_lipid_volume_table():
+    """Canonical SMILES (isomeric or not) -> mean measured volume (Angstrom^3)."""
+    import pandas
+
+    frame = pandas.read_csv(_LIPID_VOLUME_CSV)
+    volume_column = next(c for c in frame.columns if c.startswith("Lipid Volumes"))
+    iso_groups = {}
+    flat_groups = {}
+    for raw_smiles, volume in zip(frame["Lipid SMILES"], frame[volume_column]):
+        molecule = Chem.MolFromSmiles(str(raw_smiles))
+        if molecule is None:
+            continue
+        iso_key = Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=True)
+        flat_key = Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=False)
+        iso_groups.setdefault(iso_key, []).append(float(volume))
+        flat_groups.setdefault(flat_key, []).append(float(volume))
+    # Insert flat keys first, then let exact isomeric keys take precedence.
+    table = {key: sum(values) / len(values) for key, values in flat_groups.items()}
+    table.update({key: sum(values) / len(values) for key, values in iso_groups.items()})
+    return table
+
+
+# ----------------------------------------------------------------------------------
+# one function per descriptor, named after the descriptor it computes
+# ----------------------------------------------------------------------------------
+
 def tail_length_asymmetry(smiles):
     """Return longest minus shortest tail length in carbons; zero for a single tail."""
     tails = _qualifying_tails(smiles)
@@ -707,21 +1094,6 @@ def tail_double_bond_position(smiles):
     return float(min(positions))
 
 
-def _tail_fragment(smiles):
-    """Return qualifying carbon tails as one molecule, or None when none remain."""
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    tails = _qualifying_tails(smiles)
-    if not tails:
-        return None
-    atoms = sorted({atom for tail in tails for atom in tail["atoms"]})
-    if not atoms:
-        return None
-    fragment_smiles = Chem.MolFragmentToSmiles(mol, atomsToUse=atoms, canonical=True)
-    return Chem.MolFromSmiles(fragment_smiles)
-
-
 def tail_logp(smiles):
     """Crippen logP of the tails alone -- `logp`'s head-blind counterpart."""
     fragment = _tail_fragment(smiles)
@@ -740,7 +1112,7 @@ def tail_heavy_atoms(smiles):
     return None if fragment is None else float(fragment.GetNumHeavyAtoms())
 
 
-def longest_acyl_chain(smiles):
+def chain(smiles):
     """Return the longest non-ring, non-aromatic carbon path, or None for invalid/empty input."""
     lengths = _acyl_chain_component_lengths(smiles)
     if not lengths:  # None (unparseable) or [] (no qualifying carbon) alike
@@ -748,7 +1120,7 @@ def longest_acyl_chain(smiles):
     return max(lengths)
 
 
-def acyl_chain_count(smiles):
+def tail_count(smiles):
     """Count components with at least _MINIMUM_TAIL_CARBONS; return None for invalid/empty input."""
     lengths = _acyl_chain_component_lengths(smiles)
     if not lengths:
@@ -756,7 +1128,7 @@ def acyl_chain_count(smiles):
     return float(sum(1 for length in lengths if length >= _MINIMUM_TAIL_CARBONS))
 
 
-def unsaturation_count(smiles):
+def unsaturation(smiles):
     """Non-aromatic C=C double bonds in one molecule, or None if RDKit cannot parse it."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -770,7 +1142,7 @@ def unsaturation_count(smiles):
     ))
 
 
-def hbond_capacity(smiles):
+def hbond(smiles):
     """RDKit H-bond donor + acceptor count -- a headgroup polarity proxy, not a pose."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -778,7 +1150,7 @@ def hbond_capacity(smiles):
     return float(Descriptors.NumHDonors(mol) + Descriptors.NumHAcceptors(mol))
 
 
-def heavy_atom_count(smiles):
+def heavy(smiles):
     """Heavy-atom count -- a cheap, robust size proxy standing in for ligand volume."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -835,58 +1207,6 @@ def ring_count(smiles):
     return float(rdMolDescriptors.CalcNumRings(mol))
 
 
-# Generate a shared ETKDG/MMFF ensemble for the optional 3D shape measures.
-CONFORMER_COUNT = 10
-CONFORMER_SEED = 0xF00D
-
-
-def generate_conformer_ensemble(mol, n_confs=CONFORMER_COUNT, seed=CONFORMER_SEED):
-    """Return an explicit-H molecule and conformer IDs from ETKDG and MMFF.
-
-    Keep the original heavy-atom indices. Retry embedding with random coordinates.
-    Raise ValueError if embedding still fails.
-    """
-    mol_h = Chem.AddHs(mol)
-    params = AllChem.ETKDGv3()
-    params.randomSeed = seed
-    conf_ids = list(AllChem.EmbedMultipleConfs(mol_h, numConfs=n_confs, params=params))
-    if not conf_ids:
-        params.useRandomCoords = True
-        conf_ids = list(
-            AllChem.EmbedMultipleConfs(mol_h, numConfs=n_confs, params=params)
-        )
-    if not conf_ids:
-        raise ValueError(
-            f"ETKDG conformer embedding failed for {Chem.MolToSmiles(mol)}"
-        )
-    try:
-        AllChem.MMFFOptimizeMoleculeConfs(mol_h, maxIters=500)
-    except Exception:
-        pass  # MMFF parameters missing for some atom types -- keep raw ETKDG geometry
-    return mol_h, conf_ids
-
-
-@functools.lru_cache(maxsize=4096)
-def _cached_conformer_ensemble(smiles):
-    """Cache conformers by canonical SMILES for reuse across shape measures.
-
-    Return None for invalid SMILES. Use the fixed CONFORMER_SEED.
-    """
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    return generate_conformer_ensemble(mol)
-
-
-def _mean_over_conformers(smiles, per_conformer_fn):
-    ensemble = _cached_conformer_ensemble(smiles)
-    if ensemble is None:
-        return None
-    mol_h, conf_ids = ensemble
-    values = [per_conformer_fn(mol_h, conf_id) for conf_id in conf_ids]
-    return float(sum(values) / len(values))
-
-
 def radius_of_gyration(smiles):
     """Ensemble-mean radius of gyration (Angstrom) -- overall size/compactness."""
     return _mean_over_conformers(
@@ -925,16 +1245,6 @@ def rotatable_fraction(smiles):
     return float(rdMolDescriptors.CalcNumRotatableBonds(mol)) / total_bonds
 
 
-def _median_over_conformers(smiles, per_conformer_fn):
-    """Return the median measure over the cached conformer ensemble."""
-    ensemble = _cached_conformer_ensemble(smiles)
-    if ensemble is None:
-        return None
-    mol_h, conf_ids = ensemble
-    values = [per_conformer_fn(mol_h, conf_id) for conf_id in conf_ids]
-    return float(numpy.median(values))
-
-
 def npr1(smiles):
     """Return median PMI1/PMI3 over the conformer ensemble (Sauer & Schwarz, 2003)."""
     return _median_over_conformers(
@@ -949,6 +1259,15 @@ def npr2(smiles):
     )
 
 
+def experimental_lipid_volume(smiles):
+    """Look up canonical SMILES in data/Lipid_Volumes.csv; return None for missing keys."""
+    return _experimental_lipid_volume_table().get(smiles)
+
+
+# ----------------------------------------------------------------------------------
+# registry: every lipid name -> the function above that computes it
+# ----------------------------------------------------------------------------------
+
 LIPID_SHAPE_DESCRIPTOR_NAMES = (
     "radius_of_gyration", "asphericity", "molecular_volume", "rotatable_fraction",
     "npr1", "npr2",
@@ -960,46 +1279,12 @@ CONFORMER_MEASURE_NAMES = (
 )
 
 
-# Measured volumes (Angstrom^3), looked up by canonical SMILES in data/Lipid_Volumes.csv.
-_LIPID_VOLUME_CSV = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data", "Lipid_Volumes.csv",
-)
-
-
-@functools.lru_cache(maxsize=1)
-def _experimental_lipid_volume_table():
-    """Canonical SMILES (isomeric or not) -> mean measured volume (Angstrom^3)."""
-    import pandas
-
-    frame = pandas.read_csv(_LIPID_VOLUME_CSV)
-    volume_column = next(c for c in frame.columns if c.startswith("Lipid Volumes"))
-    iso_groups = {}
-    flat_groups = {}
-    for raw_smiles, volume in zip(frame["Lipid SMILES"], frame[volume_column]):
-        molecule = Chem.MolFromSmiles(str(raw_smiles))
-        if molecule is None:
-            continue
-        iso_key = Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=True)
-        flat_key = Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=False)
-        iso_groups.setdefault(iso_key, []).append(float(volume))
-        flat_groups.setdefault(flat_key, []).append(float(volume))
-    # Insert flat keys first, then let exact isomeric keys take precedence.
-    table = {key: sum(values) / len(values) for key, values in flat_groups.items()}
-    table.update({key: sum(values) / len(values) for key, values in iso_groups.items()})
-    return table
-
-
-def experimental_lipid_volume(smiles):
-    """Look up canonical SMILES in data/Lipid_Volumes.csv; return None for missing keys."""
-    return _experimental_lipid_volume_table().get(smiles)
-
-
-_MEASURES = {
-    "unsaturation": unsaturation_count,
-    "hbond": hbond_capacity,
-    "heavy_atoms": heavy_atom_count,
-    "tail_count": acyl_chain_count,
+_LIPID_MEASURES = {
+    "chain": chain,
+    "unsaturation": unsaturation,
+    "hbond": hbond,
+    "heavy": heavy,
+    "tail_count": tail_count,
     "radius_of_gyration": radius_of_gyration,
     "asphericity": asphericity,
     "molecular_volume": molecular_volume,
@@ -1025,13 +1310,18 @@ _MEASURES = {
     "experimental_lipid_volume": experimental_lipid_volume,
 }
 
-# Expose candidate names to analysis without adding them to LIPID_DESCRIPTOR_NAMES.
-CANDIDATE_LIPID_DESCRIPTOR_NAMES = (
-    "tail_length_asymmetry", "tail_length_mean", "tail_double_bonds",
-    "tail_unsaturation_density", "tail_double_bond_position",
-    "tail_logp", "tail_molar_refractivity", "tail_heavy_atoms",
-)
 
+LIPID_SIDE_NAMES = tuple(_LIPID_MEASURES)
+
+
+def lipid_measure_function(name):
+    """The callable behind one lipid name -- the counterpart of protein_measure_function."""
+    return _LIPID_MEASURES[name]
+
+
+# ----------------------------------------------------------------------------------
+# the table: per-row values, write one column
+# ----------------------------------------------------------------------------------
 
 def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
     """Return per-candidate values in the encoder's candidate order.
@@ -1042,7 +1332,7 @@ def descriptor_values_by_row(csv, measure, isomeric=False, cache=None):
     """
     from dataloader.pocket_lipid_compatibility import candidate_fields_by_row
 
-    fn = _MEASURES[measure]
+    fn = _LIPID_MEASURES[measure]
     raw_to_canonical = cache["raw_to_canonical"] if cache else {}
     cached_values = cache["values"] if cache else {}
     by_field = {}
@@ -1093,139 +1383,37 @@ def as_arrays(per_row):
     ]
 
 
-# Tanford, The Hydrophobic Effect (1980): extended hydrocarbon-chain length.
-# L = 1.5 + 1.265 * (n - 1) angstrom for n carbons.
-# Convert carbon counts before comparing them with pocket lengths.
-_CHAIN_BOND_PROJECTION_A = 1.265
-_CHAIN_TERMINAL_A = 1.5
-
-
-def chain_length_angstrom(chain):
-    """Estimate extended-chain length in angstrom from carbon count using Tanford's formula."""
-    return _CHAIN_TERMINAL_A + _CHAIN_BOND_PROJECTION_A * (chain - 1.0)
-
-
-def pair_descriptor_value(name, lipid_values, protein_values):
-    """Combine lipid and protein descriptor dictionaries into one pair descriptor.
-
-    Formulas:
-        occupancy: max(chain_length_angstrom(chain) - pocket_extent, 0)
-        chain_extent_gap: pocket_extent - chain_length_angstrom(chain)
-        aromatic_contact: aromatic_share * unsaturation
-        hbond_match: polar_share * hbond
-        volume_fit: pocket_volume_per_sasa * heavy
-        buriedness_match: buriedness_q50 * heavy
-        depth_bulk_match: depth_q10 * heavy
-        hydropathy_chain_match: hydropathy_core * chain
-        aromatic_contact_min: min(aromatic_share, unsaturation)
-        hbond_match_min: min(polar_share, hbond)
-        tail_elongation_fit: tail_count / max(pocket_elongation, 1)
-        hydropathy_rim_match: hydropathy_rim * hbond
-        elongation_shape_match: pocket_elongation * npr1
-        flatness_shape_match: pocket_flatness * npr2
-
-    The two minimum formulas require standardised inputs from the caller. Length gaps
-    use angstroms. Products combine summary features without a bound ligand pose.
-    """
-    if name == "occupancy":
-        return max(
-            0.0,
-            chain_length_angstrom(lipid_values["chain"]) - protein_values["pocket_extent"],
-        )
-    if name == "chain_extent_gap":
-        return protein_values["pocket_extent"] - chain_length_angstrom(lipid_values["chain"])
-    if name == "aromatic_contact":
-        return protein_values["aromatic_share"] * lipid_values["unsaturation"]
-    if name == "hbond_match":
-        return protein_values["polar_share"] * lipid_values["hbond"]
-    if name == "volume_fit":
-        return protein_values["pocket_volume_per_sasa"] * lipid_values["heavy"]
-    if name == "buriedness_match":
-        return protein_values["buriedness_q50"] * lipid_values["heavy"]
-    if name == "depth_bulk_match":
-        return protein_values["depth_q10"] * lipid_values["heavy"]
-    if name == "hydropathy_chain_match":
-        return protein_values["hydropathy_core"] * lipid_values["chain"]
-    if name == "aromatic_contact_min":
-        return min(protein_values["aromatic_share"], lipid_values["unsaturation"])
-    if name == "hbond_match_min":
-        return min(protein_values["polar_share"], lipid_values["hbond"])
-    if name == "tail_elongation_fit":
-        return lipid_values["tail_count"] / max(protein_values["pocket_elongation"], 1.0)
-    if name == "hydropathy_rim_match":
-        return protein_values["hydropathy_rim"] * lipid_values["hbond"]
-    if name == "elongation_shape_match":
-        return protein_values["pocket_elongation"] * lipid_values["npr1"]
-    if name == "flatness_shape_match":
-        return protein_values["pocket_flatness"] * lipid_values["npr2"]
-    raise ValueError(f"Unknown pair descriptor: {name}. Known: {PAIR_DESCRIPTOR_NAMES}")
-
-
-# ----------------------------------------------------------------------------------
-# Which table a name belongs to, and the CLI that writes one name's column into it.
-# ----------------------------------------------------------------------------------
-
-PROTEIN_SIDE_NAMES = tuple(
-    PROTEIN_DESCRIPTOR_NAMES
-    + PROTEIN_DERIVED_DESCRIPTOR_NAMES
-    + POCKET_CHEMISTRY_DESCRIPTOR_NAMES
-)
-# The chain column uses longest_acyl_chain, which is not registered in _MEASURES.
-LIPID_SIDE_NAMES = ("chain",) + tuple(_MEASURES)
-
-
-def descriptor_side(name):
-    """"protein" / "lipid" / "pair" for `name`, or None when no table defines it."""
-    if name in PROTEIN_SIDE_NAMES:
-        return "protein"
-    if name in LIPID_SIDE_NAMES:
-        return "lipid"
-    if name in PAIR_DESCRIPTOR_NAMES:
-        return "pair"
-    return None
-
-
-def lipid_measure_function(name):
-    """The callable behind one lipid name, "chain" included."""
-    return longest_acyl_chain if name == "chain" else _MEASURES[name]
-
-
-def _write_column(table_path, new_values, name, key_columns, isomeric):
-    """Update one descriptor column for one isomeric mode.
-
-    Match new_values by key_columns. Preserve other columns and the other mode's rows.
-    """
-    table = pandas.read_csv(table_path, float_precision="round_trip")
-    mask = table["isomeric"] == bool(isomeric)
-    if name not in table.columns:
-        table[name] = numpy.nan
-    keys = list(zip(*(table[column] for column in key_columns)))
-    updated = [
-        new_values.get(key) if is_this_variant else current
-        for key, is_this_variant, current in zip(keys, mask, table[name])
-    ]
-    table[name] = updated
-    table.to_csv(table_path, index=False)
-    return int(mask.sum())
-
-
-def compute_lipid_descriptor(data_dir, name, isomeric=False):
+def compute_lipid_descriptor(data_dir, name, isomeric=False, force=False):
     """Update one lipid descriptor column for interaction-table candidates.
 
-    Require an existing data/lipid_descriptors.csv. Use the descriptor cache builder
-    for the initial table.
+    Require an existing data/lipid_descriptors.csv: this patches one column and
+    preserves the others. --force rebuilds this isomeric variant's whole table
+    through the cache builder instead, which is also how it is first built.
     """
     from dataloader.dataset_source import interaction_csv_path
     from dataloader.descriptor_cache_reader import lipid_descriptors_csv_path
 
     table_path = lipid_descriptors_csv_path(data_dir)
+    csv_path = interaction_csv_path(str(data_dir) + os.sep)
+    if force:
+        from dataloader.cache_builders.descriptor_csv_builder import (
+            build_lipid_descriptor_cache,
+        )
+
+        csv = pandas.read_csv(csv_path)
+        protein_names = sorted(csv["LTPProtein"].dropna().unique().tolist())
+        path, written, _ = build_lipid_descriptor_cache(
+            data_dir, csv, protein_names, csv_path, isomeric=isomeric
+        )
+        return path, written
     if not table_path.exists():
         raise SystemExit(
             f"{table_path} does not exist yet -- build it once with "
-            "`python3 data/build_descriptor_cache.py` before writing one column"
+            f"`python3 preprocessing/compute_descriptors.py {name} --force` "
+            "before writing one column"
         )
 
-    csv = pandas.read_csv(interaction_csv_path(str(data_dir) + os.sep))
+    csv = pandas.read_csv(csv_path)
     function = lipid_measure_function(name)
     values = {}
     for key in _canonical_candidate_keys(csv, isomeric):
@@ -1256,18 +1444,253 @@ def _canonical_candidate_keys(csv, isomeric):
     return keys
 
 
-def compute_pair_descriptor(data_dir, name, isomeric=False):
-    """Compute one pair column from the cached lipid and protein descriptor tables."""
+######################################################################################
+# PAIR DESCRIPTORS
+# one row per candidate-protein pair, from the two tables above
+######################################################################################
+
+
+# ----------------------------------------------------------------------------------
+# helpers
+# ----------------------------------------------------------------------------------
+
+# Tanford, The Hydrophobic Effect (1980): extended hydrocarbon-chain length.
+# L = 1.5 + 1.265 * (n - 1) angstrom for n carbons.
+# Convert carbon counts before comparing them with pocket lengths.
+_CHAIN_BOND_PROJECTION_A = 1.265
+_CHAIN_TERMINAL_A = 1.5
+
+
+def chain_length_angstrom(carbons):
+    """Estimate extended-chain length in angstrom from carbon count using Tanford's formula."""
+    return _CHAIN_TERMINAL_A + _CHAIN_BOND_PROJECTION_A * (carbons - 1.0)
+
+
+# ----------------------------------------------------------------------------------
+# every pair descriptor, by name, in one function
+# ----------------------------------------------------------------------------------
+
+# The lipid values every PAIR_DESCRIPTOR_NAMES formula below reads. Named once: the
+# pair table builder, the dataloader and the GBM baseline all assemble this same dict.
+PAIR_DESCRIPTOR_LIPID_INPUTS = (
+    "chain", "unsaturation", "hbond", "heavy", "tail_count", "npr1", "npr2",
+)
+
+
+_PAIR_MEASURES = {}
+
+
+def _pair_measure(kind):
+    """Register one pair formula under its own name, with the kind that says how
+    dataloader/chemistry_prior.py's feature_similarity standardises its INPUTS.
+
+    The kind governs that one function and nothing else. Training never standardises
+    a pair formula's inputs: Dataloader computes the column from raw values and then
+    z-scores the finished column on train statistics, the same as every other
+    descriptor token. So a "bottleneck" formula reads standardised values in the kNN
+    null model and raw ones in the model's own input -- see the kinds below.
+
+    product : two DIFFERENT-unit quantities multiplied, so their relative
+            contribution is whatever their raw scales happen to be --
+            feature_similarity standardises both sides when --zscore.
+    bottleneck : min(A, B), which compares nothing unless A and B are already on
+            one scale, so feature_similarity standardises it with or without
+            --zscore. On raw values the smaller-ranged side wins the min
+            every time, which is a units artefact instead of a bottleneck.
+    never : nothing to reconcile, so the inputs are left alone. Either both
+            sides are already ONE physical quantity in angstrom
+            (occupancy, chain_extent_gap), where standardising would
+            replace "does the cavity reach as far as the chain" with an
+            abstract distance; or the formula is a ratio instead of a
+            product or a difference (tail_elongation_fit).
+
+    pair_names_of_kind reads these back; nothing re-lists them by hand.
+    """
+    def register(function):
+        function.kind = kind
+        _PAIR_MEASURES[function.__name__] = function
+        return function
+    return register
+
+
+@_pair_measure("never")
+def occupancy(lipid, protein):
+    return max(0.0, chain_length_angstrom(lipid["chain"]) - protein["pocket_extent"])
+
+
+@_pair_measure("never")
+def chain_extent_gap(lipid, protein):
+    return protein["pocket_extent"] - chain_length_angstrom(lipid["chain"])
+
+
+@_pair_measure("product")
+def aromatic_contact(lipid, protein):
+    return protein["aromatic_share"] * lipid["unsaturation"]
+
+
+@_pair_measure("product")
+def hbond_match(lipid, protein):
+    return protein["polar_share"] * lipid["hbond"]
+
+
+@_pair_measure("product")
+def volume_fit(lipid, protein):
+    return protein["pocket_volume_per_sasa"] * lipid["heavy"]
+
+
+@_pair_measure("product")
+def buriedness_match(lipid, protein):
+    return protein["buriedness_q50"] * lipid["heavy"]
+
+
+@_pair_measure("product")
+def depth_bulk_match(lipid, protein):
+    return protein["depth_q10"] * lipid["heavy"]
+
+
+@_pair_measure("product")
+def hydropathy_chain_match(lipid, protein):
+    return protein["hydropathy_core"] * lipid["chain"]
+
+
+@_pair_measure("bottleneck")
+def aromatic_contact_min(lipid, protein):
+    return min(protein["aromatic_share"], lipid["unsaturation"])
+
+
+@_pair_measure("bottleneck")
+def hbond_match_min(lipid, protein):
+    return min(protein["polar_share"], lipid["hbond"])
+
+
+@_pair_measure("never")
+def tail_elongation_fit(lipid, protein):
+    return lipid["tail_count"] / max(protein["pocket_elongation"], 1.0)
+
+
+@_pair_measure("product")
+def hydropathy_rim_match(lipid, protein):
+    return protein["hydropathy_rim"] * lipid["hbond"]
+
+
+@_pair_measure("product")
+def elongation_shape_match(lipid, protein):
+    return protein["pocket_elongation"] * lipid["npr1"]
+
+
+@_pair_measure("product")
+def flatness_shape_match(lipid, protein):
+    return protein["pocket_flatness"] * lipid["npr2"]
+
+
+def pair_names_of_kind(kind):
+    """The pair descriptors registered under one kind -- what dataloader/descriptors.py
+    builds MULTIPLICATIVE_PAIR_DESCRIPTOR_NAMES and MIN_PAIR_DESCRIPTOR_NAMES from.
+    """
+    return tuple(name for name, fn in _PAIR_MEASURES.items() if fn.kind == kind)
+
+
+def pair_descriptor_value(name, lipid_values, protein_values):
+    """One pair descriptor from the lipid and protein value dictionaries."""
+    try:
+        function = _PAIR_MEASURES[name]
+    except KeyError:
+        raise ValueError(
+            f"Unknown pair descriptor: {name}. Known: {tuple(_PAIR_MEASURES)}"
+        ) from None
+    return function(lipid_values, protein_values)
+
+
+# ----------------------------------------------------------------------------------
+# the table: per-row values, write one column
+# ----------------------------------------------------------------------------------
+
+def pair_values_by_row(csv, name, protein_table, isomeric=False, lipid_cache=None, pair_cache=None):
+    """Return per-row candidate values of one pair descriptor, in encoder order.
+
+    Prefer data/pair_descriptors.csv (pair_cache, descriptor_cache_reader.
+    load_pair_value_cache's {(smiles, protein): {name: value}}). A (candidate,
+    protein) pair absent from it -- a new candidate, or no pair cache at all --
+    falls back to pair_descriptor_value on lipid_cache's own per-SMILES values,
+    the same fallback descriptor_values_by_row uses for a candidate missing from
+    the lipid cache.
+
+    Return per-row lists, with None for a row without usable candidates.
+    """
+    from dataloader.pocket_lipid_compatibility import candidate_fields_by_row
+
+    raw_to_canonical = lipid_cache["raw_to_canonical"] if lipid_cache else {}
+    lipid_values = lipid_cache["values"] if lipid_cache else {}
+    pair_values = pair_cache or {}
+    protein_column = csv["LTPProtein"].to_numpy()
+    by_field = {}
+    per_row = []
+    for row_position, field in enumerate(candidate_fields_by_row(csv)):
+        protein = protein_column[row_position]
+        field_key = (field, protein)
+        values = by_field.get(field_key)
+        if values is None:
+            values = []
+            seen = set()
+            for raw in field:
+                if raw in raw_to_canonical:
+                    key = raw_to_canonical[raw]
+                    if key is None:
+                        continue
+                else:
+                    molecule = Chem.MolFromSmiles(raw)
+                    if molecule is None or molecule.GetNumAtoms() == 0:
+                        continue
+                    key = Chem.MolToSmiles(molecule, canonical=True, isomericSmiles=isomeric)
+                if key in seen:
+                    continue
+                seen.add(key)
+                cached_pair = pair_values.get((key, protein))
+                if cached_pair is not None and name in cached_pair:
+                    values.append(cached_pair[name])
+                    continue
+                cached_lipid = lipid_values.get(key)
+                lipid_input = {
+                    measure: (
+                        cached_lipid[measure]
+                        if cached_lipid is not None and measure in cached_lipid
+                        else _LIPID_MEASURES[measure](key)
+                    )
+                    for measure in PAIR_DESCRIPTOR_LIPID_INPUTS
+                }
+                values.append(pair_descriptor_value(name, lipid_input, protein_table[protein]))
+            values = values or [None]
+            by_field[field_key] = values
+        per_row.append(values)
+    return per_row
+
+
+# ----------------------------------------------------------------------------------
+# the table: write one column
+# ----------------------------------------------------------------------------------
+
+def compute_pair_descriptor(data_dir, name, isomeric=False, force=False):
+    """Update one pair descriptor column from the cached lipid and protein tables.
+
+    Patch that one column and preserve the others. --force rebuilds this isomeric
+    variant's whole table instead, which is also how it is first built.
+    """
+    from dataloader.dataset_source import interaction_csv_path
     from dataloader.descriptor_cache_reader import (
         load_lipid_descriptor_cache,
         pair_descriptors_csv_path,
     )
 
     table_path = pair_descriptors_csv_path(data_dir)
+    if force:
+        from dataloader.cache_builders.descriptor_csv_builder import build_pair_value_cache
+
+        csv = pandas.read_csv(interaction_csv_path(str(data_dir) + os.sep))
+        return build_pair_value_cache(data_dir, csv, isomeric=isomeric)
     if not table_path.exists():
         raise SystemExit(
             f"{table_path} does not exist yet -- build it once with "
-            "`dataloader.cache_builders.descriptor_csv_builder.build_pair_value_cache` "
+            f"`python3 preprocessing/compute_descriptors.py {name} --force` "
             "before writing one column"
         )
     lipid_cache = load_lipid_descriptor_cache(Path(data_dir).resolve(), isomeric)
@@ -1290,15 +1713,7 @@ def compute_pair_descriptor(data_dir, name, isomeric=False):
         pv = protein_table.get(protein)
         if lv is None or pv is None:
             continue
-        lipid_input = {
-            "chain": lv["chain"],
-            "unsaturation": lv["unsaturation"],
-            "hbond": lv["hbond"],
-            "heavy": lv["heavy_atoms"],
-            "tail_count": lv["tail_count"],
-            "npr1": lv["npr1"],
-            "npr2": lv["npr2"],
-        }
+        lipid_input = {key: lv[key] for key in PAIR_DESCRIPTOR_LIPID_INPUTS}
         values[(smiles, protein, bool(isomeric))] = pair_descriptor_value(
             name, lipid_input, pv
         )
@@ -1309,9 +1724,49 @@ def compute_pair_descriptor(data_dir, name, isomeric=False):
     return table_path, written
 
 
+######################################################################################
+# SHARED: WHICH TABLE A NAME BELONGS TO, AND THE CLI
+# no descriptor formulas below this line
+######################################################################################
+
+def descriptor_side(name):
+    """"protein" / "lipid" / "pair" for `name`, or None when no table defines it."""
+    if name in PROTEIN_DESCRIPTOR_NAMES:
+        return "protein"
+    if name in LIPID_SIDE_NAMES:
+        return "lipid"
+    if name in PAIR_DESCRIPTOR_NAMES:
+        return "pair"
+    return None
+
+
+def _write_column(table_path, new_values, name, key_columns, isomeric=None):
+    """Update one descriptor column, in one isomeric mode when the table has modes.
+
+    Match new_values by key_columns. Preserve other columns and the other mode's rows.
+    The protein table carries no isomeric column: isomeric=None makes every row the
+    request's own.
+    """
+    table = pandas.read_csv(table_path, float_precision="round_trip")
+    mask = (
+        pandas.Series(True, index=table.index) if isomeric is None
+        else table["isomeric"] == bool(isomeric)
+    )
+    if name not in table.columns:
+        table[name] = numpy.nan
+    keys = list(zip(*(table[column] for column in key_columns)))
+    updated = [
+        new_values.get(key) if is_this_variant else current
+        for key, is_this_variant, current in zip(keys, mask, table[name])
+    ]
+    table[name] = updated
+    table.to_csv(table_path, index=False)
+    return int(mask.sum())
+
+
 def _print_catalog():
     for side, names in (
-        ("protein", PROTEIN_SIDE_NAMES),
+        ("protein", PROTEIN_DESCRIPTOR_NAMES),
         ("lipid", LIPID_SIDE_NAMES),
         ("pair", PAIR_DESCRIPTOR_NAMES),
     ):
@@ -1336,7 +1791,7 @@ def main(argv=None):
     parser.add_argument(
         "--force",
         action="store_true",
-        help="protein side only: recompute even when the cached table is current",
+        help="rebuild that side's whole table instead of writing one column",
     )
     parser.add_argument("--data_dir", default=str(PROJECT_ROOT / "data"))
     arguments = parser.parse_args(argv)
@@ -1355,24 +1810,22 @@ def main(argv=None):
         )
 
     if side == "protein":
-        # Protein descriptors share one pass, so rebuild the table for a protein-name request.
-        table = protein_descriptor_table(arguments.data_dir, force=arguments.force)
-        print(
-            f"{name}: protein side, {len(table)} proteins -> "
-            f"{_protein_descriptors_csv_path(arguments.data_dir)}"
+        path, written = compute_protein_descriptor(
+            arguments.data_dir, name, force=arguments.force
         )
+        print(f"{name}: protein side, {written} proteins -> {path}")
         return 0
 
     if side == "lipid":
         path, written = compute_lipid_descriptor(
-            arguments.data_dir, name, isomeric=arguments.isomeric
+            arguments.data_dir, name, isomeric=arguments.isomeric, force=arguments.force
         )
         variant = "isomeric" if arguments.isomeric else "deterministic"
         print(f"{name}: lipid side, {written} {variant} rows -> {path}")
         return 0
 
     path, written = compute_pair_descriptor(
-        arguments.data_dir, name, isomeric=arguments.isomeric
+        arguments.data_dir, name, isomeric=arguments.isomeric, force=arguments.force
     )
     variant = "isomeric" if arguments.isomeric else "deterministic"
     print(f"{name}: pair side, {written} {variant} rows -> {path}")

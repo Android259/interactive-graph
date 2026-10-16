@@ -43,7 +43,7 @@ def test_uneven_pool_spreads_the_remainder_across_batches():
     assert sorted(set(sizes)) == [14, 16]
     assert sizes.count(14) == 4
     assert sum(sizes) == 1112
-    # Spread through the epoch rather than bunched together.
+    # Spread through the epoch instead of being bunched together.
     short = [i for i, size in enumerate(sizes) if size == 14]
     gaps = [b - a for a, b in zip(short, short[1:])]
     assert min(gaps) >= len(sizes) // len(short) - 1

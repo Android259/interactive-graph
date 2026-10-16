@@ -108,9 +108,9 @@ class ConcreteDropout(torch.nn.Module):
     i.e. ``weight_reg*||W||^2/(1-p) - dropout_reg*K*H(p)``. The entropy term pulls p up
     (toward 0.5); the weight term and the task loss pull it down, so p settles at a
     data-driven value instead of collapsing to 0. Canonically ``weight_reg = l^2/(tau*N)``
-    and ``dropout_reg = 2/(tau*N)``.
+    and `dropout_reg = 2/(tau*N)`.
 
-    NOTE -- this is the *mirror* of Gal et al.'s derivation, not their literal formulation.
+    This is the *mirror* of Gal et al.'s derivation, not their literal formulation.
     They attribute the mask to the *consumer* (dropout on a layer's input, so the mask zeros
     *columns* of the downstream W, q(W) = M diag(z)). Here the mask is attributed to the
     *producer*: masking output unit i of ``y = W h + b`` zeros *row* i of the producing W,
@@ -283,7 +283,7 @@ def insert_hidden_gate(layers, num_units, config):
 def branch_width(config, branch):
     """The width of one encoder tower: --protein_hiddim/--lipid_hiddim, else --hiddim.
 
-    Read here rather than at each use site because each encoder binds its width ONCE at
+    Read here instead of at each use site because each encoder binds its width ONCE at
     the top of __init__ and uses the local everywhere after, so one call per tower is
     the whole of it. `branch` is "protein" or "lipid".
 
@@ -577,7 +577,7 @@ def build_ffn_with_residual(dim, config, act_fn=None, use_final_dropout=False, h
     Used as: x = x + FFN(x)
 
     ``hidden_dim`` overrides the usual ``m * dim`` width. It exists so a block can be
-    sized to a parameter budget rather than to m: the adversary's attention-substitute
+    sized to a parameter budget instead of to m: the adversary's attention-substitute
     passes 2 * dim, which makes the two Linears cost 4 * dim^2, the same budget as the
     Q/K/V/O projections of the MultiheadAttention it stands in for.
     """
@@ -626,7 +626,7 @@ class AttentionMLPSubstitute(torch.nn.Module):
 class NodeMLPSubstitute(torch.nn.Module):
     """--mlp_in_place_of_sa's substitute for architecture.geometric_transformer.
     RoPESelfAttention, whose own call contract is forward(x, batch, layout=None) ->
-    [nodes, dim] rather than MultiheadAttention's (query, key, value) -- a separate
+    [nodes, dim] instead of MultiheadAttention's (query, key, value) -- a separate
     class from AttentionMLPSubstitute only because the shape of the call differs;
     the substitute itself is identical (same budget-matched per-token MLP, `batch`/
     `layout` unused since an MLP has no node axis to pad or mask).

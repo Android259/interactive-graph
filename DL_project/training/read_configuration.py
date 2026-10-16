@@ -123,11 +123,8 @@ EXCLUDED_GROUP_ALIASES.update({
 # at parse time instead of after a job reaches a GPU. PLIDataset checks the two agree.
 LIPID_COLDSPLIT_NAMES = ("sphingolipids", "phosphorus_free", "choline", "anionic")
 
-# The same axis addressed by distance instead of by chemistry. The keys are the
-# requested isolation values, and they are read straight off the generated registry
-# rather than repeated here: that file IS the list, and a second copy is how the two
-# would drift (which is exactly what the comment above LIPID_COLDSPLIT_NAMES guards
-# against for the class sets, where the names and the classes live in two files).
+# Read isolation keys from the generated registry to keep one authoritative list.
+# Keys are requested Tanimoto isolation values.
 from dataloader.splitting_on_blocks.lipid_isolation_blocks import (  # noqa: E402
     LIPID_ISOLATION_BLOCKS,
 )
@@ -1068,9 +1065,8 @@ class ModelConfig:
             if getattr(self, name) is not None and getattr(self, name) != self.hiddim
         ]
         if asymmetric and self.double_attention:
-            # The second encoder receives hiddim-wide cross-attention output but
-            # uses branch width, so widths must match. A second adapter would change
-            # the tested architecture. No current config uses --double_attention.
+            # The second encoder receives hiddim-wide cross-attention output and uses
+            # branch width; require matching widths to avoid an additional adapter.
             raise ValueError(
                 f"{'/'.join(asymmetric)} differs from hiddim ({self.hiddim}), which "
                 "--double_attention does not support: its second encoder pass reads "
@@ -1700,22 +1696,11 @@ BOOL_FLAG_NAMES = (
 
     # Bare flags only enable a lipid conv. No flag selects plain lipid GATv2
     # while the protein uses EdgeMLPConv; that option has not been requested.
-    # Override lipid graph conv and EdgeMLPConv divisor. None inherits the
-    # protein settings, preserving existing arg files and run behavior.
-    # Protein graphs use Voronota contacts (~30 neighbors/residue, 25-dim SE(3)
-    # frame edges); lipid graphs use 2-4 bonds/atom and 22-dim bond features
-    # (LIPID_ISOMER_EDGE_DIM). Sharing settings has two effects:
-    # - EdgeMLPConv divides message sums by a constant. Dauparas et al.'s 30
-    #   approximates a protein mean, but makes lipid updates ~10x too small.
-    #   Use measured mean degree (analysis/probes/lipid_graph_degree.py).
-    # - edge_mlp outputs hiddim, while attention/GATv2 outputs hiddim * HEADS.
-    #   In past runs, choosing protein edge_mlp also narrowed lipid output 8x,
-    #   already the --lipid_coldsplit bottleneck.
-    # All past --lipid_graph_isomers runs inherited protein conv and lambda=30.
-    # The direct graph ablation was flat for both conv variants, including
-    # attention without either scaling or width issue. The
-    # mis-scaled divisor is real, but does not explain those flat results.
-    # See architecture/lipid_encoder.py.
+    # Override the lipid conv and EdgeMLPConv divisor; None inherits protein settings.
+    # Protein structured edges have 25 features; lipid bond edges have 22
+    # (LIPID_ISOMER_EDGE_DIM). EdgeMLPConv divides message sums by its configured
+    # constant and outputs hiddim; attention/GATv2 output hiddim * HEADS.
+    # See architecture/lipid_encoder.py and analysis/probes/lipid_graph_degree.py.
     # excl. lipid_edge_mlp.
     "lipid_edge_attention",
     "lipid_edge_mlp",  # forces the lipid graph conv to edge-MLP; requires lipid_graph_isomers; excl. lipid_edge_attention
@@ -1744,7 +1729,7 @@ BOOL_FLAG_NAMES = (
     # "which residue belongs in this geometry", which is a description of the site.
     # excl. proteinmpnn_replace_esm3 and the whole-vector RNA-BAnG modes.
     "esmif1_replace_esm3",
-    # Use the v2 ESM3 embeddings (preprocessing/embed_protein_esm3_v2.py, read from
+    # Use the v2 ESM3 embeddings (preprocessing/embeddings/embed_protein_esm3_v2.py, read from
     # data/embedding_ESM3_v2/) built from a real structure+coordinates+SASA+confidence
     # input (data/esm3_input/<stem>.pdb, preprocessing/build_consistent_esm3_pdb.py)
     # instead of the v1 sequence-only embeddings in data/embedding_ESM3/. When this is
@@ -1754,7 +1739,7 @@ BOOL_FLAG_NAMES = (
     # from pocketness.pdb, which marks Voronota pocket membership, not confidence.
     "use_esm3_v2_embeddings",
     # RNA-BAnG protein representations are generated offline by
-    # preprocessing/embed_protein_rnabang.py and have one 128-dimensional row per
+    # preprocessing/embeddings/embed_protein_rnabang.py and have one 128-dimensional row per
     # graph residue. The two ways of consuming them below are mutually exclusive.
     # Feed RNA-BAnG rows instead of ESM3 into the existing protein GNN.
     "rnabang_replace_esm3",
@@ -1770,7 +1755,7 @@ BOOL_FLAG_NAMES = (
     # All three are already in data/graphs/<protein>/coarse_graph_nodes.csv, computed
     # offline; nothing new is generated. This is the fold-independent half of the
     # protein description, which is what a cold-family split needs: unlike the PLM
-    # embedding these say what the site is like rather than which protein it belongs
+    # embedding these say what the site is like instead of which protein it belongs
     # to. The columns are appended, so node[:, 0..2] keep their meaning for every path
     # that indexes them positionally (see Protein_encoder's frozen node adapter).
     "protein_extra_node_features",
@@ -1848,11 +1833,6 @@ BOOL_FLAG_NAMES = (
     # a learnable preference and keeps every residue reachable; the two are mutually
     # exclusive because a constant bias on the surviving keys is a no-op under softmax
     # and would leave prot_attention_pos_bias's parameter without gradient.
-    # Measured against the bound ligand in 18 raw structures, pocketness.pdb recovers
-    # 77% of the residues within 5 A of the real ligand (median 80%, min 40% on BPI,
-    # which has two lipid sites and one crystallised ligand), at precision 0.63.
-    # So this drops roughly a fifth of the true contact residues along with ~82% of
-    # the protein.
     "attention_by_pockets",
     "prot_pos_bias_per_head",  # makes the pocket positional bias a per-head vector instead of one shared value; requires --protein_pooling=attention_pos_bias or pooling_by_pockets
     # Cross-attention key bias, softplus-scaled so a bigger feature value always
@@ -1867,18 +1847,13 @@ BOOL_FLAG_NAMES = (
     # --- 7. Final pooling ---
     # Learned attention pooling (one learnable query per partner) instead of the fixed
     # pool_type reduction: out = sum_i softmax_i(w·x_i) x_i over each graph's nodes -- a
-    # content-weighted readout rather than a flat mean/max.
+    # content-weighted readout.
     # excl. swe_pooling.
     "attention_pooling",
     "attention_pooling_pocket_bias",  # adds a learnable bias toward pocket residues in attention pooling; requires attention_pooling
     # Sliced-Wasserstein pooling (architecture/final_layer.py:SlicedWassersteinPool):
-    # reads the SHAPE of a graph's node distribution instead of its average, by matching
-    # its quantiles to swe_reference_points learned reference points along learned
-    # directions. Under mean pooling, the 35
-    # proteins sit at ESM3 cosine 0.974 of each other under mean pooling while their
-    # binding profiles are at 0.000, so the average does not separate them.
-    # Freezing references leaves directions and output mapping trainable, as in
-    # "SWE_Simple", suited to a protein axis of 21-33.
+    # match node-feature quantiles to swe_reference_points along learned directions.
+    # Freezing references leaves directions and output mapping trainable (SWE_Simple).
     # excl. attention_pooling.
     "swe_pooling",
     "swe_freeze_reference",  # keeps swe_pooling's reference points at random init instead of learning them; requires swe_pooling
@@ -1985,7 +1960,7 @@ BOOL_FLAG_NAMES = (
     # averaged away by families already easy. Requires loss_type=cross_entropy (the
     # branch that already has an unreduced per-sample loss to regroup by family) and
     # is mutually exclusive with pu_loss, whose loss terms are population-
-    # or pair-level rather than per-row. See architecture.loss.GroupDROState.
+    # or pair-level instead of per-row. See architecture.loss.GroupDROState.
     "group_dro",
     "pu_loss",  # replaces the task loss with the non-negative PU risk estimator everywhere (train/valid/test); excl. group_dro; supersedes loss_type/focal_loss selection
     # One PU class prior per lipid subclass of the source paper instead of one for the
@@ -2002,93 +1977,58 @@ BOOL_FLAG_NAMES = (
     "focal_loss",  # focal loss instead of plain cross-entropy; only applies inside the loss_type=cross_entropy branch, no effect under pu_loss or pairwise_rank
     "logit_adjustment",  # adds a fixed prior-derived bias to the logits before the task loss; composes with class_weights/focal_loss without double-correcting
     "protein_group_weight",  # adds per-protein-group sample weights to the loss; no effect under group_dro (weights computed but unused)
-    # Restore each protein's pos:neg ratio inside train by weighting instead of by
-    # discarding. What a two-axis split needs: holding lipid classes out cuts across
-    # proteins and leaves some of them badly skewed (STARD2 at 4 positive against 91
-    # unlabeled), and re-matching by subsampling would cut hardest from exactly those.
-    # See PLIDataset.get_protein_balance_weights.
+    # Balance each protein's training pos:neg ratio through loss weights,
+    # retaining rows after lipid-class holdout. See PLIDataset.get_protein_balance_weights.
     "protein_balance_weight",
-    # Rake the train rows' loss weights (iterative proportional fitting) so that the
-    # weighted positive rate is the SAME inside every protein, every lipid class and
-    # every individual lipid: the train-wide rate, so --class_weights keeps its meaning.
-    # Each of the three one-dimensional priors ("this protein binds", "this class
-    # binds", "this lipid binds") then carries no information, while the joint
-    # (protein x class) is left intact -- measured on --lipid_species_coldsplit=0.15,
-    # npp=5: marginal AUCs 0.634/0.615 -> 0.458/0.471, joint 0.930 -> 0.930
-    # A loss weight, so it works under
-    # every architecture. See PLIDataset.get_marginal_balance_weights.
+    # Rake train loss weights over protein, lipid class, and lipid species
+    # (iterative proportional fitting). Match every key's weighted positive rate
+    # to the train-wide rate, preserving --class_weights semantics.
+    # Leave the joint (protein, class) structure intact. Works with every architecture;
+    # see PLIDataset.get_marginal_balance_weights.
     "marginal_balance_weight",
     "protein_class_weight",  # adds per-protein-class sample weights; no effect under group_dro
     "protein_class_sqrt_weight",  # same as protein_class_weight but sqrt-damped; no effect under group_dro
     # Train positives mean "this protein has a screened positive in this
-    # lipid's head-group class", rather than for this exact lipid.
+    # lipid's head-group class". This widens the target beyond the exact lipid.
     # Uses dataloader.lipid_classes.class_level_positive_labels and the same
     # classes as --lipid_coldsplit/--double_coldsplit. Inputs and architecture
     # stay unchanged; valid/test still score exact-molecule Interaction labels.
     "lipid_class_targets",
 
     # --- 13. Cold-split / holdout axes ---
-    # Both double_coldsplit and mixed_coldsplit hold out head-group classes alongside
-    # excluded_groups. Derive the classes from the held-out
-    # family by dataloader.splitting_on_blocks.lipid_coldsplit_blocks.lipid_classes_for_holdout, not typed in, because the
-    # right set differs per family and the rule that finds it is what makes the split
-    # honest. The derived list is printed at load time so a run's log records it.
-    #
-    # They differ in what happens to the held-out family's rows in the classes that
-    # STAYED in train. mixed_coldsplit leaves them in the evaluation pool, so valid and
-    # test mix three regimes and 6-39% of their lipids are ones training has seen; the
-    # per-lipid label prior measures 0.498 there, diluted but present. double_coldsplit
-    # drops those rows entirely -- they cannot go to train either, their protein is held
-    # out -- so no evaluated lipid has been seen and the prior measures exactly 0.500.
-    # That costs 3-17% of the working set and nothing from train, which never held them.
+    # Both modes derive lipid-class holdouts per excluded protein family via
+    # lipid_coldsplit_blocks.lipid_classes_for_holdout. Log the chosen classes.
+    # mixed_coldsplit evaluates all removed rows, mixing protein-cold, lipid-cold,
+    # and double-cold pairs. double_coldsplit keeps only pairs with both partners
+    # held out; discard rows cold on just one axis from both train and evaluation.
     # excl. family_only.
     "double_coldsplit",
     "mixed_coldsplit",  # same derived lipid-class holdout as double_coldsplit but without the intersection narrowing; requires excluded_groups; excl. family_only
     "cold_split",  # marks the cold-split submitter convention; requires --test_group to be set; excl. family_only
-    # Drop from valid/test every row whose (LTPProtein, article lipid subclass) cell has
-    # no training row , instead of scoring it.
-    #
-    # Such a row is not a hard case, it is an unanswerable one: the no-model planka this
-    # project measures the network against -- the train positive rate of that cell,
-    # analysis/baselines/protein_subclass_label_baseline.py -- has nothing to estimate from and
-    # falls back to "negative", so it scores balanced accuracy 0.500 there by
-    # construction. Measured on --lipid_species_coldsplit=0.15 over the five standard
-    # seeds, those rows are 10.1% of test and 9.8% of valid but carry only 2.9%/2.5% of
-    # the positives, so dropping them moves the planka 0.871 -> 0.879 and the block's
-    # positive rate 0.335 -> 0.362, keeping 90% of the rows and 97% of the positives
-    #
-    # The point is comparability, not a higher number: with these rows in, part of what
-    # separates a model from the planka is which side of an uninformative fallback each
-    # happens to land on. The key is the JOINT (protein, subclass) cell, matching that
-    # baseline exactly, so the two are measured on the same rows.
+    # Drop validation/test rows whose (LTPProtein, article subclass) cell is absent
+    # from training. Match analysis/baselines/protein_subclass_label_baseline.py's key:
+    # unseen cells use its negative fallback and provide no estimated cell prior.
+    # Train stays unchanged; model and baseline use the same evaluated rows.
     "drop_uncovered_protein_subclass",
 
     # --- 14. Negative sampling ---
-    # Match negatives to positives per (family, lipid class), removing the
-    # class prior left by coarser samplers: positive rates 0.25-0.68 become
-    # 0.50-0.51. Per-protein balance cannot also be kept on this data; see
-    # Dataloader.sample_lipid_class_balanced_negatives. Overrides balanced_proteins.
+    # Match negatives to positives per (family, lipid class), removing class priors.
+    # This does not also balance individual proteins. Overrides balanced_proteins;
+    # see Dataloader.sample_lipid_class_balanced_negatives.
     "balanced_lipid_classes",
     "balance_negatives_by_family",  # draws negatives per protein family to match that family's positive count; overridden by balanced_proteins/balanced_lipid_classes
     "balanced_proteins",  # draws negatives per protein to match its own positive count; overridden by balanced_lipid_classes, overrides balance_negatives_by_family
     "balanced_batches",  # balances the class composition within each drawn batch; composes with rotate_train_negatives
-    # --rotate_train_negatives: show the model EVERY negative over the course of a run
-    # instead of the one draw negatives_per_positive fixed at dataset build time. The
-    # draw above decides what a single epoch holds; without this flag it also decides
-    # what the whole RUN ever sees, which at this table's 634:9271 ratio is 14% of the
-    # negative evidence, chosen by the seed. With it, train keeps every eligible
-    # negative and each epoch is handed a different consecutive slice of a fixed
-    # permutation (dataloader/sampler.py's RotatingNegativeBatchSampler), so the epoch
-    # costs exactly what it cost before and the run covers the pool about sixteen times
-    # over at 120 epochs. Only TRAIN changes: the evaluated block is sampled exactly as
-    # before, so a rotating run's metrics stay comparable with a fixed one's.
-    # excl. eval_average_candidates.
+    # Rotate eligible training negatives through consecutive slices of one seeded
+    # permutation (sampler.RotatingNegativeBatchSampler). Retain all positives and
+    # the configured per-epoch negative quota. Without rotation, reuse one fixed draw.
+    # Validation/test sampling stays unchanged. excl. eval_average_candidates.
     "rotate_train_negatives",
     "balance_excluded_group_negatives",  # rewrites negatives in the held-out (validation/test) groups to class-stratified 50/50; requires excluded_groups; no-op under cold lipid-chemistry splits
     # Bias the negatives drawn for a protein's TRAIN-side rows toward its own chemistry
     # hard cases -- unlabeled lipids Tanimoto-similar to a lipid that protein IS
     # positive for -- instead of drawing them uniformly, so the loss must separate
-    # binder from non-binder chemistry rather than lean on the base rate. Applies only
+    # binder from non-binder chemistry and reduce reliance on the base rate. Applies only
     # to groups whose family is not in --excluded_groups: a held-out family's rows
     # become validation/test after the split, and this flag must not change what those
     # measure, only what training sees. See dataloader/sampler.py's
@@ -2116,24 +2056,18 @@ BOOL_FLAG_NAMES = (
     "dissimilar_negative_mining",
 
     # --- 15. Lipid candidates / fragments ---
-    # The ";"-separated SMILES of a row are candidate structures for one measured lipid
-    # species (sn-positional / double-bond isomers the spectrum cannot separate), and
-    # the embedding path used to keep only the first of them regardless of
-    # lipid_fragments_treatment -- which made all three treatments the same run. This
-    # flag is that behaviour. It is now OFF by default, so the chosen treatment sees
-    # the whole candidate set; runs before this change had it on and encoded the first
-    # candidate alone, whichever treatment they named. Turning it back on
-    # (--lipid_first_fragment_only) is requires concat or fragments_mask,
-    # which then degenerate to that single candidate; with random_choice the draw would
-    # have nothing to draw from, so validate() rejects the pair. It governs the
-    # embedding path only; the lipid_graph_isomers path has always used every candidate.
+    # Semicolon-separated SMILES are unresolved candidate isomers of one species.
+    # lipid_first_fragment_only keeps the first usable candidate on the embedding path.
+    # Default off: use the selected treatment on the full set. Requires concat or
+    # fragments_mask; validate rejects random_choice because only one candidate remains.
+    # The lipid_graph_isomers path always uses all candidates.
     "lipid_first_fragment_only",
     # Marginalize evaluation over the candidate set instead of scoring one member of it.
     # Training under random_choice teaches invariance to the degrees of freedom the mass
     # spectrum left open, and this is that invariance on the reading side: a validation
     # or test row is scored once per candidate and the probabilities are averaged before
     # the threshold, so the metric is one quantity across epochs and is the answer for
-    # the species rather than for an arbitrary member of it.
+    # the species, averaged across its candidate structures.
     # requires --lipid_fragments_treatment=random_choice; excl. rotate_train_negatives.
     "eval_average_candidates",
 
@@ -2141,30 +2075,21 @@ BOOL_FLAG_NAMES = (
     "disable_early_stopping",  # default on: never breaks the training loop early, so runs are always scored on the whole curve
     "type_opt",  # enables AMP mixed precision, but only on CUDA; stays off on CPU so CPU runs remain valid
     "lr_warmup_cosine",  # linear warm-up over --lr_warmup_epochs then cosine decay to lr*lr_min_factor, instead of a flat learning rate
-    # Give the lipid branch a lower LR so the protein branch gets a head start;
-    # forward behavior stays unchanged. Matched test BA is 0.621 for lipid_only
-    # and 0.603 for the full model. The lipid path may solve the task first,
-    # leaving little useful protein gradient. Slowing it preserves transferable
-    # lipid signal, unlike adversarial suppression.
-    # Use a separate optimizer group: Adam's m/sqrt(v) nearly cancels constant
-    # gradient scaling, except for a relative L2 boost (coupled L2 is added
-    # after scaling). Activation hooks after cross-attention would also affect
-    # the protein through partner mixing. InteractionClassification.
-    # lipid_branch_parameters selects only lipid parameters.
-    # When off, no split optimizer group or per-epoch schedule is used;
-    # the next two values apply only when on.
+    # Give the lipid branch a lower learning rate while preserving forward behavior.
+    # Use a separate optimizer group (InteractionClassification.lipid_branch_parameters):
+    # Adam nearly cancels constant gradient scaling in m/sqrt(v), leaving a relative
+    # L2 boost. Post-cross-attention activation hooks would also affect the protein.
+    # When disabled, create no separate group or per-epoch schedule;
+    # lipid_path_weight and lipid_path_ramp_epochs apply only when enabled.
     # excl. lipid_only/protein_only, deepclip, descriptor heads.
     "lipid_path_handicap",
 
     # --- 17. Checkpointing / IO ---
     "testmode",  # redirects every output artifact (run/, models/, checkpoints/, metrics) under testmode_outputs/ so a smoke run can't pollute real results
     "save_checkpoint",  # writes the selected-epoch weights to checkpoints/<family>/<label>/...; independent of save_model (separate directory tree)
-    # Save by default: run_test() uses best_model_state selected by rolling
-    # validation and loaded before testing. Other saved weights are only five
-    # save_model_in_dynamics milestones, missing the selected epoch ~80% of
-    # the time. Without selected weights, later per-row/subclass analysis or
-    # new metrics need a nearby milestone approximation. Unsaved sweeps have
-    # already been lost to reanalysis; weights cost a few hundred KB per run.
+    # Save best_model_state selected by rolling validation and loaded for run_test().
+    # These selected-epoch weights support later per-row/subclass analysis;
+    # save_model_in_dynamics independently saves fixed milestone epochs.
     "save_model",
     # Track whether and when the protein branch is used: per-epoch branch
     # gradient norms, classifier input-weight norms, pooled protein spread,
@@ -2223,34 +2148,22 @@ FLAG_HANDLERS = {
 
 VALUE_HANDLERS = {
     # --- 1. Global model type ---
-    # Descriptors from Lipovsky et al. (Nature 2025, s41586-025-10040-y),
-    # the source of this project's LTP-lipid measurements (dataloader/descriptors.py).
-    # --descriptor_heads names DESCRIPTOR_CATALOG tokens from shared
-    # descriptor_catalog_input, bare or <name>_coarse=<spec>
-    # (parse_descriptor_token). Commas group tokens into a head; "/" separates
-    # heads: "a,b/c,d" gives two. pool_type reduces their vectors to one
-    # (named_descriptor_head.pool_descriptor_head_outputs). "/" avoids the
-    # shell quoting needed for "|" or ";" in arg files.
-    # By default, concatenate the head vector beside normal towers. This is
-    # incompatible with --bilinear_fusion: post-product concat restores a
-    # single-partner shortcut. The flags below instead build only a descriptor
-    # path and small classifier, with incompatible state_dicts and no full-model
-    # modules; validate() rejects options that need those modules:
+    # --descriptor_heads uses DESCRIPTOR_CATALOG scalar tokens from
+    #  descriptor_catalog_input (dataloader/descriptors.py; Lipovsky et al.,
+    # Nature 2025, s41586-025-10040-y). Accept bare or <name>_coarse=<spec> tokens.
+    # Commas join tokens; "/" separates heads: "a,b/c,d" gives two.
+    # The separator avoids shell quoting for "|" or ";". pool_type combines heads
+    # (named_descriptor_head.pool_descriptor_head_outputs).
+    # By default, concatenate the result with normal towers; --bilinear_fusion
+    # rejects this post-product shortcut. Descriptor-only modes build no full towers:
     # --descriptors_head: token self-attention per segment (NamedDescriptorHead).
-    # --descriptor_mlp: exactly one segment through DescriptorMLPHead.
-    # NamedDescriptorHead shares Linear(1, dim) token_embed, so its value
-    # response cannot depend on descriptor identity. On an 11-descriptor
-    # species15 block it gave test BA 0.535 versus 0.853 for a 2-hidden-layer
-    # MLP using the same columns.
-    # MLPs use hiddim/m/third_layers_in_mlps/dropout/act_fn as usual.
-    # Raw pocket scalars (pocket_extent, pocket_elongation, buriedness_q50,
-    # hydropathy_core, ...) are also accepted. The safe "extent" token uses
-    # train-fit quantile coarsening: raw pocket_extent identifies held-out
-    # proteins at eta^2=0.78. Other raw
-    # protein scalars are unaudited, so they are opt-in probes, not safe defaults
-    # All catalog tokens are scalars
-    # embedded by Linear(1, hiddim); pooled PLM vectors are unsupported and
-    # would need a separate embedding path.
+    # --descriptor_mlp: one segment through DescriptorMLPHead.
+    # Their state_dicts differ; validate rejects flags requiring absent modules.
+    # NamedDescriptorHead shares Linear(1, dim) token_embed across descriptor identities.
+    # MLPs use hiddim/m/third_layers_in_mlps/dropout/act_fn.
+    # Raw pocket scalars are opt-in probes. extent uses train-fit quantile coarsening;
+    # raw pocket_extent can identify proteins. Other raw protein scalars are unaudited.
+    # Tokens use Linear(1, hiddim); pooled PLM vectors need a separate embedding path.
     "--descriptor_heads=": set_config_field("descriptor_heads"),
 
     # --- 2. Protein graph encoder (conv architecture + edge features) ---
@@ -2282,14 +2195,10 @@ VALUE_HANDLERS = {
     "--rnabang_embedding_dim=": set_config_field("rnabang_embedding_dim", int),
     "--proteinmpnn_embedding_dim=": set_config_field("proteinmpnn_embedding_dim", int),  # width of the frozen ProteinMPNN embedding; requires proteinmpnn_replace_esm3
     "--esmif1_embedding_dim=": set_config_field("esmif1_embedding_dim", int),  # width of the frozen ESM-IF1 embedding; requires esmif1_replace_esm3
-    # Randomly keep this many residues per training sample, redrawn each
-    # epoch; 0 disables it. Changing the set preserves site statistics while
-    # preventing memorization of a fixed residue fingerprint.
-    # Dropout instead zeros hidden dimensions per residue: noise averages
-    # out over ~200 residues, leaving the pooled fingerprint nearly unchanged.
-    # Use a fixed count to hide size too (pocket/protein size rho=0.72).
-    # Pockets have 22-64 residues, median 33; 20 needs no replacement.
-    # Proteins with fewer residues keep all of them and retain a size signal.
+    # Keep this many random residues per training sample, redrawn each epoch;
+    # 0 disables subsampling. A fixed count reduces size and fixed-set identity cues.
+    # Hidden-dimension dropout can average out across residues without changing
+    # pooled identity. Proteins shorter than the count keep all residues and size cues.
     "--protein_residue_subsample=": set_config_field("protein_residue_subsample", int),
     # --protein_descriptors / --lipid_descriptors: an arbitrary, comma-separated subset of
     # the FULL DESCRIPTOR_CATALOG (dataloader/descriptors.py -- lipid, protein/pocket,
@@ -2325,13 +2234,6 @@ VALUE_HANDLERS = {
     # --- 8. Dimensions & layer counts ---
     "--hiddim=": set_config_field("hiddim", int),  # global hidden width for both branches, cross-attention, fusion and classifier; must be >0 and divisible by HEADS
     # Separate branch widths; None uses hiddim and preserves existing models.
-    # The branches carry different information: 35 protein identities fit in
-    # about one dimension, while lipid
-    # chemistry passes through Linear(768, hiddim) on MolFormer embeddings
-    # (architecture/lipid_encoder.py). Under --lipid_coldsplit, this projection
-    # is the only entry for unseen head groups; known proteins can be memorized.
-    # Raising both widths from 8 to 64 changed test BA 0.5530 -> 0.5511 and
-    # train sensitivity 0.837 -> 0.897, adding memorization without test gains
     # Each width covers its branch's projections, convs, self-attention, MLPs
     # and norms. Cross-attention, fusion and classifier keep hiddim. A differing
     # width adds Linear(branch_width, hiddim) at the boundary
@@ -2400,25 +2302,13 @@ VALUE_HANDLERS = {
     "--excluded_subgroups=": set_config_field(
         "excluded_subgroups", read_excluded_subgroups
     ),  # head-group classes held out alongside excluded_groups; stacks with it, appends to the excluded-set directory name
-    # How much of the held-out family's positives the derived class set has to cover.
-    #
-    # 0.8 rather than 0.7: the value decides how many of a family's own classes leave
-    # with it, and the classes it stops short of are its lipids' closest relatives, so
-    # what it really sets is how far the held-out chemistry ends up from the chemistry
-    # left behind. Measured as the mean best Tanimoto similarity from the block to
-    # training (analysis/coldsplit_geometry.py --sweep), 0.7 leaves START at 0.828 and
-    # CRAL-TRIO at 0.902, while 0.8 brings them to 0.654 and 0.784 and the seven-family
-    # mean from 0.810 to 0.768. Past 0.8 the trade turns: 0.85 buys 0.02 more for fifty
-    # training positives, and 0.9 drops CRAL-TRIO to 142 of them.
-    #
-    # Both lookup baselines stay at 0.500 for every family at any value from 0.4 up
-    # (preprocessing/lipid_marginal_baseline.py), so this choice is about the distance,
-    # not about the guarantee; 0.3 is the one value in the sweep that breaks it.
+    # Target share of the held-out family's positives covered by excluded lipid classes.
+    # Controls the selected chemistry and remaining training data.
     "--coldsplit_share=": set_config_field("coldsplit_share", float),
     # The other axis on its own: a whole chemical family of lipids leaves training while
     # every protein stays. Answers "a lipid of a chemistry never seen arrives -- which of
     # the known proteins bind it", which is the question that matters when the screening
-    # panel grows rather than the protein list. Takes the name of one set; the launcher
+    # panel grows instead of the protein list. Takes the name of one set; the launcher
     # expands a bare --lipid_coldsplit into one run per set.
     # excl. lipid_isolation/subclass/species_coldsplit, excluded_groups, family_only.
     "--lipid_coldsplit=": set_config_field("lipid_coldsplit", read_lipid_coldsplit),
@@ -2438,20 +2328,14 @@ VALUE_HANDLERS = {
     # partition -- LIPID_COLDSPLIT_SETS merges PC with LPC and lumps six anionic classes
     # together, and an isolation block is whatever sits at a requested distance -- and
     # this one is the task as the collaborators state it ("classify binders and
-    # non-binders by lipid subclass"), which is why it gets its own flag rather than a
+    # non-binders by lipid subclass"), which is why it gets its own flag instead of a
     # re-spelling of either. Same species-level machinery as lipid_isolation from here
     # on; see dataloader/splitting_on_blocks/lipid_subclass_blocks.py.
     "--lipid_subclass=": set_config_field("lipid_subclass", read_lipid_subclass),
-    # The same axis again, cut at the CONCRETE LIPID instead of at a named chemical set:
-    # a seeded draw of individual lipids leaves training for every protein, sized so the
-    # block carries this share of the table's positives. 0.0 means the flag is off.
-    #
-    # What it holds out is not a set of FullIdentityOfLipid names. A name is a measured
-    # sum composition carrying a bag of candidate structures, and those bags overlap --
-    # 149 of 1226 structures are offered by more than one name -- so a name-level draw
-    # leaves 12-22% of the drawn structures in training under another name. The unit is
-    # therefore the connected component of the name-structure graph, which is the finest
-    # structure-disjoint cut that exists; see dataloader/splitting_on_blocks/lipid_species_blocks.py.
+    # Hold out seeded name-structure components for every protein until the block
+    # covers this share of positives; 0.0 disables the flag.
+    # Species names can share candidate structures, so draw whole connected components
+    # to keep concrete structures disjoint. See splitting_on_blocks/lipid_species_blocks.py.
     "--lipid_species_coldsplit=": set_config_field(
         "lipid_species_coldsplit", float
     ),
@@ -2463,22 +2347,13 @@ VALUE_HANDLERS = {
     # this family with no valid/test rows.
     # excl. excluded_groups, double/mixed_coldsplit, lipid_coldsplit, cold_split.
     "--family_only=": set_config_field("family_only"),
-    "--test_group=": set_config_field("test_group", read_test_group),  # names which excluded_groups member is the held-out TEST group rather than validation; requires excluded_groups; required by cold_split
+    "--test_group=": set_config_field("test_group", read_test_group),  # names which excluded_groups member is the held-out TEST group instead of validation; requires excluded_groups; required by cold_split
 
     # --- 14. Negative sampling ---
-    # Negatives drawn per positive inside each balancing group. 1 is the exact 1:1 the
-    # samplers produced before this existed, and it costs the 9506 rows of the table
-    # that the match discards. Raising it keeps the grouping -- so the between-protein
-    # prior the grouping removes stays removed -- and only coarsens the class ratio: 2
-    # gives about 32-38% positives in train, 3 about 24-30%, against the table's own
-    # 6.9%. The class ratio the loss then sees is --class_weights' business, and the
-    # per-protein skew a two-axis split leaves behind is --protein_balance_weight's.
-    #
-    # DEFAULT 2, not 1: the exact match throws away 86% of the table for a precision the
-    # loss can supply instead, and the rows it throws away are the record of which
-    # lipids each protein does not bind. Runs that want the old pool pass
-    # --negatives_per_positive=1 explicitly; results from before this default are 1:1
-    # and are not directly comparable.
+    # Negatives per positive within each balancing group; default 2.
+    # Higher ratios retain more negatives while preserving grouping.
+    # --class_weights handles the resulting class ratio; --protein_balance_weight
+    # handles protein skew left by a two-axis split.
     "--negatives_per_positive=": set_config_field("negatives_per_positive", int),
     # How many negatives one epoch holds under the flag above. 0 means
     # negatives_per_positive x (train positives), i.e. the same per-epoch class ratio
@@ -2492,8 +2367,7 @@ VALUE_HANDLERS = {
     # with uniform ever depended on that, so the pool is now a choice. One of:
     #
     # tanimoto lipid species, Morgan fingerprints (the default: this is
-    # what every run before this flag drew, so their numbers are
-    # reproduced exactly)
+    # species-level maximum over Morgan-fingerprint similarities)
     # molformer lipid species, MolFormer's mean-pooled embedding
     # (preprocessing/build_molformer_similarity_matrix.py)
     # lipid_descriptors lipid species, the hand-built lipid descriptor set
@@ -2540,12 +2414,8 @@ VALUE_HANDLERS = {
     "--lipid_first_fragment_only=": set_config_field(
         "lipid_first_fragment_only", read_bool
     ),  # value form of lipid_first_fragment_only; see that bool flag
-    # How many candidates of a pair the averaged evaluation actually scores. A species
-    # can list up to 37 of them and scoring every one makes the evaluation blocks larger
-    # than the training epoch (2912 rows against 345 pairs on START), while the
-    # candidates of one species sit at cosine 0.98 of each other in the embedding, so
-    # four evenly spread over the list carry nearly all of the variation at 2.7x the
-    # rows rather than 8.4x. 0 means every candidate.
+    # Maximum candidates scored per pair in averaged evaluation; 0 scores all.
+    # Select evenly spaced candidates to bound evaluation cost without favoring a prefix.
     "--eval_candidates_per_pair=": set_config_field(
         "eval_candidates_per_pair", int
     ),
@@ -2557,12 +2427,9 @@ VALUE_HANDLERS = {
     "--lr_warmup_epochs=": set_config_field("lr_warmup_epochs", int),  # epochs over which lr_warmup_cosine's linear warm-up ramps before cosine decay; clamped to ep-1; requires lr_warmup_cosine
     "--lr_min_factor=": set_config_field("lr_min_factor", float),  # fraction of lr the cosine schedule decays down to as its floor, in (0,1]; requires lr_warmup_cosine
     "--checkpoint_window=": set_config_field("checkpoint_window", int),  # rolling-average window (epochs) smoothing the validation selection metric before comparing "best so far"; must be >0
-    # Rolling validation metric for checkpoint selection. Empty uses
-    # balanced_accuracy at threshold 0.5. Small --family_only/--lipid_subclass
-    # validation blocks may have only a dozen rows (~0.06-0.1 BA per row),
-    # making selection noisy (see new_train.py's AUC-vs-BA comment).
-    # "auc" selects by threshold-independent ranking. This changes the chosen
-    # epoch, not calibration: reported sensitivity/specificity/BA still use 0.5.
+    # Rolling validation metric for checkpoint selection. Empty selects balanced_accuracy
+    # at threshold 0.5; auc selects by ranking. Reported sensitivity/specificity/BA
+    # still use 0.5, so selection does not change calibration.
     "--checkpoint_selection_metric=": set_config_field("checkpoint_selection_metric"),
     "--seed=": set_config_field("seed", int),  # seeds all reproducible randomness and the train/valid/test split itself; part of the metrics_summary.csv row key
     "--label=": set_config_field("label"),  # human run name; becomes the top-level directory under every result tree; falls back to the OAR job name or an attention-flag-derived name if blank
@@ -2573,18 +2440,10 @@ VALUE_HANDLERS = {
     # lipid encoder makes the head learn a random projection, not a head start.
     # requires lipid_path_handicap.
     "--lipid_path_weight=": set_config_field("lipid_path_weight", float),
-    # Linearly ramp lipid_path_weight to 1.0 over R epochs. Epoch 0 uses w0;
-    # epoch >= R uses 1.0. R=0 keeps a permanent handicap.
-    # Together, R and w0 remove delay = R * (1 - w0) / 2 effective lipid epochs:
-    # the ramp allows R*(w0+1)/2 out of R, so 0.1/50 removes 22.5 epochs.
-    # R must keep the handicap relevant late in training. Ending at epoch 10
-    # of 150 leaves 140 full-speed epochs to erase the protein head start.
-    # An earlier R<=10 cap tried to avoid the old median peak at epoch 16;
-    # that was wrong because moving the peak is the intended effect.
-    # R=50 leaves 100 full-speed epochs, covering the 90th-percentile peak
-    # at ~113. R=0 is supported but changes optimization for the whole run,
-    # so it is not the default. Protein learning time is unknown: protonly
-    # is a constant predictor peaking at epoch 1. Tune the effective delay.
+    # Ramp lipid_path_weight linearly from w0 to 1 over R epochs.
+    # Epoch >= R uses 1; R=0 keeps the handicap permanently.
+    # Effective lipid-learning delay is R * (1-w0)/2 epochs:
+    # the ramp permits R*(w0+1)/2 effective epochs. Tune this delay.
     # requires lipid_path_handicap.
     "--lipid_path_weight_ramp_epochs=": set_config_field(
         "lipid_path_weight_ramp_epochs", int
@@ -2605,21 +2464,15 @@ VALUE_HANDLERS = {
     # stay identical, which works for NUM_FILTERS=1 but adds no capacity above
     # it. validate() requires "normal" (random, scale 0.01) for >1 filters.
     "--deepclip_conv_init=": set_config_field("deepclip_conv_init"),
-    # "sum" reproduces DeepCLIP's DenseLayer(num_units=1, W=Constant(1.0),
-    # b=None). DeepCLIP pads all sequences to one fixed length without masks
-    # (slice_n_pad.py), so each sum covers the same number of positions.
-    # Here lengths are 26-165 characters. At initialization, profile values
-    # are nearly constant (0.556 +/- 0.027), so sum reads molecule size:
-    # score = 0.556 * length, or 14.2 at 26 chars and 91.9 at 165.
-    # Default "mean" divides by each molecule's length; "sum" stays available
-    # to reproduce the published readout.
+    # sum reproduces DeepCLIP's DenseLayer(num_units=1, W=Constant(1.0), b=None).
+    # Published inputs use fixed-length padding without masks (slice_n_pad.py).
+    # Here lengths vary, so default mean divides by molecule length;
+    # sum remains available to reproduce the published readout.
     "--deepclip_readout=": set_config_field("deepclip_readout"),
-    # Stack convolutions to widen DeepCLIP's receptive field. One layer
-    # sees at most 8 characters at published widths; two width-W layers see
-    # 2W-1. Hexose rings span 32-38 SMILES characters in this table
-    # (analysis/probes/deepclip_headgroup_probe.py), so one layer sees C/O
-    # content but cannot recognize the whole ring. Later layers read
-    # concatenated filter channels, not one-hot input.
+    # Stack convolutions to widen the receptive field. At published widths,
+    # one layer sees at most 8 characters; two width-W layers see 2W-1.
+    # Later layers read concatenated filter channels. Wider fields can capture
+    # whole head-group motifs such as hexose rings.
     "--deepclip_conv_layers=": set_config_field("deepclip_conv_layers", int),
     # Protein DESCRIPTOR_CATALOG entries -> one-hidden-layer MLP -> one
     # weight per LSTM channel for the profile sum. Published DeepCLIP has no

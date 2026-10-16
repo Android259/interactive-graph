@@ -1,8 +1,7 @@
 import numpy as np
 
-# Lipid descriptors that belong to the lipid, not to one isomer: every candidate of a
-# lipid gets the mean of its known candidates. The value is what a lipid with no known
-# candidate gets (None: that is an error).
+# Share lipid-level means across candidates. Values below are fallbacks for
+# lipids with no known candidate value; None requires an error.
 LIPID_LEVEL_MEASURES = {
     "tail_double_bond_position": 0.0,  # no double bond: nothing to measure
     "experimental_lipid_volume": None,  # the sheet lists one isomer per lipid

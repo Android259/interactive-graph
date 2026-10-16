@@ -10,49 +10,39 @@ import torch
 from torch_geometric.data import Data
 
 from dataloader.descriptors import PROTEIN_DESCRIPTOR_NAMES as POCKET_DESCRIPTOR_NAMES
-# The descriptor VALUES (pocket geometry/chemistry) and the residue tables they read
-# now live in preprocessing/compute_descriptors.py; only the node-feature assembly
-# below stays here, and KYTE_DOOLITTLE is the one table both sides need.
+# Descriptor values and residue tables live in compute_descriptors.py;
+# this module assembles node features. Both share KYTE_DOOLITTLE.
 from preprocessing.compute_descriptors import KYTE_DOOLITTLE
 
 
-# The 9-family encoding of prot.family (one-hot, this order). Shared with
-# --group_dro (training/new_train.py), which needs the same names to read
-# per-family training counts off the interaction table's ProteinDomain column.
+# Family one-hot order, shared with --group_dro in training/new_train.py
+# for ProteinDomain-based training counts.
 FAMILY_NAMES = (
     "CRAL-TRIO", "LBP_BPI_CETP", "GLTP", "ML", "lipocalin",
     "START", "IP_trans", "scp2", "OSBP",
 )
 
-# Base protein node vector. Positional: several paths index node[:, 0..2] directly
-# (residue type, SASA, volume), so anything optional must be appended after these.
+# Keep residue type/SASA/volume at node[:, 0..2]; append optional features.
 BASE_NODE_COLUMNS = ("residue_type", "residue_sas_area", "residue_volume")
 # Appended by --protein_extra_node_features, in this order.
 EXTRA_NODE_COLUMNS = ("residue_mean_ev28", "residue_mean_ev56")
-# + hydrophobicity, which is derived rather than read. Must equal the increment
-# ModelConfig.validate applies to protein_node_feature_count.
+# Add derived hydrophobicity; match ModelConfig.validate's node-width increment.
 EXTRA_NODE_FEATURE_COUNT = len(EXTRA_NODE_COLUMNS) + 1
 
 
-# POCKET_DESCRIPTOR_NAMES itself now lives in dataloader/descriptors.py
-# (PROTEIN_DESCRIPTOR_NAMES, imported above) so the whole descriptor catalog --
-# lipid, protein, pair -- is named in one file; the VALUES are still computed here,
-# by pocket_descriptor() (preprocessing/compute_descriptors.py), from
-# coarse_graph_nodes.csv plus pocketness.pdb.
+# POCKET_DESCRIPTOR_NAMES aliases descriptors.PROTEIN_DESCRIPTOR_NAMES,
+# keeping all descriptor names in one catalog. compute_descriptors.pocket_descriptor
+# computes values from coarse_graph_nodes.csv and pocketness.pdb.
 
-# The seven POCKET_DESCRIPTOR_NAMES entries whose eta^2 against the 9-family split sits
-# at or near the no-structure floor of 0.24 (files/reference/pocket_shape_descriptors.md
-# section 5, analysis/feature_identity_check.py). Excludes the six entries
-# closest to a pure family label: pocket_sasa_share (0.85), hydropathy_core (0.77),
-# pocket_residue_share (0.71), pocket_extent (0.62), ev14_q50 (0.59), depth_q10 (0.55).
-#
-# Reference list only -- nothing reads it at runtime. It used to back
-# --pocket_descriptors_family_neutral, which restricted a raw per-node broadcast of the
-# per-protein cavity tensor; that broadcast and its flags were removed (the values were
-# never standardised). Kept because the selection is a measured result several comments
-# and files/reference/ still cite, and because these names can still be requested
-# individually through --protein_descriptors, which reads them standardised out of
-# descriptor_catalog_input.
+# Reference-only selection of seven descriptors near the 9-family eta^2
+# floor 0.24 (files/reference/pocket_shape_descriptors.md section 5;
+# analysis/feature_identity_check.py).
+# Excluded: pocket_sasa_share 0.85, hydropathy_core 0.77, pocket_residue_share
+# 0.71, pocket_extent 0.62, ev14_q50 0.59, depth_q10 0.55.
+# No runtime consumer remains: --pocket_descriptors_family_neutral and its
+# unstandardized per-node broadcast were removed. Keep the measured selection
+# for cited reference documents. Individual names remain available through
+# --protein_descriptors as standardized descriptor_catalog_input columns.
 POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES = (
     "pocket_volume_per_sasa", "pocket_elongation", "pocket_flatness",
     "buriedness_q50", "apolar_sasa_share", "aromatic_share", "hydropathy_rim",
@@ -64,13 +54,10 @@ POCKET_DESCRIPTOR_FAMILY_NEUTRAL_NAMES = (
 
 
 def restrict_parts_to_mask(parts, keep):
-    """One protein's tensors reduced to the residues ``keep`` marks.
+    """Subset protein nodes by keep, retaining edges only when both endpoints survive.
 
-    Node tensors are subset and the graph keeps only edges whose *both* endpoints
-    survive, renumbered into the compacted node range. Two callers want exactly this:
-    the pocket restriction, whose mask is fixed and structural, and the residue
-    subsampling augmentation, whose mask is redrawn per sample.
-
+    Renumber surviving edges. Used for fixed pocket masks and per-sample random
+    residue-subsampling masks.
     """
     kept = int(keep.sum())
     renumber = torch.full((keep.numel(),), -1, dtype=torch.long)
@@ -90,12 +77,10 @@ def restrict_parts_to_mask(parts, keep):
 
 
 def protein_node_columns(config):
-    """Voronota columns making up the protein node vector for this configuration.
+    """Return Voronota node columns for this configuration.
 
-    --no_protein_geometry drops BASE_NODE_COLUMNS (and EXTRA_NODE_COLUMNS with it,
-    since the latter is meaningless without the former) -- the node vector is then
-    built entirely from --protein_descriptors' broadcast and/or ESM, neither of which
-    this function's caller reads.
+    --no_protein_geometry drops BASE_NODE_COLUMNS and dependent EXTRA_NODE_COLUMNS.
+    The node vector then uses descriptor broadcasts and/or ESM, loaded elsewhere.
     """
     if getattr(config, "no_protein_geometry", False):
         return []
@@ -108,11 +93,9 @@ def protein_node_columns(config):
 
 class ProteinGraphData(Data):
     def __inc__(self, key, value, *args, **kwargs):
-        # Both are row identifiers rather than node indices: pair_id names the row in
-        # the interaction table, candidate_group names the pair whose candidates the
-        # averaged evaluation puts back together. Shifting either by the node count of
-        # the preceding graphs, which is what PyG does by default, would turn them into
-        # numbers that identify nothing.
+        # pair_id and candidate_group identify interaction rows/pairs, not nodes.
+        # Do not apply PyG's default node-count offsets; candidate averaging needs
+        # these original identifiers.
         if key in ("pair_id", "candidate_group"):
             return 0
         return super().__inc__(key, value, *args, **kwargs)
@@ -127,15 +110,12 @@ class ProteinGraphBuilder:
         )
 
     def _check_node_width(self, parts, nodes_path):
-        """Node vector width must match what the encoder's input layer was sized for.
+        """Check node width against the encoder input, reporting mismatches before GAT.
 
-        Also the guard against a stale cache: each column set (BASE_NODE_COLUMNS,
-        or --no_protein_geometry's empty one) reads its own cache file (see
-        protein_node_columns and protein_graph_tensor_cache._cache_files), but that
-        file can still predate a source CSV changing shape, or --protein_extra_node_features
-        can be turned on without its hydrophobicity-augmented cache existing yet --
-        either way this is where the mismatch would otherwise turn into an
-        unexplained shape error inside the GAT instead of a plain one here.
+        Each column set has its own cache (protein_node_columns and
+        protein_graph_tensor_cache._cache_files), but CSV shape changes or missing
+        hydrophobicity-augmented --protein_extra_node_features caches can still
+        produce stale widths.
         """
         expected = getattr(self.config, "protein_node_feature_count", 3)
         width = int(parts["x"].shape[1])
@@ -150,14 +130,11 @@ class ProteinGraphBuilder:
         return parts
 
     def _restrict_to_pockets(self, parts):
-        """Drop every non-pocket residue from one protein's tensors.
+        """Remove non-pocket residues from the graph entirely.
 
-        This is a stronger statement than ``attention_by_pockets``: there the GAT still
-        propagates over the whole protein and only attention keys are restricted, here
-        the rest of the structure is not in the graph at all. Median pocket is 33 of 203
-        residues, so the surviving graph is small and may be disconnected -- edges
-        between two pocket residues on opposite sides of the cavity do not exist in the
-        contact graph.
+        Unlike attention_by_pockets, which restricts attention keys but keeps full GAT
+        propagation, this leaves only the pocket. Median size is 33/203 residues.
+        The contact subgraph may be disconnected: opposite cavity sides need not touch.
         """
         if not getattr(self.config, "protein_pockets_only", False):
             return parts
@@ -179,11 +156,9 @@ class ProteinGraphBuilder:
             or getattr(self.config, "protein_edge_attention", False)
             or getattr(self.config, "protein_edge_mlp", False)
         )
-        # protein_edge_attention/protein_edge_mlp only need the rigid frame below,
-        # not geometric_node_attr (used by the geometric transformer). Loading
-        # it is harmless (unused columns
-        # from the same already-open CSV) and keeps this one boolean shared instead
-        # of adding a third near-identical variant.
+        # protein_edge_attention/protein_edge_mlp use the rigid frame, not the
+        # geometric transformer's geometric_node_attr. Loading unused columns from
+        # the same CSV is harmless and avoids another near-identical boolean path.
         use_frame = (
             getattr(self.config, "geometric_transformer", False)
             or getattr(self.config, "protein_edge_attention", False)
@@ -220,30 +195,24 @@ class ProteinGraphBuilder:
         return parts
 
     def _load_node_confidence(self, path):
-        """Per-node real pLDDT/B-factor-derived confidence, aligned to graph node order.
+        """Load real pLDDT/B-factor-derived confidence in graph-node order.
 
-        Built by preprocessing/build_consistent_esm3_pdb.py from the same
-        coarse_graph_nodes.csv row order used elsewhere, so no extra alignment is
-        needed here -- row i of this CSV is node i, same as plm row i.
+        build_consistent_esm3_pdb.py uses coarse_graph_nodes.csv order, so CSV row i,
+        graph node i, and PLM row i align without another mapping.
         """
         confidence_df = pandas.read_csv(path)
         return torch.tensor(confidence_df["confidence"].values, dtype=torch.float32)
 
     def make_graph_protein(self,nodes,edges,inter,family,plm,pok,name,node_confidence=None) -> Data:
-        """
-        Input : nodes is the name of the file containing node graph, edges is the same for links between nodes
-
-        """
+        """Build a protein graph from the named node and edge files."""
         parts = self.protein_graph_tensors(nodes, edges, plm, pok, node_confidence)
         return self.assemble_protein_graph(parts, inter, family)
 
     def assemble_protein_graph(self, parts, inter, family) -> Data:
-        """Wrap cached per-protein tensors into the graph for one interaction row.
+        """Wrap cached protein tensors for one interaction row, adding its inter label.
 
-        Split out of make_graph_protein so the parts, which depend only on the protein,
-        can be reused across the rows that share it while `inter` stays per row. Key
-        insertion order matches the original single-shot construction, because PyG
-        collates by store key order.
+        Reuse protein-only parts across rows. Preserve original key insertion order,
+        which PyG uses when collating.
         """
         intera = (
             inter
@@ -261,21 +230,17 @@ class ProteinGraphBuilder:
             graph_kwargs["frame_rotation"] = parts["frame_rotation"]
             graph_kwargs["frame_translation"] = parts["frame_translation"]
         if "node_confidence" in parts:
-            # Only attached when use_esm3_v2_embeddings is on, so every sample in a
-            # given run consistently has (or lacks) this key -- PyG's default batch
-            # collation cannot mix a real tensor and a missing/None value for one key
-            # across a batch.
+            # Attach confidence only with use_esm3_v2_embeddings. PyG requires the same
+            # keys across a batch and cannot mix tensors with missing/None fields.
             graph_kwargs["node_confidence"] = parts["node_confidence"]
         return ProteinGraphData(**graph_kwargs)
 
 
 
     def protein_graph_tensors(self, nodes, edges, plm, pok, node_confidence=None):
-        """Parse the node/edge/pocket files of one protein into its graph tensors.
+        """Parse one protein's node/edge CSVs, pocketness PDB, and embedding.
 
-        Everything here is a function of the protein alone, so get() caches the result
-        per protein name instead of re-reading two CSVs, the pocketness PDB and the
-        embedding for every interaction row that mentions the protein.
+        get() caches these protein-only tensors by name instead of rereading per pair.
         """
         protein_name = os.path.basename(os.path.dirname(nodes))
         cached = getattr(self, "_protein_tensor_cache", {}).get(protein_name)
@@ -308,8 +273,8 @@ class ProteinGraphBuilder:
             )[residue_type]
             x = torch.cat((x, hydrophobicity.unsqueeze(-1)), dim=-1)
         edge_index=torch.tensor(edges[["ID1_resSeq","ID2_resSeq"]].values, dtype=torch.int64) 
-        edge_attr=torch.tensor(edges[["distance","area","boundary"]].values, dtype=torch.float32) #maybe a problem here? about how the edges are indexed OH YES THERE IS
-        #also can we pool covalent bond y/n from the non coarse grained structure?
+        edge_attr=torch.tensor(edges[["distance","area","boundary"]].values, dtype=torch.float32) # TODO: verify edge indexing.
+        # TODO: consider covalent-bond features from the full graph.
         """
         if inter == 1:
             intera = torch.tensor([1,0],dtype=torch.int32)
@@ -319,8 +284,8 @@ class ProteinGraphBuilder:
         dic={}
         for i in range(len(vertices["ID_resSeq"])):
             dic[int(vertices["ID_resSeq"][i])]=i
-        # Dead since the print below was commented out: both lines walk every edge in
-        # Python (0.15 ms per sample, 0.4 s per epoch) to build a list nothing reads.
+        # Disabled edge diagnostics built an unused list in Python:
+        # 0.15 ms/sample, 0.4 s/epoch after the prints below were disabled.
         # import itertools
         # all_nodes = list(itertools.chain.from_iterable(edge_index.tolist()))
         # missing_keys = [x for x in all_nodes if dic.get(x) is None]
@@ -329,12 +294,12 @@ class ProteinGraphBuilder:
         edge_index.apply_(lambda x: dic.get(x, 0))  # -1 or some other sentinel
         #edge_index.apply_(dic.get())
         #pocket
-        #discard backbone atoms for contributoin to pocket
+        # Exclude backbone atoms from pocket membership.
         aal=["C","CA","CB","O","N"]
         dic={}
         lis=[]
 
-        #need to parse this better, maybe load csv and filter on atom fetures and 
+        # TODO: simplify atom-feature parsing, possibly with CSV filtering.
 
         with open(pok,"r") as f:
             lines = f.readlines()
@@ -359,11 +324,9 @@ class ProteinGraphBuilder:
             or getattr(self.config, "protein_edge_attention", False)
             or getattr(self.config, "protein_edge_mlp", False)
         )
-        # protein_edge_attention/protein_edge_mlp only need the rigid frame below,
-        # not geometric_node_attr (used by the geometric transformer). Loading
-        # it is harmless (unused columns
-        # from the same already-open CSV) and keeps this one boolean shared instead
-        # of adding a third near-identical variant.
+        # protein_edge_attention/protein_edge_mlp use the rigid frame, not the
+        # geometric transformer's geometric_node_attr. Loading unused columns from
+        # the same CSV is harmless and avoids another near-identical boolean path.
         use_frame = (
             getattr(self.config, "geometric_transformer", False)
             or getattr(self.config, "protein_edge_attention", False)
@@ -421,12 +384,10 @@ class ProteinGraphBuilder:
 
 
     def protein_family(self, prot_file):
-        """The protein's family, straight from the interaction table's ProteinDomain.
+        """Read the protein family directly from interaction-table ProteinDomain.
 
-        ProteinDomain is a per-protein constant in the table (verified: exactly one
-        value per LTPProtein across all 35), so it is the family. It used to be copied
-        into data/protein_registry.csv and read back from there; the table is the
-        source, and a second copy could only drift from it.
+        The recorded table has one value per LTPProtein across all 35 proteins.
+        Do not duplicate it in the former data/protein_registry.csv, which could drift.
         """
         domains = self.sampled_split.loc[
             self.sampled_split["LTPProtein"] == prot_file, "ProteinDomain"
@@ -439,10 +400,9 @@ class ProteinGraphBuilder:
         return str(domains[0])
 
     def protein_family_one_hot(self, prot_file):
-        """The 9-wide family one-hot of one protein, without loading its graph.
+        """Return the 9-wide family one-hot without loading the graph.
 
-        Same vector protein_graph_parts returns; memoized because sampled_split (read by
-        protein_family) does not survive initialization.
+        Match protein_graph_parts. Memoize before sampled_split is released after init.
         """
         cached = self._protein_family_cache.get(prot_file)
         if cached is not None:
@@ -456,19 +416,17 @@ class ProteinGraphBuilder:
         return tenfam
 
     def protein_graph_parts(self, prot_file):
-        """Graph tensors and family one-hot of one protein, parsed once per protein.
+        """Cache graph tensors and family one-hot per protein.
 
-        The train split holds 1095 rows over 32 distinct proteins, so without this the
-        same two CSVs, pocketness PDB and ESM3 embedding were re-read about 34 times an
-        epoch each, and 5100 times over a 150-epoch run.
+        Recorded train size: 1095 rows / 32 proteins. Without caching, each protein's
+        two CSVs, pocketness PDB, and ESM3 embedding were read ~34 times per epoch,
+        or ~5100 times in 150 epochs.
         """
         cached = self._protein_graph_cache.get(prot_file)
         if cached is not None:
             return cached
 
-        # Artifacts are filed under the interaction table's own protein name, so the
-        # name in LTPProtein IS the directory / file prefix -- no rename map, no
-        # registry lookup.
+        # Use LTPProtein as artifact directory/prefix; no rename map or registry lookup.
         prot_file_emb = prot_file
 
         node_file = self.ROOT_DIR+"/graphs/"+prot_file_emb+"/coarse_graph_nodes.csv"
@@ -481,10 +439,10 @@ class ProteinGraphBuilder:
                 getattr(self.config, "rnabang_full_protein_encoder", False),
             )
         )
-        # v2 embeddings (preprocessing/embed_protein_esm3_v2.py) are built from
-        # data/esm3_input/<stem>.pdb, where Voronota has already normalized MSE and
-        # alt-conformations (see build_consistent_esm3_pdb.py header) -- no per-protein
-        # special-token hacks needed beyond the standard BOS/EOS trim, unlike v1.
+        # v2 embeddings (preprocessing/embeddings/embed_protein_esm3_v2.py) use
+        #  data/esm3_input/<stem>.pdb with normalized MSE/alt-conformations
+        # (build_consistent_esm3_pdb.py). Only standard BOS/EOS trimming is needed,
+        # unlike v1's per-protein token adjustments.
         esm3_tensor = None
         if not (
             getattr(self.config, "rnabang_replace_esm3", False)
@@ -501,10 +459,9 @@ class ProteinGraphBuilder:
                 )
             with open(embed_files[0], "rb") as f:
                 esm3_tensor = pickle.load(f)
-            # Both variants have one row per residue plus a BOS/EOS pair, and every
-            # protein's graph now has one node per residue of the sequence ESM3 saw
-            # (MSE residues are converted, not dropped -- see
-            # preprocessing/convert_mse_to_met.py), so this is the whole adjustment.
+            # Both variants add BOS/EOS around residue rows. Graph nodes match the ESM3
+            # sequence after MSE conversion, so only these two rows are removed
+            # (preprocessing/convert_mse_to_met.py).
             esm3_tensor = esm3_tensor[1:-1]
 
         frozen_replacement = (
@@ -520,7 +477,7 @@ class ProteinGraphBuilder:
             if not os.path.isfile(frozen_path):
                 raise FileNotFoundError(
                     f"Expected {frozen_path}; generate it before training with this "
-                    "flag (see proposals.md and preprocessing/embed_protein_rnabang.py "
+                    "flag (see proposals.md and preprocessing/embeddings/embed_protein_rnabang.py "
                     "for the alignment contract: one row per coarse_graph_nodes.csv row)"
                 )
             with open(frozen_path, "rb") as handle:
@@ -555,17 +512,15 @@ class ProteinGraphBuilder:
         if use_rnabang:
             plm_tensor = rnabang_tensor
         elif frozen_tensor is not None:
-            # Replaces ESM3 outright: validate() rejects combining this with any
-            # RNA-BAnG mode, so exactly one source reaches the encoder.
+            # Replace ESM3; validate() forbids RNA-BAnG combinations, leaving one source.
             plm_tensor = frozen_tensor
         else:
             plm_tensor = esm3_tensor
         with open(node_file, 'r') as f:
             num_lines = sum(1 for line in f)
-        # PLM row i is aligned with graph node i (see protein_encoder), so the
-        # embedding must have exactly one row per graph residue. Fail loudly
-        # instead of silently attaching a shifted / wrong-length embedding. The same
-        # invariant is checked in bulk (no training) by tests/test_esm3_alignment.py.
+        # PLM row i must match graph node i (protein_encoder).
+        # Raise on row-count mismatch instead of attaching shifted embeddings;
+        # tests/test_esm3_alignment.py checks this invariant without training.
         if num_lines - plm_tensor.shape[0] != 1:
             raise ValueError(
                 f"protein embedding<->graph node misalignment for {prot_file}: "

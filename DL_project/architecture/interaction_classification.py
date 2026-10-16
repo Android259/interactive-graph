@@ -79,7 +79,7 @@ class InteractionClassification(torch.nn.Module):
         point. ``lip_adversary`` is also out: it is a probe attached to the lipid
         stream, not part of it, and handicapping a probe only weakens the measurement.
 
-        A parameter list rather than a gradient hook because the optimiser is Adam,
+        A parameter list instead of a gradient hook because the optimiser is Adam,
         whose step m/sqrt(v) is invariant to a constant rescaling of the gradient --
         scaling the lipid gradient would be very nearly a no-op. Selecting parameters
         also keeps the handicap off the protein, which a hook on the post-attention
@@ -190,7 +190,7 @@ class InteractionClassification(torch.nn.Module):
 
         A protein with no pocket node leaves its queries with every key masked to -inf,
         and softmax over an all -inf row is NaN -- which would surface as a silent NaN
-        loss many layers later rather than here.
+        loss many layers later instead of here.
         """
         if pocket_mask is None:
             raise ValueError("attention_by_pockets requires pocket_mask")
@@ -231,7 +231,7 @@ class InteractionClassification(torch.nn.Module):
         experimental ones; NOT pocketness.pdb's binary flag, see
         preprocessing/build_consistent_esm3_pdb.py), use that continuous value
         instead, so pooling weights residues by how reliable their structure is
-        rather than by a coarse in/out-of-pocket flag.
+        instead of by a coarse in/out-of-pocket flag.
         """
         if (
             getattr(self.config, "use_esm3_v2_embeddings", False)

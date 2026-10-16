@@ -12,7 +12,7 @@ sklearn.ensemble.HistGradientBoostingClassifier, one row per (protein, lipid) pa
 features = protein_pocket_features(protein) concatenated with
 explicit_lipid_features(lipid) (both training/pair_baseline_common.py, the same
 descriptor sets Kron-RLS's pocket_subset/explicit kernels use, so the two baselines
-are feature-matched). Being row-based rather than matrix-completion, it has none of
+are feature-matched). Being row-based instead of matrix-completion, it has none of
 Kron-RLS's constraints:
 
   - Real class weighting. --class_weight=balanced goes straight into
@@ -61,7 +61,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dataloader.chemistry_prior import knn_scores, knn_scores_leave_one_row_out  # noqa: E402
 from dataloader.dataset_source import interaction_csv_path  # noqa: E402
 from dataloader.descriptors import PAIR_DESCRIPTOR_NAMES  # noqa: E402
-from preprocessing.compute_descriptors import pair_descriptor_value  # noqa: E402
+from preprocessing.compute_descriptors import (  # noqa: E402
+    PAIR_DESCRIPTOR_LIPID_INPUTS,
+    pair_descriptor_value,
+)
 from dataloader.splitting_on_blocks.lipid_coldsplit_blocks import LIPID_COLDSPLIT_SETS  # noqa: E402
 from dataloader.sampler import lipid_class_series  # noqa: E402
 from analysis.baselines.knn_model import per_lipid_auc, per_pair_auc, per_protein_auc  # noqa: E402
@@ -87,7 +90,6 @@ DEFAULT_LIPID_COLDSPLIT_GROUPS = tuple(LIPID_COLDSPLIT_SETS.keys())
 # build_pair_feature_inputs needs from explicit_lipid_features/protein_pocket_
 # features (via resolve_protein_feature_subset) regardless of which pair names are
 # actually requested, so one small lookup table serves all of them.
-PAIR_DESCRIPTOR_LIPID_INPUTS = ("chain", "unsaturation", "hbond", "heavy", "tail_count", "npr1", "npr2")
 PAIR_DESCRIPTOR_PROTEIN_INPUTS = (
     "pocket_extent", "aromatic_share", "polar_share", "pocket_volume_per_sasa",
     "buriedness_q50", "depth_q10", "hydropathy_core", "hydropathy_rim",
@@ -195,8 +197,7 @@ def similarity_feature_column(
     """dataloader.chemistry_prior's k-NN similarity-weighted train positive rate,
     as one more feature column -- the SAME score analysis/lipid_coldsplit_null_
     model.py's "lipid_only" competitor reports standalone, fed in here instead so the
-    model can learn how much to trust it against the structural descriptors rather
-    than being compared to it after the fact.
+    model can learn how much to trust it against the structural descriptors instead of being compared to it after the fact.
 
     `is_train` selects the leak-safe variant: every train row's own species IS in
     the train reference set with similarity 1.0 to itself
@@ -307,7 +308,7 @@ def evaluate_block(
     # never the excluded block: that block stands in for a genuinely new lipid, so
     # its labels may not pick the stopping iteration any more than they may pick the
     # threshold below -- either one would make the reported BA/F1 "best achievable
-    # knowing the answer" rather than what the model does on an unseen lipid.
+    # knowing the answer" instead of what the model does on an unseen lipid.
     model.fit(x_train, y_train)
 
     train_scores = model.predict_proba(x_train)[:, 1]

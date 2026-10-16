@@ -54,7 +54,7 @@ for the Kronecker identity that makes the two sequential solves equal one joint
 solve. A pair descriptor (npr1/npr2, pocket_shares, ...) is a joint (protein, lipid)
 value by construction and does not factor into either kernel alone, so there is no
 well-defined place for it in this method -- passing --pair_features fails fast with
-that explanation rather than silently doing something else with it.
+that explanation instead of silently doing something else with it.
 
 --no_logs skips writing the results/tables/cron_test_metrics/cron_*.txt file -- no label needed then, unless
 --set_label is also given. --set_label names the run (same role as the positional
@@ -105,10 +105,10 @@ from training.pair_baseline_common import (  # noqa: E402
 # actually has: (build_report() column, printed label, is_auc), same order/wording
 # as that script where the concept genuinely matches ("test BA", "test AUC", ...);
 # dropped where it does not (max_valid_balanced_accuracy has no per-epoch history to
-# take a max over; test loss has no loss concept here) rather than fabricated.
+# take a max over; test loss has no loss concept here) instead of being fabricated.
 # "(proteins contributing)" becomes "(lipid classes)" for AUC_within_protein_pairs'
 # own count, since per_pair_auc counts lipid-class groups, not proteins -- see
-# analysis/baselines/knn_model.py's per_pair_auc docstring; relabeled rather than mislabeled.
+# analysis/baselines/knn_model.py's per_pair_auc docstring; relabeled instead of mislabeled.
 # is_auc rows only print with --complete (AUC is left out of the default summary
 # for now -- see this file's own header for why, once it has one).
 SUMMARY_METRICS = (

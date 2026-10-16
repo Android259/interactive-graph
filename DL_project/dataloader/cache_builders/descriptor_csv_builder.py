@@ -22,21 +22,17 @@ from dataloader.descriptor_cache_reader import (
     pair_descriptors_csv_path,
     pair_descriptors_manifest_path,
 )
-from preprocessing.compute_descriptors import _MEASURES, longest_acyl_chain
+from preprocessing.compute_descriptors import _LIPID_MEASURES, PAIR_DESCRIPTOR_LIPID_INPUTS
 from dataloader.pocket_lipid_compatibility import candidates_for_row
 
 
 def _init_worker():
-    """Pool initializer: one BLAS/OpenMP thread per worker process.
+    """Limit BLAS/OpenMP to one thread per pool worker.
 
-    Without this, numpy/RDKit's threaded BLAS calls (pocket_shape's eigh/cov, and
-    whatever the conformer-optimisation step below pulls in) each try to grab every
-    core on the host THEMSELVES, on top of the process pool already using all of
-    them -- measured as 25 OS threads for what should be one, thrashing on
-    creation/synchronisation instead of finishing sooner (same issue scripts/tools/
-    lipid_graphs_on_kraken.sh's own OMP_NUM_THREADS=1 comment documents). Every
-    worker doing its own one candidate on its own one thread is what makes the pool
-    add up to real parallelism instead of oversubscribing the box N times over.
+    Without limits, numpy/RDKit linear algebra and conformer optimization
+    oversubscribe cores on top of the process pool (25 OS threads observed per
+    worker). One candidate per worker thread avoids synchronization overhead.
+    See scripts/tools/lipid_graphs_on_kraken.sh, OMP_NUM_THREADS=1.
     """
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
@@ -44,33 +40,22 @@ def _init_worker():
 
 
 def _compute_one(key, seed_entry=None, skip_measures=()):
-    """{"chain": ..., **_MEASURES} for one canonical SMILES -- the pool's unit of work.
+    """Compute _LIPID_MEASURES for one canonical SMILES; picklable worker function.
 
-    `seed_entry`, when given, is that same key's entry from a PREVIOUS build (any
-    older code fingerprint) -- a measure already present there (and not None) is
-    reused as-is instead of calling its fn again. This is what makes adding one new
-    _MEASURES entry (a new descriptor, unrelated formulas for the rest) NOT force a
-    fresh 10-conformer ETKDG+MMFF embed for the four measures that already had it:
-    radius_of_gyration/asphericity/molecular_volume/npr1/npr2 all read the SAME
-    _cached_conformer_ensemble(key), so a genuinely new conformer-based measure
-    (missing from every seed) still costs one embed per key, same as always -- this
-    only removes cost that ISN'T actually needed, never changes what a from-scratch
-    build (seed_entry=None, e.g. this project's very first build) computes.
+    Reuse non-None seed_entry values from any previous build, regardless of its
+    fingerprint. Adding a measure need not recompute existing conformer values.
+    radius_of_gyration/asphericity/molecular_volume/npr1/npr2 share
+    _cached_conformer_ensemble(key); a missing conformer measure still requires
+    one 10-conformer ETKDG+MMFF embedding per key. seed_entry=None computes all.
 
-    `skip_measures`: names to leave uncomputed THIS call -- the seeded value (if any)
-    is kept, otherwise the entry is None, same as RDKit failing to resolve it. An
-    explicit, opt-in escape from "every measure, always" (see build_pair_descriptor_
-    cache's own docstring for why that is the default and stays the default), for a
-    one-off build that must skip the expensive conformer-based measures this call --
-    the manifest records no fingerprint for a skipped name, so a later ordinary build
-    (no skip_measures) sees it as missing and fills it in, never serving it as if it
-    had been validated.
-
-    Module-level (not a closure) so it can be pickled to worker processes.
+    skip_measures preserves seeded values or leaves None for this call.
+    This opt-in exception skips expensive work without changing the default.
+    Skipped names get no manifest fingerprint, so a later ordinary build fills
+    them instead of treating them as validated.
     """
     seed_entry = seed_entry or {}
-    entry = {"chain": longest_acyl_chain(key)}
-    for measure, fn in _MEASURES.items():
+    entry = {}
+    for measure, fn in _LIPID_MEASURES.items():
         if measure in skip_measures:
             entry[measure] = seed_entry.get(measure)
             continue
@@ -80,29 +65,19 @@ def _compute_one(key, seed_entry=None, skip_measures=()):
 
 
 def _compute_one_star(args):
-    """Pool.starmap-free (key, seed_entry, skip_measures) unpacking -- Pool.map takes
-    one arg per call, and a seed dict cannot be a second positional without this."""
+    """Unpack (key, seed_entry, skip_measures) for the single-argument Pool.map call."""
     return _compute_one(*args)
 
 
 def _parallel_measures(keys, seed_values=None, skip_measures=(), progress=False):
-    """{key: {"chain": ..., **_MEASURES}} for every key in `keys`, via a process pool.
+    """Return {key: lipid-measure entry} through a process pool.
 
-    `seed_values`: {key: previous-build entry}, see _compute_one -- keys absent from
-    it (a genuinely new candidate, or no previous table at all) compute every measure
-    fresh, exactly as before this parameter existed.
-
-    `skip_measures`: see _compute_one -- forwarded as-is to every task.
-
-    `progress`: opt-in, default off (preserves the exact original pool.map behaviour
-    for every existing caller) -- prints "done N/total" to stdout every 25 completions
-    plus the final one. Uses imap_unordered instead of map so a result is available
-    to print as soon as ANY worker finishes it, not only once the whole batch returns.
-
-    Serial below a small pool would not be worth starting (fork overhead exceeds the
-    saving), but there is no such thing as "too few" here in practice -- a build is a
-    one-off, not a per-job cost, so always parallelising is simpler than guessing a
-    threshold and both keep the exact same code path tested.
+    seed_values maps keys to old entries (_compute_one); missing keys compute
+    all measures. Forward skip_measures unchanged.
+    progress defaults to False, retaining pool.map behavior. When enabled, use
+    imap_unordered and print done N/total every 25 completions and at the end.
+    Always use the pool: this is a one-off build, avoiding a separate small-task
+    threshold and keeping one tested computation path despite fork overhead.
     """
     if not keys:
         return {}
@@ -126,22 +101,17 @@ def _parallel_measures(keys, seed_values=None, skip_measures=(), progress=False)
 
 
 def _previous_cache_values(root_dir, isomeric):
-    """{key: entry} read straight off the existing data/lipid_descriptors.csv for this
-    isomeric variant, regardless of whether its measures still validate against the
-    current code -- deliberately NOT gated on that (a code change is exactly the case
-    this exists to make cheap: a fingerprint match would mean nothing to seed from in
-    the first place). {} when the table does not exist yet (this project's very first
-    build for this variant) -- an empty seed is the same as not seeding at all, never
-    an error.
+    """Read {key: entry} for this variant from the existing lipid CSV.
+
+    Ignore code fingerprints: old values seed partial rebuilds after code changes.
+    Return {} if no table exists; an empty seed is equivalent to no seed.
     """
     path = lipid_descriptors_csv_path(root_dir)
     if not path.exists():
         return {}
     try:
-        # float_precision="round_trip": see dataloader/descriptor_cache_reader.py's
-        # load_lipid_descriptor_cache for why this flag is not optional here -- without
-        # it, a seeded value already in the table can read back one ULP off from what
-        # was actually written.
+        # Use round_trip to preserve seeded floats exactly; the default parser can
+        # shift them by one ULP. See descriptor_cache_reader.load_lipid_descriptor_cache.
         table = pd.read_csv(path, float_precision="round_trip")
     except (OSError, ValueError, pd.errors.ParserError):
         return {}
@@ -162,34 +132,21 @@ def build_lipid_descriptor_cache(
     root_dir, csv, protein_names, csv_path, isomeric=False, skip_measures=(),
     progress=False,
 ):
-    """Compute this isomeric variant's rows and merge them into data/
-    lipid_descriptors.csv (the other variant's rows, if any, are left untouched).
-    Returns (table_path, smiles_count, protein_count).
+    """Build one variant and merge it into data/lipid_descriptors.csv.
 
-    `protein_names` is accepted and `protein_count` still returned only so every
-    existing caller's (path, smiles_count, protein_count) unpacking keeps working --
-    the protein side no longer lives in this table at all (dataloader.chemistry_prior.
-    protein_descriptor_table owns it, in data/protein_descriptors.csv, built and read
-    independently of this function).
+    Keep other-variant rows. Return (table_path, smiles_count, protein_count).
+    protein_names and protein_count remain for caller compatibility; protein
+    values live separately in chemistry_prior.protein_descriptor_table's
+     data/protein_descriptors.csv.
 
-    Rebuilds unconditionally -- the caller (data/build_descriptor_cache.py)
-    decides whether that is needed, same division of responsibility as
-    cache_builders.lipid_embedding_tensors_builder.build_lipid_embedding_store. Every
-    _MEASURES entry is computed by DEFAULT (see dataloader/descriptor_cache_reader.py's
-    module docstring) -- there is no lipid_shape flag here anymore; an ordinary run
-    (skip_measures=()) that never reads radius_of_gyration/asphericity/molecular_volume
-    still gets a table that carries them, because the NEXT run that does must never
-    hit a table silently missing what it asked for. "Computed" does not mean
-    "recomputed from RDKit every time a rebuild runs", though -- see
-    _previous_cache_values/_compute_one: a measure already correct in the table before
-    this call is carried over rather than re-embedded, so adding ONE new descriptor
-    costs ONLY that descriptor's own compute, not every existing one's too.
+    Build unconditionally; data/build_descriptor_cache.py decides when needed,
+    as for build_lipid_embedding_store. Include all _LIPID_MEASURES by default,
+    including shape values unused by this run, so later runs find complete rows.
+    Reuse existing entries through _previous_cache_values/_compute_one:
+    adding a measure computes only missing values, not every RDKit embedding.
 
-    `skip_measures`: an explicit, opt-in exception to "every measure, always" -- names
-    left uncomputed THIS call (see _compute_one). Their fingerprint is also left out of
-    the written manifest, so a later ordinary build (skip_measures=()) sees them as
-    missing -- never already-validated -- and fills them in rather than silently
-    continuing to serve a table that never actually computed them.
+    skip_measures is opt-in. Skipped names receive no manifest fingerprint;
+    a later default build fills them instead of treating them as validated.
     """
     root_dir = Path(root_dir).resolve()
     seed_values = _previous_cache_values(root_dir, isomeric)
@@ -218,7 +175,7 @@ def build_lipid_descriptor_cache(
         {"smiles": key, "isomeric": bool(isomeric), **entry}
         for key, entry in values.items()
     ]
-    new_table = pd.DataFrame(rows, columns=["smiles", "isomeric", "chain", *_MEASURES])
+    new_table = pd.DataFrame(rows, columns=["smiles", "isomeric", *_LIPID_MEASURES])
 
     table_path = lipid_descriptors_csv_path(root_dir)
     existing = pd.DataFrame()
@@ -252,15 +209,12 @@ def build_lipid_descriptor_cache(
 
 
 def build_pair_value_cache(root_dir, csv, isomeric=False):
-    """Compute and write data/pair_descriptors.csv's rows for this isomeric variant:
-    every PAIR_DESCRIPTOR_NAMES value for every (candidate, protein) combination the
-    interaction table actually contains, read from data/lipid_descriptors.csv and
-    data/protein_descriptors.csv rather than recomputed. Returns (table_path,
-    pair_count).
+    """Write this variant's joint values to data/pair_descriptors.csv.
 
-    Requires a current data/lipid_descriptors.csv (raises RuntimeError otherwise) --
-    this reads lipid values from it rather than recomputing them, so building this
-    table is only ever the cheap arithmetic step, never RDKit.
+    Compute all PAIR_DESCRIPTOR_NAMES for (candidate, protein) pairs present
+    in the interaction table. Read cached lipid/protein values; do not rerun
+    RDKit. Return (table_path, pair_count).
+    Require current data/lipid_descriptors.csv, otherwise raise RuntimeError.
     """
     from preprocessing.compute_descriptors import protein_descriptor_table
     from dataloader.descriptors import PAIR_DESCRIPTOR_NAMES
@@ -290,19 +244,7 @@ def build_pair_value_cache(root_dir, csv, isomeric=False):
     rows = []
     for smiles, protein in pairs_needed:
         lv = lipid_values[smiles]
-        # pair_descriptor_value's own key names (Dataloader.py's identical dict at
-        # its inline call site): "heavy", not this table's "heavy_atoms". Every key
-        # pair_descriptor_value actually reads across all of PAIR_DESCRIPTOR_NAMES --
-        # npr1/npr2 included, for elongation_shape_match/flatness_shape_match.
-        lipid_input = {
-            "chain": lv["chain"],
-            "unsaturation": lv["unsaturation"],
-            "hbond": lv["hbond"],
-            "heavy": lv["heavy_atoms"],
-            "tail_count": lv["tail_count"],
-            "npr1": lv["npr1"],
-            "npr2": lv["npr2"],
-        }
+        lipid_input = {key: lv[key] for key in PAIR_DESCRIPTOR_LIPID_INPUTS}
         pv = protein_table[protein]
         row = {"smiles": smiles, "protein": protein, "isomeric": bool(isomeric)}
         row.update({

@@ -108,7 +108,7 @@ python3 preprocessing/compute_descriptors.py <name> --isomeric    # изомер
 | артефакт | чем собирается | когда обязателен |
 |---|---|---|
 | компактный Tanimoto | `preprocessing/similarity/build_tanimoto_compact.py` (+`--isomeric`) | только при `--tanimoto_weight`, но манифест сверяет время и размер таблицы и **отказывается** работать со старым |
-| эмбеддинги липидов | `preprocessing/embed_isomeric_smiles_molformer.py` → `data/build_lipid_embedding_store.py` | при любом новом SMILES |
+| эмбеддинги липидов | `preprocessing/embeddings/embed_isomeric_smiles_molformer.py` → `data/build_lipid_embedding_store.py` | при любом новом SMILES |
 | атомные графы липидов | `data/build_lipid_isomer_graphs.py` | при `--lipid_graph_isomers` и новом SMILES |
 | графы и эмбеддинги белка | `preprocessing/build_geometric_protein_graphs.py`, `embed_protein_esm3_v2.py`, затем `data/build_protein_graph_tensor_cache.py` | при новом белке |
 | схожесть белков (3 метрики) | `preprocessing/similarity/build_protein_sequence_similarity.py`, `build_protein_tmscore.py` | при `--negative_similarity=protein_*` |

@@ -95,7 +95,7 @@ cluster_profile() {
             # three clusters' OAR ids never collide in script_logs/*.out names.
             _default_job_id_tag="c"
             # Not documented for kraken-cpu specifically (only kraken-gpu's cap is
-            # published, and it has none either); leave unchecked rather than
+            # published, and it has none either); leave unchecked instead of
             # guessing kraken-gpu's number applies here too.
             _default_max_walltime=""
             # One whole node, not a partial /core=N: the anti-fragmentation note
@@ -170,7 +170,7 @@ case "${CLUSTER_NAME:-bigfoot}" in
         _default_pack_size=12
         # Four: the weakest card GPU_PROPERTY matches runs four at a time. Eight was
         # tried on 2026-08-19 and reverted -- see the h100 profile in pack_lib.sh; past
-        # four the card is saturated and total throughput drops rather than rises.
+        # four the card is saturated and total throughput decreases.
         _default_pack_walltime_parallel=4
         _default_pack_cpu_per_run=0
         ;;
@@ -238,7 +238,7 @@ LOCAL_CONDA_ENV="${LOCAL_CONDA_ENV:-rsync-env}"
 
 # Serialised list of the settings the submitter reads, %q-escaped exactly once
 # so it can be prefixed to a remote command and interpreted by the login shell.
-# GPU_PROPERTY carries single quotes and parentheses, hence %q rather than
+# GPU_PROPERTY carries single quotes and parentheses, hence %q instead of
 # manual quoting.
 cluster_remote_env() {
     printf 'CONDA_SH=%q CONDA_ENV=%q PROJECT=%q GPU_PROPERTY=%q GPU_MODEL_GLOB=%q OAR_RESOURCES=%q CPU_ONLY=%q WALLTIME=%q FAST_ATTENTION_WALLTIME=%q DESCRIPTORS_HEAD_WALLTIME=%q DEEPCLIP_WALLTIME=%q MIN_FREE_GPU_MIB=%q JOB_ID_TAG=%q OARSUB_EXTRA=%q GROUPS_OVERRIDE=%q SEEDS_OVERRIDE=%q PACK_SIZE=%q PACK_PARALLEL=%q GPU_MIB_PER_RUN=%q PACK_GPU_PERCENT=%q PACK_CPU_PER_RUN=%q PACK_MIN_FREE_GPU_MIB=%q PACK_HARDWARE_AUTO=%q PACK_SKIP_DONE=%q COMPLETE_ONLY=%q COMPLETED_EXPERIMENTS=%q PACK_WALLTIME_PARALLEL=%q MAX_WALLTIME=%q' \

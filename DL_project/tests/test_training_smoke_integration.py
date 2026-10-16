@@ -91,7 +91,7 @@ def synthetic_forward_args(config):
             args["chain_rank"] = torch.rand(4)
     else:
         # --lipid_smiles_tokens narrows a lipid node from MoLFormer's 768 to one
-        # one-hot column per SMILES character; randn rather than a real one-hot is
+        # one-hot column per SMILES character; randn instead of a real one-hot is
         # enough here, since nothing in the forward path reads the values as a
         # distribution -- only the width has to match what Lipid_encoder built.
         args["lip"] = torch.randn(
@@ -1584,7 +1584,7 @@ def test_branch_widths_default_to_hiddim_and_build_no_adapter():
 
     number_of_parameters names run directories and is a column of metrics_summary.csv,
     so a default run that silently gained an adapter would corrupt the identity of
-    every past run rather than just its memory use.
+    every past run instead of just its memory use.
     """
     plain = InteractionClassification(_width_config())
     explicit = InteractionClassification(

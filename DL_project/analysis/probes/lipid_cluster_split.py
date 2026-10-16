@@ -63,7 +63,7 @@ def cluster_structures(compact, count, method):
     distance = 1.0 - similarity
     # squareform demands exact symmetry and a zero diagonal; the stored matrix is
     # symmetric by construction but round-trips through uint8, so force both
-    # rather than trip its tolerance check.
+    # to satisfy its tolerance check.
     distance = (distance + distance.T) / 2.0
     np.fill_diagonal(distance, 0.0)
     tree = linkage(squareform(distance, checks=False), method=method)

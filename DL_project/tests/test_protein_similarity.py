@@ -49,7 +49,7 @@ def test_read_structure_keeps_sequence_and_coordinates_in_lock_step(tmp_path):
     assert structure.sequence == "MKV"
     assert structure.coords.shape == (3, 3)
     # One CA per residue, at the x offset pdb_text gave it, so a reordering or a dropped
-    # residue is visible rather than silently shifting the TM-align point cloud.
+    # residue is visible instead of silently shifting the TM-align point cloud.
     assert structure.coords[:, 0].tolist() == [0.0, 1.0, 2.0]
     assert structure.unknown == 0
 

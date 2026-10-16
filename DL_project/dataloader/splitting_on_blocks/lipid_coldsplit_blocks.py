@@ -1,48 +1,32 @@
-"""The lipid axis cut BY PROJECT HEAD-GROUP CLASS SET, for --lipid_coldsplit.
+"""Define head-group class sets for --lipid_coldsplit.
 
-The first of the four cuts on the lipid side, and the one the other three are
-defined against:
+Lipid-axis alternatives:
+--lipid_coldsplit: four hand-built project class sets (here).
+--lipid_isolation: blocks at a target Tanimoto isolation.
+--lipid_subclass: a Titeca et al. Figure 3a subclass.
+--lipid_species_coldsplit: a seeded draw of individual lipids.
 
-  --lipid_coldsplit   four hand-built sets of project head-group classes (here)
-  --lipid_isolation   a block chosen by Tanimoto distance to a target isolation
-  --lipid_subclass    one subclass of Titeca et al. (a head-group row of Figure 3a)
-  --lipid_species_coldsplit   a seeded draw of individual lipids
-
-`lipid_classes_for_holdout` is the --double_coldsplit/--mixed_coldsplit form of the
-same axis: the class set is read off the table per held-out family instead of being
-fixed in advance.
-
-Lives here rather than in dataloader/sampler.py because it decides WHICH chemistry
-leaves training, not how negatives are drawn from the pool that stays.
+lipid_classes_for_holdout derives family-specific class sets from the table
+for --double_coldsplit/--mixed_coldsplit instead of using fixed sets.
+This module selects excluded chemistry; sampler.py draws remaining negatives.
 """
 from dataloader.lipid_classes import lipid_class_series
 
 
-# Lipid-class sets for --lipid_coldsplit: whole chemical families held out of training
-# while every protein stays in it. The question they ask is the other one from the
-# protein-family split -- a lipid of a chemistry never seen arrives, which of the known
-# proteins bind it -- and it is the one that matters when the screening panel grows.
-#
-# Grouped by chemistry rather than by count, because a set is only cold if its close
-# relatives leave with it. Measured on the compact Tanimoto matrix as the mean over the
-# set's structures of the highest similarity to anything left in training:
-#
-#   sphingolipids    0.458   85 positives (11.2%)   sphingoid backbone, all of it
-#   phosphorus_free  0.553   61 positives ( 8.1%)   no phosphate: neutral glycerolipids,
-#                                                   free fatty acids, retinol
-#   choline          0.653  258 positives (34.1%)   phosphocholine head, di- and lyso-
-#   anionic          0.766  228 positives (30.2%)   anionic glycerophospholipid heads
-#
-# The first three are genuinely isolated. `anionic` is not, and cannot be: PA, PI, PS,
-# PG and their relatives differ from the phosphatidylcholines that stay behind only in
-# the head group, while a fingerprint sees mostly the two acyl chains, so 0.77 is what
-# the chemistry allows. Splitting it makes that worse, not better (PG+LPG+PGP alone
-# comes out at 0.872, BMP+cardiolipin alone at 0.946). Kept as the hardest of the four:
-# it asks whether the model reads the head group at all.
-#
-# Phosphatidyl- and lysophosphatidylethanolamine are in no set. They would isolate no
-# better than `anionic` (0.778) and there is no reason to spend a fifth run on them;
-# they stay in training throughout.
+# Hold out whole chemical groups while retaining all proteins, testing known
+# proteins on new chemistry as the screening panel grows.
+# Group related chemistry, not counts, to exclude close relatives together.
+# Recorded compact-Tanimoto mean best similarity to training, with positives:
+#   sphingolipids   0.458   85 (11.2%): sphingoid backbones
+#   phosphorus_free 0.553  61 (8.1%): neutral glycerolipids, fatty acids, retinol
+#   choline        0.653  258 (34.1%): diacyl and lyso phosphocholine
+#   anionic        0.766  228 (30.2%): anionic glycerophospholipids
+# The first three are more isolated. Anionic PA/PI/PS/PG share acyl chains
+# with retained PC, so fingerprints stay similar despite different heads.
+# Smaller sets were less isolated: PG+LPG+PGP 0.872, BMP+cardiolipin 0.946.
+# Keep anionic as the harder head-group test.
+# PE/LPE remain in training: their isolation was 0.778, offering no improvement
+# over anionic to justify a fifth set.
 LIPID_COLDSPLIT_SETS = {
     "sphingolipids": (
         "Sphingomyelin",
@@ -91,32 +75,23 @@ COLDSPLIT_MINIMUM_TEST_POSITIVES = 20
 
 
 def lipid_classes_for_holdout(csv, family, share):
-    """The head-group classes to hold out of training when `family` is held out.
+    """Select head-group classes to exclude when family is held out.
 
-    The second axis of the cold split needs its own class set per family, not one shared
-    set: a family's positives sit in its own classes -- START's in phosphatidylcholines,
-    GLTP's in sphingolipids -- so any set fixed in advance is arbitrary for whichever
-    family is being held out. Classes are scored by concentration,
+    Rank by family positives / (other-family positives + 1), then add classes
+    until they cover share of family positives. The numerator is test gain;
+    the denominator reflects training cost. START favors PC and GLTP favors
+    sphingolipids, so one fixed class set would not suit every family.
+    Recorded costs: two GLTP classes remove one other-family positive;
+    three PC-dependent families cost 128-238 positives.
 
-        score(class) = family positives in class / (everyone else's positives there + 1)
+    Stopping early can leave familiar lipids dominating evaluation.
+    At share=0.3 the lipocalin lookup scored 0.618. share=0.7 was the lowest
+    checked value with every family within one standard error of 0.5.
+    preprocessing/lipid_marginal_baseline.py measures this residual prior.
 
-    and taken by descending score until the family's covered positives reach `share` of
-    its total. The numerator is what the held-out block gains, the denominator what
-    training loses elsewhere, so what gets held out is what the family owns. GLTP comes
-    out at two classes costing training a single positive; the three families that need
-    phosphatidylcholine cost it 128-238.
-
-    `share` is not cosmetic. Stopping early leaves only the cheap classes, and for a
-    family whose cheap classes are thin on rows the held-out block ends up almost
-    entirely familiar lipids -- the split looks two-axis while the per-lipid label prior
-    still carries it. At 0.3 the lipocalin lookup baseline stays at 0.618; 0.7 is the
-    smallest value at which no family sits further than one standard error from 0.5.
-
-    Whether the rule worked is not decided here but by
-    preprocessing/lipid_marginal_baseline.py, which measures that prior on the split it
-    produces. Families too small for a test block at all (ML and OSBP, 10 and 8
-    positives) come back with fewer than COLDSPLIT_MINIMUM_TEST_POSITIVES covered;
-    callers that care report it, the split itself does not special-case them.
+    ML and OSBP have only 10 and 8 positives, below
+    COLDSPLIT_MINIMUM_TEST_POSITIVES. Return their small blocks unchanged;
+    callers report insufficient coverage instead of special-casing the split.
     """
     positives = csv[csv["Interaction"] == 1]
     lipid_classes = lipid_class_series(positives)

@@ -2,7 +2,7 @@
 
 One question: does the protein half of the model influence the decision, and if it
 stops, at which epoch and through which mechanism. Answered by scalars written every
-epoch rather than by weights, because the answer is a curve -- the endpoint alone
+epoch instead of by weights, because the answer is a curve -- the endpoint alone
 cannot distinguish a branch that never learned anything from one that was learning
 and then got out-competed.
 
@@ -102,7 +102,7 @@ class BranchDynamics:
         """One validation pass under whatever ablation flags are currently set.
 
         Built from the same update_aggregate/aggregate_values pair the real validation uses,
-        so the balanced accuracies compared across these passes are one quantity rather than
+        so the balanced accuracies compared across these passes are one quantity instead of
         two definitions of it.
         """
         conf, model, device = self.conf, self.model, self.device

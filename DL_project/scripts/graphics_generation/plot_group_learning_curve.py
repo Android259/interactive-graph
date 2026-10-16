@@ -219,7 +219,7 @@ def estimate_prevalence(series_by_tag):
 
     pi is constant across epochs by construction -- the split does not change --
     so every epoch is an independent estimate of the same quantity. The median
-    is taken rather than the mean because early epochs and collapse phases push
+    is taken instead of the mean because early epochs and collapse phases push
     single estimates to the degenerate ends, and it stays robust as long as most
     epochs are well conditioned. Epochs that yield no estimate are dropped.
     """
@@ -260,7 +260,7 @@ def random_baseline(metric, prevalence, positive_rate="half"):
     class balance, and precision is pinned at pi no matter the policy -- so on a
     skewed split a "high" precision or F1 can still sit below chance.
 
-    ``positive_rate`` picks p, it is a choice of reference policy rather than
+    ``positive_rate`` picks p, it is a choice of reference policy instead of
     something estimated: ``half`` sets p = 0.5 (fair coin, the usual convention),
     ``prevalence`` sets p = pi (a coin weighted to the class prior, under which
     sens = pi, spec = 1 - pi, and F1 = pi).
